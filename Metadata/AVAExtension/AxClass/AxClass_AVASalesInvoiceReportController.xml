@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+  <Name>AVASalesInvoiceReportController</Name>
+  <SourceCode>
+    <Declaration><![CDATA[
+/// <summary>
+/// Controller class for the AVA Sales Invoice SSRS report.
+/// Extends SrsReportRunController to orchestrate query-based report execution.
+/// Entry point: AVASalesInvoiceReport output menu item -> AVASalesInvoiceReportController::main().
+/// </summary>
+public class AVASalesInvoiceReportController extends SrsReportRunController
+{
+    // Report design constant – must match the SSRS report design name in AVASalesInvoiceReport.Report
+    private const str AVASalesInvoiceReportName   = 'AVASalesInvoiceReport.Report';
+    private const str AVASalesInvoiceDesignName   = 'Report';
+}
+]]></Declaration>
+    <Methods>
+      <Method>
+        <Name>main</Name>
+        <Source><![CDATA[
+/// <summary>
+/// Entry point invoked by the AVASalesInvoiceReport output menu item.
+/// Instantiates the controller, binds the report and contract, then starts execution.
+/// </summary>
+/// <param name="_args">Args object supplied by the menu item framework.</param>
+public static void main(Args _args)
+{
+    AVASalesInvoiceReportController controller = new AVASalesInvoiceReportController();
+
+    controller.parmReportName(AVASalesInvoiceReportController::AVASalesInvoiceReportName);
+    controller.parmArgs(_args);
+    controller.startOperation();
+}
+]]></Source>
+      </Method>
+      <Method>
+        <Name>preRunModifyContract</Name>
+        <Source><![CDATA[
+/// <summary>
+/// Overrides SrsReportRunController::preRunModifyContract().
+/// Retrieves the report contract, extracts user-supplied parameter values,
+/// and applies them as query ranges on AVASalesInvoiceReportQuery before the
+/// report dataset is evaluated.
+/// </summary>
+protected void preRunModifyContract()
+{
+    AVASalesInvoiceReportContract   contract;
+    Query                           query;
+    QueryBuildDataSource            qbdsSalesTable;
+    QueryBuildRange                 qbrCustAccount;
+    QueryBuildRange                 qbrDeliveryDate;
+
+    // Retrieve the typed contract from the base controller framework
+    contract = this.parmReportContract().parmRdpContract() as AVASalesInvoiceReportContract;
+
+    if (!contract)
+    {
+        // Fallback: retrieve from the data contract map using the query data contract key
+        contract = this.parmReportContract().parmDataContract() as AVASalesInvoiceReportContract;
+    }
+
+    if (!contract)
+    {
+        super();
+        return;
+    }
+
+    // Retrieve the query object bound to the SSRS dataset (AVASalesInvoiceReportQuery)
+    query = this.getFirstQuery();
+
+    if (!query)
+    {
+        super();
+        return;
+    }
+
+    qbdsSalesTable = query.dataSourceTable(tableNum(SalesTable));
+
+    if (qbdsSalesTable)
+    {
+        // Apply CustAccount range
+        qbrCustAccount = SrsReportHelper::addRangeToQuery(
+            query,
+            tableNum(SalesTable),
+            fieldNum(SalesTable, CustAccount),
+            contract.parmCustAccount());
+
+        // Apply DeliveryDate range using SysQuery::range for from/to expression
+        if (contract.parmDeliveryDateFrom() || contract.parmDeliveryDateTo())
+        {
+            TransDate dateFrom = contract.parmDeliveryDateFrom()
+                ? contract.parmDeliveryDateFrom()
+                : dateNull();
+            TransDate dateTo   = contract.parmDeliveryDateTo()
+                ? contract.parmDeliveryDateTo()
+                : systemDateGet();
+
+            qbrDeliveryDate = SrsReportHelper::addRangeToQuery(
+                query,
+                tableNum(SalesTable),
+                fieldNum(SalesTable, DeliveryDate),
+                SysQuery::range(dateFrom, dateTo));
+        }
+    }
+
+    super();
+}
+]]></Source>
+      </Method>
+      <Method>
+        <Name>getFirstQuery</Name>
+        <Source><![CDATA[
+/// <summary>
+/// Helper – retrieves the first Query object from the report's query data source binding.
+/// The query corresponds to AVASalesInvoiceReportQuery defined in AOT.
+/// </summary>
+/// <returns>The first <c>Query</c> bound to the report dataset, or null.</returns>
+protected Query getFirstQuery()
+{
+    SrsReportRunPrinter         reportRunPrinter;
+    SRSReportDataContract       reportDataContract;
+    Query                       queryObj;
+
+    reportDataContract = this.parmReportContract();
+
+    if (reportDataContract && reportDataContract.parmQueryContracts().elements())
+    {
+        MapEnumerator qcEnum = reportDataContract.parmQueryContracts().getEnumerator();
+        if (qcEnum.moveNext())
+        {
+            queryObj = (qcEnum.currentValue() as SrsReportQueryContract).parmQuery();
+        }
+    }
+
+    return queryObj;
+}
+]]></Source>
+      </Method>
+      <Method>
+        <Name>initializeReportContract</Name>
+        <Source><![CDATA[
+/// <summary>
+/// Overrides initializeReportContract to bind AVASalesInvoiceReportContract
+/// as the primary data contract for the report run.
+/// </summary>
+protected void initializeReportContract()
+{
+    super();
+    this.parmReportContract().parmRdpContract(new AVASalesInvoiceReportContract());
+}
+]]></Source>
+      </Method>
+    </Methods>
+  </SourceCode>
+</AxClass>
