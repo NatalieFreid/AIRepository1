@@ -1,0 +1,338 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAGenBatchLocDirService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Service class for the Generate Batch Location Directives operation.
+/// Processes location directives and creates batch-enabled action copies.
+/// </summary>
+public class AVAGenBatchLocDirService extends SysOperationServiceBase
+{
+    int directivesProcessed;
+    int actionsCreated;
+    int actionsSkipped;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Main processing method for generating batch location directives.
+    /// </summary>
+    /// <param name="_contract">The data contract with user selections</param>
+    public void process(AVAGenBatchLocDirContract _contract)
+    {
+        WHSLocDir locDir;
+        WHSLocDirAction action, sourceAction;
+        Query query;
+        QueryRun queryRun;
+        
+        // Initialize counters
+        directivesProcessed = 0;
+        actionsCreated = 0;
+        actionsSkipped = 0;
+        
+        // Get the query from contract
+        query = _contract.getQuery();
+        
+        if (!query)
+        {
+            throw error("@SYS19306"); // Query not specified
+        }
+        
+        queryRun = new QueryRun(query);
+        
+        // Process each selected location directive
+        while (queryRun.next())
+        {
+            locDir = queryRun.get(tableNum(WHSLocDir));
+            
+            if (locDir.RecId)
+            {
+                this.processLocationDirective(locDir);
+            }
+        }
+        
+        // Display summary info
+        this.showSummary();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processLocationDirective</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Processes a single location directive and its actions.
+    /// </summary>
+    /// <param name="_locDir">The location directive to process</param>
+    private void processLocationDirective(WHSLocDir _locDir)
+    {
+        WHSLocDirAction sourceAction;
+        boolean processed = false;
+        
+        // Process all actions for this directive
+        while select sourceAction
+            where sourceAction.LocDirId == _locDir.LocDirId
+               && sourceAction.isBatchEnabled == NoYes::No
+               && sourceAction.AVAIsCopied == NoYes::No
+        {
+            try
+            {
+                this.processAction(sourceAction);
+                processed = true;
+            }
+            catch (Exception::Error)
+            {
+                warning(strFmt("@AVAExtension:AVAProcessActionError", 
+                    sourceAction.SequenceNumber, _locDir.LocDirId));
+            }
+        }
+        
+        if (processed)
+        {
+            directivesProcessed++;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processAction</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Processes a single location directive action.
+    /// </summary>
+    /// <param name="_sourceAction">The source action to copy</param>
+    private void processAction(WHSLocDirAction _sourceAction)
+    {
+        WHSLocDirAction newAction;
+        Query clonedQuery;
+        container queryCon;
+        
+        // Check if already processed
+        if (_sourceAction.AVAIsCopied)
+        {
+            actionsSkipped++;
+            return;
+        }
+        
+        // Check if already batch enabled
+        if (_sourceAction.isBatchEnabled)
+        {
+            actionsSkipped++;
+            return;
+        }
+        
+        ttsbegin;
+        
+        try
+        {
+            // Step 1: Clone the query BEFORE changing any flags
+            clonedQuery = this.cloneActionQuery(_sourceAction);
+            
+            // Step 2: Create new action record with all fields copied
+            newAction = this.copyActionRecord(_sourceAction);
+            
+            // Step 3: Set isBatchEnabled = Yes on new record
+            newAction.isBatchEnabled = NoYes::Yes;
+            newAction.insert();
+            
+            // Step 4: Re-apply the cloned query to the new record
+            if (clonedQuery)
+            {
+                this.applyQueryToAction(newAction, clonedQuery);
+            }
+            
+            // Step 5: Set isCopied = Yes on source record
+            _sourceAction.selectForUpdate(true);
+            _sourceAction.AVAIsCopied = NoYes::Yes;
+            _sourceAction.update();
+            
+            actionsCreated++;
+            
+            ttscommit;
+        }
+        catch
+        {
+            // Let the exception propagate to the calling method
+            throw;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>cloneActionQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Clones the query from a location directive action.
+    /// </summary>
+    /// <param name="_sourceAction">The source action</param>
+    /// <returns>Cloned query</returns>
+    private Query cloneActionQuery(WHSLocDirAction _sourceAction)
+    {
+        Query clonedQuery;
+        container queryCon;
+        
+        if (!_sourceAction)
+        {
+            return null;
+        }
+        
+        // Get the packed query from the action record
+        queryCon = _sourceAction.QueryCriteria;
+        
+        if (queryCon && conLen(queryCon) > 0)
+        {
+            // Unpack to clone
+            clonedQuery = new Query();
+            clonedQuery.unpack(queryCon);
+        }
+        else
+        {
+            // If no query container, create empty query
+            // The action might not have custom query criteria
+            clonedQuery = null;
+        }
+        
+        return clonedQuery;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyActionRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Copies all fields from source action to a new action record.
+    /// </summary>
+    /// <param name="_sourceAction">The source action to copy from</param>
+    /// <returns>New action record (not yet inserted)</returns>
+    private WHSLocDirAction copyActionRecord(WHSLocDirAction _sourceAction)
+    {
+        WHSLocDirAction newAction;
+        
+        buf2Buf(_sourceAction, newAction);
+        
+        // Clear system fields
+        newAction.RecId = 0;
+        newAction.RecVersion = 0;
+        newAction.createdBy = '';
+        newAction.createdDateTime = DateTimeUtil::minValue();
+        newAction.modifiedBy = '';
+        newAction.modifiedDateTime = DateTimeUtil::minValue();
+        
+        // Don't copy the isCopied flag to new record
+        newAction.AVAIsCopied = NoYes::No;
+        
+        // Adjust sequence number to be unique
+        newAction.SequenceNumber = this.getNextSequenceNumber(_sourceAction.LocDirId);
+        
+        return newAction;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getNextSequenceNumber</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the next available sequence number for a location directive.
+    /// </summary>
+    /// <param name="_locDirId">Location directive ID</param>
+    /// <returns>Next sequence number</returns>
+    private WHSLocDirSequenceNumber getNextSequenceNumber(WHSLocDirId _locDirId)
+    {
+        WHSLocDirAction action;
+        WHSLocDirSequenceNumber maxSeq = 0;
+        
+        select maxof(SequenceNumber) from action
+            where action.LocDirId == _locDirId;
+        
+        maxSeq = action.SequenceNumber;
+        
+        return maxSeq + 10;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>applyQueryToAction</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Applies a cloned query to a location directive action.
+    /// </summary>
+    /// <param name="_action">The action to update</param>
+    /// <param name="_query">The query to apply</param>
+    private void applyQueryToAction(WHSLocDirAction _action, Query _query)
+    {
+        container queryCon;
+        
+        if (!_action || !_query)
+        {
+            return;
+        }
+        
+        try
+        {
+            // Pack the query
+            queryCon = _query.pack();
+            
+            if (queryCon && conLen(queryCon) > 0)
+            {
+                // Update the action with the query
+                _action.selectForUpdate(true);
+                _action.QueryCriteria = queryCon;
+                _action.update();
+            }
+        }
+        catch (Exception::Error)
+        {
+            warning(strFmt("@AVAExtension:AVAApplyQueryError", _action.SequenceNumber));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showSummary</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Displays a summary of the processing results.
+    /// </summary>
+    private void showSummary()
+    {
+        str message;
+        
+        message = strFmt("@AVAExtension:AVAGenBatchSummary", 
+            directivesProcessed, 
+            actionsCreated, 
+            actionsSkipped);
+        
+        info(message);
+        
+        // Also show individual counts
+        if (directivesProcessed > 0)
+        {
+            info(strFmt("@AVAExtension:AVADirectivesProcessed", directivesProcessed));
+        }
+        
+        if (actionsCreated > 0)
+        {
+            info(strFmt("@AVAExtension:AVAActionsCreated", actionsCreated));
+        }
+        
+        if (actionsSkipped > 0)
+        {
+            info(strFmt("@AVAExtension:AVAActionsSkipped", actionsSkipped));
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

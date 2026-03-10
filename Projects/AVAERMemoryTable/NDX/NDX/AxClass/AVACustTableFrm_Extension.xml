@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACustTableFrm_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>AVACustTableFrm_Extension</c> class is the extension for <c>CustTable</c>
+/// </summary>
+[ExtensionOf(FormStr(CustTable))]
+final class AVACustTableFrm_Extension
+{
+    public DirPartyTable  frmDirPartyTable;
+
+    public  DirPartyType    allowedParentType;
+    public  DirPartyType    allowedChildType;
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmDirGroupPartyTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_frmDirPatrtyTable">_frmDirPatrtyTable</param>
+    /// <returns>DirPartyTable</returns>
+    public DirPartyTable     parmDirGroupPartyTable(DirPartyTable       _frmDirPatrtyTable     = frmDirPartyTable)
+    {
+        frmDirPartyTable = _frmDirPatrtyTable;
+        return frmDirPartyTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>init</c> method.
+    /// </summary>
+    public void init()
+    {
+        FormTabPageControl  AVAtabPageCreditLimit;
+        next init();
+
+        if(!AVASalesParameters::checkDirectCustomerCreation())
+        {
+            this.design().controlName(FormControlStr(CustTable, NewCustomer)).enabled(false);
+            this.design().controlName(FormControlStr(CustTable, NewCustomer)).helpText(strFmt("@NDX:NXAP1P2", "@NDX:NXACustomerCreationByTransformingBusinessRelations", ''));
+        }
+        AVAtabPageCreditLimit   = this.design().controlName(formControlStr(CustTable, TabCreditManagement)) as FormTabPageControl;
+        AVAtabPageCreditLimit.columns(7, ColumnsMode::Fixed);
+
+        this.updateICControl();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAllowedChildType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>getAllowedChildType</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>DirPartyType</c> as return value
+    /// </returns>
+    public DirPartyType getAllowedChildType()
+    {
+        return allowedChildType;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAllowedParentType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>getAllowedParentType</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>DirPartyType</c> as return value
+    /// </returns>
+    public DirPartyType getAllowedParentType()
+    {
+        return allowedParentType;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAllowedPartyTypes</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>getAllowedPartyTypes</c> method.
+    /// </summary>
+    void getAllowedPartyTypes()
+    {
+        if (dirPartyRelationship.RelationshipTypeId != dirRelationshipTypeTable.RelationshipTypeId)
+        {
+            dirRelationshipTypeTable.data(DirRelationshipTypeTable::find(dirPartyRelationship.RelationshipTypeId));
+        }
+        [allowedParentType, allowedChildType] = [dirRelationshipTypeTable.ParentPartyType, dirRelationshipTypeTable.ChildPartyType];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateRange</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>updateRange</c> method.
+    /// </summary>
+    /// <param name="_dataSource">
+    ///    <c>FormDataSource</c> as type
+    /// </param>
+    public void updateRange(FormDataSource _dataSource)
+    {
+        QueryBuildDataSource    qbd;
+        QueryBuildRange         qbRange;
+        str                     qStr;
+
+        qbd = _dataSource.query().dataSourceTable(tableNum(DirPartyRelationship));
+        qStr = strFmt(  '((%1.%2 == %4) || (%1.%3 == %4))',
+                        qbd.name(), fieldStr(DirPartyRelationship, ParentParty),
+                        fieldStr(DirPartyRelationship,ChildParty), dirPartyTable.RecId);
+
+        qbRange = SysQuery::findOrCreateRange(qbd, fieldNum(DirPartyRelationship, RecId));
+        qbRange.status(RangeStatus::Locked);
+        qbRange.value(qStr);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAsetContext</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// setContext method
+    /// </summary>
+    /// <param name = "_custTable">CustTable</param>
+    public void AVAsetContext(CustTable _custTable)
+    {
+        CustTable_ds.reread();
+        custTable_ds.positionToRecord(_custTable);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateControls</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// extension of method updateControls
+    /// </summary>
+    public void updateControls()
+    {
+        CredManCreditLimitCustGroup     crlCustGroup;
+        CredManCreditLimitCustGroupLine creditLimitCustGroupLine;
+
+        next updateControls();
+
+        select firstonly RecId from crlCustGroup where crlCustGroup.AVARiscDebtor == custTable.AccountNum;
+        AVACRLUpdateRiscDebtorController.enabled(crlCustGroup.RecId);
+
+        select firstonly creditLimitCustGroupLine
+                        where creditLimitCustGroupLine.custAccount == custTable.AccountNum
+                    join crlCustGroup
+                        where crlCustGroup.RecId == creditLimitCustGroupLine.CreditLimitCustGroup;
+        AVACRLRiscDebtorForm.enabled(crlCustGroup.RecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateICControl</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NDX
+    /// </summary>
+    public void updateICControl()
+    {
+        InterCompanyTradingPartner CustTradingPartner;
+        InterCompanyTradingPartner VendTradingPartner;
+        
+        CustTradingPartner = InterCompanyTradingPartner::findCustomer(custTable.Party, curExt());
+        VendTradingPartner  = InterCompanyTradingRelation::getRelatedTradingPartner(CustTradingPartner);
+        
+        NDXPriceDiscTable_ICSales.enabled(CustTradingPartner && VendTradingPartner);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

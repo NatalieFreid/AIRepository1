@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXInventItemPrice_tbl_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// InventItemPrice extension class
+/// WolfA 08.10.21
+/// </summary>
+[ExtensionOf(tableStr(InventItemPrice))]
+final class NDXInventItemPrice_tbl_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>KCS_findCostingVersion</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds costing version
+    /// </summary>
+    /// <param name = "_itemId">Item id</param>
+    /// <param name = "_versionId">Version id</param>
+    /// <param name = "_priceDate">Date</param>
+    /// <param name = "_priceType">Type of price</param>
+    /// <param name = "_inventDimId">InventDim id</param>
+    /// <param name = "_newSiteId">InventSite id</param>
+    /// <returns>Costing version record</returns>
+    public static inventItemPrice KCS_findCostingVersion(
+                                                        ItemId                  _itemId,
+                                                        CostingVersionId        _versionId,
+                                                        PriceDate               _priceDate,
+                                                        CostingVersionPriceType _priceType,
+                                                        InventDimId             _inventDimId,
+                                                        InventSiteId            _newSiteId          = ''
+                                                     )
+    {
+        InventItemPrice     inventItemPrice;
+        InventTable         inventTable;
+        InventDim           inventDim;
+        InventDim           inventDimCriteria;
+        InventDimParm       inventDimParm;
+        ;
+
+
+        if (_itemId)
+        {
+            inventTable                         = InventTable::find(_itemId);
+            inventDimCriteria  = InventItemPrice::initializeInventDimCriteria(inventTable, _inventDimId);
+            inventDimParm.setAllInventDim();
+            if (!_newSiteId)
+            {
+                inventDimParm.InventSiteIdFlag = NoYes::No;
+            }
+            inventDimCriteria.InventSiteId      = InventItemPrice::changeSiteId(inventDimCriteria.InventSiteId, _newSiteId);
+
+            select firstonly inventItemPrice order by ActivationDate desc, CreatedDateTime desc
+                where inventItemPrice.ItemId            == _itemId
+                   && inventItemPrice.VersionId         == _versionId
+                   && inventItemPrice.ActivationDate    <= _priceDate
+                   && inventItemPrice.PriceType         == _priceType
+                #InventDimExistsJoin(inventItemPrice.inventDimId, inventDim, inventDimCriteria, inventDimParm);
+
+        }
+        return inventItemPrice;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_PricePerQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets price per quantity using InventPriceMap
+    /// </summary>
+    /// <param name = "qty">Quantity</param>
+    /// <returns>Price</returns>
+    public Price KCS_PricePerQty(Qty qty)
+    {
+        /*InventPriceMap inventPriceMap = this;
+        return inventPriceMap.KCS_PricePerQty(qty);*/
+        Price pcsPrice = this.Price / this.priceUnit();
+
+        if (this.PriceAllocateMarkup)
+        {
+            pcsPrice += this.Markup / this.priceQty();
+        }
+
+        return pcsPrice;
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

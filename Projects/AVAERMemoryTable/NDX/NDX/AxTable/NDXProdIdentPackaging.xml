@@ -1,0 +1,709 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXProdIdentPackaging</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class NDXProdIdentPackaging extends common
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>checkAllActive</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 01.02.23
+    /// AX2009: tables.NDX_ProdIdent_Packaging.checkAllActive()
+    /// </summary>
+    /// <param name = "_inBatchMode">boolean</param>
+    void checkAllActive(boolean _inBatchMode = false)
+    {
+        NDXProdIdentBoxLabel nDX_ProdIdentBoxLabel;
+        NDXProdIdentPackaging    lNDX_ProdIdent_Packaging;
+        container conRec = connull();
+        NDXUpdatedUTCDateTime updatedUTC = DateTimeUtil::utcNow();
+        int i;
+        RefRecId refRecId;
+        ;
+        conRec = this.getConRec(_inBatchMode);
+
+        for (i=1; i<=conlen(conRec); i++)
+        {
+            refRecId = conpeek(conRec, i);
+            select firstonly forUpdate lNDX_ProdIdent_Packaging where lNDX_ProdIdent_Packaging.RecId == refRecId;
+            info(strfmt("@NDX:NDXCheckPackingitemStart", i, conlen(conRec), lNDX_ProdIdent_Packaging.InventTable, NDXHelperCommon::seconds2Str() ));
+
+            lNDX_ProdIdent_Packaging.UpdatedUTC = updatedUTC;
+            lNDX_ProdIdent_Packaging.Counter    = NDXBOM::checkItemInBOMAll(InventTable::findRecId(lNDX_ProdIdent_Packaging.InventTable).ItemId, lNDX_ProdIdent_Packaging.UpdatedUTC);
+            delete_from nDX_ProdIdentBoxLabel
+            where nDX_ProdIdentBoxLabel.InventTableBox == lNDX_ProdIdent_Packaging.InventTable
+                && nDX_ProdIdentBoxLabel.UpdatedUTC != lNDX_ProdIdent_Packaging.UpdatedUTC;
+            ttsbegin;
+            lNDX_ProdIdent_Packaging.update();
+            ttscommit;
+            info(strfmt("@NDX:NDXCheckPackingitemEnd", i, conlen(conRec), InventTable::findRecId(lNDX_ProdIdent_Packaging.InventTable).ItemId, NDXHelperCommon::seconds2Str() ));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getConRec</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 01.02.23
+    /// AX2009: tables.NDX_ProdIdent_Packing.getConRec()
+    /// </summary>
+    /// <param name = "_inBatchMode">boolean</param>
+    /// <returns>container</returns>
+    public container getConRec(boolean _inBatchMode = false)
+    {
+        NDXProdIdentPackaging    nDXProdIdentPackaging;
+        MultiSelectionHelper msh;
+        container conRec = connull();
+        FormDataSource fds;
+        int anzMarked;
+        ;
+
+        if (_inBatchMode)
+        {
+            // alle Aktiv-markierten DS
+            while select nDXProdIdentPackaging
+                        where nDXProdIdentPackaging.Active == NoYes::Yes
+            {
+                conRec += nDXProdIdentPackaging.RecId;
+            }
+        }
+        else
+        {
+            if (FormDataUtil::isFormDataSource(this))
+            {
+                fds = FormDataUtil::getFormDataSource(this);
+                anzMarked = NDXHelperTable::anzRecordsFDSMarked(fds);
+                if (box::yesNo(anzMarked != 1 ?
+                            strfmt("@NDX:NDXCheckAllMarkedRecords", anzMarked) :
+                            "@NDX:NDXCheckCurrentRecord", DialogButton::No)== DialogButton::No)
+                {
+                    if (box::yesNo("@NDX:NDXCheckActiveMarkedRecords", DialogButton::No) == DialogButton::No)
+                    {
+                        if (anzMarked != 1 && box::yesNo("@NDX:NDXCheckOnlyCurrentRecord", DialogButton::No) == DialogButton::Yes)
+                        {
+                            // nur aktueller Datensatz
+                            conRec += this.RecId;
+                        }
+                    }
+                    else
+                    {
+                        // alle Aktiv-markierten DS
+                        while select nDXProdIdentPackaging
+                        where nDXProdIdentPackaging.Active == NoYes::Yes
+                        {
+                            conRec += nDXProdIdentPackaging.RecId;
+                        }
+                    }
+                }
+                else
+                {
+                    // alle markierten DS
+                    msh = MultiSelectionHelper::construct();
+                    msh.parmDatasource(fds);
+                    nDXProdIdentPackaging = msh.getFirst();
+                    while (nDXProdIdentPackaging)
+                    {
+                        conRec += nDXProdIdentPackaging.RecId;
+                        nDXProdIdentPackaging = msh.getNext();
+                    }
+                }
+            }
+        }
+        return conRec;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkProdIdent</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 08.02.23
+    /// AX2009: tables.NDX_ProdIdent_Packing.checkProdIdent()
+    /// </summary>
+    /// <param name = "_inBatchMode">boolean</param>
+    void checkProdIdent(boolean _inBatchMode = false)
+    {
+        NDXProdIdentBoxLabel           nDX_ProdIdentBoxLabel;
+        NDXProdIdentBoxLabel           nDX_ProdIdentBoxLabelUpdate;
+        NDXProdIdentProcedureLine1    nDX_ProdIdent_ProcedureLine1;
+        NDXProdIdentProcedureLine2    nDX_ProdIdent_ProcedureLine2;
+        NDXProdIdentPackaging         lNDX_ProdIdent_Packaging;
+
+        Query       q;
+        QueryRun    qr;
+        RefRecId    refRecId;
+        int         count1, i;
+        container conRec = this.getConRec(_inBatchMode);
+
+        for (i=1; i<=conlen(conRec); i++)
+        {
+            refRecId = conpeek(conRec, i);
+            select firstonly forUpdate lNDX_ProdIdent_Packaging where lNDX_ProdIdent_Packaging.RecId == refRecId;
+            info(strfmt("@NDX:NDXCheckPackingitemStart", i, conlen(conRec), InventTable::findRecId(lNDX_ProdIdent_Packaging.InventTable).ItemId, NDXHelperCommon::seconds2Str()));
+
+            // 1. Prüfung: ist für jeden zugeordneten Arbeitsplan ein NDX_ProdIdentBoxLabel - DS vorhanden?
+            delete_from nDX_ProdIdentBoxLabel
+            where nDX_ProdIdentBoxLabel.InventTableBox == lNDX_ProdIdent_Packaging.InventTable
+                && nDX_ProdIdentBoxLabel.RouteIdCopy == NoYes::Yes;
+
+            q = new Query();
+            QueryBuildDataSource qbdsProdIdentProcedureLine1 = q.addDataSource(tablenum(NDXProdIdentProcedureLine1));
+            //qbds1.addOrderByField(fieldnum(NDXProdIdentProcedureLine1, ItemId));
+            //qbds1.addOrderByField(fieldnum(NDXProdIdentProcedureLine1, RouteId));
+
+            QueryBuildDataSource qbdsProdIdentprocedureTable = qbdsProdIdentProcedureLine1.addDataSource(tableNum(NDXProdIdentProcedureTable));
+            qbdsProdIdentprocedureTable.relations(true);
+            qbdsProdIdentprocedureTable.joinMode(JoinMode::InnerJoin);
+            qbdsProdIdentprocedureTable.fetchMode(QueryFetchMode::One2One);
+
+            QueryBuildDataSource qbdsProdIdentBoxLable = qbdsProdIdentprocedureTable.addDataSource(tableNum(NDXProdIdentBoxLabel));
+            qbdsProdIdentBoxLable.update(true);
+            qbdsProdIdentBoxLable.addLink(fieldNum(NDXProdIdentProcedureTable, InventTable), fieldNum(NDXProdIdentBoxLabel, InventTableWithBox));
+            qbdsProdIdentBoxLable.fetchMode(QueryFetchMode::One2One);
+            qbdsProdIdentBoxLable.addRange(fieldNum(NDXProdIdentBoxLabel, InventTableBox)).value(queryValue(lNDX_ProdIdent_Packaging.InventTable));
+
+            //qbds2 = qbds1.addDataSource(tablenum(NDXProdIdentBoxLabel));
+            //qbds2.update(true);
+            //qbds2.addLink(fieldnum(NDX_ProdIdent_ProcedureLine1, ItemId), fieldnum(NDX_ProdIdentBoxLabel, ItemIdWithBox));
+            //qbds2.addRange(fieldnum(nDX_ProdIdentBoxLabel, ItemIdBox)).value(QueryValue(lNDX_ProdIdent_Packaging.ItemIdPacking));
+            //qbds2.fetchMode(QueryFetchMode::One2One);
+            qr = new QueryRun(q);
+            ttsbegin;
+            while (qr.next())
+            {
+                nDX_ProdIdent_ProcedureLine1 = qr.get(tablenum(NDXProdIdentProcedureLine1));
+                if (qr.changed(tablenum(NDXProdIdentBoxLabel)))
+                {
+                    nDX_ProdIdentBoxLabel = qr.get(tablenum(NDXProdIdentBoxLabel));
+                    if (nDX_ProdIdentBoxLabel.Route != nDX_ProdIdent_ProcedureLine1.Route)
+                    {
+                        nDX_ProdIdentBoxLabel.Route = nDX_ProdIdent_ProcedureLine1.Route;
+                        nDX_ProdIdentBoxLabel.update();
+                    }
+                }
+                else
+                {
+                    buf2Buf(nDX_ProdIdentBoxLabel, nDX_ProdIdentBoxLabelUpdate);
+                    nDX_ProdIdentBoxLabelUpdate.RouteIdCopy = NoYes::Yes;
+                    nDX_ProdIdentBoxLabelUpdate.Route     = nDX_ProdIdent_ProcedureLine1.Route;
+                    nDX_ProdIdentBoxLabelUpdate.insert();
+                }
+            }
+            ttscommit;
+
+            ttsbegin;
+            while select forUpdate nDX_ProdIdentBoxLabel
+            where nDX_ProdIdentBoxLabel.InventTableBox == lNDX_ProdIdent_Packaging.InventTable
+            {
+                count1 = 0;
+                q = new Query();
+                QueryBuildDataSource qbdsProdIdentProcedureLine2_2 = q.addDataSource(tablenum(NDXProdIdentProcedureLine2));
+                if (lNDX_ProdIdent_Packaging.NDXProdIdentTechnique)
+                {
+                    qbdsProdIdentProcedureLine2_2.addRange(fieldnum(NDXProdIdentProcedureLine2, NDXProdIdentTechnique)).value(QueryValue(lNDX_ProdIdent_Packaging.NDXProdIdentTechnique));
+                }
+
+                // Filter auf Sortierkennung in den Kennzeichnungsverfahren
+                if (nDX_ProdIdentBoxLabel.FilterSortId)
+                {
+                    qbdsProdIdentProcedureLine2_2.addRange(fieldnum(NDXProdIdentProcedureLine2, IDSort)).value(QueryValue(nDX_ProdIdentBoxLabel.FilterSortId));
+                }
+                else
+                {
+                    // Filter auf Einheitenumrechnung
+                    if (lNDX_ProdIdent_Packaging.UnitOfMeasure && lNDX_ProdIdent_Packaging.FilterMultipleAssignments == NoYes::No)
+                    {
+                        QueryBuildDataSource qbdsUnitOfMeasureConversion = qbdsProdIdentProcedureLine2_2.addDataSource(tableNum(UnitOfMeasureConversion));
+                        qbdsUnitOfMeasureConversion.relations(true);
+                        qbdsUnitOfMeasureConversion.fetchMode(QueryFetchMode::One2One);
+
+                        QueryBuildDataSource qbdsUnitOfMeasure = qbdsUnitOfMeasureConversion.addDataSource(tableNum(UnitOfMeasure));
+                        qbdsUnitOfMeasure.addLink(fieldNum(UnitOfMeasureConversion, ToUnitOfMeasure), fieldNum(UnitOfMeasure, RecId));
+                        qbdsUnitOfMeasure.fetchMode(QueryFetchMode::One2One);
+                        qbdsUnitOfMeasure.addRange(fieldnum(UnitOfMeasure, Symbol)).value(strfmt('*%1*', UnitOfMeasure::find(lNDX_ProdIdent_Packaging.UnitOfMeasure).Symbol));
+
+                        //qbds4 = qbds1.addDataSource(tablenum(UnitConvert));
+                        //qbds4.fetchMode(QueryFetchMode::One2One);
+                        //qbds4.relations(true);
+                        //qbds4.joinMode(JoinMode::InnerJoin);
+                        //qbds4.addRange(fieldnum(UnitConvert, ToUnit)).value(strfmt("*%1*", lNDX_ProdIdent_Packaging.UnitIdFilter));
+
+
+                    }
+                }
+
+                QueryBuildDataSource qbdsProdIdentProcedureLine1_2 = qbdsProdIdentProcedureLine2_2.addDataSource(tablenum(NDXProdIdentProcedureLine1));
+                qbdsProdIdentProcedureLine1_2.relations(true);
+                qbdsProdIdentProcedureLine1_2.fetchMode(QueryFetchMode::One2One);
+
+                QueryBuildDataSource qbdsProdIdentProcedureTable_2 = qbdsProdIdentProcedureLine1_2.addDataSource(tableNum(NDXProdIdentProcedureTable));
+                qbdsProdIdentProcedureTable_2.relations(true);
+                qbdsProdIdentProcedureTable_2.fetchMode(QueryFetchMode::One2One);
+
+                QueryBuildDataSource qbdsProdIdentBoxLabel_2 = qbdsProdIdentProcedureTable_2.addDataSource(tablenum(NDXProdIdentBoxLabel));
+                qbdsProdIdentBoxLabel_2.addLink(fieldNum(NDXProdIdentProcedureTable, InventTable), fieldNum(NDXProdIdentBoxLabel, InventTableWithBox));
+                qbdsProdIdentBoxLabel_2.relations(true);
+                qbdsProdIdentBoxLabel_2.fetchMode(QueryFetchMode::One2One);
+                qbdsProdIdentBoxLabel_2.addRange(fieldnum(NDXProdIdentBoxLabel, InventTableWithBox)).value(QueryValue(nDX_ProdIdentBoxLabel.InventTableWithBox));
+                qbdsProdIdentBoxLabel_2.addRange(fieldnum(NDXProdIdentBoxLabel, InventTableBox)).value(QueryValue(nDX_ProdIdentBoxLabel.InventTableBox));
+
+                QueryBuildDataSource qbdsProdIdentBoxLabel_2Route = qbdsProdIdentProcedureLine1_2.addDataSource(tablenum(NDXProdIdentBoxLabel));
+                qbdsProdIdentBoxLabel_2Route.addLink(fieldNum(NDXProdIdentProcedureLine1, Route), fieldNum(NDXProdIdentBoxLabel, Route));
+                qbdsProdIdentBoxLabel_2Route.relations(true);
+                qbdsProdIdentBoxLabel_2Route.fetchMode(QueryFetchMode::One2One);
+                qbdsProdIdentBoxLabel_2Route.addRange(fieldnum(NDXProdIdentBoxLabel, Route)).value(QueryValue(nDX_ProdIdentBoxLabel.Route));
+
+                //qbdsProdIdentBoxLabel_2.fetchMode(QueryFetchMode::One2One);
+                //qbdsProdIdentBoxLabel_2.addRange(fieldnum(NDXProdIdentBoxLabel, InventTableWithBox)).value(QueryValue(nDX_ProdIdentBoxLabel.InventTableWithBox));
+                //qbdsProdIdentBoxLabel_2.addRange(fieldnum(NDXProdIdentBoxLabel, InventTableBox)).value(QueryValue(nDX_ProdIdentBoxLabel.InventTableBox));
+                ////qbdsProdIdentBoxLabel_2.addRange(fieldnum(NDX_ProdIdentBoxLabel, RouteId)).value(QueryValue(nDX_ProdIdentBoxLabel.RouteId));
+
+                qr = new QueryRun(q);
+                while (qr.next())
+                {
+                    ++count1;
+                    nDX_ProdIdent_ProcedureLine2 = qr.get(tablenum(NDXProdIdentProcedureLine2));
+                    nDX_ProdIdentBoxLabel.NDXProdIdentProcedureLine2 = nDX_ProdIdent_ProcedureLine2.RecId;
+                    nDX_ProdIdentBoxLabel.DiffLabelId = nDX_ProdIdent_ProcedureLine2.NDXProdIdentLabel != lNDX_ProdIdent_Packaging.NDXProdIdentLabel;
+                }
+
+                // Option: Filter auf Einheitenumrechnung nur bei Mehrfachzuordnung
+                if (count1 > 1 &&
+                lNDX_ProdIdent_Packaging.UnitOfMeasure &&
+                lNDX_ProdIdent_Packaging.FilterMultipleAssignments == NoYes::Yes)
+                {
+                    QueryBuildDataSource qbdsUnitOfMeasureConversion_2 = qbdsProdIdentProcedureLine2_2.addDataSource(tableNum(UnitOfMeasureConversion));
+                    qbdsUnitOfMeasureConversion_2.relations(true);
+                    qbdsUnitOfMeasureConversion_2.fetchMode(QueryFetchMode::One2One);
+                    QueryBuildDataSource qbdsUnitOfMeasre_2 = qbdsUnitOfMeasureConversion_2.addDataSource(tableNum(UnitOfMeasure));
+                    qbdsUnitOfMeasre_2.relations(true);
+                    qbdsUnitOfMeasre_2.fetchMode(QueryFetchMode::One2One);
+                    qbdsUnitOfMeasre_2.addRange(fieldnum(UnitOfMeasure, Symbol)).value(strfmt('*%1*', UnitOfMeasure::find(lNDX_ProdIdent_Packaging.UnitOfMeasure).Symbol));
+
+                    //qbds4 = qbdsProdIdentProcedureLine2_2.addDataSource(tablenum(UnitConvert));
+                    //qbds4.fetchMode(QueryFetchMode::One2One);
+                    //qbds4.relations(true);
+                    //qbds4.joinMode(JoinMode::InnerJoin);
+                    //qbds4.addRange(fieldnum(UnitConvert, ToUnit)).value(strfmt("*%1*", lNDX_ProdIdent_Packaging.UnitIdFilter));
+                    count1 = 0;
+                    qr = new QueryRun(q);
+                    while (qr.next())
+                    {
+                        ++count1;
+                        nDX_ProdIdent_ProcedureLine2 = qr.get(tablenum(NDXProdIdentProcedureLine2));
+                        nDX_ProdIdentBoxLabel.NDXProdIdentProcedureLine2 = nDX_ProdIdent_ProcedureLine2.RecId;
+                        nDX_ProdIdentBoxLabel.DiffLabelId = nDX_ProdIdent_ProcedureLine2.NDXProdIdentLabel != lNDX_ProdIdent_Packaging.NDXProdIdentLabel;
+                    }
+                }
+                nDX_ProdIdentBoxLabel.RecAssignments = count1;
+                nDX_ProdIdentBoxLabel.ProdIdentOK = count1 == 1;
+                nDX_ProdIdentBoxLabel.DoChange = nDX_ProdIdentBoxLabel.ProdIdentOK == NoYes::Yes
+                                          && nDX_ProdIdentBoxLabel.DiffLabelId == NoYes::Yes;
+                
+                if (nDX_ProdIdentBoxLabel.DontChange == NoYes::Yes && nDX_ProdIdentBoxLabel.DoChange == NoYes::Yes)
+                {
+                    nDX_ProdIdentBoxLabel.DoChange = NoYes::No;
+                }
+                nDX_ProdIdentBoxLabel.update();
+            }
+            select count(RecId) from nDX_ProdIdentBoxLabel
+                where  nDX_ProdIdentBoxLabel.InventTableBox == lNDX_ProdIdent_Packaging.InventTable;
+            if (lNDX_ProdIdent_Packaging.Counter != nDX_ProdIdentBoxLabel.RecId)
+            {
+                lNDX_ProdIdent_Packaging.Counter = int642int(nDX_ProdIdentBoxLabel.RecId);
+                lNDX_ProdIdent_Packaging.update();
+            }
+            select count(RecId) from nDX_ProdIdentBoxLabel
+            where  nDX_ProdIdentBoxLabel.InventTableBox == lNDX_ProdIdent_Packaging.InventTable
+                && nDX_ProdIdentBoxLabel.ProdIdentOK == NoYes::No;
+            if (lNDX_ProdIdent_Packaging.CounterNotOK != nDX_ProdIdentBoxLabel.RecId)
+            {
+                lNDX_ProdIdent_Packaging.CounterNotOK = int642int(nDX_ProdIdentBoxLabel.RecId);
+                lNDX_ProdIdent_Packaging.update();
+            }
+            ttscommit;
+            info(strfmt("@NDX:NDXCheckPackingitemEnd", i, conlen(conRec), InventTable::findRecId(lNDX_ProdIdent_Packaging.InventTable).ItemId, NDXHelperCommon::seconds2Str() ));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 06.02.23
+    /// </summary>
+    /// <param name = "_inventTable">InventTable</param>
+    /// <param name = "_update">boolean</param>
+    /// <returns>NDXProdIdentPackaging</returns>
+    public static NDXProdIdentPackaging find(InventTable _inventTable, boolean _update = false)
+    {
+        NDXProdIdentPackaging nDXProdIdentPackaging;
+        nDXProdIdentPackaging.selectForUpdate(_update);
+        select nDXProdIdentPackaging
+            where nDXProdIdentPackaging.InventTable == _inventTable.RecId;
+
+        return nDXProdIdentPackaging;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findRecId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 07.02.23
+    /// </summary>
+    /// <param name = "_recId">RecId</param>
+    /// <param name = "_update">boolean</param>
+    /// <returns>NDXProdIdentPackaging</returns>
+    public static NDXProdIdentPackaging findRecId(RecId _recId, boolean _update = false)
+    {
+        NDXProdIdentPackaging nDXProdIdentPackaging;
+        nDXProdIdentPackaging.selectForUpdate(_update);
+        if (_recId)
+        {
+            select nDXProdIdentPackaging
+                where nDXProdIdentPackaging.RecId == _recId;
+        }
+        return nDXProdIdentPackaging;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findItemId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 06.02.23
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_update">boolean</param>
+    /// <returns>NDXProdIdentPackaging</returns>
+    public static NDXProdIdentPackaging findItemId(ItemId _itemId, boolean _update = false)
+    {
+        NDXProdIdentPackaging nDXProdIdentPackaging = NDXProdIdentPackaging::find(InventTable::find(_itemId), _update);
+
+        return nDXProdIdentPackaging;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findOrCreate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 06.02.23
+    /// </summary>
+    /// <param name = "_inventtable">InventTable</param>
+    /// <param name = "_doInsert">boolean</param>
+    /// <returns>NDXProdIdentPackaging</returns>
+    public static NDXProdIdentPackaging findOrCreate(InventTable _inventtable, boolean _doInsert = false)
+    {
+        NDXProdIdentPackaging nDXProdIdentPackaging = NDXProdIdentPackaging::find(_inventtable, true);
+        if (!nDXProdIdentPackaging)
+        {
+            nDXProdIdentPackaging.InventTable = _inventtable.RecId;
+            if (_doInsert)
+            {
+                nDXProdIdentPackaging.insert();
+            }
+        }
+        return nDXProdIdentPackaging;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findOrCreateItemId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 06.02.23
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_doInsert">boolean</param>
+    /// <returns>NDXProdIdentPackaging</returns>
+    public static NDXProdIdentPackaging findOrCreateItemId(ItemId _itemId, boolean _doInsert = false)
+    {
+        return NDXProdIdentPackaging::findOrCreate(InventTable::find(_itemId), _doInsert);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NDXPackagings</DeveloperDocumentation>
+	<Label>@NDX:NDXPackagings</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>InventTable</TitleField1>
+	<ReplacementKey>InventTableIdx</ReplacementKey>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>Active</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>UpdatedUTC</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Counter</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>NDXProdIdentTechnique</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InventTable</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>NDXProdIdentLabel</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>NDXProdIdentProcedureLine2</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>FilterMultipleAssignments</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CounterNotOK</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>UnitOfMeasure</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>InventTable</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Active</Name>
+			<ExtendedDataType>NDXActive</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>UpdatedUTC</Name>
+			<ExtendedDataType>NDXUpdatedUTCDateTime</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>Counter</Name>
+			<ExtendedDataType>NDXCounter</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>NDXProdIdentTechnique</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>InventTable</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>NDXProdIdentLabel</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>NDXProdIdentProcedureLine2</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>UnitOfMeasure</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<HelpText>@NDX:NDXProdIdentFilterUnitConvertHelp</HelpText>
+			<Label>@NDX:NDXProdIdentFilterUnitConvert</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>FilterMultipleAssignments</Name>
+			<ExtendedDataType>NDXProdIdentFilterMultipleAssignments</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>CounterNotOK</Name>
+			<ExtendedDataType>NDXCounter</ExtendedDataType>
+			<Label>@NDXBase:NDXNotOK</Label>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>NDXProdIdentTechniqueIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>NDXProdIdentTechnique</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>InventTableIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>InventTable</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>NDXProdIdentLabelIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>NDXProdIdentLabel</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>NDXProdIdentProcedureLine2Idx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>NDXProdIdentProcedureLine2</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>UnitOfMeasureIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>UnitOfMeasure</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>NDXProdIdentTechnique</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>NDXProdIdentTechnique</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>NDXProdIdentTechnique</Name>
+					<Field>NDXProdIdentTechnique</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>InventTable</Name>
+			<Cardinality>ExactlyOne</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>InventTable</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>InventTable</Name>
+					<Field>InventTable</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>NDXProdIdentLabel</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>NDXProdIdentLabel</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>NDXProdIdentLabel</Name>
+					<Field>NDXProdIdentLabel</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>NDXProdIdentProcedureLine2</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>NDXProdIdentProcedureLine2</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>NDXProdIdentProcedureLine2</Name>
+					<Field>NDXProdIdentProcedureLine2</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>UnitOfMeasure</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>UnitOfMeasure</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>UnitOfMeasure</Name>
+					<Field>UnitOfMeasure</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

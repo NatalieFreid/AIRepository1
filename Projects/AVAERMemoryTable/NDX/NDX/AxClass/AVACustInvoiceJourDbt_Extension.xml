@@ -1,0 +1,531 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACustInvoiceJourDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of table <t>CustInvoiceJour</t>
+/// </summary>
+[ExtensionOf(tableStr(CustInvoiceJour))]
+final class AVACustInvoiceJourDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>calcDue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// calcDue extension method
+    /// </summary>
+    public void calcDue()
+    {
+        next calcDue();
+
+        if(this.salesTable().AVAValutaExtensionDays > 0)
+        {
+            this.DueDate = this.avaCalcDueDate_Valuta();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcDueDate_Valuta</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// calculates DueDate with valuta
+    /// </summary>
+    /// <returns>DueDate</returns>
+    public DueDate avaCalcDueDate_Valuta()
+    {
+        DueDate dueDate = this.avaCalcOriginalDueDate_Valuta();
+
+        if (this.avaIsBusinessDayOffsetAllowed())
+        {
+            dueDate = this.avaApplyBusinessDayOffset(dueDate);
+        }
+
+        return DueDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcOriginalDueDate_Valuta</Name>
+				<Source><![CDATA[
+     ///<summary>
+     ///Calculates the <c>CustVendInvoiceJour</c> due date, without accounting for any holiday/business day offsets but including Valutal extension days.
+     ///</summary>
+     ///<returns>The due date for the <c>CustVendInvoiceJour</c>.</returns>
+    public DueDate avaCalcOriginalDueDate_Valuta()
+    {
+        DueDate dueDate;
+
+        if (this.avaIsCalculationMethodConsolidatedInvoice())
+        {
+            dueDate = this.avaCalcDueDateConsolidateInvoice_Valuta();
+        }
+        else if (this.avaIsCalculationMethodFixedDueDate())
+        {
+            dueDate = this.avaCalcDueDateFixedDueDate_Valuta();
+        }
+        else if (this.avaIsCalculationMethodCopyPrecisely())
+        {
+            dueDate = this.avaCalcDueDateCopyPrecisely_Valuta();
+        }
+        else
+        {
+            dueDate = this.avaCalcDueDateDefault_Valuta();
+        }
+
+        return dueDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaIsCalculationMethodConsolidatedInvoice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// checks if is consolidated invoice
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean avaIsCalculationMethodConsolidatedInvoice()
+    {
+        boolean isCalculationMethodConsolidatedInvoice = false;
+        CustVendConsRefRecId_JP consFK;
+
+        #isoCountryRegionCodes
+
+        if(SysCountryRegionCode::isLegalEntityInCountryRegion([#isoJP])
+            && CustConsInvoiceType_JP::isCustConsInvoiceEnabled())
+        {
+            consFK = this.CustVendInvoiceJour::getConsInvoice_JP();
+
+            if (consFK && this.module() == SysModule::Cust)
+            {
+                isCalculationMethodConsolidatedInvoice = true;
+            }
+        }
+
+        return isCalculationMethodConsolidatedInvoice;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcDueDateConsolidateInvoice_Valuta</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// calculates JP dueDate
+    /// </summary>
+    /// <returns>DueDate</returns>
+    public DueDate avaCalcDueDateConsolidateInvoice_Valuta()
+    {
+        CustVendConsRefRecId_JP consFK;
+        DueDate dueDate;
+
+        consFK = this.CustVendInvoiceJour::getConsInvoice_JP();
+        dueDate = this.avaCalcDueDateJP_Valuta(CustConsInvoice_JP::find(consFK));
+
+        return dueDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcDueDateJP_Valuta</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calculates due date according to consolidation date and payment term.
+    /// </summary>
+    /// <param name = "_custConsInvoiceJP">CustConsInvoice_JP</param>
+    /// <returns>
+    /// Due date.
+    /// </returns>
+    public DueDate avaCalcDueDateJP_Valuta(CustConsInvoice_JP _custConsInvoiceJP)
+    {
+        PaymTerm                                paymTerm;
+        PaymCalendarProcessor                   paymCalendarProcessor;
+        PaymCalendarSourceCustConsInvoice_JP    paymCalendarSourceCustConsInvoice;
+        DueDate                                 dueDate;
+        TransDate                               avaConsDate = _custConsInvoiceJP.ConsDate;
+
+        if(this.salesTable().AVAValutaExtensionDays > 0)
+        {
+            avaConsDate = avaConsDate + this.salesTable().AVAValutaExtensionDays;
+        }
+
+        paymTerm = PaymTerm::find(_custConsInvoiceJP.PaymTerm);
+        dueDate = paymTerm.due(avaConsDate, paymTerm.PaymDayId);
+
+        if (isConfigurationkeyEnabled(configurationKeyNum(PaymCalendar))
+            && paymTerm.CustomerUpdateDueDate != PaymentDueDateUpdatePolicy::NoUpdate)
+        {
+            paymCalendarProcessor = PaymCalendarProcessor::construct();
+            paymCalendarSourceCustConsInvoice = PaymCalendarSourceCustConsInvoice_JP::newCalendarSource(_custConsInvoiceJP);
+            dueDate = paymCalendarProcessor.adjustDate(dueDate, paymTerm.CustomerUpdateDueDate, paymCalendarSourceCustConsInvoice);
+        }
+
+        return dueDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaIsCalculationMethodFixedDueDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// checks if fixed due date exists
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean avaIsCalculationMethodFixedDueDate()
+    {
+        boolean isCalculationMethodFixedDueDate = false;
+
+        if (this.FixedDueDate != dateNull())
+        {
+            isCalculationMethodFixedDueDate = true;
+        }
+
+        return isCalculationMethodFixedDueDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcDueDateFixedDueDate_Valuta</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns fixed due date + valuta extension days if positive
+    /// </summary>
+    /// <returns>DueDate</returns>
+    public DueDate avaCalcDueDateFixedDueDate_Valuta()
+    {
+        DueDate avaFixedDueDate = this.FixedDueDate;
+
+        if(this.salesTable().AVAValutaExtensionDays > 0)
+        {
+            avaFixedDueDate = avaFixedDueDate + this.salesTable().AVAValutaExtensionDays;
+        }
+
+        return avaFixedDueDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaIsCalculationMethodCopyPrecisely</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// checks if has paymSched and is Copy precisely to invoice
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean avaIsCalculationMethodCopyPrecisely()
+    {
+        boolean isCalculationMethodCopyPrecisely = false;
+
+        if (this.PaymentSched != '')
+        {
+            SalesTable salesTable = this.salesTable();
+            CustPaymSched custPaymSched = CustPaymSched::find(salesTable.TableId, salesTable.RecId);
+
+            if (custPaymSched && custPaymSched.CopyPreciselyToInvoice)
+            {
+                isCalculationMethodCopyPrecisely = true;
+            }
+        }
+
+        return isCalculationMethodCopyPrecisely;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcDueDateCopyPrecisely_Valuta</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// due date from paymSched + valuta extension days
+    /// </summary>
+    /// <returns>DueDate</returns>
+    public DueDate avaCalcDueDateCopyPrecisely_Valuta()
+    {
+        DueDate dueDate;
+        SalesTable salesTable = this.salesTable();
+        CustPaymSched custPaymSched = CustPaymSched::find(salesTable.TableId, salesTable.RecId);
+
+        dueDate = custPaymSched.paymScheduleDueDate();
+
+        if(salesTable.AVAValutaExtensionDays > 0)
+        {
+            dueDate = dueDate + salesTable.AVAValutaExtensionDays;
+        }
+
+        return dueDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcDueDateDefault_Valuta</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// default due date calculation + valuta extension days
+    /// </summary>
+    /// <returns>DueDate</returns>
+    public DueDate avaCalcDueDateDefault_Valuta()
+    {
+        #ISOCountryRegionCodes
+
+        DueDate dueDate;
+        TransDate transDate;
+        PaymTerm paymTerm = PaymTerm::find(this.Payment);
+
+        if (this.CashDiscBaseDate)
+        {
+            transDate = this.CashDiscBaseDate;
+        }
+        else if (paymTerm.UseDeliveryDateForDueDate_ES)
+        {
+            transDate = this.ReceiptDateConfirmed_ES;
+        }
+        else
+        {
+            transDate = this.DocumentDate ? this.DocumentDate : this.InvoiceDate;
+        }
+
+        if(this.salesTable().AVAValutaExtensionDays > 0)
+        {
+            transDate = transDate + this.salesTable().AVAValutaExtensionDays;
+        }
+
+        if (SysCountryRegionCode::isLegalEntityInCountryRegion([#isoES]))
+        {
+            PaymDueDateLimit_ES dueDateLimit = this.calcDueDateLimit_ES(paymTerm, transDate);
+            dueDate = paymTerm.due(transDate, this.PaymDayId, false, dueDateLimit, this.TableId);
+        }
+        else
+        {
+            dueDate = paymTerm.due(transDate, this.PaymDayId);
+        }
+
+        return dueDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaIsBusinessDayOffsetAllowed</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// checks if business day offset is allowed
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean avaIsBusinessDayOffsetAllowed()
+    {
+        return (!this.avaIsCalculationMethodConsolidatedInvoice()
+                && !this.avaIsCalculationMethodFixedDueDate()
+                && !this.avaIsCalculationMethodCopyPrecisely());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaApplyBusinessDayOffset</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// apply a business day offset
+    /// </summary>
+    /// <param name = "_baseDueDate">DueDate</param>
+    /// <returns>DueDate</returns>
+    public DueDate avaApplyBusinessDayOffset(DueDate _baseDueDate)
+    {
+        DueDate dueDate = _baseDueDate;
+        PaymCalendarProcessor paymCalendarProcessor;
+        PaymTerm paymTerm = PaymTerm::find(this.Payment);
+
+        if (isConfigurationkeyEnabled(configurationKeyNum(PaymCalendar))
+            && paymTerm.CustomerUpdateDueDate != PaymentDueDateUpdatePolicy::NoUpdate)
+        {
+            paymCalendarProcessor = PaymCalendarProcessor::construct();
+            PaymCalendarSourceCustInvoiceJournal paymCalendarSourceCustInvoiceJournal = PaymCalendarSourceCustInvoiceJournal::newCalendarSource(this);
+            dueDate = paymCalendarProcessor.adjustDate(dueDate, paymTerm.CustomerUpdateDueDate, paymCalendarSourceCustInvoiceJournal);
+        }
+
+        return dueDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcMSTAmounts</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// extension of calcMSTAmounts method
+    /// </summary>
+    public void calcMSTAmounts()
+    {
+        next calcMSTAmounts();
+
+        this.AVANetAmountMST    = this.InvoiceAmountMST - this.SumTaxMST;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromSalesTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of initFromSalesTable method
+    /// </summary>
+    /// <param name = "_salesTable">SalesTable</param>
+    /// <param name = "_salesParmTable">SalesParmTable</param>
+    public void initFromSalesTable(SalesTable _salesTable, SalesParmTable _salesParmTable)
+    {
+        next initFromSalesTable(_salesTable, _salesParmTable);
+
+        this.AVAValutaExtensionDays     = _salesTable.AVAValutaExtensionDays;
+        this.AVASalesGroup              = _salesTable.SalesGroup;
+        this.AVAInventSiteId            = _salesTable.InventSiteId;
+        this.KCS_PurchRefDate           = _salesTable.KCS_PurchRefDate;
+        this.AVARepPckSlipNum           = _salesTable.AVARepPckSlipNum;
+        this.AVARepPckSlipDate          = _salesTable.AVARepPckSlipDate;
+        this.KCS_CreditNoteResponsible  = _salesTable.KCS_CreditNoteResponsible;
+        this.AVASQClerk                 = _salesTable.AVASQClerk;
+        this.AVADlvResponsible          = _salesTable.AVADlvResponsible;
+        this.AVAValutaExtensionDays     = _salesTable.AVAValutaExtensionDays;
+        this.AVADlvReason               = _salesTable.DlvReason;
+        this.AVAPreferenceOutput        = _salesTable.AVAPreferenceOutput;
+
+        //this.avaCreditNoteRemoveCashDiscNPayment(_salesTable);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromSalesParmTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Initializes the <c>CustInvoiceJour</c> record from the specified <c>SalesParmTable</c> record.
+    /// </summary>
+    /// <param name="_salesParmTable">
+    ///    The <c>SalesParmTable</c> record to use to initialize the <c>CustInvoiceJour</c> record.
+    /// </param>
+    void initFromSalesParmTable(SalesParmTable _salesParmTable)
+    {
+        next initFromSalesParmTable(_salesParmTable);
+
+        if(_salesParmTable.salesParmUpdate().SpecQty == SalesUpdate::PackingSlip)
+        {
+            this.AVAPackingSlipId   = _salesParmTable.documentId(_salesParmTable);
+        }
+
+        if(_salesParmTable.salesParmUpdate().AVASendEmail)
+        {
+            this.AVAEmailInvoice    = _salesParmTable.AVAEmailInvoice;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setInvoiceAddress</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of method setInvoiceAddress
+    /// </summary>
+    /// <param name = "_common">Common</param>
+    void setInvoiceAddress(Common _common)
+    {
+        next setInvoiceAddress(_common);
+
+        if(this.InvoicePostalAddress)
+        {
+            this.InvoicingName = LogisticsPostalAddress::findRecId(this.InvoicePostalAddress).avaName();
+        }
+        else
+        {
+            this.InvoicingName = this.custTable_InvoiceAccount().avaName();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCreditNoteRemoveCashDiscNPayment</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaCreditNoteRemoveCashDiscNPayment</c> method.
+    /// </summary>
+    /// <param name="_salesTable">
+    ///     <c>SalesTable</c> as type
+    /// </param>
+    public void avaCreditNoteRemoveCashDiscNPayment(SalesTable _salesTable)
+    {
+        SalesTotals locSalesTotals;
+
+        locSalesTotals = SalesTotals::construct(_salesTable, SalesUpdate::All);
+        locSalesTotals.calc();
+
+        //if(_salesTable.amountRemainSalesFinancial() < 0.0)
+        if(locSalesTotals.totalAmount() < 0.0)
+        {
+            this.CashDisc           = 0;
+            this.CashDiscBaseDate   = dateNull();
+            this.CashDiscCode       = '';
+            this.CashDiscDate       = dateNull();
+            this.CashDiscPercent    = 0;
+            this.Payment            = '';
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaFirstTransLine</Name>
+				<Source><![CDATA[
+    public CustInvoiceTrans avaFirstTransLine()
+    {
+        CustInvoiceTrans avaFirstTrans;
+
+        select firstonly avaFirstTrans
+            order by avaFirstTrans.LineNum
+            where avaFirstTrans.InvoiceId == this.InvoiceId
+            && avaFirstTrans.InvoiceDate == this.InvoiceDate
+            && avaFirstTrans.NumberSequenceGroup == this.numberSequenceGroup
+            && avaFirstTrans.SalesId == this.SalesId;
+
+        return avaFirstTrans;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromSalesTotals</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesTotals">_salesTotals</param>
+    /// <param name = "_cashDiscAmount">_cashDiscAmount</param>
+    /// <param name = "_installmentEligible">_installmentEligible</param>
+    void initFromSalesTotals(SalesTotals _salesTotals, AmountCur _cashDiscAmount, boolean _installmentEligible)
+    {
+        next   initFromSalesTotals(_salesTotals,_cashDiscAmount,_installmentEligible);
+        if (_salesTotals.totalAmount()< 0)
+        {
+            this.CashDisc           = 0;
+            this.CashDiscBaseDate   = dateNull();
+            this.CashDiscCode       = '';
+            this.CashDiscDate       = dateNull();
+            this.CashDiscPercent    = 0;
+            this.Payment            = '';
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

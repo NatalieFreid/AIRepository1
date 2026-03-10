@@ -1,0 +1,1076 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAFCMGroupTableHelper</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN/2024/07/30  AVA_012297_CreditLimitAfterMSUpate
+/// </summary>
+class AVAFCMGroupTableHelper
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getBalanceTmpTableByGroupForBalanceForm</Name>
+				<Source><![CDATA[
+    public static server tmpCustVendTrans getBalanceTmpTableByGroupForBalanceForm(CredManCreditLimitId _creditLimitId)
+    {
+        Query								query;
+        QueryRun							queryRun;
+        CredManCreditLimitCustGroupView		credManCreditLimitCustGroupView;
+        CustTable							custTable;
+        AmountCur							balanceCur,deliveredNetAmount;
+        AmountCur							notInvoicedBalanceCur;
+        TmpCustVendTrans					tmpCustVendTrans;
+        TmpCustVendTrans					tmpCustVendTransCurrency;
+        AmountCur							notInvoicedAmountWithoutTaxes, invoicedAmountWithoutTaxes;
+        CustParameters						custParameters;
+        AmountCur							localAmountCur;
+        AmountMST							localAmountMST;
+        AmountMST							invoicedAmountWithoutTaxesLocal;
+        AVAFCMCalcBalance					calcBalance	= CustParameters::find().AVAFCMCalcBalance;
+        AVAFCMGroupTableHelper              aVAFCMGroupTableHelper = new AVAFCMGroupTableHelper();
+
+        // Calculatebalance for all members of credit limit group and check againsts credit limit
+        query       = AVAFCMGroupTable::buildAllocatedCustomersQuery(_creditLimitId);
+        queryRun    = new queryRun(query);
+    
+        // Sort by company (not really needed)
+        query.dataSourceTable(tableNum(CredManCreditLimitCustGroupView)).addSortField(fieldNum(CredManCreditLimitCustGroupView, Company));
+    
+        while (queryRun.next())
+        {
+            credManCreditLimitCustGroupView = queryRun.get(tableNum(CredManCreditLimitCustGroupView));
+    
+            changeCompany (credManCreditLimitCustGroupView.Company)
+            {
+                custTable = custTable::find(credManCreditLimitCustGroupView.AccountNum);
+    
+                balanceCur                      = AVAFCMGroupTable::getInvoicedBalanceMSTByCustTable(custTable);
+                notInvoicedBalanceCur           = AVAFCMGroupTable::getNotInvoicedBalanceMSTByCustTable(custTable);
+                //invoicedAmountWithoutTaxes      = AVAFCMGroupTable::getInvoicedAmountWithoutTaxesByCustTable(custTable);
+                invoicedAmountWithoutTaxes      = AVAFCMGroupTable::getInvoicedAmountWithoutTaxesWithMarkupsByCustTable(custTable);
+                notInvoicedAmountWithoutTaxes   = AVAFCMGroupTableHelper::getnotInvoicedAmountWithoutTaxesByCustTable(custTable);
+                deliveredNetAmount              = AVAFCMGroupTable::getDeliveredAmountByCustTable(custTable);
+
+                if (balanceCur != 0 || notInvoicedBalanceCur != 0 || invoicedAmountWithoutTaxes != 0 || notInvoicedAmountWithoutTaxes != 0)
+                {
+                    tmpCustVendTrans.clear();
+                    tmpCustVendTrans.CurrencyCode   = CompanyInfoHelper::standardCurrency();
+                    tmpCustVendTrans.AmountCur      = balanceCur;
+                    tmpCustVendTrans.AmountMst      = notInvoicedBalanceCur;
+                    tmpCustVendTrans.TotalAmountMst = 0;
+                    tmpCustVendTrans.AVAFPLNetEstimatedAmount = notInvoicedAmountWithoutTaxes;
+                    tmpCustVendTrans.AVAFPLNetEstimatedInvoicedAmount = invoicedAmountWithoutTaxes;
+                    tmpCustVendTrans.AVAFPLNetDeliveredAmount = deliveredNetAmount;
+                    tmpCustVendTrans.Txt            = '';
+                    tmpCustVendTrans.insert();
+                }
+            }
+        }
+        
+        select firstonly CreditMaxCheck from custParameters;
+
+        if (custParameters.CreditMaxCheck == TypeOfCreditmaxCheck::Balance)
+        {
+            tmpCustVendTransCurrency = aVAFCMGroupTableHelper.getTypeOfCreditmaxCheckBalance(tmpCustVendTrans);
+        }
+        else if (custParameters.CreditMaxCheck == TypeOfCreditmaxCheck::BalanceDelivered)
+        {
+            tmpCustVendTransCurrency = aVAFCMGroupTableHelper.getTypeOfCreditmaxCheckBalanceDelivered(tmpCustVendTrans);
+        }
+        else if (custParameters.CreditMaxCheck == TypeOfCreditmaxCheck::BalanceAll)
+        {
+            tmpCustVendTransCurrency = aVAFCMGroupTableHelper.getTypeOfCreditmaxCheckBalanceAll(tmpCustVendTrans);
+        }
+        else
+        {
+            localAmountCur      = 0;
+            localAmountMST      = 0;
+            invoicedAmountWithoutTaxesLocal = 0;
+
+            while select sum(AmountCur), sum(AVAFPLNetEstimatedInvoicedAmount) from tmpCustVendTrans
+                group by CurrencyCode
+            {
+                localAmountCur      += tmpCustVendTrans.AmountCur;
+                localAmountMST      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AmountCur, tmpCustVendTrans.CurrencyCode);
+                invoicedAmountWithoutTaxesLocal      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AVAFPLNetEstimatedInvoicedAmount, tmpCustVendTrans.CurrencyCode);
+
+                tmpCustVendTransCurrency.clear();
+                tmpCustVendTransCurrency.CurrencyCode   = CompanyInfoHelper::standardCurrency();
+                if(calcBalance == AVAFCMCalcBalance::Gross)
+                {
+                    tmpCustVendTransCurrency.AmountCur      = localAmountMST;
+                    tmpCustVendTransCurrency.AmountMst      = localAmountMST;
+                }
+                else
+                {
+                    tmpCustVendTransCurrency.AmountCur      = invoicedAmountWithoutTaxesLocal;
+                    tmpCustVendTransCurrency.AmountMst      = invoicedAmountWithoutTaxesLocal;
+                }
+                tmpCustVendTransCurrency.TotalAmountMst = 0;
+                tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = invoicedAmountWithoutTaxesLocal;
+                tmpCustVendTransCurrency.Txt            = "@SYS77886";
+                tmpCustVendTransCurrency.insert();
+            }
+           
+            localAmountCur      = 0;
+            localAmountMST      = 0;
+            invoicedAmountWithoutTaxesLocal = 0;
+
+            while select sum(AmountMST),  sum(AVAFPLNetEstimatedAmount) from tmpCustVendTrans
+                group by CurrencyCode
+            {
+                localAmountCur      += tmpCustVendTrans.AmountMST;
+                localAmountMST      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AmountMST, tmpCustVendTrans.CurrencyCode);
+                invoicedAmountWithoutTaxesLocal      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AVAFPLNetEstimatedAmount, tmpCustVendTrans.CurrencyCode);
+
+                tmpCustVendTransCurrency.clear();
+                tmpCustVendTransCurrency.CurrencyCode   = CompanyInfoHelper::standardCurrency();
+                if(calcBalance == AVAFCMCalcBalance::Gross)
+                {
+                    tmpCustVendTransCurrency.AmountCur      = localAmountMST;
+                    tmpCustVendTransCurrency.AmountMst      = localAmountMST;
+                }
+                else
+                {
+                    tmpCustVendTransCurrency.AmountCur      = invoicedAmountWithoutTaxesLocal;
+                    tmpCustVendTransCurrency.AmountMst      = invoicedAmountWithoutTaxesLocal;
+                }
+                tmpCustVendTransCurrency.TotalAmountMst = 0;
+                tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = invoicedAmountWithoutTaxesLocal;
+                tmpCustVendTransCurrency.Txt            = "@SYS16279";
+                tmpCustVendTransCurrency.insert();
+            }
+        }
+  
+        return tmpCustVendTransCurrency;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getBalanceTmpTableByGroupForBalanceFormByCust</Name>
+				<Source><![CDATA[
+    public static server TmpCustVendTrans getBalanceTmpTableByGroupForBalanceFormByCust(CredManCreditLimitId _creditLimitId,
+                                                                                        CustAccount  _custAccount)
+    {
+        Query								query;
+        QueryRun							queryRun;
+        CustTable							custTable;
+        AmountCur							balanceCur, balanceMst,deliveredNetAmount;
+        AmountCur							notInvoicedBalanceCur;
+        TmpCustVendTrans					tmpCustVendTrans;
+        TmpCustVendTrans					tmpCustVendTransCurrency;
+        AmountCur							notInvoicedAmountWithoutTaxes, invoicedAmountWithoutTaxes;
+        CustParameters						custParameters;
+        AVAFCMCalcBalance					calcBalance = CustParameters::find().AVAFCMCalcBalance;
+        CredManCreditLimitCustGroupView		CredManCreditLimitCustGroupView;
+        boolean                             found;
+        AVAFCMGroupTableHelper              aVAFCMGroupTableHelper = new AVAFCMGroupTableHelper();
+        
+        // Calculate balance for all members of credit limit group and check againsts credit limit
+        query       = AVAFCMGroupTable::buildAllocatedCustomersQuery(_creditLimitId);
+        
+        queryRun    = new queryRun(query);
+    
+        query.dataSourceTable(tableNum(CredManCreditLimitCustGroupView)).addSortField(fieldNum(CredManCreditLimitCustGroupView, Company));
+    
+        while (queryRun.next())
+        {
+            CredManCreditLimitCustGroupView = queryRun.get(tableNum(CredManCreditLimitCustGroupView));
+    
+            changeCompany (CredManCreditLimitCustGroupView.Company)
+            {
+                custTable = custTable::find(CredManCreditLimitCustGroupView.AccountNum);
+    
+                balanceCur                      = AVAFCMGroupTable::getInvoicedBalanceMSTByCustTable(custTable);
+                notInvoicedBalanceCur           = AVAFCMGroupTable::getNotInvoicedBalanceMSTByCustTable(custTable);
+                //invoicedAmountWithoutTaxes      = AVAFCMGroupTable::getInvoicedAmountWithoutTaxesByCustTable(custTable);
+                invoicedAmountWithoutTaxes      = AVAFCMGroupTable::getInvoicedAmountWithoutTaxesWithMarkupsByCustTable(custTable);
+                notInvoicedAmountWithoutTaxes   = AVAFCMGroupTableHelper::getnotInvoicedAmountWithoutTaxesByCustTable(custTable);
+                deliveredNetAmount              = AVAFCMGroupTable::getDeliveredAmountByCustTable(custTable);
+    
+                if (balanceCur != 0 || notInvoicedBalanceCur != 0 || invoicedAmountWithoutTaxes != 0 || notInvoicedAmountWithoutTaxes != 0)
+                {
+                    tmpCustVendTrans.clear();
+                    tmpCustVendTrans.CurrencyCode						= CompanyInfoHelper::standardCurrency();
+                    tmpCustVendTrans.AmountCur							= balanceCur;
+                    tmpCustVendTrans.AmountMst							= notInvoicedBalanceCur;
+                    tmpCustVendTrans.TotalAmountMst						= 0;
+                    tmpCustVendTrans.AVAFPLNetEstimatedAmount           = notInvoicedAmountWithoutTaxes;
+                    tmpCustVendTrans.AVAFPLNetEstimatedInvoicedAmount   = invoicedAmountWithoutTaxes;
+                    tmpCustVendTrans.AVAFPLNetDeliveredAmount           = deliveredNetAmount;
+                    tmpCustVendTrans.Txt								= strMin();
+                    tmpCustVendTrans.AccountNum							= custTable.AccountNum;
+                    tmpCustVendTrans.insert();
+                }
+            }
+        }
+        
+        select firstonly CreditMaxCheck from custParameters;
+
+        if (custParameters.CreditMaxCheck == TypeOfCreditmaxCheck::Balance)
+        {
+            //Balance details of current customer
+            AVAFCMGroupTable::getCustBalance(tmpCustVendTrans, tmpCustVendTransCurrency, _custAccount, true);
+
+            //Accounting balance of current customer
+            AVAFCMGroupTable::getCustAccountingBalance(tmpCustVendTransCurrency, _custAccount, true);
+
+            //Balance details of remaining customers
+            AVAFCMGroupTable::getCustBalance(tmpCustVendTrans, tmpCustVendTransCurrency, _custAccount, false);
+
+            //Accounting balance of remaining customers
+            AVAFCMGroupTable::getCustAccountingBalance(tmpCustVendTransCurrency, _custAccount, false);
+        }
+        else if (custParameters.CreditMaxCheck == TypeOfCreditmaxCheck::BalanceDelivered)
+        {
+            tmpCustVendTransCurrency = aVAFCMGroupTableHelper.getTypeOfCustCreditMaxCheckBalanceDeliverd(tmpCustVendTrans,_custAccount);
+        }
+        else if (custParameters.CreditMaxCheck == TypeOfCreditmaxCheck::BalanceAll)
+        {
+            tmpCustVendTransCurrency = aVAFCMGroupTableHelper.getTypeOfCustCreditMaxCheckBalanceAll(tmpCustVendTrans,_custAccount);
+        }
+
+        else
+        {
+            //Balance details of current customer
+            AVAFCMGroupTable::getCustBalance(tmpCustVendTrans, tmpCustVendTransCurrency, _custAccount, true);
+            
+            balanceCur = 0;
+            balanceMst = 0;
+            notInvoicedBalanceCur = 0;
+
+            //Ordered details of current customer
+            while select sum(AmountMST),  sum(AVAFPLNetEstimatedAmount) from tmpCustVendTrans
+                group by CurrencyCode, AccountNum
+                where tmpCustVendTrans.AccountNum == _custAccount
+            {
+                balanceCur      += tmpCustVendTrans.AmountMST;
+                balanceMst      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AmountMST, tmpCustVendTrans.CurrencyCode);
+                notInvoicedBalanceCur      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AVAFPLNetEstimatedAmount, tmpCustVendTrans.CurrencyCode);
+
+                tmpCustVendTransCurrency.clear();
+                tmpCustVendTransCurrency.AccountNum             = _custAccount;
+                tmpCustVendTransCurrency.CurrencyCode           = tmpCustVendTrans.CurrencyCode;
+                if(calcBalance == AVAFCMCalcBalance::Gross)
+                {
+                    tmpCustVendTransCurrency.AmountCur      = balanceMst;
+                    tmpCustVendTransCurrency.AmountMst      = balanceMst;
+                }
+                else
+                {
+                    tmpCustVendTransCurrency.AmountCur      = notInvoicedBalanceCur;
+                    tmpCustVendTransCurrency.AmountMst      = notInvoicedBalanceCur;
+                }
+                tmpCustVendTransCurrency.TotalAmountMst         = 0;
+                tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = notInvoicedBalanceCur;
+                tmpCustVendTransCurrency.Txt                    = "@AVAFCM:OrderedCurrentCustomer";
+                tmpCustVendTransCurrency.insert();
+
+                found = true;
+            }
+
+            //If no orders, a record with blank data is shown
+            if (!found)
+            {
+                tmpCustVendTransCurrency.clear();
+                tmpCustVendTransCurrency.AccountNum       = _custAccount;
+                tmpCustVendTransCurrency.CurrencyCode     = CompanyInfoHelper::standardCurrency();
+                tmpCustVendTransCurrency.Txt              = "@AVAFCM:OrderedCurrentCustomer";
+                tmpCustVendTransCurrency.insert();
+
+                found = false;
+            }
+
+            //Accounting balance of current customer
+            AVAFCMGroupTable::getCustAccountingBalance(tmpCustVendTransCurrency, _custAccount, true);
+
+            //Balance details of remaining customers
+            AVAFCMGroupTable::getCustBalance(tmpCustVendTrans, tmpCustVendTransCurrency, _custAccount, false);
+
+            balanceCur = 0;
+            balanceMst = 0;
+            notInvoicedBalanceCur = 0;
+            //Ordered details of remaining customers
+            while select sum(AmountMST),  sum(AVAFPLNetEstimatedAmount) from tmpCustVendTrans
+                group by CurrencyCode
+                where tmpCustVendTrans.AccountNum != _custAccount
+            {
+                balanceCur      += tmpCustVendTrans.AmountMST;
+                balanceMst      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AmountMST, tmpCustVendTrans.CurrencyCode);
+                notInvoicedBalanceCur      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AVAFPLNetEstimatedAmount, tmpCustVendTrans.CurrencyCode);
+
+                tmpCustVendTransCurrency.clear();
+                tmpCustVendTransCurrency.CurrencyCode           = tmpCustVendTrans.CurrencyCode;
+                if(calcBalance == AVAFCMCalcBalance::Gross)
+                {
+                    tmpCustVendTransCurrency.AmountCur      = balanceMst;
+                    tmpCustVendTransCurrency.AmountMst      = balanceMst;
+                }
+                else
+                {
+                    tmpCustVendTransCurrency.AmountCur      = notInvoicedBalanceCur;
+                    tmpCustVendTransCurrency.AmountMst      = notInvoicedBalanceCur;
+                }
+                tmpCustVendTransCurrency.TotalAmountMst         = 0;
+                tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = notInvoicedBalanceCur;
+                tmpCustVendTransCurrency.Txt                    = "@AVAFCM:OrderedOtherCustomers";
+                tmpCustVendTransCurrency.insert();
+
+                found = true;
+            }
+
+            //If no orders, a record with blank data is shown
+            if (!found)
+            {
+                tmpCustVendTransCurrency.clear();
+                tmpCustVendTransCurrency.CurrencyCode     = CompanyInfoHelper::standardCurrency();
+                tmpCustVendTransCurrency.Txt              = "@AVAFCM:OrderedOtherCustomers";
+                tmpCustVendTransCurrency.insert();
+            }
+                        
+            //Accounting balance of remaining customers
+            AVAFCMGroupTable::getCustAccountingBalance(tmpCustVendTransCurrency, _custAccount, false);
+        }
+        
+        return tmpCustVendTransCurrency;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTypeOfCustCreditMaxCheckBalanceDeliverd</Name>
+				<Source><![CDATA[
+    private TmpCustVendTrans getTypeOfCustCreditMaxCheckBalanceDeliverd(TmpCustVendTrans _tmpCustVendTrans,CustAccount _custAccount)
+    {
+        AmountCur							balanceCur, balanceMst;
+        AmountCur							notInvoicedBalanceCur;
+        TmpCustVendTrans					tmpCustVendTransCurrency;
+        AVAFCMCalcBalance					calcBalance = CustParameters::find().AVAFCMCalcBalance;
+        boolean                             found;
+
+        //Balance details of current customer
+        AVAFCMGroupTable::getCustBalance(_tmpCustVendTrans, tmpCustVendTransCurrency, _custAccount, true);
+             
+        balanceMst = 0;
+        notInvoicedBalanceCur = 0;
+
+        //Packing slip details of current customer
+        while select sum(AmountMST), sum(AVAFPLNetEstimatedAmount) from _tmpCustVendTrans
+                group by CurrencyCode
+                where _tmpCustVendTrans.AccountNum == _custAccount
+        {
+            balanceMst      += CurrencyExchangeHelper::amountCur2MST(_tmpCustVendTrans.AmountMST, _tmpCustVendTrans.CurrencyCode);
+            notInvoicedBalanceCur      += CurrencyExchangeHelper::amountCur2MST(_tmpCustVendTrans.AVAFPLNetEstimatedAmount, _tmpCustVendTrans.CurrencyCode);
+
+            tmpCustVendTransCurrency.clear();
+            tmpCustVendTransCurrency.AccountNum             = _custAccount;
+            tmpCustVendTransCurrency.CurrencyCode           = _tmpCustVendTrans.CurrencyCode;
+            if(calcBalance == AVAFCMCalcBalance::Gross)
+            {
+                tmpCustVendTransCurrency.AmountCur      = balanceMst;
+                tmpCustVendTransCurrency.AmountMst      = balanceMst;
+            }
+            else
+            {
+                tmpCustVendTransCurrency.AmountCur      = notInvoicedBalanceCur;
+                tmpCustVendTransCurrency.AmountMst      = notInvoicedBalanceCur;
+            }
+            tmpCustVendTransCurrency.TotalAmountMst         = 0;
+            tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = notInvoicedBalanceCur;
+            tmpCustVendTransCurrency.Txt                    = "@AVAFCM:PackingSlipCurrentCustomer";
+            tmpCustVendTransCurrency.insert();
+
+            found = true;
+        }
+
+        //If no packing slip, a record with blank data is shown
+        if (!found)
+        {
+            tmpCustVendTransCurrency.clear();
+            tmpCustVendTransCurrency.AccountNum       = _custAccount;
+            tmpCustVendTransCurrency.CurrencyCode     = CompanyInfoHelper::standardCurrency();
+            tmpCustVendTransCurrency.Txt              = "@AVAFCM:PackingSlipCurrentCustomer";
+            tmpCustVendTransCurrency.insert();
+
+            found = false;
+        }
+
+        //Accounting balance of current customer
+        AVAFCMGroupTable::getCustAccountingBalance(tmpCustVendTransCurrency, _custAccount, true);
+
+        //Balance details of remaining customers
+        AVAFCMGroupTable::getCustBalance(_tmpCustVendTrans, tmpCustVendTransCurrency, _custAccount, false);
+
+        balanceCur = 0;
+        balanceMst = 0;
+        notInvoicedBalanceCur = 0;
+
+        //Packing slip details of remaining customers
+        while select sum(AmountMST), sum(AVAFPLNetEstimatedAmount) from _tmpCustVendTrans
+                group by CurrencyCode
+                where _tmpCustVendTrans.AccountNum != _custAccount
+        {
+            balanceCur      += _tmpCustVendTrans.AmountMST;
+            balanceMst      += CurrencyExchangeHelper::amountCur2MST(_tmpCustVendTrans.AmountMST, _tmpCustVendTrans.CurrencyCode);
+            notInvoicedBalanceCur      += CurrencyExchangeHelper::amountCur2MST(_tmpCustVendTrans.AVAFPLNetEstimatedAmount, _tmpCustVendTrans.CurrencyCode);
+
+            tmpCustVendTransCurrency.clear();
+            tmpCustVendTransCurrency.CurrencyCode           = CompanyInfoHelper::standardCurrency();
+            if(calcBalance == AVAFCMCalcBalance::Gross)
+            {
+                tmpCustVendTransCurrency.AmountCur      = balanceMst;
+                tmpCustVendTransCurrency.AmountMst      = balanceMst;
+            }
+            else
+            {
+                tmpCustVendTransCurrency.AmountCur      = notInvoicedBalanceCur;
+                tmpCustVendTransCurrency.AmountMst      = notInvoicedBalanceCur;
+            }
+            tmpCustVendTransCurrency.TotalAmountMst         = 0;
+            tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = notInvoicedBalanceCur;
+            tmpCustVendTransCurrency.Txt                    = "@AVAFCM:PackingSlipOtherCustomers";
+            tmpCustVendTransCurrency.insert();
+
+            found = true;
+        }
+
+        //If no packing slip, a record with blank data is shown
+        if (!found)
+        {
+            tmpCustVendTransCurrency.clear();
+            tmpCustVendTransCurrency.CurrencyCode     = CompanyInfoHelper::standardCurrency();
+            tmpCustVendTransCurrency.Txt              = "@AVAFCM:PackingSlipOtherCustomers";
+            tmpCustVendTransCurrency.insert();
+        }
+
+        //Accounting balance of remaining customers
+        AVAFCMGroupTable::getCustAccountingBalance(tmpCustVendTransCurrency, _custAccount, false);
+
+        return tmpCustVendTransCurrency;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTypeOfCustCreditMaxCheckBalanceAll</Name>
+				<Source><![CDATA[
+    private tmpCustVendTrans getTypeOfCustCreditMaxCheckBalanceAll(TmpCustVendTrans _tmpCustVendTrans,CustAccount _custAccount)
+    {
+        AmountCur							balanceCur, balanceMst;
+        AmountCur							notInvoicedBalanceCur;
+        TmpCustVendTrans					tmpCustVendTransCurrency;
+        AVAFCMCalcBalance					calcBalance = CustParameters::find().AVAFCMCalcBalance;
+        boolean                             found;
+
+        //Balance details of current customer
+        AVAFCMGroupTable::getCustBalance(_tmpCustVendTrans, tmpCustVendTransCurrency, _custAccount, true);
+
+        balanceMst = 0;
+        notInvoicedBalanceCur = 0;
+
+        //Packing slip details of current customer
+        while select sum(AmountMST), sum(AVAFPLNetDeliveredAmount) from _tmpCustVendTrans
+                group by CurrencyCode
+                where _tmpCustVendTrans.AccountNum == _custAccount
+        {
+            balanceMst       += CurrencyExchangeHelper::amountCur2MST(_tmpCustVendTrans.AVAFPLNetDeliveredAmount, _tmpCustVendTrans.CurrencyCode);
+            notInvoicedBalanceCur      += CurrencyExchangeHelper::amountCur2MST(_tmpCustVendTrans.AVAFPLNetDeliveredAmount, _tmpCustVendTrans.CurrencyCode);
+
+            tmpCustVendTransCurrency.clear();
+            tmpCustVendTransCurrency.AccountNum             = _custAccount;
+            tmpCustVendTransCurrency.CurrencyCode           = _tmpCustVendTrans.CurrencyCode;
+            if(calcBalance == AVAFCMCalcBalance::Gross)
+            {
+                tmpCustVendTransCurrency.AmountCur      = balanceMst;
+                tmpCustVendTransCurrency.AmountMst      = balanceMst;
+            }
+            else
+            {
+                tmpCustVendTransCurrency.AmountCur      = notInvoicedBalanceCur;
+                tmpCustVendTransCurrency.AmountMst      = notInvoicedBalanceCur;
+            }
+            tmpCustVendTransCurrency.TotalAmountMst           = 0;
+            tmpCustVendTransCurrency.AVAFPLNetDeliveredAmount = notInvoicedBalanceCur;
+            tmpCustVendTransCurrency.Txt                      = "@AVAFCM:PackingSlipCurrentCustomer";
+            tmpCustVendTransCurrency.insert();
+
+            found = true;
+        }
+
+        //If no packing slip, a record with blank data is shown
+        if (!found)
+        {
+            tmpCustVendTransCurrency.clear();
+            tmpCustVendTransCurrency.AccountNum       = _custAccount;
+            tmpCustVendTransCurrency.CurrencyCode     = CompanyInfoHelper::standardCurrency();
+            tmpCustVendTransCurrency.Txt              = "@AVAFCM:PackingSlipCurrentCustomer";
+            tmpCustVendTransCurrency.insert();
+
+            found = false;
+        }
+            
+        balanceCur = 0;
+        balanceMst = 0;
+        notInvoicedBalanceCur = 0;
+        AmountCur packingSlipAmount;
+
+        //Ordered details of current customer
+        while select sum(AmountMST),  sum(AVAFPLNetEstimatedAmount), sum(AVAFPLNetDeliveredAmount) from _tmpCustVendTrans
+                group by CurrencyCode, AccountNum
+                where _tmpCustVendTrans.AccountNum == _custAccount
+        {
+            balanceCur      += _tmpCustVendTrans.AmountMST;
+            balanceMst      += CurrencyExchangeHelper::amountCur2MST(_tmpCustVendTrans.AmountMST, _tmpCustVendTrans.CurrencyCode);
+            notInvoicedBalanceCur      += CurrencyExchangeHelper::amountCur2MST(_tmpCustVendTrans.AVAFPLNetEstimatedAmount, _tmpCustVendTrans.CurrencyCode);
+            packingSlipAmount += CurrencyExchangeHelper::amountCur2MST(_tmpCustVendTrans.AVAFPLNetDeliveredAmount, _tmpCustVendTrans.CurrencyCode);
+
+            if(!packingSlipAmount)
+            {
+                tmpCustVendTransCurrency.clear();
+                tmpCustVendTransCurrency.AccountNum             = _custAccount;
+                tmpCustVendTransCurrency.CurrencyCode           = _tmpCustVendTrans.CurrencyCode;
+                if(calcBalance == AVAFCMCalcBalance::Gross)
+                {
+                    tmpCustVendTransCurrency.AmountCur      = balanceMst;
+                    tmpCustVendTransCurrency.AmountMst      = balanceMst;
+                }
+                else
+                {
+                    tmpCustVendTransCurrency.AmountCur      = notInvoicedBalanceCur;
+                    tmpCustVendTransCurrency.AmountMst      = notInvoicedBalanceCur;
+                }
+                tmpCustVendTransCurrency.TotalAmountMst         = 0;
+                tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = notInvoicedBalanceCur;
+                tmpCustVendTransCurrency.Txt                    = "@AVAFCM:OrderedCurrentCustomer";
+                tmpCustVendTransCurrency.insert();
+
+                found = true;
+            }
+            else if(packingSlipAmount)
+            {
+                tmpCustVendTransCurrency.clear();
+                tmpCustVendTransCurrency.AccountNum     = _custAccount;
+                tmpCustVendTransCurrency.CurrencyCode   = CompanyInfoHelper::standardCurrency();
+                if(calcBalance == AVAFCMCalcBalance::Gross)
+                {
+                    tmpCustVendTransCurrency.AmountCur      = balanceMst - packingSlipAmount;
+                    tmpCustVendTransCurrency.AmountMst      = balanceMst - packingSlipAmount;
+                }
+                else
+                {
+                    tmpCustVendTransCurrency.AmountCur      = notInvoicedBalanceCur - packingSlipAmount;
+                    tmpCustVendTransCurrency.AmountMst      = notInvoicedBalanceCur - packingSlipAmount;
+                }
+                tmpCustVendTransCurrency.TotalAmountMst = 0;
+                tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = notInvoicedBalanceCur - packingSlipAmount;
+                tmpCustVendTransCurrency.Txt            = "@AVAFCM:OrderedCurrentCustomer";
+                tmpCustVendTransCurrency.insert();
+
+                found = true;
+            }
+
+        }
+
+        //If no orders, a record with blank data is shown
+        if (!found)
+        {
+            tmpCustVendTransCurrency.clear();
+            tmpCustVendTransCurrency.AccountNum       = _custAccount;
+            tmpCustVendTransCurrency.CurrencyCode     = CompanyInfoHelper::standardCurrency();
+            tmpCustVendTransCurrency.Txt              = "@AVAFCM:OrderedCurrentCustomer";
+            tmpCustVendTransCurrency.insert();
+
+            found = false;
+        }
+
+        //Accounting balance of current customer
+        AVAFCMGroupTable::getCustAccountingBalance(tmpCustVendTransCurrency, _custAccount, true);
+
+        //Balance details of remaining customers
+        AVAFCMGroupTable::getCustBalance(_tmpCustVendTrans, tmpCustVendTransCurrency, _custAccount, false);
+
+        balanceCur = 0;
+        balanceMst = 0;
+        notInvoicedBalanceCur = 0;
+
+        //Packing slip details of remaining customers
+        while select sum(AmountMST), sum(AVAFPLNetDeliveredAmount) from _tmpCustVendTrans
+                group by CurrencyCode
+                where _tmpCustVendTrans.AccountNum != _custAccount
+        {
+            balanceCur      += _tmpCustVendTrans.AVAFPLNetDeliveredAmount;
+            balanceMst      += CurrencyExchangeHelper::amountCur2MST(_tmpCustVendTrans.AVAFPLNetDeliveredAmount, _tmpCustVendTrans.CurrencyCode);
+            notInvoicedBalanceCur      += CurrencyExchangeHelper::amountCur2MST(_tmpCustVendTrans.AVAFPLNetDeliveredAmount, _tmpCustVendTrans.CurrencyCode);
+
+            tmpCustVendTransCurrency.clear();
+            tmpCustVendTransCurrency.CurrencyCode           = CompanyInfoHelper::standardCurrency();
+            if(calcBalance == AVAFCMCalcBalance::Gross)
+            {
+                tmpCustVendTransCurrency.AmountCur      = balanceMst;
+                tmpCustVendTransCurrency.AmountMst      = balanceMst;
+            }
+            else
+            {
+                tmpCustVendTransCurrency.AmountCur      = notInvoicedBalanceCur;
+                tmpCustVendTransCurrency.AmountMst      = notInvoicedBalanceCur;
+            }
+            tmpCustVendTransCurrency.TotalAmountMst           = 0;
+            tmpCustVendTransCurrency.AVAFPLNetDeliveredAmount = notInvoicedBalanceCur;
+            tmpCustVendTransCurrency.Txt                      = "@AVAFCM:PackingSlipOtherCustomers";
+            tmpCustVendTransCurrency.insert();
+
+            found = true;
+        }
+
+        //If no packing slip, a record with blank data is shown
+        if (!found)
+        {
+            tmpCustVendTransCurrency.clear();
+            tmpCustVendTransCurrency.CurrencyCode     = CompanyInfoHelper::standardCurrency();
+            tmpCustVendTransCurrency.Txt              = "@AVAFCM:PackingSlipOtherCustomers";
+            tmpCustVendTransCurrency.insert();
+        }
+
+        balanceCur = 0;
+        balanceMst = 0;
+        notInvoicedBalanceCur = 0;
+        AmountCur custPackingSlipAmount;
+
+        //Ordered details of remaining customers
+        while select sum(AmountMST),  sum(AVAFPLNetEstimatedAmount), sum(AVAFPLNetDeliveredAmount) from _tmpCustVendTrans
+                group by CurrencyCode
+                where _tmpCustVendTrans.AccountNum != _custAccount
+        {
+            balanceCur      += _tmpCustVendTrans.AmountMST;
+            balanceMst      += CurrencyExchangeHelper::amountCur2MST(_tmpCustVendTrans.AmountMST, _tmpCustVendTrans.CurrencyCode);
+            notInvoicedBalanceCur      += CurrencyExchangeHelper::amountCur2MST(_tmpCustVendTrans.AVAFPLNetEstimatedAmount, _tmpCustVendTrans.CurrencyCode);
+            custPackingSlipAmount += CurrencyExchangeHelper::amountCur2MST(_tmpCustVendTrans.AVAFPLNetDeliveredAmount,_tmpCustVendTrans.CurrencyCode);
+
+            if(!custPackingSlipAmount)
+            {
+                tmpCustVendTransCurrency.clear();
+                tmpCustVendTransCurrency.CurrencyCode           = _tmpCustVendTrans.CurrencyCode;
+                if(calcBalance == AVAFCMCalcBalance::Gross)
+                {
+                    tmpCustVendTransCurrency.AmountCur      = balanceMst;
+                    tmpCustVendTransCurrency.AmountMst      = balanceMst;
+                }
+                else
+                {
+                    tmpCustVendTransCurrency.AmountCur      = notInvoicedBalanceCur;
+                    tmpCustVendTransCurrency.AmountMst      = notInvoicedBalanceCur;
+                }
+                tmpCustVendTransCurrency.TotalAmountMst         = 0;
+                tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = notInvoicedBalanceCur;
+                tmpCustVendTransCurrency.Txt                    = "@AVAFCM:OrderedOtherCustomers";
+                tmpCustVendTransCurrency.insert();
+
+                found = true;
+            }
+            else if(custPackingSlipAmount)
+            {
+                tmpCustVendTransCurrency.clear();
+                tmpCustVendTransCurrency.CurrencyCode   = CompanyInfoHelper::standardCurrency();
+                if(calcBalance == AVAFCMCalcBalance::Gross)
+                {
+                    tmpCustVendTransCurrency.AmountCur      = balanceMst - custPackingSlipAmount;
+                    tmpCustVendTransCurrency.AmountMst      = balanceMst - custPackingSlipAmount;
+                }
+                else
+                {
+                    tmpCustVendTransCurrency.AmountCur      = notInvoicedBalanceCur - custPackingSlipAmount;
+                    tmpCustVendTransCurrency.AmountMst      = notInvoicedBalanceCur - custPackingSlipAmount;
+                }
+                tmpCustVendTransCurrency.TotalAmountMst = 0;
+                tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = notInvoicedBalanceCur - custPackingSlipAmount;
+                tmpCustVendTransCurrency.Txt            = "@SYS16279";
+                tmpCustVendTransCurrency.insert();
+
+                found = true;
+
+            }
+
+        }
+
+        //If no orders, a record with blank data is shown
+        if (!found)
+        {
+            tmpCustVendTransCurrency.clear();
+            tmpCustVendTransCurrency.CurrencyCode     = CompanyInfoHelper::standardCurrency();
+            tmpCustVendTransCurrency.Txt              = "@AVAFCM:OrderedOtherCustomers";
+            tmpCustVendTransCurrency.insert();
+        }
+                        
+        //Accounting balance of remaining customers
+        AVAFCMGroupTable::getCustAccountingBalance(tmpCustVendTransCurrency, _custAccount, false);
+
+        return tmpCustVendTransCurrency;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getnotInvoicedAmountWithoutTaxesByCustTable</Name>
+				<Source><![CDATA[
+    public static amountMST getnotInvoicedAmountWithoutTaxesByCustTable(CustTable _custTable)
+    {
+        CustCreditLimit        CustCreditLimit;
+        AmountMST              netEstimate;
+        CurrencyCode           fromCurrencyCode;
+        CurrencyCode           toCurrencyCode = CompanyInfoHelper::standardCurrency();
+        CurrencyExchangeHelper currencyExchangeHelper = CurrencyExchangeHelper::newExchangeDate(Ledger::current(), DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+            
+        changeCompany(_custTable.dataAreaId)
+        {
+            CustCreditLimit = CustCreditLimit::construct(_custTable);
+    
+            CustCreditLimit.mcrDisplayMessage(false);                   // Don't display default message
+            CustCreditLimit.parmavaCheckEmptyOrderBalance(NoYes::Yes); // Ignore empty orderBalance in class CustCreditLimit
+    
+            fromCurrencyCode = _custTable.Currency;
+            //netEstimate = CustCreditLimit.netEstimateNotInvoiced();
+            netEstimate = CustCreditLimit.balanceEstimate();
+
+            netEstimate = currencyExchangeHelper.calculateCurrencyToCurrency(fromCurrencyCode, toCurrencyCode, netEstimate, true);
+        }
+        return netEstimate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTypeOfCreditmaxCheckBalance</Name>
+				<Source><![CDATA[
+    Private TmpCustVendTrans getTypeOfCreditmaxCheckBalance(TmpCustVendTrans _tmpCustVendTrans)
+    {
+        AmountCur							localAmountCur;
+        AmountMST							localAmountMST;
+        TmpCustVendTrans					tmpCustVendTrans = _tmpCustVendTrans;
+        TmpCustVendTrans					tmpCustVendTransCurrency;
+        AmountMST							invoicedAmountWithoutTaxesLocal;
+        AVAFCMCalcBalance					calcBalance	= CustParameters::find().AVAFCMCalcBalance;
+
+        localAmountCur = 0;
+        localAmountMST = 0;
+
+        while select sum(AmountCur) from tmpCustVendTrans
+            group by CurrencyCode
+        {
+            localAmountCur      += tmpCustVendTrans.AmountCur;
+            localAmountMST      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AmountCur, tmpCustVendTrans.CurrencyCode);
+        }
+
+        while select sum(AVAFPLNetEstimatedInvoicedAmount) from tmpCustVendTrans
+            group by CurrencyCode
+        {
+            invoicedAmountWithoutTaxesLocal      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AVAFPLNetEstimatedInvoicedAmount, tmpCustVendTrans.CurrencyCode);
+        }
+
+        tmpCustVendTransCurrency.clear();
+        tmpCustVendTransCurrency.CurrencyCode   = CompanyInfoHelper::standardCurrency();
+
+        if(calcBalance == AVAFCMCalcBalance::Gross)
+        {
+            tmpCustVendTransCurrency.AmountCur      = localAmountMST;
+            tmpCustVendTransCurrency.AmountMst      = localAmountMST;
+        }
+        else
+        {
+            tmpCustVendTransCurrency.AmountCur      = invoicedAmountWithoutTaxesLocal;
+            tmpCustVendTransCurrency.AmountMst      = invoicedAmountWithoutTaxesLocal;
+        }
+
+        tmpCustVendTransCurrency.TotalAmountMst = 0;
+        //tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = CurrencyExchangeHelper::amountCur2MST(tmpCustVendTransCurrency.AmountCur, tmpCustVendTransCurrency.CurrencyCode);
+        tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = invoicedAmountWithoutTaxesLocal;
+        tmpCustVendTransCurrency.Txt            = "@SYS77886";
+        tmpCustVendTransCurrency.insert();
+
+        return tmpCustVendTransCurrency;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTypeOfCreditmaxCheckBalanceDelivered</Name>
+				<Source><![CDATA[
+    private TmpCustVendTrans getTypeOfCreditmaxCheckBalanceDelivered(TmpCustVendTrans _tmpCustVendTrans)
+    {
+        AmountCur							localAmountCur;
+        AmountMST							localAmountMST;
+        TmpCustVendTrans					tmpCustVendTrans = _tmpCustVendTrans;
+        TmpCustVendTrans					tmpCustVendTransCurrency;
+        AmountMST							invoicedAmountWithoutTaxesLocal;
+        AVAFCMCalcBalance					calcBalance	= CustParameters::find().AVAFCMCalcBalance;
+
+        localAmountCur      = 0;
+        localAmountMST      = 0;
+        invoicedAmountWithoutTaxesLocal = 0;
+            
+        while select sum(AmountCur), sum(AVAFPLNetEstimatedInvoicedAmount) from tmpCustVendTrans
+                group by CurrencyCode
+        {
+            localAmountCur      += tmpCustVendTrans.AmountCur;
+            localAmountMST      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AmountCur, tmpCustVendTrans.CurrencyCode);
+            invoicedAmountWithoutTaxesLocal      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AVAFPLNetEstimatedInvoicedAmount, tmpCustVendTrans.CurrencyCode);
+
+            tmpCustVendTransCurrency.clear();
+            tmpCustVendTransCurrency.CurrencyCode   = CompanyInfoHelper::standardCurrency();
+            if(calcBalance == AVAFCMCalcBalance::Gross)
+            {
+                tmpCustVendTransCurrency.AmountCur      = localAmountMST;
+                tmpCustVendTransCurrency.AmountMst      = localAmountMST;
+            }
+            else
+            {
+                tmpCustVendTransCurrency.AmountCur      = invoicedAmountWithoutTaxesLocal;
+                tmpCustVendTransCurrency.AmountMst      = invoicedAmountWithoutTaxesLocal;
+            }
+            tmpCustVendTransCurrency.TotalAmountMst = 0;
+            tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = invoicedAmountWithoutTaxesLocal;
+            tmpCustVendTransCurrency.Txt            = "@SYS77886";
+            tmpCustVendTransCurrency.insert();
+        }
+
+        localAmountCur      = 0;
+        localAmountMST      = 0;
+        invoicedAmountWithoutTaxesLocal = 0;
+
+        while select sum(AmountMST), sum(AVAFPLNetEstimatedAmount) from tmpCustVendTrans
+                group by CurrencyCode
+        {
+            localAmountCur      += tmpCustVendTrans.AmountMST;
+            localAmountMST      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AmountMST, tmpCustVendTrans.CurrencyCode);
+            invoicedAmountWithoutTaxesLocal      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AVAFPLNetEstimatedAmount, tmpCustVendTrans.CurrencyCode);
+
+            tmpCustVendTransCurrency.clear();
+            tmpCustVendTransCurrency.CurrencyCode   = CompanyInfoHelper::standardCurrency();
+            if(calcBalance == AVAFCMCalcBalance::Gross)
+            {
+                tmpCustVendTransCurrency.AmountCur      = localAmountMST;
+                tmpCustVendTransCurrency.AmountMst      = localAmountMST;
+            }
+            else
+            {
+                tmpCustVendTransCurrency.AmountCur      = invoicedAmountWithoutTaxesLocal;
+                tmpCustVendTransCurrency.AmountMst      = invoicedAmountWithoutTaxesLocal;
+            }
+            tmpCustVendTransCurrency.TotalAmountMst = 0;
+            tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = invoicedAmountWithoutTaxesLocal;
+            tmpCustVendTransCurrency.Txt            = "@SYS11549";
+            tmpCustVendTransCurrency.insert();
+        }
+        return tmpCustVendTransCurrency;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTypeOfCreditmaxCheckBalanceAll</Name>
+				<Source><![CDATA[
+    private TmpCustVendTrans getTypeOfCreditmaxCheckBalanceAll(TmpCustVendTrans _tmpCustVendTrans)
+    {
+        AmountCur							localAmountCur;
+        AmountMST							localAmountMST;
+        TmpCustVendTrans					tmpCustVendTrans = _tmpCustVendTrans;
+        TmpCustVendTrans					tmpCustVendTransCurrency;
+        AmountMST							invoicedAmountWithoutTaxesLocal;
+        AVAFCMCalcBalance					calcBalance	= CustParameters::find().AVAFCMCalcBalance;
+
+        localAmountCur      = 0;
+        localAmountMST      = 0;
+        invoicedAmountWithoutTaxesLocal = 0;
+
+        while select sum(AmountCur), sum(AVAFPLNetEstimatedInvoicedAmount) from tmpCustVendTrans
+                group by CurrencyCode
+        {
+            localAmountCur      += tmpCustVendTrans.AmountCur;
+            localAmountMST      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AmountCur, tmpCustVendTrans.CurrencyCode);
+            invoicedAmountWithoutTaxesLocal      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AVAFPLNetEstimatedInvoicedAmount, tmpCustVendTrans.CurrencyCode);
+
+            tmpCustVendTransCurrency.clear();
+            tmpCustVendTransCurrency.CurrencyCode   = CompanyInfoHelper::standardCurrency();
+            if(calcBalance == AVAFCMCalcBalance::Gross)
+            {
+                tmpCustVendTransCurrency.AmountCur      = localAmountMST;
+                tmpCustVendTransCurrency.AmountMst      = localAmountMST;
+            }
+            else
+            {
+                tmpCustVendTransCurrency.AmountCur      = invoicedAmountWithoutTaxesLocal;
+                tmpCustVendTransCurrency.AmountMst      = invoicedAmountWithoutTaxesLocal;
+            }
+            tmpCustVendTransCurrency.TotalAmountMst = 0;
+            tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = invoicedAmountWithoutTaxesLocal;
+            tmpCustVendTransCurrency.Txt            = "@SYS77886";
+            tmpCustVendTransCurrency.insert();
+        }
+
+        localAmountCur      = 0;
+        localAmountMST      = 0;
+        invoicedAmountWithoutTaxesLocal = 0;
+
+        while select sum(AmountMST), sum(AVAFPLNetDeliveredAmount) from tmpCustVendTrans
+            group by CurrencyCode
+        {
+            localAmountCur      += tmpCustVendTrans.AVAFPLNetDeliveredAmount;
+            localAmountMST      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AVAFPLNetDeliveredAmount, tmpCustVendTrans.CurrencyCode);
+            invoicedAmountWithoutTaxesLocal      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AVAFPLNetDeliveredAmount, tmpCustVendTrans.CurrencyCode);
+
+            tmpCustVendTransCurrency.clear();
+            tmpCustVendTransCurrency.CurrencyCode   = CompanyInfoHelper::standardCurrency();
+            if(calcBalance == AVAFCMCalcBalance::Gross)
+            {
+                tmpCustVendTransCurrency.AmountCur      = localAmountMST;
+                tmpCustVendTransCurrency.AmountMst      = localAmountMST;
+            }
+            else
+            {
+                tmpCustVendTransCurrency.AmountCur      = invoicedAmountWithoutTaxesLocal;
+                tmpCustVendTransCurrency.AmountMst      = invoicedAmountWithoutTaxesLocal;
+            }
+            tmpCustVendTransCurrency.TotalAmountMst = 0;
+            tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = invoicedAmountWithoutTaxesLocal;
+            tmpCustVendTransCurrency.Txt            = "@SYS11549";
+            tmpCustVendTransCurrency.insert();
+        }
+           
+        localAmountCur      = 0;
+        localAmountMST      = 0;
+        invoicedAmountWithoutTaxesLocal = 0;
+        AmountCur packingSlipAmount;
+
+        while select sum(AmountMST),  sum(AVAFPLNetEstimatedAmount), sum(AVAFPLNetDeliveredAmount) from tmpCustVendTrans
+                group by CurrencyCode
+        {
+            localAmountCur      += tmpCustVendTrans.AmountMST;
+            localAmountMST      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AmountMST, tmpCustVendTrans.CurrencyCode);
+            invoicedAmountWithoutTaxesLocal      += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AVAFPLNetEstimatedAmount, tmpCustVendTrans.CurrencyCode);
+            packingSlipAmount += CurrencyExchangeHelper::amountCur2MST(tmpCustVendTrans.AVAFPLNetDeliveredAmount,tmpCustVendTrans.CurrencyCode);
+
+            if(!packingSlipAmount)
+            {
+                tmpCustVendTransCurrency.clear();
+                tmpCustVendTransCurrency.CurrencyCode   = CompanyInfoHelper::standardCurrency();
+                if(calcBalance == AVAFCMCalcBalance::Gross)
+                {
+                    tmpCustVendTransCurrency.AmountCur      = localAmountMST;
+                    tmpCustVendTransCurrency.AmountMst      = localAmountMST;
+                }
+                else
+                {
+                    tmpCustVendTransCurrency.AmountCur      = invoicedAmountWithoutTaxesLocal;
+                    tmpCustVendTransCurrency.AmountMst      = invoicedAmountWithoutTaxesLocal;
+                }
+                tmpCustVendTransCurrency.TotalAmountMst = 0;
+                tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = invoicedAmountWithoutTaxesLocal;
+                tmpCustVendTransCurrency.Txt            = "@SYS16279";
+                tmpCustVendTransCurrency.insert();
+            }
+            else if(packingSlipAmount)
+            {
+                tmpCustVendTransCurrency.clear();
+                tmpCustVendTransCurrency.CurrencyCode   = CompanyInfoHelper::standardCurrency();
+                if(calcBalance == AVAFCMCalcBalance::Gross)
+                {
+                    tmpCustVendTransCurrency.AmountCur      = localAmountMST - packingSlipAmount;
+                    tmpCustVendTransCurrency.AmountMst      = localAmountMST - packingSlipAmount;
+                }
+                else
+                {
+                    tmpCustVendTransCurrency.AmountCur      = invoicedAmountWithoutTaxesLocal - packingSlipAmount;
+                    tmpCustVendTransCurrency.AmountMst      = invoicedAmountWithoutTaxesLocal - packingSlipAmount;
+                }
+                tmpCustVendTransCurrency.TotalAmountMst = 0;
+                tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = invoicedAmountWithoutTaxesLocal - packingSlipAmount;
+                tmpCustVendTransCurrency.Txt            = "@SYS16279";
+                tmpCustVendTransCurrency.insert();
+            }
+        }
+        return tmpCustVendTransCurrency;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCustAccountingBalance</Name>
+				<Source><![CDATA[
+    public static TmpCustVendTrans getCustAccountingBalance(TmpCustVendTrans _tmpCustVendTransCurrency, CustAccount _custAccount,
+                                                            boolean _isCurrentCustomer)
+    {
+        TmpCustVendTrans   tmpCustVendTransHelper;
+        AmountMST          totalAmountMST, totalNetEstimatedAmount;
+        AVAFCMCalcBalance calcBalance = CustParameters::find().AVAFCMCalcBalance;
+
+        tmpCustVendTransHelper.setTmpData(_tmpCustVendTransCurrency);
+
+        //Accounting balance of current customer
+        if (_isCurrentCustomer)
+        {
+            while select sum(amountMST), sum(AVAFPLNetEstimatedAmount) from tmpCustVendTransHelper
+                where tmpCustVendTransHelper.AccountNum == _custAccount
+            {
+                if(calcBalance == AVAFCMCalcBalance::Gross)
+                {
+                    totalAmountMST          += tmpCustVendTransHelper.amountMST;
+                }
+                else
+                {
+                    totalAmountMST          += tmpCustVendTransHelper.AVAFPLNetEstimatedAmount;
+                }
+
+                totalNetEstimatedAmount += tmpCustVendTransHelper.AVAFPLNetEstimatedAmount;
+            }
+
+            _tmpCustVendTransCurrency.clear();
+            _tmpCustVendTransCurrency.AccountNum             = _custAccount;
+            _tmpCustVendTransCurrency.CurrencyCode           = CompanyInfoHelper::standardCurrency();
+            _tmpCustVendTransCurrency.AmountMst              = totalAmountMST;
+            _tmpCustVendTransCurrency.AmountCur              = 0;
+            _tmpCustVendTransCurrency.TotalAmountMst         = 0;
+            _tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = totalNetEstimatedAmount;
+            _tmpCustVendTransCurrency.Txt                    = "@AVAFCM:AccountBalanceCurrentCustomer";
+            _tmpCustVendTransCurrency.insert();
+        }
+        //Accounting balance of remaining customers
+        else
+        {
+            while select sum(amountMST), sum(AVAFPLNetEstimatedAmount) from tmpCustVendTransHelper
+                where tmpCustVendTransHelper.AccountNum != _custAccount
+            {
+                if(calcBalance == AVAFCMCalcBalance::Gross)
+                {
+                    totalAmountMST          += tmpCustVendTransHelper.amountMST;
+                }
+                else
+                {
+                    totalAmountMST          += tmpCustVendTransHelper.AVAFPLNetEstimatedAmount;
+                }
+
+                totalNetEstimatedAmount += tmpCustVendTransHelper.AVAFPLNetEstimatedAmount;
+            }
+
+            _tmpCustVendTransCurrency.clear();
+            _tmpCustVendTransCurrency.CurrencyCode           = CompanyInfoHelper::standardCurrency();
+            _tmpCustVendTransCurrency.AmountMst              = totalAmountMST;
+            _tmpCustVendTransCurrency.AmountCur              = 0;
+            _tmpCustVendTransCurrency.TotalAmountMst         = 0;
+            _tmpCustVendTransCurrency.AVAFPLNetEstimatedAmount = totalNetEstimatedAmount;
+            _tmpCustVendTransCurrency.Txt                    = "@AVAFCM:AccountBalanaceOtherCustomer";
+            _tmpCustVendTransCurrency.insert();
+        }
+
+        return  _tmpCustVendTransCurrency;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

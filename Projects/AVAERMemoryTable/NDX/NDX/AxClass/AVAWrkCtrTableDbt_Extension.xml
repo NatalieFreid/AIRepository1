@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAWrkCtrTableDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of WrkCtrTable
+/// </summary>
+[ExtensionOf(tableStr(WrkCtrTable))]
+final public class AVAWrkCtrTableDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>validateField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of method validateField
+    /// </summary>
+    /// <param name = "_fieldIdToCheck">FieldId</param>
+    /// <returns>boolean</returns>
+    public boolean validateField(FieldId _fieldIdToCheck)
+    {
+        boolean ret = next validateField(_fieldIdToCheck);
+
+        switch (_fieldIdToCheck)
+        {
+            case fieldNum(WrkCtrTable, KCS_NotActiveWrkCtr):
+                if(this.KCS_NotActiveWrkCtr == NoYes::Yes)
+                {
+                    ret = ret && !this.avaWrkCtrIdIsUsed();
+                }
+                break;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// extension of modifiedField method
+    /// </summary>
+    /// <param name = "_fieldId">FieldId</param>
+    public void modifiedField(FieldId _fieldId)
+    {
+        next modifiedField(_fieldId);
+
+        switch (_fieldId)
+        {
+            case fieldNum(WrkCtrTable, KCS_NotActiveWrkCtr):
+                if(this.KCS_NotActiveWrkCtr == NoYes::Yes)
+                {
+                    this.NDX_InactiveSince = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                }
+                else
+                {
+                    this.NDX_InactiveSince = dateNull();
+                }
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaWrkCtrIdIsUsed</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// checks if WrkCtrId is used in a RouteVersion or ProdTable
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean avaWrkCtrIdIsUsed()
+    {
+        boolean         avaIsUsed = false;
+        RouteVersion    avaRouteVersion    = this.avaWrkCtrIdIsUsedInRouteVersion();
+        ProdTable       avaProdTable       = this.avaWrkCtrIdIsUsedInProdTable();
+
+        if(avaRouteVersion.RecId)
+        {
+            avaIsUsed = true;
+            error(strFmt("@NDX:NXARouteInactiveError", this.WrkCtrId, avaRouteVersion.RouteId));
+        }
+        else if(avaProdTable.RecId)
+        {
+            avaIsUsed = true;
+            error(strFmt("@NDX:NXAProdInactiveError", this.WrkCtrId, avaProdTable.ProdId));
+        }
+
+        return avaIsUsed;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaWrkCtrIdIsUsedInRouteVersion</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns RouteVersion where WrkCtrId is used
+    /// </summary>
+    /// <returns>RouteVersion</returns>
+    public RouteVersion avaWrkCtrIdIsUsedInRouteVersion()
+    {
+        RouteVersion                        avaRouteVersion;
+        RouteOpr                            avaRouteOpr;
+        WrkCtrRouteOprActivity              avaWrkCtrRouteOprActivity;
+        WrkCtrActivityRequirement           avaWrkCtrActivityRequirement;
+        WrkCtrActivityRequirementSet        avaWrkCtrActivityRequirementSet;
+        WrkCtrActivityResourceRequirement   avaWrkCtrActivityResourceRequirement;
+
+        select firstonly avaRouteVersion
+            join avaRouteOpr
+            join avaWrkCtrRouteOprActivity
+            join avaWrkCtrActivityRequirementSet
+            join avaWrkCtrActivityRequirement
+            join avaWrkCtrActivityResourceRequirement
+            where avaRouteVersion.Approved                          == NoYes::Yes
+                && (avaRouteVersion.ToDate                              == dateNull()
+                    || (avaRouteVersion.ToDate                          >= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())
+                    && avaRouteVersion.FromDate                         <= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())))
+                && avaRouteVersion.RouteId      == avaRouteOpr.RouteRelation
+                && avaRouteOpr.RouteCode        == RouteAll::Route
+                && avaRouteOpr.RecId            == avaWrkCtrRouteOprActivity.RouteOpr
+                && avaRouteOpr.DataAreaId       == avaWrkCtrRouteOprActivity.RouteOprDataAreaId
+                && avaWrkCtrRouteOprActivity.Activity    == avaWrkCtrActivityRequirementSet.Activity
+                && avaWrkCtrActivityRequirementSet.RecId == avaWrkCtrActivityRequirement.ActivityRequirementSet
+                && avaWrkCtrActivityRequirement.RecId    == avaWrkCtrActivityResourceRequirement.ActivityRequirement
+                && avaWrkCtrActivityResourceRequirement.WrkCtrId == this.WrkCtrId;
+
+        return avaRouteVersion;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaWrkCtrIdIsUsedInProdTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns ProdTable where WrkCtrId is used
+    /// </summary>
+    /// <returns>ProdTable</returns>
+    public ProdTable avaWrkCtrIdIsUsedInProdTable()
+    {
+        ProdTable                               avaProdTable;
+        ProdRoute                               avaProdRoute;
+        WrkCtrProdRouteActivity                 avaWrkCtrProdRouteActivity;
+        WrkCtrActivityRequirement               avaWrkCtrActivityRequirement;
+        WrkCtrActivityRequirementSet            avaWrkCtrActivityRequirementSet;
+        WrkCtrActivityResourceRequirement       avaWrkCtrActivityResourceRequirement;
+
+        select firstonly avaProdTable
+            join avaProdRoute
+            where (avaProdTable.ProdStatus      == ProdStatus::Created
+                    || avaProdTable.ProdStatus  == ProdStatus::CostEstimated
+                    || avaProdTable.ProdStatus  == ProdStatus::Scheduled
+                    || avaProdTable.ProdStatus  == ProdStatus::Released
+                    || avaProdTable.ProdStatus  == ProdStatus::StartedUp)     // -> avaProdStatus.ProdStatus <= ProdStatus::StartedUp     this is not working anymore for extendable Enums
+                && avaProdRoute.ProdId          == avaProdTable.ProdId
+                && avaProdRoute.WrkCtrIdCost    == this.WrkCtrId;
+
+        if(!avaProdTable)
+        {
+            select firstonly avaProdTable
+            join avaWrkCtrProdRouteActivity
+            join avaWrkCtrActivityRequirementSet
+            join avaWrkCtrActivityRequirement
+            join avaWrkCtrActivityResourceRequirement
+            where (avaProdTable.ProdStatus                          == ProdStatus::Created
+                    || avaProdTable.ProdStatus                      == ProdStatus::CostEstimated
+                    || avaProdTable.ProdStatus                      == ProdStatus::Scheduled
+                    || avaProdTable.ProdStatus                      == ProdStatus::Released
+                    || avaProdTable.ProdStatus                      == ProdStatus::StartedUp)     // -> avaProdStatus.ProdStatus <= ProdStatus::StartedUp     this is not working anymore for extendable Enums
+                && avaProdTable.ProdId                              == avaWrkCtrProdRouteActivity.ProdId
+                && avaWrkCtrProdRouteActivity.Activity              == avaWrkCtrActivityRequirementSet.Activity
+                && avaWrkCtrActivityRequirementSet.RecId            == avaWrkCtrActivityRequirement.ActivityRequirementSet
+                && avaWrkCtrActivityRequirement.RecId               == avaWrkCtrActivityResourceRequirement.ActivityRequirement
+                && avaWrkCtrActivityResourceRequirement.WrkCtrId    == this.WrkCtrId;
+        }
+
+        return avaProdTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitFromResourceGroup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/02/03   AVA_012548_WrkCtrTable_WrkCtrGroupFields
+    /// </summary>
+    public void avaInitFromResourceGroup()
+    {
+        WrkCtrResourceGroup     resourceGroup = WrkCtrTable::resourceGroup(this.WrkCtrId, DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+        WrkCtrTable             resourceGroupTable = resourceGroup.wrkCtrTable();
+
+        if (resourceGroupTable)
+        {
+            this.QueueTimeAfter     = resourceGroupTable.QueueTimeAfter;
+            this.QueueTimeBefore    = resourceGroupTable.QueueTimeBefore;
+            this.ToHours            = resourceGroupTable.ToHours;
+            this.TranspTime         = resourceGroupTable.TranspTime;
+            this.SetupTime          = resourceGroupTable.SetupTime;
+            this.ProcessTime        = resourceGroupTable.ProcessTime;
+            this.ProcessPerQty      = resourceGroupTable.ProcessPerQty;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAupdateResourceCalendar</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/05/15   AVA_013002_ResourceCalendar
+    /// </summary>
+    /// <param name = "_resourceId">WrkCtrId</param>
+    /// <param name = "_calendarId">CalendarId</param>
+    /// <param name = "_validFrom">ValidFromDate</param>
+    /// <param name = "_validTo">ValidToDate</param>
+    public static void AVAupdateResourceCalendar( WrkCtrId        _resourceId,
+                                            CalendarId      _calendarId,
+                                            ValidFromDate   _validFrom,
+                                            ValidToDate     _validTo)
+    {
+        WrkCtrResourceCalendar  resourceCalendar;
+        ValidToDate             tempValidToDate;
+
+        try
+        {
+            // Look up if the target resoruce calendar valid from date overlap the date range of the existing resoruce calendar record.
+            resourceCalendar = WrkCtrResourceCalendar::findActiveForResource(_resourceId, _validFrom, true);
+
+            ttsbegin;
+            if (resourceCalendar)
+            {
+                resourceCalendar.validTimeStateUpdateMode(ValidTimeStateUpdate::Correction);
+                if (resourceCalendar.ValidFrom < _validFrom)
+                {
+                    // Update the existing record valid to date to become 1 day less then the validFrom date
+                    tempValidToDate = resourceCalendar.ValidTo;
+                    resourceCalendar.ValidTo    = _validFrom - 1;
+                    resourceCalendar.update();
+
+                    // Add a new record for the new calendar association
+                    resourceCalendar.clear();
+                    resourceCalendar.WrkCtrId   = _resourceId;
+                    resourceCalendar.CalendarId = _calendarId;
+                    resourceCalendar.ValidFrom  = _validFrom;
+                    resourceCalendar.ValidTo    = tempValidToDate;
+                    resourceCalendar.insert();
+                }
+                else if (resourceCalendar.ValidFrom == _validFrom)
+                {
+                    resourceCalendar.CalendarId = _calendarId;
+                    resourceCalendar.update();
+                }
+            }
+            else
+            {
+                resourceCalendar.clear();
+                resourceCalendar.WrkCtrId   = _resourceId;
+                resourceCalendar.CalendarId = _calendarId;
+                resourceCalendar.ValidFrom  = _validFrom;
+                resourceCalendar.ValidTo    = _validTo;
+                resourceCalendar.insert();
+            }
+            ttscommit;
+        }
+        catch(Exception::Error)
+        {
+            //ttsabort;
+            exceptionTextFallThrough();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

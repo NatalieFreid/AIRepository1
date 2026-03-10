@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXPALabelMaintainProcessing</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 26.05.23
+/// </summary>
+internal class NDXPALabelMaintainProcessing
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>InitFromContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.05.23
+    /// init from contract NDXPALabelMaintainContract
+    /// </summary>
+    /// <param name = "_contract">NDXProdStatusChangedGenerateTransportLabelContract</param>
+    protected void InitFromContract(NDXPALabelMaintainContract _contract)
+    {
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Processing</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.02.22
+    /// save DataContract NDXProdStatusChangedGenerateTransportLabelEventContract to queue for not enqueued PA's
+    /// runs in Batch.exe-process
+    /// </summary>
+    protected void Processing()
+    {
+        #OCCRetryCount
+        System.Exception exception;
+        boolean exceptionThrown;
+        TransactionTextLarge message;
+        int delayInterval;
+
+        Counter anzRecords;
+
+        NDXPAWithLabelInfo nDXPAWithLabelInfo;
+        select count(RecId) from nDXPAWithLabelInfo
+            where (!nDXPAWithLabelInfo.SendToQueue || nDXPAWithLabelInfo.BTSendAgain == NoYes::Yes)
+            && nDXPAWithLabelInfo.PAWithLabelInfo == NoYes::Yes;
+        anzRecords = int642int(nDXPAWithLabelInfo.RecId);
+        
+        //if (!batchHeaderRefRecId && prodId && anzRecords > 1)
+        //{
+        //    select firstonly nDXPAWithLabelInfo where nDXPAWithLabelInfo.ProdId == prodId;
+        //    if (nDXPAWithLabelInfo.BatchHeaderRefRecId)
+        //    {
+        //        batchHeaderRefRecId = nDXPAWithLabelInfo.BatchHeaderRefRecId;
+        //        info(strFmt("@NDX:NDXDeterminedBatchJobId", batchHeaderRefRecId));
+        //    }
+        //}
+        if (anzRecords > 1)
+        {
+            Info(strFmt("@NDX:NDXCountPAWithLabelInfo", anzRecords));
+        }
+
+        // send all PA's to queue which have not been send yet
+        try
+        {
+            ttsbegin;
+            while select pessimisticlock nDXPAWithLabelInfo
+                where (!nDXPAWithLabelInfo.SendToQueue || nDXPAWithLabelInfo.BTSendAgain == NoYes::Yes)
+                && nDXPAWithLabelInfo.PAWithLabelInfo == NoYes::Yes
+            {
+                // save contract to queue
+                if (BusinessEventsConfigurationReader::isBusinessEventEnabled(classStr(NDXProdStatusChangedGenerateTransportLabelEvent)))
+                {
+                    NDXProdStatusChangedGenerateTransportLabelEvent::newFromProdId(nDXPAWithLabelInfo.ProdId).send();
+                    nDXPAWithLabelInfo.SendToQueue = DateTimeUtil::utcNow();
+                    nDXPAWithLabelInfo.BTSendAgain = NoYes::No;
+                    //if (anzRecords > 1 && batchHeaderRefRecId)
+                    //{
+                    //    nDXPAWithLabelInfo.BatchHeaderRefRecId = batchHeaderRefRecId;
+                    //}
+                    if (nDXPAWithLabelInfo.validateWrite())
+                    {
+                        nDXPAWithLabelInfo.update();
+                    }
+                    else
+                    {
+                        Error(strFmt("@NDX:NDXErrorOnUpdateNDXPAWithLabelInfo", nDXPAWithLabelInfo.RecId));
+                    }
+                    Info(strFmt("@NDX:NDXProductionOrderInAzureQueue", nDXPAWithLabelInfo.ProdId));
+                }
+                else
+                {
+                    warning(strFmt("@NDX:NDXBusinessEventNotActivated", classStr(NDXProdStatusChangedGenerateTransportLabelEvent)));
+                }
+            }
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                exceptionThrown = true;
+                //message = strFmt("@Subledger:DeadlockErrorThrown");
+            }
+            else
+            {
+                delayInterval = RandomGenerate::construct().randomInt(100, 500);
+                sleep(delayInterval);
+                retry;
+            }
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    exceptionThrown = true;
+                    //message = strFmt("@Subledger:UpdateConflictErrorThrown");
+                }
+                else
+                {
+                    delayInterval = RandomGenerate::construct().randomInt(100, 500);
+                    sleep(delayInterval);
+                    retry;
+                }
+            }
+            else
+            {
+                if (appl.ttsLevel() > 0)
+                {
+                    ttsabort;
+                }
+
+                exceptionThrown = true;
+                //message = strFmt("@Subledger:UpdateConflictErrorThrown");
+            }
+        }
+        catch (Exception::DuplicateKeyException)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    exceptionThrown = true;
+                    //message = strFmt("@Subledger:DuplicateKeyException");
+                }
+                else
+                {
+                    delayInterval = RandomGenerate::construct().randomInt(100, 500);
+                    sleep(delayInterval);
+                    retry;
+                }
+            }
+            else
+            {
+                if (appl.ttsLevel() > 0)
+                {
+                    ttsabort;
+                }
+
+                exceptionThrown = true;
+                //message = strFmt("@Subledger:DuplicateKeyException");
+            }
+        }
+        catch (Exception::TransientSqlConnectionError)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    exceptionThrown = true;
+                    //message = strFmt("@Subledger:TransientSQLError");
+                }
+                else
+                {
+                    delayInterval = RandomGenerate::construct().randomInt(100, 500);
+                    sleep(delayInterval);
+                    retry;
+                }
+            }
+            else
+            {
+                if (appl.ttsLevel() > 0)
+                {
+                    ttsabort;
+                }
+
+                exceptionThrown = true;
+                //message = strFmt("@Subledger:TransientSQLError");
+            }
+        }
+        catch (exception)
+        {
+            exceptionThrown = true;
+            error(exception.Message);
+            //error(strFmt("@Subledger:ErrorThrownWhileJournalizingDocument"));
+            message = exception.Message;
+        }
+
+        //catch
+        //{
+        //    Error("@NDX:NDXErrorBusinessEventProdStatusChangedGenerateTransportLabelEventSend");
+        //}
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Validate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.02.22
+    /// </summary>
+    /// <returns>valid ?</returns>
+    public boolean Validate()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.02.22
+    /// called from controler: NDXProdStatusChangedGenerateTransportLabelController
+    /// runs in Batch.exe-process
+    /// </summary>
+    /// <param name = "_contract">NDXProdStatusChangedGenerateTransportLabelContract</param>
+    public void Run(NDXPALabelMaintainContract _contract)
+    {
+        if (!_contract.validate())
+        {
+            return;
+        }
+        this.InitFromContract(_contract);
+        if (!this.Validate())
+        {
+            return;
+        }
+        this.Processing();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesquotationCopyingCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed by AVANADE
+/// </summary>
+[ExtensionOf(classStr(SalesQuotationCopying))]
+final class AVASalesquotationCopyingCls_Extension
+{
+
+    private LogisticsDeliveryName       deliveryName;
+    private LogisticsPostalAddressRecId deliveryAddress;
+    private NoYes copyFromJournal;
+   
+
+
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initializeParametersFromContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_salesQuotationCopyingContract">SalesQuotationCopyingContract</param>
+    protected void initializeParametersFromContract(SalesQuotationCopyingContract _salesQuotationCopyingContract)
+    {
+        next initializeParametersFromContract(_salesQuotationCopyingContract);
+        copyFromJournal = _salesQuotationCopyingContract.parmAVACopyFromJournal();
+       
+        recalculateAmount       = false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteSalesQuotationLines</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    protected void deleteSalesQuotationLines()
+    {
+        next deleteSalesQuotationLines();
+
+        deliveryName    = this.salesQuotationTable.DeliveryName;
+        deliveryAddress = this.salesQuotationTable.DeliveryPostalAddress;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyHeader</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    void copyHeader()
+    {
+        SalesQuotationLine  salesQuotLine;
+        AVASalesQuotationHasLines sqHasLines;
+        DocuRef docuRef;
+
+        if (deliveryName || deliveryAddress)
+        {
+            salesQuotationTable.DeliveryName       = deliveryName;
+            salesQuotationTable.DeliveryPostalAddress   = deliveryAddress;
+        }
+        
+        select firstonly RecId from salesQuotLine where salesQuotLine.QuotationId == salesQuotationTable.quotationId;
+        if (salesQuotLine.RecId)
+        {
+            sqHasLines = AVASalesQuotationHasLines::find(salesQuotationTable.quotationid, true);
+            if (!sqHasLines)
+            {
+                sqHasLines.SalesQuotationId = salesQuotationTable.quotationid;
+                sqHasLines.insert();
+            }
+        }
+
+        if (this.parmCopyFromJournal())
+        {
+            delete_from docuRef where docuRef.RefTableId == tableNum(salesQuotationTable)
+                && docuRef.RefRecId == salesQuotationTable.recid;
+        }
+        next copyHeader();
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copy</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void copy()
+    {
+        SalesQuotationLine avaSQL;
+        AVASalesQuotationHasLines sqHasLines;
+
+        SysGlobalCache globalCache = ClassFactory.globalCache();
+        globalCache.clear(strFmt("@NDX:NXAP1P2",curUserId(),classStr(SalesQuotationLineType)));
+        select count(RecId) from avaSQL where avaSQL.QuotationId == salesQuotationTable.quotationid;
+        if (avaSQL.RecId)
+        {
+            sqHasLines = AVASalesQuotationHasLines::find(salesQuotationTable.quotationid, true);
+            if (!sqHasLines)
+            {
+                sqHasLines.SalesQuotationId = salesQuotationTable.quotationid;
+                sqHasLines.insert();
+            }
+        }
+        next copy();
+
+        delete_from sqHasLines where sqHasLines.SalesQuotationId == salesQuotationTable.quotationid;
+
+        globalCache.clear(strFmt("@NDX:NXAP1P2",curUserId(),classStr(SalesQuotationLineType)));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateSalesQuotationAfterCopying</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesQuotationTable">_salesQuotationTable</param>
+    protected void updateSalesQuotationAfterCopying(SalesQuotationTable _salesQuotationTable)
+    {
+        SalesQuotationLine      salesQuotationLineItemGrp;
+        SalesQuotationLine      avaSalesQuotationLineLoc;
+
+        while select count(Recid) from  salesQuotationLineItemGrp
+                group by ItemId
+                where salesQuotationLineItemGrp.QuotationId == _salesQuotationTable.QuotationId
+        {
+            if (salesQuotationLineItemGrp.RecId > 1 && salesQuotationLineItemGrp.ItemId)
+            {
+                ttsbegin;
+                update_recordset avaSalesQuotationLineLoc
+                setting KCS_MultipleItem = 'X'
+                where avaSalesQuotationLineLoc.ItemId == salesQuotationLineItemGrp.itemId
+                //&& avaSalesQuotationLineLoc.QuotationId == this.quotationId;
+                && avasalesquotationlineloc.QuotationId == _salesQuotationTable.QuotationId;
+                ttscommit;
+            }
+        }
+        next updateSalesQuotationAfterCopying(_salesQuotationTable);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCopyFromJournal</Name>
+				<Source><![CDATA[
+    public boolean parmCopyFromJournal()
+    {
+        return copyFromJournal;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

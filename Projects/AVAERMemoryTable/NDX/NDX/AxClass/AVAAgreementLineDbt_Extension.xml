@@ -1,0 +1,540 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAAgreementLineDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of table AgreementLine
+/// </summary>
+[ExtensionOf(tableStr(AgreementLine))]
+final class AVAAgreementLineDbt_Extension
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Inserts the records into the <c>AgreementLine</c> table and subtype tables.
+    /// </summary>
+    /// <remarks>
+    /// For more information, see the <see cref="T:AgreementLine" />, <see
+    /// cref="T:AgreementLineVolumeCommitment" />, and <see cref="T:AgreementLineQuantityCommitment" />.
+    /// </remarks>
+    public void  insert()
+    {
+        next insert();
+        
+        this.avaUpdateMarkupTrans(!this.AVASkipCreateMarkup, false);
+
+        if(!this.AVAMainPosition)
+        {
+            this.avaUpdateMainRestQty();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>delete</Name>
+				<Source><![CDATA[
+    public void delete()
+    {
+        AgreementLine locAgreementLine = this;
+
+        next delete();
+
+        if(!locAgreementLine.AVAMainPosition)
+        {
+            locAgreementLine.avaUpdateMainRestQty();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the <c>AgreementLine</c> table and subtype table records.
+    /// </summary>
+    /// <remarks>
+    /// For more information, see the <see cref="T:AgreementLine" />, <see
+    /// cref="T:AgreementLineVolumeCommitment" />, <see cref="T:AgreementLineQuantityCommitment" />.
+    /// </remarks>
+    void  update()
+    {
+        AgreementLine avaAgreementLineOrig = this.orig();
+        
+        next update();
+
+        if (this.inventDim().inventDimId != avaAgreementLineOrig.inventDim().inventDimId)
+        {
+            this.avaUpdateMarkupTrans();
+        }
+
+        if(!this.AVAMainPosition)
+        {
+            this.avaUpdateMainRestQty();
+        }
+
+        if(this.AVAEffectivePrice != avaAgreementLineOrig.AVAEffectivePrice
+            && this.AVAEffectivePrice == NoYes::Yes)
+        {
+            this.avaDeleteMTZMarkup();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isLinkValid</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// checks if agreement line link is valid
+    /// </summary>
+    /// <param name="_salesPurchLine">
+    /// The <c>SalesLine</c> or <c>PurchLine</c> record to check.
+    /// </param>
+    /// <param name="_showInfolog">
+    ///    A Boolean value that indicates whether to print the errors in the Infolog; optional.
+    /// </param>
+    /// <returns>
+    ///    true if the link between the specified record and the agreement line is valid; otherwise, false.
+    /// </returns>
+    public boolean isLinkValid(SalesPurchLine _salesPurchLine, boolean _showInfolog)
+    {
+        boolean ret = next isLinkValid(_salesPurchLine, _showInfolog);
+
+        if(_salesPurchLine.TableId != tableNum(SalesLine))
+        {
+            PurchLine purchLineLoc = _salesPurchLine;
+            AVAReleaseAgreementItemMapping releaseAgreementItemMappingLoc = AVAReleaseAgreementItemMapping::find(purchLineLoc.ItemId, this.ItemId);
+
+            if(releaseAgreementItemMappingLoc)
+            {
+                ret = true;
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaExistMarkup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if this record has a markup record; if parameters provided only checks for a certain MarkupCategory, otherwise for any record
+    /// </summary>
+    /// <param name = "_searchCategory">boolean, if to search specific category</param>
+    /// <param name = "_markupCategory">MarkupCategory, which Category to search for</param>
+    /// <returns>boolean</returns>
+    public boolean avaExistMarkup(boolean _searchCategory = false, MarkupCategory _markupCategory = MarkupCategory::AVAMTZ)
+    {
+        MarkupTrans avaMarkupTrans;
+
+        if(_searchCategory)
+        {
+            select firstonly avaMarkupTrans
+                where avaMarkupTrans.TransTableId == tableNum(AgreementLine)
+                && avaMarkupTrans. TransRecId == this.RecId
+                && avaMarkupTrans.MarkupCategory == _markupCategory;
+        }
+        else
+        {
+            select firstonly avaMarkupTrans
+                where avaMarkupTrans.TransTableId == tableNum(AgreementLine)
+                && avaMarkupTrans.TransRecId == this.RecId;
+        }
+
+        return avaMarkupTrans.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDeleteMTZMarkup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Deletes all markup lines from this record and related PurchLines
+    /// </summary>
+    public void avaDeleteMTZMarkup()
+    {
+        this.avaDeleteALineMTZMarkup();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDeleteALineMTZMarkup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Deletes all Markup lines related to this record
+    /// </summary>
+    public void avaDeleteALineMTZMarkup()
+    {
+        MarkupTrans locMarkupTrans;
+
+        ttsbegin;
+
+        delete_from locMarkupTrans
+            where locMarkupTrans.TransTableId == tableNum(AgreementLine)
+            && locMarkupTrans.TransRecId == this.RecId
+            && locMarkupTrans.MarkupCategory == MarkupCategory::AVAMTZ;
+        
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDeletePurchLineMTZMarkup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Deletes all MTZ markup lines from related PurchLine records
+    /// </summary>
+    public void avaDeletePurchLineMTZMarkup()
+    {
+        MarkupTrans locMarkupTrans;
+        PurchLine   locPurchLine;
+
+        ttsbegin;
+
+        while select locPurchLine
+            where locPurchLine.MatchingAgreementLine == this.RecId
+        {
+            delete_from locMarkupTrans
+                where locMarkupTrans.TransTableId == locPurchLine.TableId
+                && locMarkupTrans.TransRecId == locPurchLine.RecId
+                && locMarkupTrans.MarkupCategory == MarkupCategory::AVAMTZ;
+        }
+        
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateMarkupTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the markup transactions based on the invent dim.
+    /// </summary>
+    /// <param name = "_findMarkup">If it is true, it finds makup</param>
+    /// <param name = "_deleteExistingMarkupTrans">if it is true it deletes existing record in <c>MarkupTrans</c> table</param>
+    public void avaUpdateMarkupTrans(boolean _findMarkup = true, boolean _deleteExistingMarkupTrans = true)
+    {
+        if (_findMarkup
+            && this.avaQty()   >= 0)
+        {
+            this.avaCreateMarkupTrans(this.agreementHeader(), _deleteExistingMarkupTrans);  
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaNetAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the amount on either the Agreement Line Volume Commitment or the
+    /// Agreement Line Quantity Commitment record.
+    /// </summary>
+    /// <returns>
+    /// Either the committed amount from the Agreement Line Volume Commitment or the
+    /// calculated line amount from the Agreement Line Quantity Commitment.
+    /// </returns>
+    public LineAmount avaNetAmount()
+    {
+        AgreementLineQuantityCommitment agreementLineQuantityCommitment;
+        AgreementLineVolumeCommitment   agreementLineVolumeCommitment;
+        LineAmount                      lineAmount;
+
+        if (this.isQuantityBased())
+        {
+            agreementLineQuantityCommitment = this as AgreementLineQuantityCommitment;
+            lineAmount = agreementLineQuantityCommitment.lineAmount();
+        }
+        else
+        {
+            agreementLineVolumeCommitment = this as AgreementLineVolumeCommitment;
+            lineAmount = agreementLineVolumeCommitment.CommitedAmount;
+        }
+        return lineAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the qty on either the Agreement Line Quantity Commitment record or 0.
+    /// </summary>
+    /// <returns>
+    /// Either the calculated line amount from the Agreement Line Quantity Commitment or 0.
+    /// </returns>
+    public AgreementCommitedQuantity avaQty()
+    {
+        AgreementLineQuantityCommitment agreementLineQuantityCommitment;
+        AgreementCommitedQuantity       avaQty;
+
+        if (this.isQuantityBased())
+        {
+            agreementLineQuantityCommitment = this as AgreementLineQuantityCommitment;
+            avaQty = agreementLineQuantityCommitment.lineAmount();
+        }
+        else
+        {
+            avaQty = 0;
+        }
+
+        return avaQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCreateMarkupTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Creates markup transactions for the purchase line.
+    /// </summary>
+    /// <param name="_agreementHeader">
+    ///     A buffer of the <c>AgreementHeader</c> table.
+    /// </param>
+    /// <param name="_deleteExistingMarkupTrans">
+    ///     A Boolean value that specifies whether to delete existing markup transactions; optional.
+    /// </param>
+    void avaCreateMarkupTrans(
+        AgreementHeader _agreementHeader,
+        boolean         _deleteExistingMarkupTrans  = true)
+    {
+        if (this.AVASkipCreateMarkup == NoYes::No)
+        {
+            InventDim           inventDim;
+            CustVendAC          avaOrderAccount;
+            MarkupModuleType    avaModuleType;
+            MarkupGroupId       avaItemMarkupGroup;
+
+            if(_agreementHeader.getModuleType() == ModuleSalesPurch::Purch)
+            {
+                PurchAgreementHeader avaPurchAgreementHeader = PurchAgreementHeader::find(_agreementHeader.RecId);
+                avaOrderAccount     = avaPurchAgreementHeader.VendAccount;
+                avaModuleType       = MarkupModuleType::Vend;
+                avaItemMarkupGroup  = InventTableModule::find(this.ItemId,ModuleInventPurchSales::Purch).MarkupGroupId;
+            }
+            else if(_agreementHeader.getModuleType() == ModuleSalesPurch::Sales)
+            {
+                SalesAgreementHeader avaSalesAgreementHeader = SalesAgreementHeader::find(_agreementHeader.RecId);
+                avaOrderAccount     = avaSalesAgreementHeader.CustAccount;
+                avaModuleType       = MarkupModuleType::Cust;
+                avaItemMarkupGroup  = InventTableModule::find(this.ItemId,ModuleInventPurchSales::Sales).MarkupGroupId;
+            }
+
+            //Set the InventDim paramters for Agreement Line in <c>Markup</c> class
+            if(this.InventDimId)
+            {
+                inventDim = InventDim::find(this.InventDimId);
+                Markup::parmInventDimParameters(inventDim);
+            }
+
+            AgreementLine avaAgreementLine = AgreementLine::find(this.RecId);
+            Markup::insertMarkupTrans(HeadingLine::Line,
+                                    avaModuleType,
+                                    avaAgreementLine,
+                                    avaOrderAccount,
+                                    avaAgreementLine.agreementHeaderDefault().MiscChargeGroup,
+                                    _agreementHeader.Currency,
+                                    _agreementHeader.Language,
+                                    avaAgreementLine.ItemId,
+                                    avaItemMarkupGroup,
+                                    (avaAgreementLine.avaNetAmount() < 0), // invert sign on credit notes
+                                    _deleteExistingMarkupTrans);
+
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateMainRestQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// updates related main position
+    /// </summary>
+    public void avaUpdateMainRestQty()
+    {
+        ttsbegin;
+
+        AgreementLineQuantityCommitment aLineQuantityCommitmentLoc = AgreementLineQuantityCommitment::find(AgreementLine::avaFindMainPos(this).RecId, true);
+
+        if(aLineQuantityCommitmentLoc.RecId)
+        {
+            aLineQuantityCommitmentLoc.AVARestQtyCallOffItem = aLineQuantityCommitmentLoc.avaMainRestQty();
+            aLineQuantityCommitmentLoc.update();
+        }
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateSubRestQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// updates related main position
+    /// </summary>
+    public void avaUpdateSubRestQty()
+    {
+        ttsbegin;
+
+        AgreementLineQuantityCommitment aLineQuantityCommitmentLoc = AgreementLineQuantityCommitment::find(this.RecId, true);
+
+        aLineQuantityCommitmentLoc.AVARestQtyCallOffItem = aLineQuantityCommitmentLoc.avaSubRestQty();
+        aLineQuantityCommitmentLoc.update();
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaFindMainPos</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds the <c>AgreementLine</c> record main position with the same ItemId as specified AgreementLine
+    /// </summary>
+    /// <param name = "_agreementLine">AgreementLine</param>
+    /// <param name = "_forUpdate">boolean</param>
+    /// <returns>AgreementLine</returns>
+    public static AgreementLine avaFindMainPos(AgreementLine _agreementLine, boolean _forUpdate = false)
+    {
+        AgreementLine avaMainAgreementLine;
+
+        if(_forUpdate)
+        {
+            avaMainAgreementLine.selectForUpdate(_forUpdate);
+        }
+
+        select firstonly avaMainAgreementLine
+            where avaMainAgreementLine.Agreement == _agreementLine.Agreement
+            && avaMainAgreementLine.IsDeleted == NoYes::No
+            && avaMainAgreementLine.ItemId == _agreementLine.ItemId
+            && avaMainAgreementLine.AVAMainPosition == NoYes::Yes;
+
+        return avamainAgreementline;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromAgreementHeader</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Sets the default value for the <c>AgreementLine</c> record from the <c>AgreementHeader</c> record.
+    /// </summary>
+    /// <param name="_agreementHeader">
+    ///    The <c>AgreementHeader</c> record from which to initialize.
+    /// </param>
+    public void initFromAgreementHeader(AgreementHeader _agreementHeader)
+    {
+
+        next initFromAgreementHeader(_agreementHeader);
+
+
+        if(_agreementHeader.getModuleType() == ModuleSalesPurch::Purch)
+        {
+            PurchAgreementHeader    avaPurchAgreementHeader = PurchAgreementHeader::find(_agreementHeader.RecId);
+
+            this.AVAEffectivePrice      = avaPurchAgreementHeader.AVAEffectivePrice;
+            this.AVAOrderConfirmation   = avaPurchAgreementHeader.AVAOrderConfirmation;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetMainQtyPricePerUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns Price per unit of quantity based main agreement line
+    /// </summary>
+    /// <returns>AgreementPricePerUnit</returns>
+    public AgreementPricePerUnit avaGetMainQtyPricePerUnit()
+    {
+        AgreementLineQuantityCommitment agreementLineLoc = AgreementLineQuantityCommitment::find(AgreementLine::avaFindMainPos(this).RecId);
+
+        return agreementLineLoc.PricePerUnit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetMainWidthCoilMM</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns coil width of quantity base main agreement line
+    /// </summary>
+    /// <returns>AVACoilCallWidth</returns>
+    public AVACoilCallWidth avaGetMainWidthCoilMM()
+    {
+        AgreementLineQuantityCommitment agreementLineLoc = AgreementLineQuantityCommitment::find(AgreementLine::avaFindMainPos(this).RecId);
+
+        return agreementLineLoc.AVAWidthCoilMM;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetMainOrderConfirmation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns returns order confirmation of main agreement line
+    /// </summary>
+    /// <returns>AVAOrderConfirmation</returns>
+    public AVAOrderConfirmation avaGetMainOrderConfirmation()
+    {
+        AgreementLine agreementLineLoc = AgreementLine::avaFindMainPos(this);
+
+        return agreementLineLoc.AVAOrderConfirmation;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayProductName1</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/10/25     AVA_012605_ProductNameFields_PurchForms
+    /// </summary>
+    /// <returns>NDXProductName1</returns>
+    display NDXProductName1 avaDisplayProductName1()
+    {
+        return this.inventTable().NDXProductName1();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayProductName2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/10/25     AVA_012605_ProductNameFields_PurchForms
+    /// </summary>
+    /// <returns>NDXProductName2</returns>
+    display NDXProductName2 avaDisplayProductName2()
+    {
+        return this.inventTable().NDXProductName2();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,5588 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>AVARouteBOMInvent</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class AVARouteBOMInvent extends FormRun
+{
+    private static readonly Types RecIdType = typeName2Type(extendedtypestr(recId));
+
+    InventTable                 callerInventTable;
+    ReqTrans                    callerReqTrans, reqTransCaller;
+    FormListControl _list, _listYear;
+    ReqSetup                    reqSetup;
+    Map                         mapReqSetupDimForm;
+
+    Map                         mapReqTrans;
+    Map                         mapReqTransPO;
+
+    AVAReqTransFormOverview    reqTransForm;
+
+    [FormObservable]
+    ItemId          itemId;
+    yr              curYear = DateTimeUtil::year(DateTimeUtil::getSystemDateTime());
+
+    [FormObservable]
+    QtyAverage      ConsumpCurMonth, ConsumpMedian;
+
+    [FormObservable]
+    Qty             PhysOnHand, PhysScope, AvailOnHand, AvailScope;
+
+    [FormObservable]
+    QtyAverage      ConsumpCurMonthInventSite;
+
+    [FormObservable]
+    Qty             PhysScopeInventSite, AvailScopeInventSite;
+    
+    [FormObservable]
+    InventUnitId    unitId;
+    [FormObservable]
+    InventSiteId    inventSiteId;
+
+    //InventAvailabilityFormCache inventAvailabilityFormCache;
+
+
+
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>inventTable</Name>
+				<Source><![CDATA[
+    protected InventTable inventTable()
+    {
+        switch(element.args().dataset())
+        {
+            case tableNum(InventTable):
+                return element.args().record();
+
+            case tableNum(ReqTrans):
+                callerReqTrans = element.args().record();
+                return callerReqTrans.inventTable();
+
+            case tableNum(ProdTable):
+                ProdTable prodTable = element.args().record();
+                return prodTable.inventTable();
+        }
+        return null;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    void init()
+    {
+        super();
+        if (element.args())
+        {
+            callerInventTable = this.inventTable();
+        }
+
+        if (!callerInventTable)
+        {
+            throw error(Error::missingFormActiveBuffer(formstr(AVARouteBOMInvent), tablestr(InventTable)));
+        }
+
+        if (!callerInventTable.isFormulaOrBOMAllowed())
+        {
+            throw error(strfmt("@PRO2616", callerInventTable.ItemId));
+        }
+
+        if (!callerInventTable.inventItemType().canHaveRoutes())
+        {
+            throw error(strFmt("@SYS22874", callerInventTable.ItemId));
+        }
+
+        this.inititemid();
+
+        _list = ListViewMonthlyValues;
+
+        _list.addColumn(1,new FormListColumn("@NDX:NDXConsump",1, 100));
+        _list.addColumn(2,new FormListColumn("@NDX:NDXLastYear",2, 100));
+        _list.addColumn(3,new FormListColumn("@NDX:NDXCurrent",3, 100));
+
+        _listYear   = ListViewYearlyValues;
+
+        _listYear.addColumn(1, new FormListColumn("@NDX:NDXYear",1));
+        _listYear.addColumn(2, new FormListColumn("@NDX:NDXConsump",2, 100));
+
+        reqTransForm = AVAReqTransFormOverview::newFormRun(element);
+        //reqTransForm.parmCtrlGridReqDate(reqTrans_ReqDate);
+        reqTransForm.parmCtrlTabTrans(tabReqTrans);
+        reqTransForm.parmCtrlTabSum(ctrlTabSum);
+
+        reqTransForm.parmTmpReqInventDim(tmpReqInventDim);
+
+        //reqTransForm.parmCtrlGroupSettlement(groupSettlement);
+
+        //reqTransForm.parmCtrlTabPagePeriod(tabPeriod);
+        //reqTransForm.parmReqTmpPeriodQty(reqTmpPeriodQty);
+        //reqTransForm.parmCtrlGraphPeriod(graphPeriod);
+        //reqTransForm.parmCtrlGridPeriod(gridPeriod);
+
+        reqTransForm.formInitPost();
+
+        reqTransForm.parmPlanFilterControl(PlanFilter);
+        //reqTransForm.parmPeriodChartTypeMenuButtonGroup(periodModeGraphType);
+        //reqTransForm.parmPeriodTemplateMenuButtonGroup(periodTemplate);
+        //reqTransForm.initSelectionFilters();
+
+        this.onModifiedPlanFilter();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>onModifiedPlanFilter</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// A hook method that will be called when the PlanFilter changed.
+    /// </summary>
+    [Wrappable(true)]
+    internal void onModifiedPlanFilter()
+    {
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initItemId</Name>
+				<Source><![CDATA[
+    private void initItemId()
+    {
+        if (callerReqTrans)
+        {
+            ItemId = callerreqtrans.ItemId;
+            InventSiteId = callerreqtrans.inventDim().InventSiteId;
+            UnitID = callerReqTrans.inventUnitId();
+        }
+        else
+        {
+            WHSInventFixedLocation whsInventFixedLocation;
+            itemId = callerInventTable.ItemId;
+            select firstonly WHSInventFixedLocation where whsInventFixedLocation.ItemId == itemId;
+            inventSiteId = whsInventFixedLocation.InventSiteId;
+            unitId = callerInventTable.inventUnitId();
+        }
+        if (!inventSiteId)
+        {
+            inventSiteId = inventItemInventSetup::findDefault(itemId).inventDimDefault().InventSiteId;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setDesign</Name>
+				<Source><![CDATA[
+    void setDesign()
+    {
+        element.setListViewMonthlyValues();
+        element.setListViewYearlyValues();
+        element.setCurrentValues();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setCurrentValues</Name>
+				<Source><![CDATA[
+    void setCurrentValues()
+    {
+        NDXItemScopeHistory        itemScopeHistory = NDXItemScopeHistory::construct();
+
+        itemScopeHistory.parmItemId(itemId);
+        itemScopeHistory.parmInventSiteId(inventSiteId);
+        itemScopeHistory.parmCurYear(curYear);
+
+        [ConsumpCurMonth,
+         ConsumpMedian,
+         PhysOnHand,
+         AvailOnHand,
+         PhysScope,
+         AvailScope,
+         ConsumpCurMonthInventSite,
+         PhysScopeInventSite,
+         AvailScopeInventSite] = itemScopeHistory.setCurrentValues();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setListViewMonthlyValues</Name>
+				<Source><![CDATA[
+    void setListViewMonthlyValues()
+    {
+        KCS_ItemScopeHistory    curScopeHistory, prevScopeHistory;
+        int                     monthCounter;
+        yr                      prevYear;
+        FormListItem            fli;
+        int                     idx;
+
+        ListViewMonthlyValues.deleteAll();
+
+        prevYear    = curYear - 1;
+
+        for(monthCounter = 1; monthCounter <= 12; monthCounter++)
+        {
+            curScopeHistory     = KCS_ItemScopeHistory::find(ItemId, curYear, monthCounter);
+            prevScopeHistory    = KCS_ItemScopeHistory::find(ItemId, prevYear, monthCounter);
+
+            fli = new FormListItem(mthname(monthCounter),1);
+            fli.idx(monthCounter);
+            idx = ListViewMonthlyValues.addItem(fli);
+            ListViewMonthlyValues.setText(idx, num2str(abs(prevScopeHistory.ConsumpSum),0,2,2,1), 1);
+            ListViewMonthlyValues.setText(idx, num2str(abs(curScopeHistory.ConsumpSum),0,2,2,1), 2);
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateDesign</Name>
+				<Source><![CDATA[
+    void updateDesign(InventDimFormDesignUpdate mode)
+    {
+        reqTransForm.formUpdateDesign(mode);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setListViewYearlyValues</Name>
+				<Source><![CDATA[
+    void setListViewYearlyValues()
+    {
+        KCS_ItemScopeHistory    curScopeHistory;
+        yr                      minYear;
+        FormListItem            fli;
+        int                     idx;
+
+        ListViewYearlyValues.deleteAll();
+
+        select firstOnly curScopeHistory order by HistoryDate
+                                    where curScopeHistory.ItemId == ItemId;
+        
+        minYear = year(curScopeHistory.HistoryDate);
+        if (!curScopeHistory.RecId)
+        {
+            minYear = curYear;
+        }
+
+        if ((curYear - 6) > minYear)
+        {
+            minYear = curYear - 6;
+        }
+
+        while (minYear <= curYear)
+        {
+            select sum(ConsumpSum) from curScopeHistory where curScopeHistory.ItemId == ItemId
+                                                       && curScopeHistory.Year   == minYear;
+
+            fli = new FormListItem(int2str(minYear),1);
+            fli.idx(minYear);
+            idx = ListViewYearlyValues.addItem(fli);
+            ListViewYearlyValues.setText(idx, num2str(abs(curScopeHistory.ConsumpSum),0,2,2,1), 1);
+            minYear++;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Unit</Name>
+				<Source><![CDATA[
+    display InventUnitId  Unit()
+    {
+        return unitId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>inventSite</Name>
+				<Source><![CDATA[
+    display InventSiteId    inventSite()
+    {
+        return inventSiteId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>itemId</Name>
+				<Source><![CDATA[
+    display itemId itemId()
+    {
+        return  ItemId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ConsumpCurMonthInventSite</Name>
+				<Source><![CDATA[
+    display QtyAverage ConsumpCurMonthInventSite()
+    {
+        return ConsumpCurMonthInventSite;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>PhysScopeInventSite</Name>
+				<Source><![CDATA[
+    display Qty PhysScopeInventSite()
+    {
+        return PhysScopeInventSite;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AvailScopeInventSite</Name>
+				<Source><![CDATA[
+    display Qty AvailScopeInventSite()
+    {
+        return AvailScopeInventSite;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AvailScope</Name>
+				<Source><![CDATA[
+    display Qty AvailScope()
+    {
+        return AvailScope;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AvailOnHand</Name>
+				<Source><![CDATA[
+    display Qty AvailOnHand()
+    {
+        return AvailOnHand;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>PhysScope</Name>
+				<Source><![CDATA[
+    display Qty PhysScope()
+    {
+        return PhysScope;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>PhysOnHand</Name>
+				<Source><![CDATA[
+    display Qty PhysOnHand()
+    {
+        return PhysOnHand;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ConsumpMedian</Name>
+				<Source><![CDATA[
+    display QtyAverage ConsumpMedian()
+    {
+        return ConsumpMedian;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ConsumpCurMonth</Name>
+				<Source><![CDATA[
+    display QtyAverage ConsumpCurMonth()
+    {
+        return ConsumpCurMonth;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initMapCache</Name>
+				<Source><![CDATA[
+    public void initMapCache()
+    {
+        mapReqSetupDimForm = new Map(typeOf(reqItemTable.CovInventDimId),Types::Class);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>reqSetupDim</Name>
+				<Source><![CDATA[
+    public ReqSetupDim reqSetupDim(
+        ReqItemTable    _reqItemTable      = reqItemTable,
+        InventDim       _inventDim         = inventDim,
+        boolean         _setCovInventDimId = true,
+        boolean         _reread            = false)
+    {
+        str                 dimKey;
+        ReqSetupDimForm     reqSetupDimForm;
+
+
+
+        if (   !reqSetup
+            || reqSetup.itemId() != _reqItemTable.ItemId)
+        {
+            reqSetup = ReqSetup::newItemId(_reqItemTable.ItemId);
+            this.initMapCache();
+        }
+
+        if (!mapReqSetupDimForm)
+        {
+            this.initMapCache();
+        }
+
+        dimKey = _inventDim.mapKeyCov();
+
+        if (!mapReqSetupDimForm.exists(dimKey) || _reread)
+        {
+            reqSetupDimForm = ReqSetupDimForm::newfromForm(reqSetup,_reqItemTable);
+            mapReqSetupDimForm.insert(dimKey, reqSetupDimForm);
+            reqSetupDimForm.showInfolog();
+        }
+        else
+        {
+            reqSetupDimForm = mapReqSetupDimForm.lookup(dimKey);
+        }
+
+        reqSetupDimForm.update(_reqItemTable);
+        return reqSetupDimForm;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>inventtable</Name>
+				<Methods>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            element.initItemId();
+            SysQuery::findOrCreateRange(inventtable_ds.queryBuildDataSource(), fieldNum(inventtable, ItemId)).value(callerInventTable.ItemId);
+            super();
+
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>linkActive</Name>
+						<Source><![CDATA[
+        public void linkActive()
+        {
+            super();
+            if (element.args())
+            {
+                callerInventTable = element.inventTable();
+            }
+
+            this.executeQuery();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>RouteVersion</Name>
+				<Methods>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+
+            if (RouteVersion.RouteId)
+            {
+                SysQuery::findOrCreateRange(Route_ds.queryBuildDataSource(), fieldNum(route, RouteId)).value(RouteVersion.RouteId);
+                SysQuery::findOrCreateRange(RouteOpr_ds.queryBuildDataSource(), fieldNum(RouteOpr, RouteRelation)).value(RouteVersion.RouteId);
+            } 
+            else
+            {
+                SysQuery::findOrCreateRange(Route_ds.queryBuildDataSource(), fieldNum(route, RouteId)).value(SysQuery::valueEmptyString());
+            }
+            ret = super();
+    
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>Route</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+
+            if (!RouteVersion.RouteId)
+            {
+                SysQuery::findOrCreateRange(Route_ds.queryBuildDataSource(), fieldNum(route, RouteId)).value(SysQuery::valueEmptyString());
+                //SysQuery::findOrCreateRange(RouteOpr_ds.queryBuildDataSource(), fieldNum(RouteOpr, RouteRelation)).value(RouteVersion.RouteId);
+            }
+
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>BOMVersion</Name>
+				<Methods>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+
+            if (BOMVersion.BOMId)
+            {
+                SysQuery::findOrCreateRange(BOM_ds.queryBuildDataSource(), fieldNum(BOM, BOMId)).value(bomVersion.BOMId);
+            }
+            else
+            {
+                SysQuery::findOrCreateRange(BOM_ds.queryBuildDataSource(), fieldNum(BOM, BOMId)).value(SysQuery::valueEmptyString());            
+            }
+            ret = super();
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>displayItemName</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute]
+        public display ItemNameDisplay displayItemName(BOMVersion _bomVersion)
+        {
+            return _bomVersion.inventTable().itemName(_bomVersion.inventDim());
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>BOM</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+
+            super();
+            if (!BOMVersion.BOMId)
+            {
+                SysQuery::findOrCreateRange(BOM_ds.queryBuildDataSource(), fieldNum(BOM, BOMId)).value(SysQuery::valueEmptyString());
+            }
+
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>InventSum</Name>
+				<Methods>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            QueryBuildDataSource    qbds;
+
+            qbds = Inventsum_ds.queryBuildDataSource();
+            //SysQuery::findOrCreateRange(qbds, fieldNum(InventSum, ItemId)).value(callerInventTable.ItemId);
+            SysQuery::findOrCreateGroupByField(InventSum_q, qbds, fieldNum(InventSum, InventSiteId));
+            SysQuery::findOrCreateGroupByField(InventSum_q, qbds, fieldNum(InventSum, InventLocationId));
+            qbds.addSelectionField(fieldNum(InventSum, PhysicalInvent), SelectionField::Sum);
+            qbds.addSelectionField(fieldNum(InventSum, ReservPhysical), SelectionField::Sum);
+            qbds.addSelectionField(fieldNum(InventSum,  AvailPhysical), SelectionField::Sum);
+            qbds.addSelectionField(fieldNum(InventSum, Ordered), selectionField::Sum);
+            qbds.addSelectionField(fieldNum(InventSum, OnOrder), SelectionField::Sum);
+            qbds.addSelectionField(fieldNum(InventSum, ReservOrdered), SelectionField::Sum);
+            qbds.addSelectionField(fieldNum(InventSum, AvailOrdered), SelectionField::Sum); 
+
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>TmpReqInventDim</Name>
+				<Methods>
+					<Method>
+						<Name>cwMinInventOnHand</Name>
+						<Source><![CDATA[
+        display PdsCWQtyMin cwMinInventOnHand(TmpReqInventDim _tmp)
+        {
+            return PdsCatchWeight::cwQty(reqTransForm.reqSetup().inventTable().ItemId, reqTransForm.findReqSetupDim(_tmp).minInventOnHand());
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>cwMaxInventOnHand</Name>
+						<Source><![CDATA[
+        display PdsCWQtyMax cwMaxInventOnHand(TmpReqInventDim _tmp)
+        {
+            return PdsCatchWeight::cwQty(reqTransForm.reqSetup().inventTable().ItemId, reqTransForm.findReqSetupDim(_tmp).maxInventOnHand());
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>reqPoType</Name>
+						<Source><![CDATA[
+        display ReqPOType reqPoType(TmpReqInventDim _tmp)
+        {
+            return ReqPO::reqRefType2ReqPoType(reqTransForm.findReqSetupDim(_tmp).plannedOrderTypeReq());
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>reqGroupId</Name>
+						<Source><![CDATA[
+        display ReqGroupId reqGroupId(TmpReqInventDim _tmp)
+        {
+            return reqTransForm.findReqSetupDim(_tmp).reqGroupId();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>maxInventOnHand</Name>
+						<Source><![CDATA[
+        display InventQtyMaxOnhand   maxInventOnHand(TmpReqInventDim _tmp)
+        {
+            return reqTransForm.findReqSetupDim(_tmp).maxInventOnHand(false);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>minInventOnHand</Name>
+						<Source><![CDATA[
+        display InventQtyMinOnhand  minInventOnHand(TmpReqInventDim _tmp)
+        {
+            return reqTransForm.findReqSetupDim(_tmp).minInventOnHand();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>linkActive</Name>
+						<Source><![CDATA[
+        public void linkActive()
+        {
+            reqTransForm.initFromCaller();
+            reqTransForm.updatePlanVersionSelection();
+            reqTransForm.initReqTransCalc(false);
+
+            reqTransForm.initTmpReq();
+
+            super();
+
+            /*if (!InventTable::isItemActiveForPlanning(reqTransForm.reqSetup().itemId()))
+            {
+                InventTable notPlannedItem = InventTable::find(reqTransForm.reqSetup().itemId());
+                warning(strFmt("@SCM:ItemNotPlannedByMasterPlanning", notPlannedItem.ItemId, notPlannedItem.ProductLifecycleStateId));
+            }  */
+
+            tmpReqInventDim_ds.findCaller();
+
+            //reqTransForm.initTabTrans(true);
+
+            element.updateDesign(InventDimFormDesignUpdate::Active);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>findCaller</Name>
+						<Source><![CDATA[
+        void findCaller()
+        {
+            TmpReqInventDim        tmpReqInventDimLocal;
+
+            if (element.args().dataset())
+            {
+                reqTransCaller = ReqTrans::findCommon(
+                ReqPlan::findReqPlanId(reqTransForm.parmReqPlanId()).findActiveVersion().RecId,
+                element.args().record());
+
+                if (reqTransCaller.RecId)
+
+                {
+                    tmpReqInventDimLocal = TmpReqInventDim::findInventDimId(reqTransCaller.CovInventDimId,tmpReqInventDim);
+                    tmpReqInventDim_ds.findRecord(tmpReqInventDimLocal);
+
+                    if (element.args().lookupRecord() && element.args().lookupRecord().TableId != tableNum(TmpReqInventDim))
+                    {
+                        element.args().lookupRecord(tmpReqInventDimLocal);
+                    }
+                }  
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>covRule</Name>
+						<Source><![CDATA[
+        display ReqCovRule covRule(TmpReqInventDim _tmp)
+        {
+            return reqTransForm.findReqSetupDim(_tmp).covRule();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>covPeriod</Name>
+						<Source><![CDATA[
+        display ReqCovPeriod covPeriod(TmpReqInventDim _tmp)
+        {
+            return reqTransForm.findReqSetupDim(_tmp).covPeriod(true);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>quantity</Name>
+						<Source><![CDATA[
+        display QtyMultiples quantity(TmpReqInventDim _tmp)
+        {
+            return reqTransForm.findReqSetupDim(_tmp).quantity();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>lowestQty</Name>
+						<Source><![CDATA[
+        display QtyLowest lowestQty(TmpReqInventDim _tmp)
+        {
+            return reqTransForm.findReqSetupDim(_tmp).lowestQty();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>highestQty</Name>
+						<Source><![CDATA[
+        display QtyHighest highestQty(TmpReqInventDim _tmp)
+        {
+            return reqTransForm.findReqSetupDim(_tmp).highestQty(true);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            this.queryBuildDataSource().clearDynalinks();
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>ReqTrans</Name>
+				<Methods>
+					<Method>
+						<Name>cwQtyAccumulated</Name>
+						<Source><![CDATA[
+        display PdsCWReqQty cwQtyAccumulated(ReqTrans _reqTrans)
+        {
+            return PdsCatchWeight::cwQty(_reqTrans.ItemId, reqTransForm.displayTransAccumQty(_reqTrans));
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>cwQty</Name>
+						<Source><![CDATA[
+        display PdsCWReqQty cwQty(ReqTrans _reqTrans)
+        {
+            return PdsCatchWeight::cwQty(_reqTrans.ItemId, reqTransForm.displayTransQty(_reqTrans));
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>accumulated</Name>
+						<Source><![CDATA[
+        display ReqQtyAccumulated accumulated(ReqTrans _reqTrans)
+        {
+            return reqTransForm.displayTransAccumQty(_reqTrans);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>qty</Name>
+						<Source><![CDATA[
+        display ReqQty  qty(ReqTrans _reqTrans)
+        {
+            return reqTransForm.displayTransQty(_reqTrans);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            //reqTransForm.reqTransDSExecuteQueryPre();
+            QueryBuildDataSource    qbsTrans = reqTrans_ds.queryBuildDataSource();
+            QueryBuildRange rangeItemId = SysQuery::findOrCreateRange(qbsTrans, fieldNum(ReqTrans, ItemId));
+
+            rangeItemId.value(queryValue(itemId));
+
+            SysQuery::findOrCreateRange(qbsTrans, fieldNum(ReqTrans, PlanVersion)).value(queryValue(ReqPlan::findReqPlanId(reqTransForm.parmReqPlanId()).findActiveVersion().RecId));
+
+            qbsTrans.sortClear();
+
+            qbsTrans.addSortField(fieldnum(ReqTrans,ReqDate));
+            qbsTrans.addSortField(fieldnum(ReqTrans,Direction));
+            qbsTrans.addSortField(fieldnum(ReqTrans,RecId));
+
+            qbsTrans.addSortIndex(indexnum(ReqTrans,ItemIdx));
+            qbsTrans.indexIsHint(true);
+
+
+            super();
+
+            //reqTransForm.reqTransDSExecuteQueryPost();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>linkActive</Name>
+						<Source><![CDATA[
+        public void linkActive()
+        {
+            super();
+
+            if (reqTransCaller &&
+                reqTransCaller.CovInventDimId == tmpReqInventDim.CovInventDimId)
+            {
+                // The code is using findRecord() for the following reasons:
+                // 1. New API positionToRecord() throws exceptions in current scenario.
+                // 2. Focus will not be on the expected line if using lookupRecord().
+                // 3. Sorting will not work if using lookupField() and lookupValue().
+                // 4. This approach secures that both sorting and setting focus behave properly.
+                reqTrans_ds.findRecord(reqTransCaller);
+
+                reqTransCaller = null;
+            }  
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+
+            //reqTransForm.reqTransDSInitPost(reqTrans);
+
+            SysQuery::findOrCreateRange(reqtrans_ds.queryBuildDataSource(), fieldNum(ReqTrans, RefType)).value(sysquery::valueNot(queryValue(ReqRefType::SafetyInvent)));
+            //reqTrans_ds.query().dataSourceTable(tablenum(ReqTrans)).addRange(fieldnum(ReqTrans,RefType)).value('!'+queryValue(ReqRefType::SafetyInvent));
+
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>ReqItemTable</Name>
+				<Methods>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            ReqItemTable    reqItemTableLocal;
+
+            super();
+
+            this.setPosition(1);
+
+            reqItemTableLocal = reqItemTable_ds.getFirst(0,false);
+
+            while (reqItemTableLocal)
+            {
+                reqItemTableLocal.initFromReqSetupDim(element.reqSetupDim(reqItemTableLocal,reqItemTableLocal.inventDim(),false));
+                reqItemTableLocal = reqItemTable_ds.getNext();
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+        
+            ret = super();
+
+            this.executeQuery();
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>KCS_ItemScopeHistory</Name>
+				<Methods>
+					<Method>
+						<Name>linkActive</Name>
+						<Source><![CDATA[
+        public void linkActive()
+        {
+            super();
+
+            element.setDesign();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>CoByProducts</Name>
+				<Type>MenuFunctionButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            super();
+    
+            //bom_ds.executeQuery();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>PlanFilter</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+
+            ret = super();
+
+            reqTransForm.planIdSelectionChanged(this);
+
+            element.onModifiedPlanFilter();
+
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>reqGroupId</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        public void jumpRef()
+        {
+            ReqGroup::jumpRefReqGroupId(this.text());
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>TabTransOverview</Name>
+				<Type>TabPage</Type>
+				<Methods>
+					<Method>
+						<Name>pageActivated</Name>
+						<Source><![CDATA[
+        public void pageActivated()
+        {
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>inventtable</Name>
+			<Table>inventtable</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>ABCContributionMargin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ABCRevenue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ABCTieUp</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ABCValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AlcoholManufacturerId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AlcoholProductionTypeId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AlcoholStrength_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AltConfigId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AltInventColorId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AltInventSizeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AltInventStyleId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AltInventVersionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AltItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ApproxTaxValue_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AssetGroupId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AssetId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AutoReportFinished</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAEDIPurchFrameRequired</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAEDIPurchPostAuto</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAItemSet</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAPAInfo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAPriceSurchargeCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVASlitCoilWidth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAVC_CreatedByExternalCatalog</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAVCMaintenancepart</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAVCManufacturerpartnumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAVCOriginalpart</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BatchMergeDateCalculationMethod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BatchNumGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMCalcGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMLevel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMManualReceipt</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMUnitId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BomWHSReleasePolicy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BrandCodeId_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CNPJ_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CommissionGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>COODualUseCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>COODualUseProduct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CostBOMLevel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CostGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CostModel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustomsExportTariffCodeTable_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustomsImportTariffCodeTable_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Density</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Depth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DisplayHazard_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DSA_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExceptionCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExciseRecordType_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExciseTariffCodes_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Exempt_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EximProductGroupTable_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FiscalLIFOAvoidCalc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FiscalLIFONormalValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FiscalLIFONormalValueCalc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ForecastDMPInclude</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FreeNotesGroup_IT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>grossDepth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>grossHeight</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>grossWidth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Height</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMIMIndicator</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HSNCodeTable_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ICMSOnService_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Intracode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntrastatChargePerKg</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntrastatCommodity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntrastatExclude</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntrastatProcId_CZ</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventFiscalLIFOGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventProductType_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemBuyerGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemDimCostPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemPriceToleranceGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ITMArrivalGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ITMCommodityCodeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ITMCostTransferGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ITMCostTypeGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ITMCustomsDescId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ITMOverUnderToleranceGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_BOSItemIdLicense</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_CALCalculatedPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_CALCalculationIDCalcPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_CALCalculationIDSimPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_CALSimulatedPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_GoodsId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_HK2GroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_HK2Vendor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_IsCatalogItem</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_IsSalesItem</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_ItemUsageId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KAOItemState</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KMSSyncBlocked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_NotCalculated</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_PTMToolCompId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_PTMToolId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MarkupCode_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MatchingPolicy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRPackedExtensions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MinimumPalletQuantity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NameAlias</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_Archiv_Von</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_CXM_GUELTBIS</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_CXM_GUELTVON</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_CylindricProperty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_FillLevelNet</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_Filter</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_HKGrouping</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_InventDiameter</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_InventProdRespons</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_IsFrameOrderItem</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_MinimalEditing</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_NominalDimensionCheckedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_NominalDimensionCheckedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_NominalDimensionsChecked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_NominalSize_Depth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_NominalSize_Height</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_NominalSize_Width</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_PhysicalDimensionCheckedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_PhysicalDimensionCheckedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_PhysicalDimensionsChecked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_PreferenceAuthorized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_ProdIdentStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_REACH_Checked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_REACH_Info</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_REACH_Listdate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_RoHS_Checked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_RoHS_Info</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_ScrapId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_ShowItemInCatalog</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_ShowItemInOnlineCatalog</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_StockItemIdentifier</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_TRU_ItemType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDXHK2GroupRefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDXModelNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDXSparePartMarker</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NetWeight</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NGPCodesTable_FR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NonGST_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NRTaxGroup_LV</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrigCountryRegionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrigCountyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrigStateId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PackagingGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Packing_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSBaseAttributeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsBestBefore</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWWMSMinimumPalletQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWWMSQtyPerLayer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWWMSStandardPalletQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsFreightAllocationGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsItemRebateGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSPotencyAttribRecording</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsShelfAdvice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsShelfLife</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSTargetFactor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsVendorCheckItem</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Phantom</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PKWiUCode_PL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPlanningItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfProductType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfYieldPct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreventPhysicalDimensionSync</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryVendorId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProdFlushingPrincip</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProdGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProdPoolId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Product</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProductLifecycleStateId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>projCategoryId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PropertyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PurchModel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>qtyPerLayer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReqGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RevRecBundle</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RevRecDefaultRevenueRecognitionSchedule</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RevRecExcludeFromCarveOut</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RevRecMedianPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RevRecMedianPriceMaximumTolerance</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RevRecMedianPriceMinimumTolerance</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RevRecRevenueRecognitionEnabled</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RevRecRevenueType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SADRateCode_PL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesContributionRatio</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesModel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesPercentMarkup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesPriceModelBasic</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SATCodeId_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SATTariffFraction_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ScaleIndicator_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ScrapConst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ScrapVar</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SerialNumGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ServiceAccountingCodeTable_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ServiceCodeTable_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SkipIntraCompanySync_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>sortCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StandardConfigId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StandardInventColorId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StandardInventSizeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StandardInventStyleId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StandardInventVersionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>standardPalletQuantity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StatisticsFactor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaraWeight</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxationOrigin_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxFiscalClassification_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxPackagingQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxRateType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxServiceCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UnitVolume</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UseAltItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Width</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WMSArrivalHandlingTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WMSPalletTypeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WMSPickingQtyTime</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>RouteVersion</Name>
+			<Table>RouteVersion</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>Active</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Approved</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Approver</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Construction</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EngChgEngineeringRouteVersion</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Name</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RouteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ToDate</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>inventtable</JoinSource>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>Route</Name>
+			<Table>Route</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AccError</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EngChgEngineeringReference</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EngChgEngineeringRoute</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ErrorPct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>JobPayType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Level</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LinkType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OprId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OprNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OprNumNext</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OprPriority</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RouteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>RouteVersion</JoinSource>
+			<LinkType>Active</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>RouteOpr</Name>
+			<Table>RouteOpr</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>ConfigId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EngChgEngineeringReference</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EngChgEngineeringRouteOpr</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Formula</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FormulaFactor1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemRelation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_PTMCavityReal</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_PTMCycleTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OprId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProcessCategoryId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProcessPerQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProcessTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PropertyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QtyCategoryId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QueueTimeAfter</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QueueTimeBefore</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RouteCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RouteGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RouteRelation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RouteType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SetUpCategoryId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SetupTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SiteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ToHours</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransferBatch</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TranspTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WrkCtrIdCost</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>Route</JoinSource>
+			<LinkType>OuterJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>BOMVersion</Name>
+			<Table>BOMVersion</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>Active</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Approved</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Approver</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAPTMProdTypeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Construction</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EngChgEngineeringBomVersion</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Name</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWFromQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWSize</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfBatchSize</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfBulkParent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfCoByVarAllow</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfFormulaChangeDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfFormulaMultiple</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfFormulaVersionCalculation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfTotalCostAllocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfTypeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfYieldPct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SequenceId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ToDate</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>inventtable</JoinSource>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>BOM</Name>
+			<Table>BOM</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>BOMConsump</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMQtySerie</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BomWHSReleasePolicy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Calculation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ConfigGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Constant</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Density</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Depth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EndSchedConsump</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EngChgEngineeringBOM</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EngChgEngineeringBomReference</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Formula</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Height</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemBOMId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemRouteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineCreationSequenceNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MaterialOverpickPercentage</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OprNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSBaseValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSIngredientType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSInheritCoProductBatchAttrib</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSInheritCoProductShelfLife</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSInheritEndItemBatchAttrib</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSInheritEndItemShelfLife</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfFormulaPct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPctEnable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPlanGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPlanGroupPriority</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfScalable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Position</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProdFlushingPrincip</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProjSetSubProdToConsumed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RoundUp</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RoundUpQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ScrapConst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ScrapVar</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ToDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UnitId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VendId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Width</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WrkCtrConsumption</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>BOMVersion</JoinSource>
+			<LinkType>Active</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>InventSum</Name>
+			<Table>InventSum</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>Arrived</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AvailOrdered</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AvailPhysical</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Closed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ClosedQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>configId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Deducted</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventBatchId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventColorId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension10</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension11</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension12</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension3</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension4</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension5</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension6</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension7</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension8</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension9</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventGtdId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventLocationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventOwnerId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventProfileId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventSerialId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventSiteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventSizeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventStatusId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventStyleId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventVersionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsExcludedFromInventoryValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastUpdDateExpected</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastUpdDatePhysical</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LicensePlateId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OnOrder</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Ordered</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWArrived</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWAvailOrdered</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWAvailPhysical</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWDeducted</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWOnOrder</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWOrdered</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWPhysicalInvent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWPicked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWPostedQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQuotationIssue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQuotationReceipt</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWReceived</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWRegistered</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWReservOrdered</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWReservPhysical</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PhysicalInvent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PhysicalValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PhysicalValueSecCur_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Picked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PostedQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PostedValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PostedValueSecCur_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QuotationIssue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QuotationReceipt</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Received</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Registered</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReservOrdered</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReservPhysical</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>wMSLocationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>wMSPalletId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>TmpReqInventDim</Name>
+			<Table>TmpReqInventDim</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>CovInventDimId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsCWItem</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KanbanIssueQuantity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KanbanReceiptQuantity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRSalesContinuityQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OnhandQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQtyDemand</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQtyInvent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQtyOnHand</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQtyPlannedDemand</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQtyPlannedProd</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQtyPlannedPurch</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQtyPlannedTransfer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQtyProdIssue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQtyProdReceipt</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQtyPurch</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQtySales</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQtySupply</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PlannedDemandQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PlannedKanbanQuantity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PlannedProdQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PlannedPurchQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PlannedTransferQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProdIssueQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProdReceiptQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PurchForecastQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PurchQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReqDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesForecastQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>InventDim</Name>
+			<Table>InventDim</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>configId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>inventBatchId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventColorId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension10</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension11</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension12</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension3</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension4</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension5</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension6</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension7</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension8</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension9</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>inventDimId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventGtdId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventLocationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventOwnerId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventProfileId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>inventSerialId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventSiteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventSizeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventStatusId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventStyleId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventVersionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LicensePlateId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SHA1HashHex</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SHA3HashHex</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>wMSLocationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>wMSPalletId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AutoSearch>No</AutoSearch>
+			<JoinSource>TmpReqInventDim</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>ReqTrans</Name>
+			<Table>ReqTrans</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>ActionDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ActionDays</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ActionMarked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ActionQtyAdd</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ActionType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMRefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CovInventDimId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CovQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustAccountId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Direction</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FuturesCalculated</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FuturesDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FuturesDays</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FuturesMarked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FuturesTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntercompanyPlannedOrder</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventTransOrigin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsDelayed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsDerivedDirectly</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsForcedItemBomId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsForcedItemRouteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsForecastPurch</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemBomId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemRouteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Keep</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastPlanRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Level</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MarkingRefInventTransOrigin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRPriceTimeFence</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OpenStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OprNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OriginalQuantity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsExpiryDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsSellableDays</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PlanningPriority</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PlanVersion</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfActionQtyAdd</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfCoByRefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPlanGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPlanGroupPrimaryIssue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPlanGroupPriority</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPlanningItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPlanPriorityCurrent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Priority</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Qty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReqDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReqDateDlvOrig</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReqProcessId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReqTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RequisitionLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SupplyDemandSubClassification</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VendId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AutoSearch>No</AutoSearch>
+			<JoinSource>TmpReqInventDim</JoinSource>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>ReqItemTable</Name>
+			<Table>ReqItemTable</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AuthorizationTimeFence</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AverageDailyUsage</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CalendarDaysProduction</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CalendarDaysPurchase</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CalendarDaysTransfer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CapacityTimeFence</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CovFieldsActive</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CovInventDimId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CovPeriod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CovRule</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CovTimeFence</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DistributionBasedADUEnabled</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExplosionTimeFence</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventLocationIdReqMain</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemCovFieldsActive</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LeadTimeProduction</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LeadTimeProductionActive</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LeadTimePurchase</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LeadTimePurchaseActive</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LeadTimeTransfer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LeadTimeTransferActive</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LockingTimeFence</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MaxInventOnhand</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MaxNegativeDays</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MaxPositiveDays</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MaxSafetyKeyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MinInventOnhand</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MinSafetyKeyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MinSafetyPeriod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MinSatisfy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MustUseLatestPossibleSupplyFirst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OnHandActive</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OnHandConsumptionStrategy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderCycle</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderSpikeThreshold</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPlanningItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPlanPriorityCurrent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPlanPriorityDateChanged</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPlanPriorityDefault</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReorderPoint</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReqGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReqPOType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReqPOTypeActive</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TimeFenceBackRequisition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TimeFenceFieldsActive</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UseDecouplingPointPeriodSettings</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VendId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>inventtable</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>InventDimReqItemTable</Name>
+			<Table>InventDim</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>configId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>inventBatchId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventColorId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension10</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension11</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension12</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension3</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension4</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension5</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension6</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension7</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension8</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimension9</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>inventDimId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventGtdId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventLocationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventOwnerId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventProfileId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>inventSerialId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventSiteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventSizeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventStatusId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventStyleId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventVersionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LicensePlateId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SHA1HashHex</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SHA3HashHex</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>wMSLocationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>wMSPalletId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>ReqItemTable</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>KCS_ItemScopeHistory</Name>
+			<Table>KCS_ItemScopeHistory</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>ConsumpAverage</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ConsumpProd</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ConsumpSales</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ConsumpSum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EndQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HistoryDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MonthOfYear</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StartQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Year</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@NDX:NXAMultiForm</Caption>
+		<Pattern xmlns="">Custom</Pattern>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormTabControl">
+				<Name>FormTabControl1</Name>
+				<Type>Tab</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>BOMTab</Name>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormMenuFunctionButtonControl">
+								<Name>CoByProducts</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HelpText>@PRO239</HelpText>
+								<Type>MenuFunctionButton</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<DataSource>BOMVersion</DataSource>
+								<MenuItemName>PmfCoByProductsConsistOf</MenuItemName>
+								<Text>@PRO112</Text>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>BOMVersionGrid</Name>
+								<Type>Grid</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOMVersion_BOMId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>BOMId</DataField>
+										<DataSource>BOMVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOMVersion_Name</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Name</DataField>
+										<DataSource>BOMVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOMVersion_inventSiteId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>inventSiteId</DataMethod>
+										<DataSource>BOMVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOMVersion_inventColorId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>inventColorId</DataMethod>
+										<DataSource>BOMVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOMVersion_ItemId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ItemId</DataField>
+										<DataSource>BOMVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOMVersion_ItemName</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayItemName</DataMethod>
+										<DataSource>BOMVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>BOMVersion_FromQty</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>FromQty</DataField>
+										<DataSource>BOMVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>BOMVersion_FromDate</Name>
+										<Type>Date</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>FromDate</DataField>
+										<DataSource>BOMVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>BOMVersion_ToDate</Name>
+										<Type>Date</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ToDate</DataField>
+										<DataSource>BOMVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>BOMVersion_Active</Name>
+										<Type>CheckBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Active</DataField>
+										<DataSource>BOMVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>BOMVersion_Approved</Name>
+										<Type>CheckBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Approved</DataField>
+										<DataSource>BOMVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>BOMVersion_Approver</Name>
+										<Type>ReferenceGroup</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>BOMVersion</DataSource>
+										<ReferenceField>Approver</ReferenceField>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>BOMVersion_PmfBatchSize</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>PmfBatchSize</DataField>
+										<DataSource>BOMVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>BOMVersion_PmfFormulaMultiple</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>PmfFormulaMultiple</DataField>
+										<DataSource>BOMVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>BOMVersion_PmfYieldPct</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>PmfYieldPct</DataField>
+										<DataSource>BOMVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOMVersion_pmfFormulaUnit</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>pmfFormulaUnit</DataMethod>
+										<DataSource>BOMVersion</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataSource>BOMVersion</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>BOMGrid</Name>
+								<Type>Grid</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOM_ItemType</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>AVABOMDbt_Extension.displayItemType</DataMethod>
+										<DataSource>BOM</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOM_ItemId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ItemId</DataField>
+										<DataSource>BOM</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOM_ItemName</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>itemName</DataMethod>
+										<DataSource>BOM</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOM_InventColorId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>AVABOMDbt_Extension.inventColorId</DataMethod>
+										<DataSource>BOM</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOM_InventSiteId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>AVABOMDbt_Extension.inventSiteId</DataMethod>
+										<DataSource>BOM</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormIntegerControl">
+										<Name>BOM_OprNum</Name>
+										<Type>Integer</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>OprNum</DataField>
+										<DataSource>BOM</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>BOM_BOMConsump</Name>
+										<Type>ComboBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>BOMConsump</DataField>
+										<DataSource>BOM</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>BOM_BOMQty</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>BOMQty</DataField>
+										<DataSource>BOM</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>BOM_BOMQtySerie</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>BOMQtySerie</DataField>
+										<DataSource>BOM</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOM_UnitId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>UnitId</DataField>
+										<DataSource>BOM</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>BOM_ProdFlushingPrincip</Name>
+										<Type>ComboBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ProdFlushingPrincip</DataField>
+										<DataSource>BOM</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOM_PmfPlanGroupId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>PmfPlanGroupId</DataField>
+										<DataSource>BOM</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>BOM_PmfPctEnable</Name>
+										<Type>CheckBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>PmfPctEnable</DataField>
+										<DataSource>BOM</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>BOM_PmfFormulaPct</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>PmfFormulaPct</DataField>
+										<DataSource>BOM</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>BOM_PmfScalable</Name>
+										<Type>CheckBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>PmfScalable</DataField>
+										<DataSource>BOM</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>BOM_PDSIngredientType</Name>
+										<Type>ComboBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>PDSIngredientType</DataField>
+										<DataSource>BOM</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>BOM_pdsActiveQty</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>pdsActiveQty</DataMethod>
+										<DataSource>BOM</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOM_ConfigGroupId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ConfigGroupId</DataField>
+										<DataSource>BOM</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataSource>BOM</DataSource>
+							</AxFormControl>
+						</Controls>
+						<Caption>@NDX:NXABOM</Caption>
+						<DataSource>BOMVersion</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>RouteTab</Name>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>RouteVersionGrid</Name>
+								<Type>Grid</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>RouteVersion_RouteId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>RouteId</DataField>
+										<DataSource>RouteVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>RouteVersion_Name</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Name</DataField>
+										<DataSource>RouteVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>RouteVersionInventSiteId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>inventSiteId</DataMethod>
+										<DataSource>RouteVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>RouteVersion_FromDate</Name>
+										<Type>Date</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>FromDate</DataField>
+										<DataSource>RouteVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>RouteVersion_ToDate</Name>
+										<Type>Date</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ToDate</DataField>
+										<DataSource>RouteVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>RouteVersion_FromQty</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>FromQty</DataField>
+										<DataSource>RouteVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>RouteVersion_ItemId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ItemId</DataField>
+										<DataSource>RouteVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>RouteVersion_Active</Name>
+										<Type>CheckBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Active</DataField>
+										<DataSource>RouteVersion</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>RouteVersion_ApprovedBy</Name>
+										<ElementPosition>2136997886</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>RouteVersion_ApprovedBy_PersonnelNumber</Name>
+												<DataRelationPath>HcmWorker</DataRelationPath>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+											</AxFormControl>
+										</Controls>
+										<DataSource>RouteVersion</DataSource>
+										<ReferenceField>Approver</ReferenceField>
+										<ReplacementFieldGroup>PersonnelNumber</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>RouteVersion_Approved</Name>
+										<Type>CheckBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Approved</DataField>
+										<DataSource>RouteVersion</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataSource>RouteVersion</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>RouteGrid</Name>
+								<Type>Grid</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormIntegerControl">
+										<Name>Route_OprNum</Name>
+										<Type>Integer</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>OprNum</DataField>
+										<DataSource>Route</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>Route_OprPriority</Name>
+										<Type>ComboBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>OprPriority</DataField>
+										<DataSource>Route</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>Route_OprId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>OprId</DataField>
+										<DataSource>Route</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>Route_OprName</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>NDX_Route_tbl_Extension.RouteOprName</DataMethod>
+										<DataSource>Route</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>RouteOpr_QueueTimeBefore</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>QueueTimeBefore</DataField>
+										<DataSource>RouteOpr</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>RouteOpr_SetupTime</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>SetupTime</DataField>
+										<DataSource>RouteOpr</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>RouteOpr_ProcessTime</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ProcessTime</DataField>
+										<DataSource>RouteOpr</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>RouteOpr_ProcessPerQty</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ProcessPerQty</DataField>
+										<DataSource>RouteOpr</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>RouteOpr_TranspTime</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>TranspTime</DataField>
+										<DataSource>RouteOpr</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>RouteOpr_QueueTimeAfter</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>QueueTimeAfter</DataField>
+										<DataSource>RouteOpr</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>RouteOpr_ToHours</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ToHours</DataField>
+										<DataSource>RouteOpr</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>RouteOpr_KCS_PTMCavityReal</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_PTMCavityReal</DataField>
+										<DataSource>RouteOpr</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>RouteOpr_KCS_PTMCycleTime</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_PTMCycleTime</DataField>
+										<DataSource>RouteOpr</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>RouteOpr_TransferBatch</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>TransferBatch</DataField>
+										<DataSource>RouteOpr</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormIntegerControl">
+										<Name>Route_OprNumNext</Name>
+										<Type>Integer</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>OprNumNext</DataField>
+										<DataSource>Route</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>RouteOpr_RouteGroupId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>RouteGroupId</DataField>
+										<DataSource>RouteOpr</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>RouteOpr_avaDisplayFirstResourceId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>AVARouteOprDbt_Extension.avaDisplayFirstResourceId</DataMethod>
+										<DataSource>RouteOpr</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>RouteOpr_avaDisplayWrkCtrLoadPct</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>AVARouteOprDbt_Extension.avaDisplayWrkCtrLoadPct</DataMethod>
+										<DataSource>RouteOpr</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataSource>Route</DataSource>
+							</AxFormControl>
+						</Controls>
+						<Caption>@NDX:NDXRouting</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>InventSumTab</Name>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>FormGroupControl2</Name>
+								<Pattern>FieldsFieldGroups</Pattern>
+								<PatternVersion>1.1</PatternVersion>
+								<Type>Group</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>isItemWHSEnabled</Name>
+										<Type>CheckBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>AVAInventTableDbt_Extension.isItemWHSEnabled</DataMethod>
+										<DataSource>inventtable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>inventtable_ItemId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ItemId</DataField>
+										<DataSource>inventtable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>inventtable_ProductName1</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>NDXInventTable_tbl_Extension.NDXProductName1</DataMethod>
+										<DataSource>inventtable</DataSource>
+										<Label>@NDX:NDXHKGroupingName</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>inventtable_ProductName2</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>NDXInventTable_tbl_Extension.NDXProductName2</DataMethod>
+										<DataSource>inventtable</DataSource>
+										<Label>@NDX:NDXHKGroupingName</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>inventtable_ItemBuyerGroupId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ItemBuyerGroupId</DataField>
+										<DataSource>inventtable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>inventtable_ReqGroupId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ReqGroupId</DataField>
+										<DataSource>inventtable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>inventtable_KCS_KAOItemState</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KAOItemState</DataField>
+										<DataSource>inventtable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>inventtable_inventUnitId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>inventUnitId</DataMethod>
+										<DataSource>inventtable</DataSource>
+									</AxFormControl>
+								</Controls>
+								<ColumnsMode>Fill</ColumnsMode>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>InventSumGrid</Name>
+								<Type>Grid</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>InventSum_InventSiteId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>InventSiteId</DataField>
+										<DataSource>InventSum</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>InventSum_InventLocationId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>InventLocationId</DataField>
+										<DataSource>InventSum</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>InventSum_PhysicalInvent</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>PhysicalInvent</DataField>
+										<DataSource>InventSum</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>InventSum_ReservPhysical</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ReservPhysical</DataField>
+										<DataSource>InventSum</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>InventSum_AvailPhysical</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>AvailPhysical</DataField>
+										<DataSource>InventSum</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>InventSum_Ordered</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Ordered</DataField>
+										<DataSource>InventSum</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>InventSum_OnOrder</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>OnOrder</DataField>
+										<DataSource>InventSum</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>InventSum_ReservOrdered</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ReservOrdered</DataField>
+										<DataSource>InventSum</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>InventSum_AvailOrdered</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>AvailOrdered</DataField>
+										<DataSource>InventSum</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataSource>InventSum</DataSource>
+							</AxFormControl>
+						</Controls>
+						<Caption>@NDX:NXAInventOnHand</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>ReqItemTableTab</Name>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>ReqItemTableGrid</Name>
+								<Type>Grid</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>Dimensions</Name>
+										<Type>Group</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_configId</Name>
+												<Type>String</Type>
+												<Visible>No</Visible>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>configId</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventSizeId</Name>
+												<Type>String</Type>
+												<Visible>No</Visible>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventSizeId</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventColorId</Name>
+												<Type>String</Type>
+												<Visible>No</Visible>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventColorId</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventStyleId</Name>
+												<Type>String</Type>
+												<Visible>No</Visible>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventStyleId</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventVersionId</Name>
+												<Type>String</Type>
+												<Visible>No</Visible>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventVersionId</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventDimension1</Name>
+												<Type>String</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventDimension1</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventDimension2</Name>
+												<Type>String</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventDimension2</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventDimension3</Name>
+												<Type>String</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventDimension3</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventDimension4</Name>
+												<Type>String</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventDimension4</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventDimension5</Name>
+												<Type>String</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventDimension5</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventDimension6</Name>
+												<Type>String</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventDimension6</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventDimension7</Name>
+												<Type>String</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventDimension7</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventDimension8</Name>
+												<Type>String</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventDimension8</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormDateTimeControl">
+												<Name>FormGroupControl1_InventDimension9</Name>
+												<Type>DateTime</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventDimension9</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormRealControl">
+												<Name>FormGroupControl1_InventDimension10</Name>
+												<Type>Real</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventDimension10</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventDimension11</Name>
+												<Type>String</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventDimension11</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventDimension12</Name>
+												<Type>String</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventDimension12</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventSiteId</Name>
+												<Type>String</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventSiteId</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventLocationId</Name>
+												<Type>String</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventLocationId</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_wMSLocationId</Name>
+												<Type>String</Type>
+												<Visible>No</Visible>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>wMSLocationId</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventStatusId</Name>
+												<Type>String</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventStatusId</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_LicensePlateId</Name>
+												<Type>String</Type>
+												<Visible>No</Visible>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>LicensePlateId</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_inventBatchId</Name>
+												<Type>String</Type>
+												<Visible>No</Visible>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>inventBatchId</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_inventSerialId</Name>
+												<Type>String</Type>
+												<Visible>No</Visible>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>inventSerialId</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventOwnerId_RU</Name>
+												<Type>String</Type>
+												<Visible>No</Visible>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventOwnerId_RU</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventProfileId_RU</Name>
+												<Type>String</Type>
+												<Visible>No</Visible>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventProfileId_RU</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>FormGroupControl1_InventGtdId_RU</Name>
+												<Type>String</Type>
+												<Visible>No</Visible>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>InventGtdId_RU</DataField>
+												<DataSource>InventDimReqItemTable</DataSource>
+											</AxFormControl>
+										</Controls>
+										<DataGroup>InventoryDimensions</DataGroup>
+										<DataSource>InventDimReqItemTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>ReqItemTable_MinInventOnhand</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>MinInventOnhand</DataField>
+										<DataSource>ReqItemTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>ReqItemTable_ReorderPoint</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ReorderPoint</DataField>
+										<DataSource>ReqItemTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>ReqItemTable_MaxInventOnhand</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>MaxInventOnhand</DataField>
+										<DataSource>ReqItemTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>ReqItemTable_ReqGroupId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ReqGroupId</DataField>
+										<DataSource>ReqItemTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>ReqItemTable_CovRule</Name>
+										<Type>ComboBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>CovRule</DataField>
+										<DataSource>ReqItemTable</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>ReqItemTable_InventLocationIdReqMain</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>InventLocationIdReqMain</DataField>
+										<DataSource>ReqItemTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>ReqItemTable_ReqPOType</Name>
+										<Type>ComboBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ReqPOType</DataField>
+										<DataSource>ReqItemTable</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>ReqItemTable_MinSafetyKeyId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>MinSafetyKeyId</DataField>
+										<DataSource>ReqItemTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>ReqItemTable_MaxSafetyKeyId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>MaxSafetyKeyId</DataField>
+										<DataSource>ReqItemTable</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataSource>ReqItemTable</DataSource>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS21672</Caption>
+						<DataSource>ReqItemTable</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>ItemScopeHistoryTab</Name>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>HeaderGroup</Name>
+								<Type>Group</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>itemId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>itemId</DataMethod>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>InventSiteId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>inventSite</DataMethod>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>Unit</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>Unit</DataMethod>
+									</AxFormControl>
+								</Controls>
+								<Columns>3</Columns>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormTabControl">
+								<Name>BodyTab</Name>
+								<Type>Tab</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormTabPageControl">
+										<Name>tpMonthlyValues</Name>
+										<Pattern>ToolbarList</Pattern>
+										<PatternVersion>1.2</PatternVersion>
+										<Type>TabPage</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormListViewControl">
+												<Name>ListViewMonthlyValues</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<HeightMode>SizeToAvailable</HeightMode>
+												<Type>ListView</Type>
+												<WidthMode>SizeToAvailable</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<GridLines>Yes</GridLines>
+											</AxFormControl>
+										</Controls>
+										<Caption>@NDX:NDXScopMonthly</Caption>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormTabPageControl">
+										<Name>tpYearlyValues</Name>
+										<Pattern>ToolbarList</Pattern>
+										<PatternVersion>1.2</PatternVersion>
+										<Type>TabPage</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormListViewControl">
+												<Name>ListViewYearlyValues</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<HeightMode>SizeToAvailable</HeightMode>
+												<Type>ListView</Type>
+												<WidthMode>SizeToAvailable</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<GridLines>Yes</GridLines>
+											</AxFormControl>
+										</Controls>
+										<Caption>@NDX:NDXScopeYearly</Caption>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormTabPageControl">
+										<Name>tpDisplayFields</Name>
+										<Pattern>FieldsFieldGroups</Pattern>
+										<PatternVersion>1.1</PatternVersion>
+										<Type>TabPage</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>Group1</Name>
+												<Type>Group</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>FormRealControl1</Name>
+														<Type>Real</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>ConsumpCurMonthInventSite</DataMethod>
+														<Label>@NDX:NDXConsumpCurMonthInventSite</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>FormRealControl2</Name>
+														<Type>Real</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>ConsumpCurMonth</DataMethod>
+														<Label>@NDX:NDXComsumpCurMonth</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>FormRealControl3</Name>
+														<Type>Real</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>ConsumpMedian</DataMethod>
+														<Label>@NDX:NDXConsumpMedian</Label>
+													</AxFormControl>
+												</Controls>
+												<Caption>@NDX:NDXConsumption</Caption>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>Group2</Name>
+												<Type>Group</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>PhysOnHand</Name>
+														<Type>Real</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>PhysOnHand</DataMethod>
+														<Label>@NDX:NDXPhysOnHand</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>FormRealControl4</Name>
+														<Type>Real</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>PhysScopeInventSite</DataMethod>
+														<Label>@NDX:NDXPhysScopeInventSite</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>FormRealControl5</Name>
+														<Type>Real</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>PhysScope</DataMethod>
+														<Label>@NDX:NDXPhysScope</Label>
+													</AxFormControl>
+												</Controls>
+												<Caption>@NDX:NDXPhysicalScope</Caption>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>Group3</Name>
+												<Type>Group</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>FormRealControl6</Name>
+														<Type>Real</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>AvailOnHand</DataMethod>
+														<Label>@NDX:NDXAvailOnHand</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>FormRealControl7</Name>
+														<Type>Real</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>AvailScopeInventSite</DataMethod>
+														<Label>@NDX:NDXAvailScopeInventSite</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>FormRealControl8</Name>
+														<Type>Real</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>AvailScope</DataMethod>
+														<Label>@NDX:NDXAvailScope</Label>
+													</AxFormControl>
+												</Controls>
+												<Caption>@NDX:NDXAvailableQty</Caption>
+											</AxFormControl>
+										</Controls>
+										<ColumnsMode>Fill</ColumnsMode>
+										<Caption>@NDX:NDXConsumptionReachAvailableQty</Caption>
+									</AxFormControl>
+								</Controls>
+							</AxFormControl>
+						</Controls>
+						<Caption>@NDX:NDXItemScopeHistory</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>ReqInventTransTab</Name>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>GridSumFilter</Name>
+								<Pattern>CustomFilters</Pattern>
+								<PatternVersion>1.1</PatternVersion>
+								<Type>Group</Type>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>PlanFilter</Name>
+										<AllowEdit>No</AllowEdit>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1431655764</ElementPosition>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<FormControlExtension
+											i:nil="true" />
+										<Label>@SCM:ReqTransActionListPage_PlanFilter</Label>
+									</AxFormControl>
+								</Controls>
+								<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+								<FrameType>None</FrameType>
+								<Style>CustomFilter</Style>
+								<ViewEditMode>Edit</ViewEditMode>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormTabControl">
+								<Name>CtrlTabSum</Name>
+								<AlignControl>No</AlignControl>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1610612734</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>Tab</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormTabPageControl">
+										<Name>TabSumOverview</Name>
+										<ElementPosition>1073741823</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<Height>0</Height>
+										<HeightMode>SizeToAvailable</HeightMode>
+										<Pattern>ToolbarList</Pattern>
+										<PatternVersion>1.2</PatternVersion>
+										<Type>TabPage</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Width>0</Width>
+										<WidthMode>SizeToAvailable</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormActionPaneControl">
+												<Name>ActionPaneGridSum</Name>
+												<Type>ActionPane</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls />
+												<Style>Strip</Style>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGridControl">
+												<Name>GridSum</Name>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<Type>Grid</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormGroupControl">
+														<Name>InventoryDimensions</Name>
+														<ElementPosition>1073741823</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Group</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls>
+															<AxFormControl xmlns=""
+																i:type="AxFormStringControl">
+																<Name>InventoryDimensions_configId</Name>
+																<ElementPosition>111557592</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>String</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Visible>No</Visible>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>configId</DataField>
+																<DataSource>InventDim</DataSource>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStringControl">
+																<Name>InventoryDimensions_inventBatchId</Name>
+																<ElementPosition>167336388</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>String</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Visible>No</Visible>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>inventBatchId</DataField>
+																<DataSource>InventDim</DataSource>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStringControl">
+																<Name>InventoryDimensions_InventColorId</Name>
+																<ElementPosition>223115184</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>String</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Visible>No</Visible>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>InventColorId</DataField>
+																<DataSource>InventDim</DataSource>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStringControl">
+																<Name>InventoryDimensions_InventStyleId</Name>
+																<ElementPosition>251004582</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>String</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Visible>No</Visible>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>InventStyleId</DataField>
+																<DataSource>InventDim</DataSource>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStringControl">
+																<Name>InventoryDimensions_InventVersionId</Name>
+																<ElementPosition>223115184</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>String</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Visible>No</Visible>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>InventVersionId</DataField>
+																<DataSource>InventDim</DataSource>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStringControl">
+																<Name>InventoryDimensions_InventLocationId</Name>
+																<ElementPosition>278893980</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>String</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>InventLocationId</DataField>
+																<DataSource>InventDim</DataSource>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStringControl">
+																<Name>InventoryDimensions_InventProfileId_RU</Name>
+																<ElementPosition>297486912</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>String</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Visible>No</Visible>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>InventProfileId_RU</DataField>
+																<DataSource>InventDim</DataSource>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStringControl">
+																<Name>InventoryDimensions_InventOwnerId_RU</Name>
+																<ElementPosition>316079844</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>String</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Visible>No</Visible>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>InventOwnerId_RU</DataField>
+																<DataSource>InventDim</DataSource>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStringControl">
+																<Name>InventoryDimensions_inventSerialId</Name>
+																<ElementPosition>334672776</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>String</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Visible>No</Visible>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>inventSerialId</DataField>
+																<DataSource>InventDim</DataSource>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStringControl">
+																<Name>InventoryDimensions_InventStatusId</Name>
+																<ElementPosition>343969242</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>String</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>InventStatusId</DataField>
+																<DataSource>InventDim</DataSource>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStringControl">
+																<Name>InventoryDimensions_LicensePlateId</Name>
+																<ElementPosition>353265708</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>String</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Visible>No</Visible>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>LicensePlateId</DataField>
+																<DataSource>InventDim</DataSource>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStringControl">
+																<Name>InventoryDimensions_InventGtdId_RU</Name>
+																<ElementPosition>362562174</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>String</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Visible>No</Visible>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>InventGtdId_RU</DataField>
+																<DataSource>InventDim</DataSource>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStringControl">
+																<Name>InventoryDimensions_InventSiteId</Name>
+																<ElementPosition>390451572</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>String</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>InventSiteId</DataField>
+																<DataSource>InventDim</DataSource>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStringControl">
+																<Name>InventoryDimensions_InventSizeId</Name>
+																<ElementPosition>780903144</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>String</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Visible>No</Visible>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>InventSizeId</DataField>
+																<DataSource>InventDim</DataSource>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStringControl">
+																<Name>InventoryDimensions_wMSLocationId</Name>
+																<ElementPosition>1561806288</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>String</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Visible>No</Visible>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>wMSLocationId</DataField>
+																<DataSource>InventDim</DataSource>
+															</AxFormControl>
+														</Controls>
+														<BackgroundColor>WindowBackground</BackgroundColor>
+														<DataGroup>ReqDimensionsPrioritized</DataGroup>
+														<DataSource>InventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>cwMinInventOnHand</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>1342177278</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Real</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>cwMinInventOnHand</DataMethod>
+														<DataSource>TmpReqInventDim</DataSource>
+														<NoOfDecimals>-1</NoOfDecimals>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>minInventOnHand</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>1610612734</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Real</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>minInventOnHand</DataMethod>
+														<DataSource>TmpReqInventDim</DataSource>
+														<NoOfDecimals>-1</NoOfDecimals>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>cwMaxInventOnHand</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>1744830462</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Real</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>cwMaxInventOnHand</DataMethod>
+														<DataSource>TmpReqInventDim</DataSource>
+														<NoOfDecimals>-1</NoOfDecimals>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>maxInventOnHand</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>1879048190</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Real</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>maxInventOnHand</DataMethod>
+														<DataSource>TmpReqInventDim</DataSource>
+														<NoOfDecimals>-1</NoOfDecimals>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>reqGroupId</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>2013265918</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>reqGroupId</DataMethod>
+														<DataSource>TmpReqInventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormComboBoxControl">
+														<Name>reqPoType</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>2080374782</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>ComboBox</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>reqPoType</DataMethod>
+														<DataSource>TmpReqInventDim</DataSource>
+														<Items />
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormComboBoxControl">
+														<Name>covRule</Name>
+														<Type>ComboBox</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>covRule</DataMethod>
+														<DataSource>TmpReqInventDim</DataSource>
+														<Items />
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormIntegerControl">
+														<Name>covPeriod</Name>
+														<Type>Integer</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>covPeriod</DataMethod>
+														<DataSource>TmpReqInventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>quantity</Name>
+														<Type>Real</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>quantity</DataMethod>
+														<DataSource>TmpReqInventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>lowestQty</Name>
+														<Type>Real</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>lowestQty</DataMethod>
+														<DataSource>TmpReqInventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>highestQty</Name>
+														<Type>Real</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>highestQty</DataMethod>
+														<DataSource>TmpReqInventDim</DataSource>
+													</AxFormControl>
+												</Controls>
+												<DataSource>TmpReqInventDim</DataSource>
+												<VisibleRows>6</VisibleRows>
+												<VisibleRowsMode>Fixed</VisibleRowsMode>
+											</AxFormControl>
+										</Controls>
+										<Caption>@SYS9039</Caption>
+										<Scrollbars>Auto</Scrollbars>
+									</AxFormControl>
+								</Controls>
+								<AlignChild>No</AlignChild>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormTabControl">
+								<Name>TabReqTrans</Name>
+								<AlignControl>No</AlignControl>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741823</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>Tab</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormTabPageControl">
+										<Name>TabTransOverview</Name>
+										<ElementPosition>1073741823</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<Height>0</Height>
+										<HeightMode>SizeToAvailable</HeightMode>
+										<Pattern>ToolbarList</Pattern>
+										<PatternVersion>1.2</PatternVersion>
+										<Type>TabPage</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Width>0</Width>
+										<WidthMode>SizeToAvailable</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormGridControl">
+												<Name>GridReqTrans</Name>
+												<ElementPosition>1073741822</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<Type>Grid</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormComboBoxControl">
+														<Name>ReqTrans_RefType</Name>
+														<ElementPosition>1610612734</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@FieldDescriptions_AccountsPayable:ReqTransOverview_ReqTrans_RefType</HelpText>
+														<Type>ComboBox</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>RefType</DataField>
+														<DataSource>ReqTrans</DataSource>
+														<Items />
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>ReqTrans_RefId</Name>
+														<ElementPosition>1879048190</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>RefId</DataField>
+														<DataSource>ReqTrans</DataSource>
+														<LookupButton>Never</LookupButton>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormComboBoxControl">
+														<Name>ReqTrans_AVAProdSchedStatus</Name>
+														<Type>ComboBox</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>AVAReqTransDbt_Extension.displayAVAProdSchedStatus</DataMethod>
+														<DataSource>ReqTrans</DataSource>
+														<Items />
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>ReqTrans_ItemId</Name>
+														<ElementPosition>1946157054</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>ItemId</DataField>
+														<DataSource>ReqTrans</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormDateControl">
+														<Name>ReqTrans_ReqDate</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<HelpText>@FieldDescriptions_AccountsPayable:ReqTransOverview_ReqTrans_ReqDate</HelpText>
+														<Type>Date</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>ReqDate</DataField>
+														<DataSource>ReqTrans</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormCheckBoxControl">
+														<Name>ReqTrans_AVADlvDateConfirmed</Name>
+														<Type>CheckBox</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>AVAReqTransDbt_Extension.displayAVADlvDateConfirmed</DataMethod>
+														<DataSource>ReqTrans</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormDateControl">
+														<Name>ReqTrans_PdsExpiryDate</Name>
+														<ElementPosition>2030043134</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Date</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>PdsExpiryDate</DataField>
+														<DataSource>ReqTrans</DataSource>
+														<Label>@SYS54367</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>ReqTrans_Qty</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>2080374782</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Real</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>qty</DataMethod>
+														<DataSource>ReqTrans</DataSource>
+														<NoOfDecimals>-1</NoOfDecimals>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>cwQty</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>2046820350</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Real</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>cwQty</DataMethod>
+														<DataSource>ReqTrans</DataSource>
+														<NoOfDecimals>-1</NoOfDecimals>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>accumulatedDate</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>2113929214</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@FieldDescriptions_AccountsPayable:ReqTransOverview_accumulatedDate</HelpText>
+														<Type>Real</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>accumulated</DataMethod>
+														<DataSource>ReqTrans</DataSource>
+														<NoOfDecimals>-1</NoOfDecimals>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>CWQtyAccumulated</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>2122317822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Real</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>cwQtyAccumulated</DataMethod>
+														<DataSource>ReqTrans</DataSource>
+														<Label>@PDS1849</Label>
+														<NoOfDecimals>-1</NoOfDecimals>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormIntegerControl">
+														<Name>ReqTrans_FuturesDays</Name>
+														<ElementPosition>2080374782</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Integer</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>DisplayFuturesDays</DataMethod>
+														<DataSource>ReqTrans</DataSource>
+														<Label>@SYS92716</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormDateControl">
+														<Name>ReqTrans_FuturesDate</Name>
+														<ElementPosition>2113929214</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Date</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>DisplayFuturesDate</DataMethod>
+														<DataSource>ReqTrans</DataSource>
+														<Label>@SYS14656</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormComboBoxControl">
+														<Name>ReqTrans_ActionTypeGrid</Name>
+														<Type>ComboBox</Type>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>ActionType</DataField>
+														<DataSource>ReqTrans</DataSource>
+														<Items />
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>ReqTrans_CustAccountId</Name>
+														<Type>String</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>CustAccountId</DataField>
+														<DataSource>ReqTrans</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>ReqTrans_CustGroupId</Name>
+														<Type>String</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>CustGroupId</DataField>
+														<DataSource>ReqTrans</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>ReqTrans_AVASettledItemId</Name>
+														<Type>String</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>AVAReqTransDbt_Extension.displayAVASettledItemId</DataMethod>
+														<DataSource>ReqTrans</DataSource>
+													</AxFormControl>
+												</Controls>
+												<DataSource>ReqTrans</DataSource>
+												<VisibleRows>10</VisibleRows>
+												<VisibleRowsMode>Fixed</VisibleRowsMode>
+											</AxFormControl>
+										</Controls>
+										<Caption>@SYS9039</Caption>
+										<Scrollbars>Auto</Scrollbars>
+									</AxFormControl>
+								</Controls>
+								<AlignChild>No</AlignChild>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS8936</Caption>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

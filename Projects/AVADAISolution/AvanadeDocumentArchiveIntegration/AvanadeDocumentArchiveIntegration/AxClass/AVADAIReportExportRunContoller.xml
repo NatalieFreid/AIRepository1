@@ -1,0 +1,741 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADAIReportExportRunContoller</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Export report data to file.
+/// </summary>
+
+class AVADAIReportExportRunContoller
+{
+    SrsReportRunController              reportController;
+    SrsReportDataContract               reportContract;
+    AVADAIExecutionId                   executionId;
+
+    SrsReportRunService                 service;
+    AVADAIReportService                 dmsService;
+
+    RecordInsertList                    exportLine; 
+
+    AVADAIExportId                      exportId;
+    boolean                             toExport;
+                                              
+    //document key
+    TableId                             documentNumTableId;
+    AVADAITableFieldMethod              documentNumFieldName;
+
+    AVADAIRefNum                        refNum;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// construct.
+    /// </summary>
+    /// <param name = "_reportController">The report controller.</param>
+    /// <param name = "_dmsService">The setup for report export.</param>
+    /// <param name = "_executionId">The SSRS execution ID.</param>
+    /// <returns>A new <c>AVADAIReportExportRunContoller</c> object.</returns>
+    public static AVADAIReportExportRunContoller construct(SrsReportRunController _reportController, AVADAIReportService _dmsService, AVADAIExecutionId  _executionId)
+    {
+        return new AVADAIReportExportRunContoller(_reportController, _dmsService, _executionId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// construct.
+    /// </summary>
+    /// <param name = "_reportController">The report controller.</param>
+    /// <param name = "_dmsService">The setup for report export.</param>
+    /// <param name = "_executionId">The SSRS execution ID.</param>
+    protected void new(SrsReportRunController _reportController, AVADAIReportService _dmsService, AVADAIExecutionId _executionId)
+    {
+        reportController = _reportController;
+        dmsService       = _dmsService;
+        executionId      = _executionId;
+
+        if (reportController)
+        {
+            service         = new SrsReportRunService();
+            reportContract  = reportController.parmReportContract();  
+          
+            exportLine  = new RecordInsertList(tableNum(AVADAIReportExportLine));
+
+        }
+        else
+        {
+            throw error('No export');
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>exportER</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Export Electronic reports.
+    /// </summary>
+    public boolean exportER(common _common)
+    {
+        boolean ret= true;
+
+        if (reportContract)
+        {
+            exportId = executionId;
+            [documentNumTableId,documentNumFieldName]   = dmsService.getDocumentKey();
+            this.processingER(_common);
+            this.createExportTable();
+            ret = this.exportData();
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processingER</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// processing Electronic Reporting
+    /// </summary>
+    /// <param name = "_common">The table buffer</param>
+    private void processingER(Common _common)
+    {
+        Map                     dataSources;
+        Map                     aliases;
+        Map                     ignoreArchive;
+      
+
+        dataSources             = dmsService.getMetadataDefinition();
+        aliases                 = dmsService.getAliasesDefinition();
+        ignoreArchive           = dmsService.getIgnoreArchiveDefinition();
+
+       
+       this.processingMetaData(_common,dataSources,aliases,ignoreArchive);
+      
+        //not all conditions are true (all are removed from the map)
+        if(!ignoreArchive.empty())
+        {
+            toExport = false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>exportReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Export report.
+    /// </summary>
+    public boolean exportReport()
+    {
+        boolean ret= true;
+
+        if (reportContract)
+        {
+            //exportId                                    = AVADAIReportExportTable::getNewExportId();
+            exportId = executionId;
+            [documentNumTableId,documentNumFieldName]   = dmsService.getDocumentKey();
+
+            this.prepareData();
+            ret = this.exportData();
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>prepareData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Prepare report data.
+    /// </summary>
+    protected void prepareData()
+    {
+        Map                                     queryContracts;                                                            
+
+        queryContracts = reportContract.parmQueryContracts();
+
+        if (reportContract.parmRdpName())
+        {
+            this.exportDataFromDP(reportContract.parmRdpName());
+        }
+        else if (queryContracts.elements())
+        {
+            this.exportDataFromQueryContract(queryContracts);
+        }     
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>exportData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Save to DB.
+    /// </summary>
+    protected boolean exportData()
+    {
+        boolean ret;
+
+       if (toExport)
+       {       
+            //to DB
+            ttsbegin;
+
+            AVADAIReport reportSetup = dmsService.getReportSetup();
+            AVADAIReportExportTable exportTable = AVADAIReportExportTable::find(executionId, true);
+
+            if (reportSetup.PreventDuplicates == NoYes::No || !this.duplicateCheck(exportTable))
+            {
+                exportLine.insertDatabase();
+
+                exportTable.MetaDataExported          = NoYes::Yes;
+                exportTable.ProcessStatus             = AVADAIReportExportTable::getProcessStatusMetadataExported();
+                exportTable.update();
+            }
+        
+            ttscommit;
+            ret = true;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>duplicateCheck</Name>
+				<Source><![CDATA[
+    private boolean duplicateCheck(AVADAIReportExportTable _reportExportTable)
+    {
+        AVADAIReportExportTable oldExport = AVADAIReportExportTable::findPrevious(_reportExportTable.ServerId, _reportExportTable.Report, _reportExportTable.Design, _reportExportTable.RefNum, _reportExportTable.RecId);
+
+        if (oldExport)
+        {
+            try
+            {
+                AVADAIReportExportTable::deleteRecId(_reportExportTable.RecId);
+            }
+            catch
+            {
+                exceptionTextFallThrough();
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>exportDataFromDP</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Procesing report with DP
+    /// </summary>
+    /// <param name = "_rdpName">The rdp class.</param>
+    private void exportDataFromDP(ClassName _rdpName)
+    {
+        SrsReportProviderQueryBuilderArgs       reportQueryArgs;
+        SrsReportProviderQueryBuilder           reportQueryBuilder;
+
+        QueryRun                                queryRun;
+
+        SetEnumerator                           tableEnum;
+
+        //make query
+        reportQueryArgs = new SrsReportProviderQueryBuilderArgs();
+
+        reportQueryArgs.isPreviewMode(false);
+        reportQueryArgs.reportProviderName(_rdpName);
+       
+        // To read the data from the report data source we must simulate report execution for the data provider class.
+        // When the report actually runs the reportQueryArgs.reportProviderArgsXml is called from outside passing the report data contract values as xml.
+        // We cannot however see how this is generated as the debugger shows us only "External code" in the call stack. We assume that the report server builds it.
+        // We initially had the below call here to pass the xml.
+        // reportQueryArgs.reportProviderArgsXml(SrsReportRunUtil::getReportParamNameValuePairs(service.createParamMapFromContract(reportContract)).xml());
+        // This works fine for most of the reports, but there are some reports where this does not work, for example RFQSend. The reason seems to be that
+        // XML is build from reportParameter.name() field and the parameter value. In most cases they are the same, but not always.
+        // In the RFQSend example the report parameters are called for example PurchRFQSendDS_PurchInternalRFQId where the alias behind it is PurchInternalRFQId.
+        // This alias is what is needed so that the data gets passed in the data contract to the data provider class.
+        // We could build a custom code which constructs this xml from the reportContract.parmRdpContract(). However there is more needed for example the AX_RdpPreProcessedId
+        // and we have no idea where this comes from. So we use service.createParamMapFromContract where we get this and accept to have some more stuff in the xml which we do not need.
+        // Then we overwrite the name in the reportParameter with the field alias for the purpose of proper xml generation.
+        // This is not the nicest solution, but it is working. If we find another way how to correctly build this xml we can replace this piece of code.
+        
+        Map reportParamMap = service.createParamMapFromContract(reportContract);
+        MapEnumerator reportParamMapEnumerator = reportParamMap.getEnumerator();
+
+        while (reportParamMapEnumerator.moveNext())
+        {
+            SRSReportParameter reportParameter = reportParamMapEnumerator.currentValue();
+            reportParameter.name(reportParameter.fieldAlias());
+        }
+        reportQueryArgs.reportProviderArgsXml(SrsReportRunUtil::getReportParamNameValuePairs(reportParamMap).xml());
+        
+        
+
+        if (reportController.getFirstQueryContractKey())
+        {
+            reportQueryArgs.dynamicFilter(reportContract.parmQueryContracts().lookup(reportController.getFirstQueryContractKey()));
+        }
+
+        reportQueryBuilder = new SrsReportProviderQueryBuilder();
+        reportQueryBuilder.setArgs(reportQueryArgs);
+        reportQueryBuilder.initialize();
+        reportQueryBuilder.getQuery();
+
+        queryRun    = reportQueryBuilder.getQueryRun();
+        tableEnum   = this.rdpTables(reportContract.parmRdpName()).getEnumerator();
+
+        this.queryRunProcessing(queryRun, tableEnum);
+
+        this.createExportTable();
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>exportDataFromQueryContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Procesing report with query
+    /// </summary>
+    /// <param name = "_rdpName">The query.</param>
+    private void exportDataFromQueryContract(Map _queryContract)
+    {
+        MapEnumerator       contractEnumerator;
+        Query               query;
+        QueryRun            queryRun;
+
+        //record
+        SetEnumerator       tableEnum;
+
+        contractEnumerator  = _queryContract.getEnumerator();
+        
+        contractEnumerator.reset();
+
+        while (contractEnumerator.moveNext())
+        {
+
+            query = contractEnumerator.currentValue();
+            tableEnum = this.queryTables(query).getEnumerator();
+
+            queryRun = new QueryRun(query);
+
+            this.queryRunProcessing(queryRun, tableEnum);
+
+        }
+
+        this.createExportTable();
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processingMetaData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// processing Metadata from queryrun/table buffer 
+    /// </summary>
+    /// <param name = "_common">The query run.</param>
+    /// <param name = "_dataSources">The query run.</param>
+    /// <param name = "_aliases">The query run.</param>
+    /// <param name = "_ignoreArchive">The query run.</param>
+    private void processingMetaData(Common _common,Map _dataSources,Map _aliases,Map _ignoreArchive)
+    {
+        Set                     fields;
+        SetEnumerator           fieldEnum;
+
+        Map                     dictTables;
+        DictTable               dictTable;
+        Common                  specificTable;
+
+        FieldId                 fieldId;
+        str                     methodName;
+
+        AVADAIExportedValue     value;
+        AVADAIFieldNameAlias    alias;
+        anytype                 origValue;
+        dictTables          = new Map(Types::Int64, Types::Class);
+        if (_dataSources.exists(_common.TableId))
+        {
+                            
+            fields = _dataSources.lookup(_common.TableId);
+
+            fieldEnum = fields.getEnumerator();
+
+            while (fieldEnum.moveNext())
+            {
+
+                value = '';
+                alias = '';
+
+                try
+                {
+                                    
+                    //get value for field
+                    fieldId = fieldName2Id(_common.TableId, fieldEnum.current());
+
+                    if (fieldId)
+                    {
+                        SysDictField sysDictField = new SysDictField(_common.TableId,fieldId);
+                        origValue = _common.(fieldId);
+                        value = AVADAIGlobal::anyToStr(_common.(fieldId),sysDictField.baseType(),sysDictField.typeId(),sysDictField.enumId());
+                       
+                    }
+
+                    //get display method value
+                    if (strScan(fieldEnum.current(), '()', 1, strLen(fieldEnum.current())))
+                    {
+
+                        methodName = strReplace(fieldEnum.current(), '()', '');
+
+                        //lazy loading
+                        if (!dictTables.exists(_common.TableId))
+                        {
+                            dictTables.insert(_common.TableId, new DictTable(_common.tableId));
+                        }
+
+                        if (specificTable.RecId != _common.RecId)
+                        {
+
+                            dictTable = dictTables.lookup(_common.TableId);
+                                        
+                            specificTable = dictTable.makeRecord();
+                                        
+                            if (dictTable.isTempDb())
+                            {
+                                str tableName = _common.getPhysicalTableName();
+
+                                specificTable.useExistingTempDBTable(tableName);
+                            }
+
+                            select firstOnly specificTable where specificTable.RecId == _common.recid
+                                                                          && specificTable.TableId == _common.TableId;
+
+                        }
+
+                        if (specificTable.RecId && tableHasMethod(dictTable, methodName))
+                        {
+                            origValue = dictTable.callObject(methodName, specificTable);
+                            value = AVADAIGlobal::anyToStr(origValue);
+
+                        }
+                                    
+                    }
+
+                    alias = (_aliases.exists(strfmt('%1_%2', _common.TableId, fieldEnum.current()))) ? _aliases.lookup(strfmt('%1_%2', _common.TableId, fieldEnum.current())) : '';
+
+                    AVADAIIgnoreArchive ignoreFlag=(_ignoreArchive.exists(strfmt('%1_%2', _common.TableId, fieldEnum.current()))) ? _ignoreArchive.lookup(strfmt('%1_%2', _common.TableId, fieldEnum.current())) : NoYes::No;
+                    if(ignoreFlag && !origValue)
+                    {
+                        if(_ignoreArchive.exists(strfmt('%1_%2', _common.TableId, fieldEnum.current())))
+                        {
+                            _ignoreArchive.remove(strfmt('%1_%2', _common.TableId, fieldEnum.current()));
+                        }
+                    }
+                }
+
+
+                catch
+                {
+                    continue;
+                }
+
+                //save document key
+                if (documentNumTableId && documentNumFieldName && _common.TableId == documentNumTableId && fieldEnum.current() == documentNumFieldName && value)
+                {
+                    refNum = value;
+                }
+                                
+                if (fieldId || methodName)
+                {
+                    this.createExportLine(_common.TableId, fieldEnum.current(), false, _common.RecId, value, alias);
+                }
+
+                toExport = true;
+
+            }
+
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>queryRunProcessing</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// processing queryrun for both variants (rdp/query)
+    /// </summary>
+    /// <param name = "_queryRun">The query run.</param>
+    /// <param name = "_tableEnum">The query run.</param>
+    private void queryRunProcessing(QueryRun _queryRun, SetEnumerator _tableEnum)
+    {
+        Common                  record;
+
+        //definition
+        Map                     dataSources;
+        Map                     aliases;
+        Map                     ignoreArchive;
+      
+
+        dataSources             = dmsService.getMetadataDefinition();
+        aliases                 = dmsService.getAliasesDefinition();
+        ignoreArchive           = dmsService.getIgnoreArchiveDefinition();
+
+        while (_queryRun.next())
+        {
+
+            while (_tableEnum.moveNext())
+            {
+                        
+                record = _queryRun.get(_tableEnum.current());
+                    
+                if (_queryRun.changed(_tableEnum.current()))
+                {
+                    this.processingMetaData(record,dataSources,aliases,ignoreArchive);
+                  
+                }
+
+            }
+
+            _tableEnum.reset();
+
+        }
+
+        //not all conditions are true (all are removed from the map)
+        if(!ignoreArchive.empty())
+        {
+            toExport = false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>rdpTables</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Get tables DP.
+    /// </summary>
+    /// <param name = "_rdpName">The rdp name.</param>
+    /// <returns>A new <c>Set</c> of ds object.</returns>
+    private Set rdpTables(ClassName _rdpName)
+    {
+        #SRSFramework
+
+        SRSReportProviderMetadata               reportDataProvider;
+        SysDictClass                            rdpDictClass;
+
+        Set                                     dictMethods;
+        SetEnumerator                           methodEnum;
+        SysDictMethod                           dictMethod;
+        SRSReportDataSetAttribute               attrib;
+        Types                                   returnType;
+        TableId                                 tableId;
+
+        Set                                     ret = new Set(Types::Int64);
+
+        reportDataProvider = SRSReportProviderMetadata::constructWithId(classname2id(reportContract.parmRdpName()));
+
+        rdpDictClass = reportDataProvider.getRdpDictClass();
+        dictMethods = rdpDictClass.methods();
+        methodEnum  = dictMethods.getEnumerator();
+        methodEnum.reset();
+
+        while (methodEnum.moveNext())
+        {
+            
+            dictMethod  = methodEnum.current();
+            attrib      = dictMethod.getAttribute('SRSReportDataSetAttribute');
+
+            if (attrib)
+            {
+
+                returnType = dictMethod.returnType();
+                tableId    = dictMethod.returnId();
+
+                if (returnType == Types::Record && tableId != tableNum(Common))
+                {
+                    ret.add(tableId);
+                }
+
+            }
+
+        }
+
+        return ret;
+       
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>queryTables</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// get tables (query)
+    /// </summary>
+    /// <param name = "_rdpName">The rdp name.</param>
+    /// <returns>A new <c>Set</c> of ds object.</returns>
+    private Set queryTables(Query _query)
+    {
+        
+        Set      ret = new Set(Types::Int64);
+        int      i;
+
+
+        for (i = 1; i <= _query.dataSourceCount(); i++)
+        {
+            ret.add(_query.dataSourceNo(i).table());
+        }
+
+        return ret;
+       
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createExportTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Save report header
+    /// </summary>
+    private void createExportTable()
+    {
+        AVADAIReportExportTable         table;
+        AVADAIReport                    reportSetup;
+        #File
+        reportSetup = dmsService.getReportSetup();
+        
+        AVADAIServer dmsServer  = AVADAIServer::findServer(reportSetup.ServerId);
+        
+        ttsbegin;
+        table                   = AVADAIReportExportTable::findOrCreate(reportSetup, executionId, true);
+        table.MetaDataId        = reportSetup.MetaDataId;
+        table.MetaDataFileName  = AVADAIReport::getExportFileName(reportSetup, '.' + reportSetup.MetaDataFileExt, executionId, refNum);
+        table.ReportFileName    = AVADAIReport::getExportFileName(reportSetup, '.' + reportSetup.ReportFileExt, executionId, refNum);
+        table.ExportId          = exportId;
+        table.RefNum            = RefNum;
+        table.CompanyLanguage   = CompanyInfo::languageId();
+        table.ReportType        = reportSetup.ReportType;
+
+        if (reportContract &&
+            reportContract.parmRdlContract())
+        {
+            table.ReportLanguage        = reportContract.parmRdlContract().parmLanguageId();
+        }
+
+        table.update();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createExportLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Save value from DP or query.
+    /// </summary>
+    /// <param name = "_tableId">The table id.</param>
+    /// <param name = "_fieldMethodName">The field name.</param>
+    /// <param name = "_isMethod">The display method.</param>
+    /// <param name = "_recId">The record Id.</param>
+    /// <param name = "_value">The values.</param>
+    /// <param name = "_alias">The alias.</param>
+    /// <returns>A new <c>Futures</c> object.</returns>
+    private void createExportLine(TableId _tableId, AVADAITableFieldMethod _fieldMethodName, AVADAIMethod _isMethod, AVADAIRefRecId _recId, AVADAIExportedValue _value,  AVADAIFieldNameAlias _alias = '')
+    {
+        AVADAIReportExportLine        line;
+
+        line.clear();
+
+        line.ExportId       = exportId;
+        line.Table          = tableId2Name(_tableId);
+        line.FieldMethod    = _fieldMethodName;
+        line.IsMethod       = _isMethod;
+        line.Alias          = _alias;
+
+        line.RefRecId       = _recId;
+        line.value          = _value;
+
+        exportLine.add(line);
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAMSQProcessingQueue_onUpdated</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVAMSQProcessingQueue_onUpdated
+    /// </summary>
+    /// <param name = "_sender">processingQueue</param>
+    /// <param name = "_args">_args</param>
+    [DataEventHandler(tableStr(AVAMSQProcessingQueue), DataEventType::Updated)]
+    public static void AVAMSQProcessingQueue_onUpdated(Common _sender, DataEventArgs _args)
+    {
+        ModifyFieldEventArgs    mArgs = _args;
+        AVAMSQProcessingQueue   processingQueue = _sender;
+        AVADAIReportExportTable reportExportTable;
+        
+        //not for all transfDefId
+        if(    processingQueue.ProcessingState != AVAMSQProcessingState::PreProcessing
+            && processingQueue.ProcessingState != AVAMSQProcessingState::Processing
+            && processingQueue.ProcessingState != AVAMSQProcessingState::PostProcessing
+            && AVADAIReportCache::existDAITransfDefIds(processingQueue.TransfDefId))
+        {
+            ttsbegin;
+            select forupdate reportExportTable where reportExportTable.ReportFileName == processingQueue.Filename;
+            if (reportExportTable)
+            {
+                switch(processingQueue.ProcessingState)
+                {
+                    case AVAMSQProcessingState::New:
+                        reportExportTable.ProcessStatus = AVADAIProcessStatus::Prepared;
+                        break;
+                    case AVAMSQProcessingState::Error:
+                        reportExportTable.ProcessStatus = AVADAIProcessStatus::Error;
+                        break;
+                    case AVAMSQProcessingState::Processed:
+                        reportExportTable.ProcessStatus = AVADAIProcessStatus::Processed;
+                        break;
+                    case AVAMSQProcessingState::Transfered:
+                        reportExportTable.ProcessStatus = AVADAIProcessStatus::Exported;
+                        break;
+                }
+                reportExportTable.doUpdate();
+            }
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

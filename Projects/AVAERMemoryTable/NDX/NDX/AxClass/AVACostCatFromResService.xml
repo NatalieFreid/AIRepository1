@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACostCatFromResService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extends SysOperationServiceBase class
+/// </summary>
+final class AVACostCatFromResService extends SysOperationServiceBase
+{
+    str         packedQuery;
+    AVAUpdResFromGroup updResFromGroup;
+    NoYesId updRouteGroup, updSetupCategoryId, updProcessCategoryId, updQtyCategoryId, updQueueTimeBefore, updSetupTime, updTranspTime, updQueueTimeAfter;
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>startOperation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// startOperation method
+    /// </summary>
+    /// <param name = "_dataContract">AVACRLCreditOverrunContract</param>
+    public void startOperation(AVACostCatFromResContract _dataContract)
+    {
+        System.Exception ex;
+        #OCCRetryCount
+
+        packedQuery             = _dataContract.parmPackedQuery();
+        updResFromGroup         = _dataContract.parmUpdResFromGroup();
+        updRouteGroup           = _dataContract.parmUpdRouteGroup();
+        updSetupCategoryId      = _dataContract.parmUpdSetupCategoryId();
+        updProcessCategoryId    = _dataContract.parmUpdProcessCategory();
+        updQtyCategoryId        = _dataContract.parmUpdQtyCategory();
+        updQueueTimeBefore      = _dataContract.parmupdQueueTimeBefore();
+        updSetupTime            = _dataContract.parmupdSetupTime();
+        updTranspTime           = _dataContract.parmupdTranspTime();
+        updQueueTimeAfter       = _dataContract.parmupdQueueTimeAfter();
+
+        try
+        {
+            this.processOperation();
+        }
+
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+
+        catch (Exception::Error)
+        {
+            error("@NDX:NXAErrorOccured");
+            retry;
+        }
+
+        catch (Exception::CLRError)
+        {
+            ex = ClrInterop::getLastException();
+
+            if (ex != null)
+            {
+                ex = ex.get_InnerException();
+                if (ex != null)
+                {
+                    error("@NDX:NXAErrorOccured");
+                }
+            }
+
+            retry;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processOperation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// processOperation method
+    /// </summary>
+    private void processOperation()
+    {
+        Query                           query = new Query(SysOperationHelper::base64Decode(packedQuery));
+        QueryRun                        queryRun;
+        WrkCtrTable                     wrkCtrTable;
+        WrkCtrResourceGroup             wrkCtrResGroup;
+        WrkCtrResourceGroupResource     resGroupRes;
+
+        queryrun = new QueryRun(query);
+
+        while (queryRun.next())
+        {
+            wrkCtrResGroup = queryRun.get(tableNum(WrkCtrResourceGroup));
+            wrkCtrTable = wrkCtrResGroup.wrkCtrTable();
+
+            this.updateFromWrkCtrTable(wrkCtrTable, wrkCtrTable, true);
+
+            if (updResFromGroup)
+            {
+                while select resGroupRes where resGroupRes.ResourceGroup == wrkCtrResGroup.RecId
+                {
+                    if (!wrkCtrResGroup.AVADoNotUpdResSetup)
+                    {
+                        this.updateWrkCtrFromGroup(WrkCtrTable::find(resGroupRes.WrkCtrId), wrkCtrTable);
+                    }
+                    this.updateFromWrkCtrTable(wrkCtrTable::find(resGroupRes.WrkCtrId), wrkCtrTable);
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateFromWrkCtrTable</Name>
+				<Source><![CDATA[
+    private void updateFromWrkCtrTable(WrkCtrTable _wrkCtrTable, WrkCtrTable _valuesFromWrkCtrTable, boolean _resGroup = false)
+    {
+        RouteOpr                        routeOpr;
+        WrkCtrResourceGroup             wrkCtrResGroup;
+        WrkCtrActivityRequirementSet    WrkCtrActivityRequirementSet;
+        WrkCtrActivityRequirement       WrkCtrActivityRequirement;
+        WrkCtrRouteOprActivity          routeOprActivity;
+        WrkCtrActivityResourceRequirement   resRequirement;
+        WrkCtrActivityResourceGroupRequirement resGroupRequirement;
+        
+        if (_resGroup)
+        {
+            wrkCtrResGroup = WrkCtrResourceGroup::findWrkCtrId(_wrkCtrTable.WrkCtrId);
+
+            while select resGroupRequirement
+            join WrkCtrActivityRequirement
+            join WrkCtrActivityRequirementSet
+            join routeOprActivity
+                where resGroupRequirement.ResourceGroup == wrkCtrResGroup.RecId
+                && WrkCtrActivityRequirement.RecId == resGroupRequirement.ActivityRequirement
+                && WrkCtrActivityRequirement.ActivityRequirementSet == WrkCtrActivityRequirementSet.RecId
+                && WrkCtrActivityRequirementSet.Activity    == routeOprActivity.Activity
+                && routeOprActivity.RouteOprDataAreaId  == curExt()
+            {
+                routeOpr = RouteOpr::findRecId(routeOprActivity.RouteOpr);
+                this.updateRouteOprFromWrkCtrTable(routeOpr, _wrkCtrTable);
+            }
+        }
+        else
+        {
+            while select resRequirement
+            join WrkCtrActivityRequirement
+            join WrkCtrActivityRequirementSet
+            join routeOprActivity
+                where resRequirement.WrkCtrId == _wrkCtrTable.WrkCtrId
+                && WrkCtrActivityRequirement.RecId == resRequirement.ActivityRequirement
+                && WrkCtrActivityRequirement.ActivityRequirementSet == WrkCtrActivityRequirementSet.RecId
+                && WrkCtrActivityRequirementSet.Activity    == routeOprActivity.Activity
+                && routeOprActivity.RouteOprDataAreaId  == curExt()
+            {
+                routeOpr = RouteOpr::findRecId(routeOprActivity.RouteOpr);
+                this.updateRouteOprFromWrkCtrTable(routeOpr, _valuesFromWrkCtrTable);
+            }
+        
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateWrkCtrFromGroup</Name>
+				<Source><![CDATA[
+    private void updateWrkCtrFromGroup(WrkCtrTable _wrkCtr, WrkCtrTable _WrkCtrGroup)
+    {
+        if (_WrkCtrGroup.RecId && _wrkCtr.RecId)
+        {
+            ttsbegin;
+            _wrkCtr.selectForUpdate(true);
+            if (updRouteGroup)
+            {
+                _wrkCtr.RouteGroupId = _WrkCtrGroup.RouteGroupId;
+            }
+            if (updSetupCategoryId)
+            {
+                _wrkCtr.SetUpCategoryId = _WrkCtrGroup.SetUpCategoryId;
+            }
+            if (updProcessCategoryId)
+            {
+                _wrkCtr.ProcessCategoryId = _WrkCtrGroup.ProcessCategoryId;
+            }
+            if (updQtyCategoryId)
+            {
+                _wrkCtr.QtyCategoryId = _WrkCtrGroup.QtyCategoryId;
+            }
+            if (updQueueTimeBefore)
+            {
+                _wrkCtr.QueueTimeBefore = _WrkCtrGroup.QueueTimeBefore;
+            }
+            if (updSetupTime)
+            {
+                _wrkCtr.SetupTime = _WrkCtrGroup.SetupTime;
+            }
+            if (updTranspTime)
+            {
+                _wrkCtr.TranspTime = _WrkCtrGroup.TranspTime;
+            }
+            if (updQueueTimeAfter)
+            {
+                _wrkCtr.QueueTimeAfter = _WrkCtrGroup.QueueTimeAfter;
+            }
+            _wrkCtr.update();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateRouteOprFromWrkCtrTable</Name>
+				<Source><![CDATA[
+    private void updateRouteOprFromWrkCtrTable(RouteOpr _routeOpr, WrkCtrTable _wrkCtrTable)
+    {
+        if (_wrkCtrTable.RecId && _routeOpr.RecId)
+        {
+            ttsbegin;
+            _routeOpr.selectForUpdate(true);
+            if (updRouteGroup)
+            {
+                _routeOpr.RouteGroupId = _wrkCtrTable.RouteGroupId;
+            }
+            if (updSetupCategoryId)
+            {
+                _routeOpr.SetUpCategoryId = _wrkCtrTable.SetUpCategoryId;
+            }
+            if (updProcessCategoryId)
+            {
+                _routeOpr.ProcessCategoryId = _wrkCtrTable.ProcessCategoryId;
+            }
+            if (updQtyCategoryId)
+            {
+                _routeOpr.QtyCategoryId = _wrkCtrTable.QtyCategoryId;
+            }
+            if (updQueueTimeBefore)
+            {
+                _routeOpr.QueueTimeBefore = _wrkCtrTable.QueueTimeBefore;
+            }
+            if (updSetupTime)
+            {
+                _routeOpr.SetupTime = _wrkCtrTable.SetupTime;
+            }
+            if (updTranspTime)
+            {
+                _routeOpr.TranspTime = _wrkCtrTable.TranspTime;
+            }
+            if (updQueueTimeAfter)
+            {
+                _routeOpr.QueueTimeAfter = _wrkCtrTable.QueueTimeAfter;
+            }
+
+            _routeOpr.update();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

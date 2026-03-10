@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVABPInfoService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// The <c>AVABPInfoService</c> class is the service class for <c>BP-Info</c>
+/// </summary>
+class AVABPInfoService extends SysOperationServiceBase
+{
+    AVABPInfoContract               dataContract;
+    boolean                         lJobMode;
+
+    int                             runtime;
+
+    KCS_KBVParameters               kcs_KBVParameters;
+    container                       allBPCompanies;
+
+    KCS_KBVInfoTmp                  kbvInfoTmp;
+    AVABPInfoDateTime               kcs_MinDateTime;
+    date                            kcs_MinDate;
+
+    KCS_KBVBuildingProjectTable     kcs_KBVBuildingProjectTable;
+    KCS_KBVBuildingProjectID        fromKCS_KBVBuildingProjectID;
+    smmBusRelSalesDistrictGroup     smmBusRelSalesDistrictGroup;
+    smmSalesUnit                    smmSalesUnit;
+    smmResponsibilitiesEmplTable    smmResponsibilitiesEmplTable;
+
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>runService</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>runService</c> method.
+    /// </summary>
+    /// <param name="_dataContract">
+    ///    <c>AVABPInfoContract</c> as type
+    /// </param>
+    void runService(AVABPInfoContract _dataContract)
+    {
+        timeofDay                   time;
+        KCS_KBVBuildingProjectID    locKCS_KBVBuildingProjectID;
+        
+        AVABPInfoExecution          locAVABPInfoExecution;
+        NDX_KBVJobProt              locNDX_KBVJobProt;
+        nDX_KBVInfoDateTime         locnDX_KBVInfoDateTime;
+
+
+        #OCCRetryCount
+
+
+        dataContract                = _dataContract;
+        locKCS_KBVBuildingProjectID = dataContract.parmKCS_KBVBuildingProjectID();
+
+        time        = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+        lJobMode    = false;
+
+        if(this.isExecutingInBatch())
+        {
+            lJobMode    = true;
+        }
+        dataContract.parmlJobMode(lJobMode);
+
+        locAVABPInfoExecution = AVABPInfoExecution::newFromArgs(dataContract.parmArgs());
+        locAVABPInfoExecution.parmDataContract(dataContract);
+        locAVABPInfoExecution.parmlJobMode(lJobMode);
+        locAVABPInfoExecution.init();
+
+        locNDX_KBVJobProt.createProt(NDX_KBVJob::KBV_Info, lJobMode);
+        locnDX_KBVInfoDateTime = DateTimeUtil::utcNow();
+
+        try
+        {
+            if(     !dataContract.parmIncludeNewBuildingProjects()
+                &&  !dataContract.parmIncludeNewRequests()
+                &&  !dataContract.parmIncludeNewRequestsRICO()
+                &&  !dataContract.parmIncludeNewQuotations()
+                &&  !dataContract.parmIncludeChangedQuotations()
+                &&  !dataContract.parmIncludeChangedBuildingProjects()
+                &&  !dataContract.parmNewChangedActivities()            )
+            {
+                throw error("@NDX:NXASelectBPCategory");
+            }
+
+            runtime = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+            
+            if (dataContract.parmRebuildData())
+            {
+                if (!locAVABPInfoExecution.createInfoTmpTableData())
+                {
+                    Error("@NDX:NXAErrorCreatingTempTableKCS_KBVInfoTmp");
+                }
+            }
+
+            if (dataContract.parmSendInfo())
+            {
+                if (!locAVABPInfoExecution.sendBPInfo())
+                {
+                    Error("@NDX:NXAErrorSendingBPInfo");
+                }
+            }
+
+            runtime = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()) - runtime;
+
+            info(strfmt("@NDX:NXABPInfoFinishedIn", runtime / 60));
+        }
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+
+
+        locNDX_KBVJobProt.createProt(NDX_KBVJob::KBV_Info, lJobMode, false);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

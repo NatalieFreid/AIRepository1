@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVATonnageService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// The <c>AVATonnageService</c> class is the service class for <c>Tonnage</c>
+/// </summary>
+class AVATonnageService extends SysOperationServiceBase
+{
+    AVATonnageContract              dataContract;
+    boolean                         frmJobMode;
+    int                             runtime;
+
+    KCS_TonnageSetup                kcs_TonnageSetup;
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>runService</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>runService</c> method.
+    /// </summary>
+    /// <param name="_dataContract">
+    ///    <c>AVATonnageContract</c> as type
+    /// </param>
+    void runService(AVATonnageContract _dataContract)
+    {
+        timeofDay                   time;
+        
+        AVATonnageExecution         locAVATonnageExecution;
+
+        #OCCRetryCount
+
+        dataContract                = _dataContract;
+
+        time        = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+
+        if(this.isExecutingInBatch())
+        {
+            frmJobMode    = true;
+        }
+
+        locAVATonnageExecution = AVATonnageExecution::newFromArgs(dataContract.parmArgs());
+        locAVATonnageExecution.parmDataContract(dataContract);
+        locAVATonnageExecution.init();
+
+        try
+        {
+            runtime = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+            
+            locAVATonnageExecution.calcTonnageFromParams();
+
+
+            runtime = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()) - runtime;
+
+            info(strfmt("@NDX:NXAOperationFinishedP1Min", runtime / 60));
+        }
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVARUMSalesFormLetter_InvoiceCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(classStr(SalesFormLetter_Invoice))]
+final class AVARUMSalesFormLetter_InvoiceCls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>updateDSDPostitions_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the DSD (Dual System) positions for a given sales line and parameter ID.
+    /// Recalculates the packing amount, line amount, and sales price for the DSD sales line.
+    /// Also updates the related <c>SalesParmLine</c> record if it exists.
+    /// </summary>
+    /// <param name="_salesLine">The original <c>SalesLine</c> record to update the DSD position for.</param>
+    /// <param name="_parmId">The parameter ID (<c>ParmId</c>) associated with the invoice process.</param>
+    /// <param name="_date">The date to use for calculation (defaults to today in the user's time zone).</param>
+    public static void updateDSDPostitions_AVA(SalesLine _salesLine, ParmId _parmId, dateDDMMYYYY _date = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        SalesLine dsdSalesLine;
+        SalesParmLine salesParmLine;
+
+        // Find the DSD sales line related to the current sales line by InventTransId
+        select firstonly forupdate dsdSalesLine
+            where dsdSalesLine.AVARUMSalesLineRef == _salesLine.InventTransId;
+
+        if (dsdSalesLine)
+        {
+            ttsbegin;
+
+            // Reset line amount and sales price before recalculation
+            dsdSalesLine.LineAmount = 0;
+            dsdSalesLine.SalesPrice = 0;
+
+            // Calculate the packing amount for the DSD sales line
+            utcdatetime dateTime = DateTimeUtil::newDateTime(_date, DateTimeUtil::getUserPreferredTimeZone());
+            SalesPrice priceUnrounded=AVARUMDSDCalculationManager::calcPackingAmount(1, _salesLine.ItemId, _salesLine.inventDim().configId, dsdSalesLine, _salesLine.ItemId, dateTime);
+
+            // Recalculate sales price and line amount
+            dsdSalesLine.SalesPrice = (dsdSalesLine.QtyOrdered ? priceUnrounded / dsdSalesLine.QtyOrdered : 0) * dsdSalesLine.PriceUnit;
+            Currency currency=Currency::find(dsdSalesLine.CurrencyCode);
+            dsdSalesLine.SalesPrice=currency.amount_Instance(dsdSalesLine.SalesPrice);
+
+            dsdSalesLine.LineAmount = dsdSalesLine.calcLineAmountForced();            
+            
+            dsdSalesLine.update();
+
+            // Update the related SalesParmLine if it exists
+            select firstonly forupdate salesParmLine
+                    where salesParmLine.SalesLineRecId == dsdSalesLine.RecId &&
+                        salesParmLine.ParmId == _parmId;
+
+            if (salesParmLine)
+            {
+                salesParmLine.setLineAmount(dsdSalesLine);
+                salesParmLine.update();
+            }
+
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

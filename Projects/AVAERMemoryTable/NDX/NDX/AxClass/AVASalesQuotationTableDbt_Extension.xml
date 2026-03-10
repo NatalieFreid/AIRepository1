@@ -1,0 +1,922 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesQuotationTableDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(tableStr(SalesQuotationTable))]
+final class AVASalesQuotationTableDbt_Extension
+{    
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>AVAinitFromNiedaxSalesParameter</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE 
+    /// </summary>
+    public void AVAinitFromNiedaxSalesParameter()
+    {
+        AVASalesParameters              salesParameters = AVASalesParameters::find();
+        this.KCS_QLStdStepSize          = salesParameters.PositionIncrement;
+        this.KCS_ShowIntPosPrice        = NoYes::Yes;
+        this.KCS_QuotationShorttext     = NoYes::Yes;
+        this.KCS_StatusId               = salesParameters.StatusId;
+        this.KCS_DataArea               = curExt(); 
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcalcExchRate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>container</returns>
+    public container  AVAcalcExchRate()
+    {
+        AVASalesParameters          avaSalesParameters    = AVASalesParameters::find();
+        SalesParameters             salesParameters       = SalesParameters::find();
+        ExchangeRateCalculation     exchangeRateCalculation,  exchangeRateCalculationLimitPrice;
+
+        if (this.CurrencyCode != salesParameters.GenericCurrency)
+        {
+            exchangeRateCalculation = ExchangeRateCalculation::newExchangeDate(salesParameters.ExchangeRateType,
+                                                                                                           salesParameters.GenericCurrency,
+                                                                                                           this.CurrencyCode,
+                                                                                                           this.AVAExchangeRateDate);
+            exchangeRateCalculationLimitPrice = ExchangeRateCalculation::newExchangeDate(avaSalesParameters.LimitPriceExchRateType,
+                                                                                                                    salesParameters.GenericCurrency,
+                                                                                                                    this.CurrencyCode,
+                                                                                                                    this.AVAExchangeRateDate);
+        }
+
+        return [exchangeRateCalculation ? exchangeRateCalculation.getExchangeRate1() : 0, exchangeRateCalculationLimitPrice ?  exchangeRateCalculationLimitPrice.getExchangeRate1() : 0];
+             
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createSpecialDiscQuotation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// special discount for sales quotation
+    /// </summary>
+    public void createSpecialDiscQuotation()
+    {
+        AVASpecialDiscQuotation::createFromSalesQuotationTable(this);         
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAExistPositions</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean AVAExistPositions()
+    {
+        SalesQuotationLine sql;
+        boolean ret;
+
+        select firstonly RecId from sql where sql.QuotationId == this.QuotationId && sql.RecId;
+        ret = sql.RecId;
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaIsClosed</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed frm AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean avaIsClosed()
+    {
+        boolean ret;
+        
+        if(     this.QuotationStatus == SalesQuotationStatus::Confirmed
+            ||  this.QuotationStatus == SalesQuotationStatus::Cancelled
+            ||  this.QuotationStatus == SalesQuotationStatus::Lost)
+        {
+            ret = true;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAinitFromKBVRequest</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_requestTable">_requestTable</param>
+    public void AVAinitFromKBVRequest(KCS_KBVRequestTable       _requestTable)
+    {
+        this.KCS_KBVBuildingProjectID = _requestTable.KCS_KBVBuildingProjectID;
+        this.KCS_KBVRequestId         = _requestTable.KCS_KBVRequestID;
+        this.CustomerRef              = _requestTable.CustRef;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeSalesQuotationLineOnUpdateSalesQuotationTable</Name>
+				<Source><![CDATA[
+    protected void initializeSalesQuotationLineOnUpdateSalesQuotationTable(SalesQuotationLine _salesQuotationLine)
+    {
+        next initializeSalesQuotationLineOnUpdateSalesQuotationTable(_salesQuotationLine);
+
+        _salesQuotationLine.avaUpdateFieldsCustAccountChanged();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>modifiedField</c> method.
+    /// </summary>
+    /// <param name="_fieldId">
+    ///     <c>FieldId</c> as type
+    /// </param>
+    /// <param name="_userInput">
+    ///     <c>boolean</c> as type
+    /// </param>
+    public void modifiedField(  FieldId _fieldId,
+                                boolean _userInput  )
+    { 
+        KCS_KBVRequestTable         locKCS_KBVRequestTable;
+        KCS_KBVBuildingProjectTable locKCS_KBVBuildingProjectTable;
+        
+        next modifiedField(_fieldId, _userInput);
+        
+        switch (_fieldId)
+        {
+            case fieldNum(SalesQuotationTable, CustAccount):
+                this.avaCustAccountChanged();
+                break;
+
+            case fieldNum(SalesQuotationTable, KCS_KBVBuildingProjectId) :
+                locKCS_KBVBuildingProjectTable  = KCS_KBVBuildingProjectTable::find(this.KCS_KBVBuildingProjectID);
+                this.KCS_KBVSubject             = locKCS_KBVBuildingProjectTable.KCS_KBVSubject;
+                this.KCS_KBVRequestId           = '';
+                break;
+            
+            case fieldNum(SalesQuotationTable, KCS_KBVRequestId) :
+                locKCS_KBVRequestTable          = KCS_KBVRequestTable::find(this.KCS_KBVRequestId);
+                locKCS_KBVBuildingProjectTable  = KCS_KBVBuildingProjectTable::find(locKCS_KBVRequestTable.KCS_KBVBuildingProjectID);
+                this.KCS_KBVBuildingProjectID   = locKCS_KBVRequestTable.KCS_KBVBuildingProjectID;
+                this.KCS_KBVSubject             = locKCS_KBVBuildingProjectTable.KCS_KBVSubject;
+                break;
+
+            case fieldNum(SalesQuotationTable, WorkerSalesTaker) :
+                locKCS_KBVRequestTable          = KCS_KBVRequestTable::find(this.KCS_KBVRequestId);
+                if(locKCS_KBVRequestTable.RecId)
+                {
+                    ttsbegin;
+                    locKCS_KBVRequestTable.selectForUpdate(true);
+                    locKCS_KBVRequestTable.KCS_KBVModifiedBy = this.WorkerSalesTaker;
+                    //locKCS_KBVRequestTable.KCS_KBVModifiedDate  = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                    if(!locKCS_KBVRequestTable.AVAWorkerSalesTaker)
+                    {
+                        locKCS_KBVRequestTable.AVAWorkerSalesTaker = this.WorkerSalesTaker;
+                    }
+                    locKCS_KBVRequestTable.update();
+                    ttscommit;
+                }
+                break;
+            
+            default : 
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCustAccountChanged</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// logic for when the CustAccount has been modified
+    /// </summary>
+    public void avaCustAccountChanged()
+    {
+        this.avaUpdateHeaderAccountChanged();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateHeaderAccountChanged</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// update Header fields for new CustAccount Id
+    /// </summary>
+    public void avaUpdateHeaderAccountChanged()
+    {
+        CustTable           avaCustTable    = CustTable::find(this.CustAccount);
+        smmBusRelChainGroup smmBusRelChainGroup;
+        
+        select firstonly  smmBusRelChainGroup
+                where smmBusRelChainGroup.ChainId == avaCustTable.CompanyChainId;
+
+        this.InvoiceAccount             = this.CustAccount;
+        this.ContactPersonId            = '';
+        this.Email                      = '';
+        this.AVACBSCommissSalesGroup    = avaCustTable.SalesGroup;
+        this.SalesUnitId                = avaCustTable.SalesDistrictId;
+        this.WorkerSalesResponsible     = avaCustTable.MainContactWorker;
+        this.KCS_CustCity               = avaCustTable.postalAddress().City;
+
+        this.PriceGroupId               = avaCustTable.PriceGroup   ?    avaCustTable.PriceGroup    :  smmBusRelChainGroup.AVAPriceGroupId;
+        this.AVANetPG1                  = avaCustTable.AVANetPG1    ?    avaCustTable.AVANetPG1     :  smmBusRelChainGroup.AVANetPG1;
+        this.AVANetPG2                  = avaCustTable.AVANetPG2    ?    avaCustTable.AVANetPG2     :  smmBusRelChainGroup.AVANetPG2;
+        this.LineDisc                   = avaCustTable.LineDisc     ?    avaCustTable.LineDisc      :  smmBusRelChainGroup.AVALineDisc;
+        this.KCS_ChainLineDiscCode      = smmBusRelChainGroup.AVALineDisc;
+        this.DlvTerm                    = avaCustTable.DlvTerm      ?    avaCustTable.DlvTerm       :  smmBusRelChainGroup.AVADlvTerm;
+        this.DlvMode                    = avaCustTable.DlvMode      ?    avaCustTable.DlvMode       :  smmBusRelChainGroup.AVADlvMode;
+        this.Payment                    = avaCustTable.PaymMode     ?    avaCustTable.PaymMode      :  smmBusRelChainGroup.AVAPayment;
+        this.CashDisc                   = avaCustTable.CashDisc     ?    avaCustTable.CashDisc      :  smmBusRelChainGroup.AVACashDisc;
+        this.KCS_MaxBonusAmount         = avaCustTable.KCS_MaxBonusAmount != 0   ?    avaCustTable.KCS_MaxBonusAmount   :  smmBusRelChainGroup.AVAMaxBonusAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromContactInfo</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>initFromContactInfo</c> method.
+    /// </summary>
+    void initFromContactInfo()
+    {
+        //ContactPerson contactPerson = this.contactPerson();
+        Email avaEmail = this.Email;
+
+        next initFromContactInfo();
+
+        if(avaEmail != ''
+            && avaEmail == this.custTable_CustAccount().KCS_QuotCentralEmail)
+        {
+            this.Email = avaEmail;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromCustTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "mandatoryFieldsOnly">mandatoryFieldsOnly</param>
+    public void initFromCustTable(boolean mandatoryFieldsOnly )
+    {
+        next initFromCustTable( mandatoryFieldsOnly);
+        this.Email =  this.custTable_CustAccount().KCS_QuotCentralEmail;
+       
+        if (!this.Email)
+        {
+            ContactPerson contactPerson = this.contactPerson();
+
+            this.Email = contactPerson.email();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromBusinessRelationTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void initFromBusinessRelationTable()
+    {
+        next initFromBusinessRelationTable();
+        this.Email = '';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAKBVRequestTableStatusUpdate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA FRN
+    /// </summary>
+    public void AVAKBVRequestTableStatusUpdate()
+    {
+        KCS_KBVRequestTable     requestTable = KCS_KBVRequestTable::find(this.KCS_KBVRequestId);
+        SalesQuotationTable     locSalesQuotationTable;
+       
+
+        if (requestTable.RecId)
+        {
+            if ((this.QuotationStatus == SalesQuotationStatus::Sent
+              || this.QuotationStatus == SalesQuotationStatus::Confirmed
+              || this.QuotationStatus == SalesQuotationStatus::Lost)
+                 && requestTable.KCS_KBVRequestStatus != KCS_KBVRequestStatus::Answered)
+            {
+                select firstonly RecId, CreatedBy, CreatedDateTime from locSalesQuotationTable
+                    where locSalesQuotationTable.KCS_KBVRequestId == requestTable.KCS_KBVRequestID
+                    && locSalesQuotationTable.QuotationStatus    == SalesQuotationStatus::Created;
+
+                if (!locSalesQuotationTable.RecId )
+                {
+                    requestTable.KCS_KBVRequestStatus = KCS_KBVRequestStatus::Answered;
+                    
+                }
+
+            }
+            ttsbegin;
+            requestTable.selectForUpdate(true);
+            requestTable.update();
+            ttscommit;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAKBVRequestTableUpdate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void AVAKBVRequestTableUpdate()
+    {
+
+        // SalesQuotationTable     helpSalesQuotationTable = SalesQuotationTable::findRec(this.RecId);
+        // TransDate               t = DateTimeUtil::date(helpSalesQuotationTable.CreatedDateTime);
+        // UserId                  u = helpSalesQuotationTable.createdBy;
+        KCS_KBVRequestTable     requestTable;
+        HcmWorkerRecId          locHcmWorkerRecId;
+        AVAWorkerSalesTaker     locAVAWorkerSalesTakerUpdated;
+        SalesQuotationTable     locSalesQuotationTable;
+        
+        requestTable = KCS_KBVRequestTable::find(this.KCS_KBVRequestId);
+
+        if (requestTable)
+        {
+            requestTable.KCS_KBVRequestStatus   = KCS_KBVRequestStatus::InProcess;
+            if (this.QuotationStatus == SalesQuotationStatus::Sent || this.QuotationStatus == SalesQuotationStatus::Lost || this.QuotationStatus == SalesQuotationStatus::Confirmed)
+            {
+                select firstonly RecId, CreatedBy, CreatedDateTime from locSalesQuotationTable
+                    where locSalesQuotationTable.KCS_KBVRequestId == requestTable.KCS_KBVRequestID
+                    && locSalesQuotationTable.QuotationStatus    == SalesQuotationStatus::Created;
+                if (!locSalesQuotationTable.RecId)
+                {
+                    requestTable.KCS_KBVRequestStatus = KCS_KBVRequestStatus::Answered;
+                }
+            }   
+        
+            requestTable.LastQuotationId        = this.QuotationId;
+            requestTable.KCS_KBVModifiedBy      = HcmWorker::userId2Worker(this.CreatedBy);
+            requestTable.KCS_KBVModifiedDate    = DateTimeUtil::date(this.CreatedDateTime);
+
+            if (requestTable.AVAWorkerSalesTaker == 0 && this.WorkerSalesTaker != 0)
+            {
+                requestTable.AVAWorkerSalesTaker    = this.WorkerSalesTaker;
+                locAVAWorkerSalesTakerUpdated       = true;
+            }
+           
+            ttsbegin;
+            requestTable.selectForUpdate(true);
+            requestTable.update();
+
+            if(requestTable.AVAWorkerSalesTaker == 0)
+            {
+                locHcmWorkerRecId = HcmWorkerLookup::currentWorker();
+                if(locHcmWorkerRecId)
+                {
+                    requestTable.assignUnassignRequest(locHcmWorkerRecId);
+                    requestTable.assignUnassignRelatedRequests(locHcmWorkerRecId);
+                }
+            }
+            else if(locAVAWorkerSalesTakerUpdated)
+            {
+                locHcmWorkerRecId = this.WorkerSalesTaker;
+                if(locHcmWorkerRecId)
+                {
+                    requestTable.assignUnassignRequest(locHcmWorkerRecId);
+                    requestTable.assignUnassignRelatedRequests(locHcmWorkerRecId);
+                }
+            }
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAKBVRequestTablePostUpdate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// defined from AVA FRN
+    /// </summary>
+    public void AVAKBVRequestTablePostUpdate()
+    {
+        HcmWorkerRecId          locHcmWorkerRecId;
+        LogisticsPostalAddress  address;
+        KCS_KBVRequestTable     requestTable;
+        AVAWorkerSalesTaker     locAVAWorkerSalesTakerUpdated;
+
+        requestTable = KCS_KBVRequestTable::find(this.KCS_KBVRequestId);
+
+        if (requestTable)
+        {
+            if (requestTable.AddressCountryRegionId == '')
+            {
+                if (requestTable.AVAWorkerSalesTaker == 0 && this.WorkerSalesTaker != 0)
+                {
+                    requestTable.AVAWorkerSalesTaker    = this.WorkerSalesTaker;
+                    locAVAWorkerSalesTakerUpdated       = true;
+                }
+                address = this.deliveryAddress();
+            
+                requestTable.AddressCountryRegionId = address.CountryRegionId;
+                requestTable.AddressStreet          = address.Street;
+                requestTable.AddressCity            = address.City;
+                requestTable.AddressZipCodeId       = address.ZipCode;
+                requestTable.SalesGroup             = this.SalesGroup;
+                requestTable.SalesUnitId            = this.SalesUnitId;
+           
+                ttsbegin;
+                requestTable.selectForUpdate(true);
+                requestTable.update();
+
+                if(requestTable.AVAWorkerSalesTaker == 0)
+                {
+                    locHcmWorkerRecId = HcmWorkerLookup::currentWorker();
+                    if(locHcmWorkerRecId)
+                    {
+                        requestTable.assignUnassignRequest(locHcmWorkerRecId);
+                        requestTable.assignUnassignRelatedRequests(locHcmWorkerRecId);
+                    }
+                }
+                else if(locAVAWorkerSalesTakerUpdated)
+                {
+                    locHcmWorkerRecId = this.WorkerSalesTaker;
+                    if(locHcmWorkerRecId)
+                    {
+                        requestTable.assignUnassignRequest(locHcmWorkerRecId);
+                        requestTable.assignUnassignRelatedRequests(locHcmWorkerRecId);
+                    }
+                }
+                ttscommit;
+
+                KCS_KBVBPCompanySpecific        companySpecific = KCS_KBVBPCompanySpecific::find(requestTable.KCS_KBVBuildingProjectID);
+                if (companySpecific.RecId && companySpecific.KCS_KBVCompSpecCountryId == '')
+                {
+                    companySpecific.smmSalesUnitId              = this.SalesUnitId;
+                    companySpecific.CommissSalesGroup           = this.SalesGroup;
+                    companySpecific.KCS_KBVMainResponsible      = this.WorkerSalesResponsible;
+                    companySpecific.KCS_KBVSmmSalesUnitIndoor   = this.KCS_KBVSmmSalesUnitIndoor;
+                    companySpecific.KCS_KBVCompSpecZipCode      = address.ZipCode;
+                    companySpecific.KCS_KBVCompSpecCountryId    = address.CountryRegionId;
+                    ttsbegin;
+                    companySpecific.selectForUpdate(true);
+                    companySpecific.update();
+                    ttscommit;
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    public void initValue()
+    {
+        next initValue();
+        this.KCS_KBVSmmSalesUnitIndoor = smmSalesUnitMembers::findMemberPrimaryUnit(this.WorkerSalesResponsible, false);
+                                         
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAdisplaySpecialDiscountStr</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE WEN
+    /// </summary>
+    /// <returns>String30</returns>
+    display String30 AVAdisplaySpecialDiscountStr()
+    {
+        AVASpecialDiscQuotation     specialDiscTable;
+
+        specialDiscTable = AVASpecialDiscQuotation::find(this.QuotationId);
+
+        return strFmt("@NDX:NXASpecialDiscTxt", specialDiscTable.SpecialDiscountPct1,specialDiscTable.SpecialDiscountPct2,specialDiscTable.SpecialDiscountPct3);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVADisplayLastSendDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_this">SalesQuotationTable</param>
+    /// <returns>TransDate</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public static display TransDate AVADisplayLastSendDate(SalesQuotationTable  _this)
+    {
+        TransDate               lastSendDate;
+        CustQuotationJour       custQuotationJour;
+        CustQuotationSalesLink  custQuotationSalesLink;
+
+        select firstonly QuotationDate, RecId from custQuotationJour
+            order by  QuotationDate  DESC
+            join custQuotationSalesLink
+                where custQuotationSalesLink.quotationId == custQuotationJour.QuotationId
+                   && custQuotationSalesLink.origQuotationId == _this.QuotationId; 
+        lastSendDate = custQuotationJour.QuotationDate;
+    
+        return lastSendDate;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAdisplayContactMail</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE WEN
+    /// </summary>
+    /// <returns>Email</returns>
+    display Email AVAdisplayContactMail()
+    {
+        return ContactPerson::find(this.ContactPersonId).email();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAdisplayContactPhone</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE WEN
+    /// </summary>
+    /// <returns>Phone</returns>
+    display Phone AVAdisplayContactPhone()
+    {
+        ContactPerson   contactPerson;
+
+        contactPerson = ContactPerson::find(this.ContactPersonId);
+
+        return contactPerson.phone() + contactPerson.phoneLocal();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAdisplayContactPhoneNotMobile</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/10/21   AVA_012578_SQTPhone
+    /// </summary>
+    /// <returns>Phone</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display Phone AVAdisplayContactPhoneNotMobile()
+    {
+        ContactPerson   contactPerson;
+
+        contactPerson = ContactPerson::find(this.ContactPersonId);
+
+        return contactPerson.displayPhoneNotMobile();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromSalesQuotationTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE WEN
+    /// </summary>
+    /// <param name = "_salesQuotationTable">SalesQuotationTable</param>
+    public void initFromSalesQuotationTable(SalesQuotationTable      _salesQuotationTable)
+    {
+        next initFromSalesQuotationTable(_salesQuotationTable);
+
+        DocuRef docuRef;
+
+        this.KCS_RefQuotationId     = _salesQuotationTable.KCS_RefQuotationId;
+        this.KCS_GAEBImportID       = _salesQuotationTable.KCS_GAEBImportID;
+        this.KCS_OrgQuotationId     = _salesQuotationTable.QuotationId;
+        this.KCS_QLStdStepSize      = _salesQuotationTable.KCS_QLStdStepSize;
+        this.KCS_QuotationShorttext = _salesQuotationTable.KCS_QuotationShorttext;
+        this.AVANoExpiryOverrun     = _salesQuotationTable.AVANoExpiryOverrun;
+
+        if (this.RecId)
+        {
+            KCS_HDMSalesQuotationTableInfoFields::copyQuotInfoField(_salesQuotationTable, this);
+            AVASpecialDiscQuotation::copyFromSpecialDiscQoutation(this.QuotationId, AVASpecialDiscQuotation::find(_salesQuotationTable.QuotationId));
+            while select docuRef where docuRef.RefTableId == tableNum(SalesQuotationTable)
+                                && docuRef.RefRecId == _salesQuotationTable.RecId
+            {
+                DocuRef::createFromDocuRef(docuRef, this.RecId, tableNum(SalesQuotationTable));
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromCustQuotationJour</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE WEN
+    /// </summary>
+    /// <param name = "_custQuotationJour">CustQuotationJour</param>
+    public void initFromCustQuotationJour(CustQuotationJour _custQuotationJour)
+    {
+        next initFromCustQuotationJour(_custQuotationJour);
+
+        DocuRef docuRef;
+
+        this.KCS_RefQuotationId     = _custQuotationJour.salesQuotationTable().KCS_RefQuotationId;
+        this.KCS_GAEBImportID       = _custQuotationJour.salesQuotationTable().KCS_GAEBImportID;
+        this.KCS_OrgQuotationId     = _custQuotationJour.KCS_QuotationId;
+        this.KCS_QLStdStepSize      = _custQuotationJour.salesQuotationTable().KCS_QLStdStepSize;
+        this.KCS_QuotationShorttext = _custQuotationJour.salesQuotationTable().KCS_QuotationShorttext;
+        this.AVANoExpiryOverrun     = _custQuotationJour.AVANoExpiryOverrun;
+        this.QuotationExpiryDate    = _custQuotationJour.AVAQuotationExpiryDate;
+        this.KCS_PriceDate          = _custQuotationJour.AVAPriceDate;
+
+        if (this.RecId)
+        {
+            KCS_HDMSalesQuotationTableInfoFields::copyQuotInfoField(_custQuotationJour.salesQuotationTable(), this);
+            AVASpecialDiscQuotationJour specialDiscQuotationJour;
+            select firstonly specialDiscQuotationJour where specialDiscQuotationJour.QuotationJourRefRecId == _custQuotationJour.RecId;
+            AVASpecialDiscQuotation::copyFromSpecialDiscQoutationJour(this.QuotationId, specialDiscQuotationJour);
+            while select docuRef where docuRef.RefTableId == tableNum(CustQuotationJour)
+                            && docuRef.RefRecId == _custQuotationJour.RecId
+            {
+                docuRef::createFromDocuRef(docuRef, this.RecId, tableNum(SalesQuotationTable));
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>maxLineNum</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <returns>LineNum</returns>
+    public LineNum maxLineNum()
+    {
+        SalesQuotationLine  sql;
+
+        select maxof(LineNum) from sql where sql.QuotationId == this.QuotationId;
+        return sql.LineNum;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGAEBCountPosWithMissingOZ</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <returns>num of positions without OZ</returns>
+    public int avaGAEBCountPosWithMissingOZ()
+    {
+        SalesQuotationLine  sql;
+
+        select count(RecId) from sql where sql.QuotationId == this.QuotationId
+                                        && ! sql.KCS_GAEBOZ;
+        return sql.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGAEBMissingOZ</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <returns>NoYesId</returns>
+    public NoYesId avaGAEBMissingOZ()
+    {
+        SalesQuotationLine  sql;
+        NoYesId             ret = NoYes::No;
+
+        //if (this.KCS_GAEBImportID)
+        //{
+        select firstonly RecId from sql where sql.QuotationId == this.QuotationId
+                                            && !sql.KCS_GAEBOZ;
+        if (sql.RecId)
+        {
+            ret = NoYes::Yes;
+        }
+        /*}
+        else
+        {
+            ret = NoYes::Yes;
+        }*/
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVASetQuotNotPosted</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_quotationId">SalesQuotationId</param>
+    public static void AVASetQuotNotPosted(SalesQuotationId    _quotationId)
+    {
+        SalesQuotationTable sqt = SalesQuotationTable::find(_quotationId,true);
+        if (sqt.RecId)
+        {
+            ttsbegin;
+            sqt.AVAPosted = false;
+            sqt.AVAPostedEnum = AVAPostedEnum::NotPosted;
+            sqt.doUpdate();
+            ttscommit;
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateDelete</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>validateDelete</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    boolean  validateDelete()
+    {
+        boolean     ok;
+
+        ok = next validateDelete();
+
+        if (ok)
+        {
+            if(SalesQuotationLine::exist(this.QuotationId))
+            {
+                ok = false;
+                warning("@NDX:NXAExistingPosPreventDeletion");
+            }
+        }
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCustName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// display method to return the customer name of the associated order account
+    /// </summary>
+    /// <returns>Name</returns>
+    public display Name avaCustName()
+    {
+        return CustTable::find(this.CustAccount).name();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkAccount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 11.03.2024
+    /// </summary>
+    /// <returns>boolean</returns>
+    boolean  checkAccount()
+    {
+        boolean accountOK = next checkAccount();
+
+        //if (AVASalesParameters::find().EnableBlockedCustomer)
+        if (SysUserInfo::find(curUserId()).AVADataImportUser)
+        {
+            accountOK = true;
+        }
+        return accountOK;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVABaseAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVABaseAmount</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>Email</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display Amount displayAVABaseAmount()
+    {
+        Amount              retVal;
+        
+        SalesQuotationLine locSalesQuotationLine;
+
+        select sum(KCS_QLLVAmount)
+        from    locSalesQuotationLine
+        where   locSalesQuotationLine.QuotationId               == this.QuotationId
+            &&  locSalesQuotationLine.KCS_CRMIsAlternativeLine  == NoYes::No
+            &&  locSalesQuotationLine.KCS_QLInternalPosition    == 1;
+
+        retVal = decRound(locSalesQuotationLine.KCS_QLLVAmount, 2);
+
+        select sum(LineAmount)
+        from    locSalesQuotationLine
+        where   locSalesQuotationLine.QuotationId               == this.QuotationId
+            &&  locSalesQuotationLine.KCS_CRMIsAlternativeLine  == NoYes::No
+            &&  locSalesQuotationLine.KCS_QLInternalPosition    == 0;
+
+        retVal += decround(locSalesQuotationLine.LineAmount, 2);
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSpecialDiscAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVASpecialDiscAmount</c> method.
+    ///     AVA - Schneider 30.04.2024
+    /// </summary>
+    /// <returns>
+    ///    <c>Amount</c> as return value
+    /// </returns>
+    public Amount avaSpecialDiscAmount()
+    {
+        Amount                      retVal;
+        Amount                      locTmpAmount;
+        Amount                      locBaseAmount;
+        AVASpecialDiscQuotation locAVASpecialDiscQuotation;
+
+        locAVASpecialDiscQuotation = AVASpecialDiscQuotation::find(this.QuotationId);
+
+        if(locAVASpecialDiscQuotation.RecId)
+        {
+            locBaseAmount   = this.displayAVABaseAmount();
+            retVal          = locBaseAmount;
+                
+            locTmpAmount    = decround((locBaseAmount * locAVASpecialDiscQuotation.SpecialDiscountPct1 / 100), 2);
+            locBaseAmount   = locBaseAmount - locTmpAmount;
+            locTmpAmount    = decround((locBaseAmount * locAVASpecialDiscQuotation.SpecialDiscountPct2 / 100), 2);
+            locBaseAmount   = locBaseAmount - locTmpAmount;
+            locTmpAmount    = decround((locBaseAmount * locAVASpecialDiscQuotation.SpecialDiscountPct3 / 100), 2);
+            locBaseAmount   = locBaseAmount - locTmpAmount;
+
+            retVal          = retVal - locBaseAmount;
+        }
+        else
+        {
+            retVal = 0.0;
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

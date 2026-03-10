@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXCSDService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Central store service
+/// </summary>
+public final class NDXCSDService extends SysOperationServiceBase
+{
+    identifierName className;
+    identifierName methodName;
+
+    str importKey = 'CSDCheck';
+    NDXCSDController controller;
+
+    utcdatetime lastCheck;
+
+    NDXCSD nxdcsd;
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmController</Name>
+				<Source><![CDATA[
+    public NDXCSDController parmController(NDXCSDController _controller = controller)
+    {
+        controller = _controller;
+        return controller;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    private void new(identifierName _methodName)
+    {
+        SysOperationExecutionMode executionMode = SysOperationExecutionMode::Asynchronous;
+       
+        className = classId2Name(classIdGet(new NDXCSD()));
+        methodName = _methodName;
+
+        importKey = strFmt('%1%2%3',className, methodName, importKey);
+        lastCheck = DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(), DateTimeUtil::getUserPreferredTimeZone());
+
+        controller = NDXCSDController::construct(className, methodName, executionMode);
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    static public NDXCSDService construct(identifierName _methodName)
+    {
+        return new NDXCSDService(_methodName);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>startCheckBatch</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Stats the batch job
+    /// </summary>
+    /// <param name = "_args">aguments</param>
+    static public void startCheckBatch(Args _args)
+    {
+        Common record;
+        NDXCSDController controller;
+        NDXCSDService service;
+
+        SysOperationStartResult result;
+
+        boolean allVisible = true;
+       
+        record = _args.record();
+        
+        switch(_args.menuItemName())
+        {
+            case menuItemActionStr(NDXCheckAlliance):
+                if(record.TableId == tableNum(NDX_CentralStoreDistributionTable))
+                {
+                    service = NDXCSDService::construct('checkCentralStoreDistributionLine');
+                    allVisible = false;
+                }
+                break;
+            case menuItemActionStr(NDXCheckCentralStore):
+                if(record.TableId == tableNum(NDX_CentralStore))
+                {
+                    service = NDXCSDService::construct('checkCentralStores');
+                }
+                break;
+        }
+        
+        if(service != null)
+        {
+            controller = service.parmController();
+
+            NDXCSDContract contract =  controller.getDataContractObject();
+        
+            contract.parmCommon(record);
+            contract.parmCSId(_args.parm());
+            contract.parmAllVisible(allVisible);
+            
+            result = controller.startOperation();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    static void main(Args _args)
+    {
+        if(_args != null && (_args.dataset() == tableNum(NDX_CentralStore) || _args.dataset() == tableNum(NDX_CentralStoreDistributionTable)) && _args.record())
+        {
+            NDXCSDService::startCheckBatch(_args);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

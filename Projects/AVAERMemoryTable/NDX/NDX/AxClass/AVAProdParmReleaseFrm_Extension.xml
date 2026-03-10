@@ -1,0 +1,395 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAProdParmReleaseFrm_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(formStr(ProdParmRelease))]
+internal final class AVAProdParmReleaseFrm_Extension
+{
+    public ProdId avaProdId;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void init()
+    {
+        next init();
+        if (!xUserInfo::checkUserOrAdminRole('AVAWorkPreparationProdReports'))
+        {
+            this.design().controlName(formControlStr(ProdParmRelease,   AVAPrintProdProdOrderOptions)).visible(false);
+            this.design().controlName(formControlStr(ProdParmRelease,   AVAPrintProdRunMapOptions)).visible(false);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of closeOk method
+    /// </summary>
+    public void closeOk()
+    {
+        this.avaCycleProdIdPreCloseOk();
+
+        next closeOk();
+
+        this.avaCycleProdIdPostCloseOk();
+   }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCycleProdIdPreCloseOk</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Cycles through ProdParmRelease before close Ok logic
+    /// </summary>
+    public void avaCycleProdIdPreCloseOk()
+    {
+        ProdParmRelease avaProdParmRelease = prodParmRelease_ds.getFirst();
+        
+        if(!avaProdParmRelease)
+        {
+            avaProdParmRelease = ProdParmRelease_ds.cursor();
+        }
+
+        if(avaProdParmRelease)
+        {
+            while(avaProdParmRelease)
+            {
+                avaProdId = avaProdParmRelease.ProdId;
+
+                this.avaPreCloseOkProcess();
+
+                avaProdParmRelease = prodParmRelease_ds.getNext();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaPreCloseOkProcess</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Goes through all pre closeOk logic for current ProdId
+    /// </summary>
+    public void avaPreCloseOkProcess()
+    {
+        this.avaHasOneSubContractedInventLocation();
+        this.avaCheckExistsInventTransferOrder();
+        this.avaCycleBomItemInventory();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaHasOneSubContractedInventLocation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks BOM InventLocations if is using different subcontractors
+    /// </summary>
+    /// <returns>true if one location, false if no location, error on more than 1</returns>
+    public boolean avaHasOneSubContractedInventLocation()
+    {
+        ProdBOM avaProdBOM;
+        InventDim avaInventDim;
+        InventLocation avaInventLocation;
+        InventLocationId avaInventLocationId;
+        boolean ret = false;
+
+        while select avaInventDim
+            join avaProdBOM
+            join avaInventLocation
+            where avaInventDim.inventDimId == avaProdBOM.InventDimId
+            && avaInventDim.InventLocationId == avaInventLocation.InventLocationId
+            && avaProdBOM.ProdId == avaProdId
+            && avaInventLocation.AVAPOTransfer == NoYes::Yes
+        {
+            ret = true;
+
+            if(avaInventLocationId == '')
+            {
+                avaInventLocationId = avaInventLocation.InventLocationId;
+            }
+            else if(avaInventLocationId == avaInventLocation.InventLocationId)
+            {
+                continue;
+            }
+            else
+            {
+                throw error("@NDX:NXAPOReleaseBOMError");
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckExistsInventTransferOrder</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if the ProdID alreadys has a TransferOrder associated
+    /// </summary>
+    public void avaCheckExistsInventTransferOrder()
+    {
+        if(InventTransferTable::avaExistsProdIdOrder(avaProdId))
+        {
+            warning(strFmt("@NDX:NXAInventTransferPOWarning", avaProdId, InventTransferTable::avaFindProdId(avaProdId).TransferId));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCycleBomItemInventory</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Cycles InventSum for ProdBOM records
+    /// </summary>
+    public void avaCycleBomItemInventory()
+    {
+        InventSum avaInventSum;
+        ProdBOM avaProdBOM;
+        ProdTable avaProdTable = ProdTable::find(avaProdId);
+        InventDim avaInventDim;
+        InventLocation avaInventLocation;
+        InventLocationId avaProdInventLocationId;
+        ItemId avaItemId;
+
+        avaProdInventLocationId = avaProdTable.inventDim().InventLocationId;
+        
+        while select sum(AvailPhysical), ItemId, InventLocationid from avaInventSum
+            join avaProdBOM
+            join avaInventDim
+            join avaInventLocation
+            order by avaProdBOM.ItemId
+            group by avaInventSum.ItemId, avaInventSum.InventLocationId
+            where avaInventLocation.AVAPOTransfer   == NoYes::Yes
+            && avaInventLocation.InventLocationId   == avaInventDim.InventLocationId
+            && avaInventSum.AvailPhysical           != 0
+            && avaInventSum.InventSiteId            == avaInventDim.InventSiteId
+            && avaInventSum.InventLocationId        == avaInventDim.InventLocationId
+            && avaInventSum.ItemId                  == avaProdBOM.ItemId
+            && avaInventDim.InventLocationId        != avaProdInventLocationId
+            && avaInventDim.inventDimId             == avaProdBOM.InventDimId
+            && avaInventDim.inventBatchId           == ''
+            && avaProdBOM.ProdId                    == avaProdId
+        {
+            if(avaItemId == avaInventSum.ItemId)
+            {
+                continue;
+            }
+            else
+            {
+                this.avaAvailInventoryInfo(avaInventSum);
+                avaItemId = avaInventSum.ItemId;
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCycleProdIdPostCloseOk</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Cycles through ProdParmRelease after close Ok logic
+    /// </summary>
+    public void avaCycleProdIdPostCloseOk()
+    {
+        ProdParmRelease avaProdParmRelease = prodParmRelease_ds.getFirst();
+                
+        if(!avaProdParmRelease)
+        {
+            avaProdParmRelease = ProdParmRelease_ds.cursor();
+        }
+
+        if(avaProdParmRelease)
+        {
+            while(avaProdParmRelease)
+            {
+                avaProdId = avaProdParmRelease.ProdId;
+
+                this.avaPostCloseOkProcess();
+
+                avaProdParmRelease = prodParmRelease_ds.getNext();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaPostCloseOkProcess</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Goes through all post closeOk logic for current ProdId
+    /// </summary>
+    public void avaPostCloseOkProcess()
+    {
+        if(this.avaHasOneSubContractedInventLocation())
+        {
+            this.avaCreateInventTransferOrder();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCreateInventTransferOrder</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creating invent transfer Order records if no transfer order exists for ProdId and it has a POTransfer InventLocation
+    /// </summary>
+    public void avaCreateInventTransferOrder()
+    {
+        if(!InventTransferTable::avaExistsProdIdOrder(ProdParmRelease.ProdId))
+        {
+            ttsbegin;
+
+            InventTransferTable avaTransferTable = this.avaCreateInventTransferTable();
+            this.avaCreateInventTransferLines(avaTransferTable);
+
+            ttscommit;
+
+            Info(strFmt("@NDX:NXAPOTransferOrderCreatedInfo", avaTransferTable.TransferId, avaProdId));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCreateInventTransferTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates an inventTransferTable
+    /// </summary>
+    public InventTransferTable avaCreateInventTransferTable()
+    {
+        ProdTable avaProdTable  = ProdTable::find(ProdParmRelease.ProdId);
+        ProdBOM avaProdBOMFirst = ProdBOM::avaFindProdIdTransfer(avaProdTable.ProdId);
+        InventTransferTable avaTransferTable;
+
+        avaTransferTable = this.avaInitInventTransferTable(avaProdTable, avaProdBOMFirst);
+        avaTransferTable.insert();
+
+        return avaTransferTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitInventTransferTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// initialize InventTransferTable record
+    /// </summary>
+    /// <param name = "_prodTable">ProdTable</param>
+    /// <param name = "_prodBom">ProdBOM</param>
+    /// <returns>InventTransferTable</returns>
+    public InventTransferTable avaInitInventTransferTable(
+        ProdTable _prodTable,
+        ProdBOM _prodBom)
+    {
+        InventTransferTable inventTransferTable;
+        inventTransferTable.initValue();
+        inventTransferTable.avaInitPOTransfer(_prodTable, _prodBom);
+
+        inventTransferTable.TransferId                  = InventTransferTable::numberSeq().num();
+
+        inventTransferTable.initFromAddress();
+        inventTransferTable.initToAddress();
+
+        return inventTransferTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCreateInventTransferLines</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creating inventTransfer linese
+    /// </summary>
+    /// <param name = "_inventTransferTable">InventTransferTable</param>
+    public void avaCreateInventTransferLines(InventTransferTable _inventTransferTable)
+    {
+        ProdTable           avaProdTable = ProdTable::find(ProdParmRelease.ProdId);
+        ProdBOM             avaProdBOM;
+        InventDim           avaInventDim;
+        InventLocation      avaInventLocation;
+        InventTransferLine  avaInventTransferLine;
+
+        while select avaProdBOM
+            join avaInventDim
+            join avaInventLocation
+            where avaInventLocation.InventLocationId == avaInventDim.InventLocationId
+            && avaInventLocation.AVAPOTransfer == NoYes::Yes
+            && avaInventDim.InventLocationId == _inventTransferTable.InventLocationIdTo
+            && avaInventDim.inventDimId == avaProdBOM.InventDimId
+            && avaProdBOM.ProdId == avaProdTable.ProdId
+        {
+            avaInventTransferLine   = this.avaInitInventTransferLine(_inventTransferTable, avaProdBOM);
+            avaInventTransferLine.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitInventTransferLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// initializing InventTransferLine
+    /// </summary>
+    /// <param name = "_inventTransferTable">InventTransferTable</param>
+    /// <param name = "_prodBOM">ProdBOM</param>
+    /// <returns>InventTransferLine</returns>
+    public InventTransferLine avaInitInventTransferLine(
+        InventTransferTable _inventTransferTable,
+        ProdBOM _prodBOM)
+    {
+        InventTransferLine avaInventTransferLine;
+
+        avaInventTransferLine.initValue();
+        avaInventTransferLine.initFromInventTransferTable(_inventTransferTable, true);
+        avaInventTransferLine.avaInitProdBOM(_prodBOM);
+        avaInventTransferLine.setDeliveryDateControlType();
+
+        return avaInventTransferLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaAvailInventoryInfo</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// info message with physically available quantity of an Item
+    /// </summary>
+    /// <param name = "_inventSum">InventSum</param>
+    public void avaAvailInventoryInfo(InventSum _inventSum)
+    {
+        Info(strFmt("@NDX:NXAPOInventoryAvailable", _inventSum.ItemId, _inventSum.InventLocationId, abs(_inventSum.AvailPhysical), _inventSum.inventTable().inventUnitId()));
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesQuotationCopyingFrm_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed by AVANADE WEN
+/// </summary>
+[ExtensionOf(formStr(SalesQuotationCopying))]
+final class AVASalesQuotationCopyingFrm_Extension
+{
+    public QueryBuildRange        AVAqbBuildingProjectId;
+    public QueryBuildRange        AVAqbProductGroupId;
+    public QueryBuildRange        AVAqbQuotationFirst;
+    public QueryBuildRange        AVAqbQuotationDocNum;
+
+    private boolean                 copyLV;
+    private boolean                 copyCalcPrice;
+    private boolean                 copyFromJournal;
+
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE WEN
+    /// </summary>
+    void init()
+    {
+        next init();
+
+        AVAqbBuildingProjectId = SalesQuotationTable_ds.query().dataSourceName('SalesQuotationTable').addRange(fieldnum(SalesQuotationTable, KCS_KBVBuildingProjectID));
+        AVAqbProductGroupId = SalesQuotationTable_ds.query().dataSourceName('SalesQuotationTable').addRange(fieldnum(SalesQuotationTable, KCS_KBVProductGroupID));
+        AVAqbQuotationFirst = SalesQuotationTable_ds.query().dataSourceName('SalesQuotationTable').addRange(fieldnum(SalesQuotationTable, KCS_QuotationFirst));
+
+        RecalculateAmount.value(NoYes::No);
+        //CopyHeader.value(NoYes::Yes);
+        CopyHeader.value(NoYes::No);
+        CopyPrecisely.value(NoYes::Yes);
+
+
+        if (this.args().menuItemName() == menuItemDisplayStr(salesquotationcopyAllHeader))
+        {
+            AVAqbBuildingProjectId.value(queryValue(callerSalesQuotationTable.KCS_KBVBuildingProjectID));
+            //AVAqbProductGroupId.value(queryValue(callerSalesQuotationTable.KCS_KBVProductGroupID));
+            AVABuildingProjectId.text(callerSalesQuotationTable.KCS_KBVBuildingProjectID);
+            //AVAProductGroupID.text(callerSalesQuotationTable.KCS_KBVProductGroupID);
+            //CopyHeader.value(NoYes::No);
+            DeleteLines.value(NoYes::No);
+
+        }
+        else if (this.args().menuItemName() == menuItemDisplayStr(AVACopyAllFirst))
+        {
+            AVAqbBuildingProjectId.value(queryValue(callerSalesQuotationTable.KCS_KBVBuildingProjectID));
+            //AVAqbProductGroupId.value(queryValue(callerSalesQuotationTable.KCS_KBVProductGroupID));
+            AVAqbQuotationFirst.value(queryValue('1'));
+            AVABuildingProjectId.text(callerSalesQuotationTable.KCS_KBVBuildingProjectID);
+            //AVAProductGroupID.text(callerSalesQuotationTable.KCS_KBVProductGroupID);
+            AVAQuotationFirst.value(1);
+            QtyFactor.realValue(1);
+            CopyMarkup.value(NoYes::No);
+            //CopyPrecisely.value(NoYes::No);
+            DeleteLines.value(NoYes::No);
+            //CopyHeader.value(NoYes::No);
+
+            copyLV          = false;
+            copyCalcPrice   = true;
+        }
+        else if (this.args().menuItemName() == menuItemDisplayStr(AVACopyAllJour))
+        {
+            QtyFactor.realValue(1);
+            CopyMarkup.value(NoYes::Yes);
+            //CopyPrecisely.value(NoYes::Yes);
+            DeleteLines.value(NoYes::Yes);
+            CopyHeader.value(NoYes::Yes);
+
+            AVAqbQuotationDocNum = CustQuotationJour_ds.query().dataSourceName('CustQuotationJour').addRange(fieldnum(CustQuotationJour, QuotationDocNum));
+            AVAqbQuotationDocNum.status(RangeStatus::Locked);
+            AVAqbQuotationDocNum.value(SysQuery::valueLike(callerSalesQuotationTable.QuotationId));
+
+            TabPageSalesQuotation.visible(false);
+
+            copyLV          = true;
+            copyCalcPrice   = true;
+
+            copyFromJournal = true;
+        }
+        
+        TabPageQuotationConfirmJour.visible(false);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canClose</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    boolean canClose()
+    {
+        boolean         canClose;
+        Object          caller;
+
+        canClose = next canclose();
+
+        if (this.closedOk() && canClose)
+        {
+            caller = this.args().caller();
+            if (caller is FormRun)
+            {
+                FormRun         callerFormRun = caller as FormRun;
+                FormDataSource  specialDisc_DS = callerFormRun.dataSource('AVASpecialDiscQuotationAVA');
+                if (specialDisc_DS)
+                {
+                    specialDisc_DS.reread();
+                    specialDisc_DS.refresh();
+                }
+
+                FormDataSource infoFields_DS = callerFormRun.dataSource('KCS_HDMSalesQuotationTableInfoFields');
+
+                if (infoFields_DS)
+                {
+                    infoFields_DS.reread();
+                    infoFields_DS.refresh();
+                }
+            }
+        }
+        return canClose;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>createContract</returns>
+    protected SalesQuotationCopyingContract createContract()
+    {
+        SalesQuotationCopyingContract contract = next createContract();
+
+        if (copyHeader.value())
+        {
+            contract.parmAVACopyFromJournal(CopyFromJournal);
+            TmpFrmVirtual       locTmpFrmVirtualHeader = contract.parmTmpFrmVirtualHeader();
+            select firstonly locTmpFrmVirtualHeader;
+            if (!locTmpFrmVirtualHeader.RecId)
+            {
+                TmpFrmVirtual       locTmpFrmVirtualLines = contract.parmTmpFrmVirtualLines();
+                select firstonly    locTmpFrmVirtualLines;
+                SalesQuotationLine  locSalesQuotationLine = SalesQuotationLine::findRecId(locTmpFrmVirtualLines.RecordNo);
+                SalesQuotationTable locSalesQuotationTable = SalesQuotationTable::find(locSalesQuotationLine.QuotationId);
+
+                if (locSalesQuotationTable.RecId)
+                {
+                    locTmpFrmVirtualHeader.tableNum   = locSalesQuotationTable.TableId;
+                    locTmpFrmVirtualHeader.RecordNo   = locSalesQuotationTable.RecId;
+                    locTmpFrmVirtualHeader.Id         = locSalesQuotationTable.QuotationId;
+                    locTmpFrmVirtualHeader.write();
+
+                    contract.parmTmpFrmVirtualHeader(locTmpFrmVirtualHeader);
+                }
+            }
+        }
+
+        return contract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>editMarkAll</Name>
+				<Source><![CDATA[
+    NoYes editMarkAll(boolean           _set,
+                      Common            _header,
+                      Num               _id,
+                      NoYes             _markAll,
+                      FormDataSource    _lineDataSource)
+    {
+        if (_set && _markAll)
+        {
+            if (CopyHeader.value() == NoYes::No)
+            {
+                //if (Box::okCancel("@NDX:NXASetCopyHeader", DialogButton::Ok) == DialogButton::Ok)
+                if (Box::yesNo("@NDX:NXASetCopyHeader", DialogButton::Yes) == DialogButton::Yes)
+                {
+                    CopyHeader.value(NoYes::Yes);
+                }
+            }
+        }
+        return next editmarkall(_set, _header, _id, _markAll, _lineDataSource);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

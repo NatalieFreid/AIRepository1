@@ -1,0 +1,453 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAHandoverDocManager</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class AVAHandoverDocManager
+{
+    WHSPackingWorkLocationSetup callerPackingWorkLocationSetup;
+    WHSWorkTable                callerWorkTable;
+    Set                         shipments;
+    Set                         handoverDocs;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmCallerWorkTable</Name>
+				<Source><![CDATA[
+    protected WHSWorkTable parmCallerWorkTable(WHSWorkTable _workTable = callerWorkTable)
+    {
+        callerWorkTable = _workTable;
+
+        return callerWorkTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>manage</Name>
+				<Source><![CDATA[
+    protected void manage()
+    {
+        this.init();
+
+        if (callerWorkTable)
+        {
+            this.setPackingWorkLocationSetup();
+
+            if (callerPackingWorkLocationSetup
+             && callerPackingWorkLocationSetup.AVAPrintHandoverDocument != AVAPrintDocumentMode::No)
+            {
+                this.setShipments();
+
+                switch (callerPackingWorkLocationSetup.AVAHandoverDocPrintMode)
+                {
+                    case AVAHandoverDocPrintMode::FirstShipmentWork:
+                        this.processFirstShipmentWork();
+                        break;
+                    case AVAHandoverDocPrintMode::LastShipmentWork:
+                        this.processLastShipmentWork();
+                        break;
+                    default:
+                        throw error(Error::wrongUseOfFunction(funcName()));
+                }
+
+                this.printCreatedDocuments();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processFirstShipmentWork</Name>
+				<Source><![CDATA[
+    protected void processFirstShipmentWork()
+    {
+        WHSWorkTable                workTable;
+        WHSWorkLine                 workLine;
+        WHSWorkLine                 workLineCheck;
+        WHSWorkLine                 workLine_PackingWorkLocation;
+        WHSPackingWorkLocationSetup packingWorkLocationSetup;
+        AVAHandoverDocTable         handoverDocTable;
+        SetEnumerator               setEnumerator;
+        WHSShipmentId               shipmentId;
+
+        setEnumerator = shipments.getEnumerator();
+
+        while (setEnumerator.moveNext())
+        {
+            shipmentId = setEnumerator.current();;
+
+            if (!this.checkIsFirstWorkForShipment(shipmentId))
+            {
+                continue;
+            }
+
+            this.processWorkByShipment(shipmentId);
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkIsFirstWorkForShipment</Name>
+				<Source><![CDATA[
+    protected boolean checkIsFirstWorkForShipment(WHSShipmentId _shipmentId)
+    {
+        boolean         isFirst;
+        WHSWorkTable    workTable;
+        WHSWorkLine     workLine;
+
+        isFirst = true;
+
+        select firstonly workTable
+            where workTable.WorkStatus == WHSWorkStatus::Closed
+               && workTable.WorkId != callerWorkTable.WorkId
+               && workTable.WorkTransType == WHSWorkTransType::Sales
+            exists join workLine
+                where workLine.WorkId       == workTable.WorkId
+                   && workLine.ShipmentId   == _shipmentId;
+
+        if (workTable)
+        {
+            isFirst = false;
+        }
+
+        return isFirst;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkIsLastWorkForShipment</Name>
+				<Source><![CDATA[
+    protected boolean checkIsLastWorkForShipment(WHSShipmentId _shipmentId)
+    {
+        boolean         isLast;
+        WHSWorkTable    workTable;
+        WHSWorkLine     workLine;
+
+        isLast = true;
+
+        select firstonly workTable
+            where workTable.WorkStatus != WHSWorkStatus::Closed
+               && workTable.WorkStatus != WHSWorkStatus::Cancelled
+               && workTable.WorkTransType == WHSWorkTransType::Sales
+            exists join workLine
+                where workLine.WorkId       == workTable.WorkId
+                   && workLine.ShipmentId   == _shipmentId;
+
+        if (workTable)
+        {
+            isLast = false;
+        }
+
+        return isLast;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processLastShipmentWork</Name>
+				<Source><![CDATA[
+    protected void processLastShipmentWork()
+    {
+        SetEnumerator               setEnumerator;
+        WHSShipmentId               shipmentId;
+
+        setEnumerator = shipments.getEnumerator();
+
+        while (setEnumerator.moveNext())
+        {
+            shipmentId = setEnumerator.current();;
+
+            if (!this.checkIsLastWorkForShipment(shipmentId))
+            {
+                continue;
+            }
+
+            this.processWorkByShipment(shipmentId);            
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processWorkByShipment</Name>
+				<Source><![CDATA[
+    protected void processWorkByShipment(WHSShipmentId _shipmentId)
+    {
+        WHSWorkTable                workTable;
+        WHSWorkLine                 workLine;
+        WHSWorkLine                 workLineCheck;
+        WHSWorkLine                 workLine_PackingWorkLocation;
+        WHSPackingWorkLocationSetup packingWorkLocationSetup;
+        AVAHandoverDocTable         handoverDocTable;
+
+        ttsbegin;
+
+        while select workTable
+            where workTable.WorkTransType == WHSWorkTransType::Sales
+            exists join workLineCheck
+                where workLineCheck.WorkId == workTable.WorkId
+                   && workLineCheck.ShipmentId == _shipmentId
+        {
+            select firstonly workLine_PackingWorkLocation
+                order by LineNum desc
+                where workLine_PackingWorkLocation.WorkId == workTable.WorkId
+                join packingWorkLocationSetup
+                    where packingWorkLocationSetup.wMSLocationId    == workLine_PackingWorkLocation.WMSLocationId
+                       && packingWorkLocationSetup.InventLocationId == workTable.InventLocationId
+                       && packingWorkLocationSetup.RecId            == callerPackingWorkLocationSetup.RecId;
+
+            if (!workLine_PackingWorkLocation
+             || (packingWorkLocationSetup && packingWorkLocationSetup.AVAPrintHandoverDocument == AVAPrintDocumentMode::No))
+            {
+                continue;
+            }
+
+            
+            handoverDocTable =  AVAHandoverDocTable::find(_shipmentId, workTable.InventLocationId, workLine_PackingWorkLocation.WMSLocationId, true);
+
+            if (!handoverDocTable)
+            {
+                handoverDocTable.ShipmentId         = _shipmentId;
+                handoverDocTable.InventLocationId   = workTable.InventLocationId;
+                handoverDocTable.WMSLocationId      = workLine_PackingWorkLocation.WMSLocationId;
+                handoverDocTable.OrderNum           = workTable.OrderNum;
+                handoverDocTable.write();
+            }
+            
+            this.insertHandoverDocLines(workTable, handoverDocTable);
+
+            handoverDocTable.reread();
+            handoverDocTable.updateFromHandoverDocLine();
+            handoverDocTable.update();
+
+            handoverDocs.add(handoverDocTable.RecId);
+        }
+
+        ttscommit;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertHandoverDocLines</Name>
+				<Source><![CDATA[
+    protected void insertHandoverDocLines(WHSWorkTable _workTable, AVAHandoverDocTable  _handoverDocTable)
+    {
+        WHSWorkLine         workLine;
+        WHSLoadLine         loadLine;
+        AVAHandoverDocLine  handoverDocLine;
+
+        while select workLine
+            order by LineNum asc
+            where workLine.WorkId == _workTable.WorkId
+               && workLine.WorkStatus != WHSWorkStatus::Cancelled
+        {
+            if (workLine.WorkType == WHSWorkType::Put)
+            {
+                break;
+            }
+
+            loadLine        = WHSLoadLine::findbyRecId(workLine.LoadLineRefRecId);
+            handoverDocLine = AVAHandoverDocLine::find(_handoverDocTable.RecId,
+                                                       _workTable.WorkId,
+                                                       workLine.LineNum,
+                                                       loadLine.RecId,
+                                                       true);
+
+            handoverDocLine.initFromHandoverDocTable(_handoverDocTable);
+            handoverDocLine.initFromWorkTable(_workTable);
+            handoverDocLine.initFromWorkLine(workLine);
+            handoverDocLine.initFroLoadLine(loadLine);
+
+            if (workLine.WorkStatus == WHSWorkStatus::Closed)
+            {
+                handoverDocLine.DataType = AVAHandoverDocDataType::Picked;
+            }
+            else
+            {
+                handoverDocLine.DataType = AVAHandoverDocDataType::Open;
+            }
+            
+            handoverDocLine.write();
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertOpenLoadLineHandoverDocLines</Name>
+				<Source><![CDATA[
+    protected void insertOpenLoadLineHandoverDocLines(AVAHandoverDocTable  _handoverDocTable)
+    {
+        AVAHandoverDocLine  handoverDocLine;
+        AVAHandoverDocLine  handoverDocLine_Open;
+        WHSLoadLine         loadLine;
+        boolean             openLine;
+
+
+        while select loadLine
+            where loadLine.ShipmentId == _handoverDocTable.ShipmentId
+        {
+            openLine = true;
+
+            while select sum(PickedQty) from handoverDocLine
+                group by handoverDocLine.LoadLineRefRecId
+                where handoverDocLine.LoadLineRefRecId  == loadLine.RecId
+                   && handoverDocLine.HandoverDocId     == _handoverDocTable.RecId
+            {
+                openLine = false;
+
+                if (handoverDocLine.PickedQty < loadLine.InventQty)
+                {
+                    handoverDocLine_Open.clear();
+                    handoverDocLine_Open.initFromHandoverDocTable(_handoverDocTable);
+                    handoverDocLine_Open.initFroLoadLine(loadLine);
+                    handoverDocLine_Open.PickedQty = handoverDocLine.PickedQty;
+                    handoverDocLine_Open.DataType =  AVAHandoverDocDataType::Partly;
+                    handoverDocLine_Open.insert();
+                }
+            }     
+ 
+            if (openLine)
+            {
+                handoverDocLine_Open.clear();
+                handoverDocLine_Open.initFromHandoverDocTable(_handoverDocTable);
+                handoverDocLine_Open.initFroLoadLine(loadLine);
+                handoverDocLine_Open.DataType =  AVAHandoverDocDataType::Open;
+                handoverDocLine_Open.insert();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setPackingWorkLocationSetup</Name>
+				<Source><![CDATA[
+    protected void setPackingWorkLocationSetup()
+    {
+        WHSWorkLine workLine;
+
+        select firstonly callerPackingWorkLocationSetup
+            where callerPackingWorkLocationSetup.InventLocationId == callerWorkTable.InventLocationId
+            exists join workLine
+                where workLine.WMSLocationId    == callerPackingWorkLocationSetup.wMSLocationId
+                   && workLine.WorkId           == callerWorkTable.WorkId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setShipments</Name>
+				<Source><![CDATA[
+    protected void setShipments()
+    {
+        WHSWorkLine workLine;
+
+        while select workLine
+            group by ShipmentId
+            where workLine.WorkId == callerWorkTable.WorkId
+               && workLine.ShipmentId
+        {
+            shipments.add(workLine.ShipmentId);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    private void init()
+    {
+        shipments       = new Set(Types::String);
+        handoverDocs    = new Set(Types::Int64);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>manageFromWorkTable</Name>
+				<Source><![CDATA[
+    public static void manageFromWorkTable(WHSWorkTable _workTable)
+    {
+        AVAHandoverDocManager   handoverDocManager;
+
+        handoverDocManager =  AVAHandoverDocManager::construct();
+        handoverDocManager.parmCallerWorkTable(_workTable);
+        handoverDocManager.manage();
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>printCreatedDocuments</Name>
+				<Source><![CDATA[
+    protected void printCreatedDocuments()
+    {
+        SetEnumerator   handoverDocTable;
+
+        handoverDocTable = handoverDocs.getEnumerator();
+
+        while (handoverDocTable.moveNext())
+        {       
+            AVAHandoverDocManager::printDocument(handoverDocTable.current());
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>printDocument</Name>
+				<Source><![CDATA[
+    public static void printDocument(AVAHandoverDocTableRefRecId _handoverDocId)
+    {
+        AVAHandoverDocTable         handoverDocTable;
+        WHSPackingWorkLocationSetup localPackingWorkLocationSetup;
+
+        handoverDocTable                =  AVAHandoverDocTable::findByRecId(_handoverDocId);
+        localPackingWorkLocationSetup   =  WHSPackingWorkLocationSetup::avaFind(handoverDocTable.InventLocationId, handoverDocTable.WMSLocationId);
+
+
+        switch (localPackingWorkLocationSetup.AVAPrintHandoverDocument)
+        {
+            case AVAPrintDocumentMode::Direkt:
+                AVAExecuteAsynchronousController::printAsynchronouse(handoverDocTable, AVAExecuteAsynchronouseType::HandoverDoc, SysOperationExecutionMode::Synchronous);
+                break;
+
+            case AVAPrintDocumentMode::Parallel:
+                AVAExecuteAsynchronousController::printAsynchronouse(handoverDocTable, AVAExecuteAsynchronouseType::HandoverDoc);
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    public static AVAHandoverDocManager construct()
+    {
+        AVAHandoverDocManager   handoverDocManager;
+
+        handoverDocManager = new AVAHandoverDocManager();
+
+        return handoverDocManager;
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

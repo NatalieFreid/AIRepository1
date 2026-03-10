@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACBSCalculation_C_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(classstr(AVACBSCalculation_C))]
+internal final class AVACBSCalculation_C_Extension
+{
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initCalcAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_journalTrans">_journalTrans</param>
+    void initCalcAmount(KCS_BOSJournalTrans _journalTrans)
+    {
+        next    initCalcAmount(_journalTrans);
+        KCS_BOSJournalTrans_C       locJournalTrans = _journalTrans as KCS_BOSJournalTrans_C;
+
+        locJournalTrans.InvoiceAmount = _journalTrans.AmountCurBase;
+        
+        if (KCS_BOSConditionMode_C::find(_journalTrans.ConditionModeID).AVABonusDeduct)
+        {
+            locJournalTrans.BonusDeductedAmount =   this.getInvoiceTransBonusAmount(_journalTrans);
+            locJournalTrans.AmountCurBase =    locJournalTrans.InvoiceAmount -  locJournalTrans.BonusDeductedAmount;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getInvoiceTransBonusAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_journalTrans">_journalTrans</param>
+    /// <returns>Amount</returns>
+    public Amount getInvoiceTransBonusAmount(KCS_BOSJournalTrans   _journalTrans)
+    {
+        KCS_BOSTrans_B          trans_B;
+        KCS_BOSTypeParameters_B typeParameters_B;
+
+        select sum(AmountCur) from  trans_B
+            where trans_B.SalesInventRefId ==  _journalTrans.SalesInventRefId
+               && trans_B.ReverseAccrualCustInvoiceId == ''
+               join typeParameters_B
+                    where typeParameters_B.TypeID == trans_B.TypeID
+                       && typeParameters_B.AVADirectBonus == NoYes::No;
+
+        return trans_b.AmountCur;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Put2Journal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 27.02.2024
+    /// </summary>
+    public void Put2Journal()
+    {
+        KCS_BOSTrans_B  trans_B;
+        KCS_BOSTypeParameters_B   typeParameters_B;
+        KCS_BOSJournalTrans_C  journalTrans_C;
+        KCS_BOSJournalTrans_C  directBonusJourTrans;
+
+        List                            recipientList = new List(Types::Container);
+        ListIterator                    iterator;
+        Percent                         scaleRate = 0;
+        AVACBSConditionsGroup           conditionsGroup;
+
+        next put2Journal();
+
+        if (KCS_BOSConditionMode_C::find(calcTable.ConditionModeId).AVABonusDeduct)
+        {
+            select firstonly  trans_B
+                where trans_B.SalesInvoiceId == custProjInvoiceTrans.InvoiceId
+                   && trans_B.ReverseAccrualCustInvoiceId == ''
+                    join typeParameters_B
+                    where typeParameters_B.TypeID == trans_B.TypeID
+                       && typeParameters_B.AVADirectBonus == NoYes::Yes;
+
+            if (trans_B.AmountCur != 0 )
+            {
+                select firstonly directBonusJourTrans
+                    where directBonusJourTrans.ItemId ==  trans_B.ItemId
+                    && directBonusJourTrans.SalesInvoiceId == custProjInvoiceTrans.InvoiceId;
+                if (!directBonusJourTrans.recId)
+                {
+                    recipientList = this.createRecipientList();
+                    iterator = new ListIterator(recipientList);
+                    while(iterator.more())
+                    {
+                        recipientInfo = iterator.value();
+                        scaleRate     = 0;
+                        journalTrans_C.clear();
+                        journalTrans_C.initFromJournalTable(JournalTable);
+                        journalTrans_C.initFromCalcTable(calcTable);     // must be performed first
+                        journalTrans_C.initFromCustInvoiceTrans(custProjInvoiceTrans);
+                        journalTrans_C.ItemId  = trans_B.ItemId;
+                        journalTrans_C.SalesInventRefId = trans_B.SalesInventRefId;
+                        journalTrans_C.AmountCurBase = trans_B.AmountCurBase;
+                        journalTrans_C.BonusDeductedAmount =   trans_B.AmountCurBase;
+                        journalTrans_C.CalcRate         = calcTable.CalcBase;
+                        journalTrans_C.AmountCur        = CurrencyExchangeHelper::amount(base * calcTable.CalcBase / 100,journalTrans_C.CurrencyCode);
+                        journalTrans_C.QuantityBased    = NoYes::No;
+                        this.initFromRecipientInfo(journalTrans_C);
+    
+                        journalTrans_C.CommissSalesGroup = CommissSalesGroup;
+    
+                        journalTrans_C.nextLineNum();
+                    
+                        IF (!journalTrans_C.RecipientAC)
+                        {
+                            if (!journalTrans_C.RecipientAC)
+                            {
+                                warning(strFmt("@BOS752",journalTrans_C.JournalNum,
+                                                            journalTrans_C.LineNum,
+                                                            journalTrans_C.ItemId,
+                                                            custProjInvoiceTrans.SalesId,
+                                                            salesTable::find(custProjInvoiceTrans.SalesId).CustAccount));
+                            }
+                        }
+    
+                        if (JournalTrans_C.validateWrite())
+                        {
+                            journalTrans_C.insert();
+                        }
+                        iterator.next();
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

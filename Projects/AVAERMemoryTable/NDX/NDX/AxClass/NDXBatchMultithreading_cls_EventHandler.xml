@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXBatchMultithreading_cls_EventHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 29.01.25
+/// </summary>
+internal final class NDXBatchMultithreading_cls_EventHandler
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>NDXBatchMultithreading_onCallBack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 29.01.25
+    /// </summary>
+    /// <param name="_nDXBatchProcessingTableHeader">NDXBatchProcessingTableHeader</param>
+    /// <param name="_returnContract">NDXBatchMultiThreadingReturnContract</param>
+    /// <param name="_eventResult">NDXEventHandlerResultBatch</param>
+    [SubscribesTo(classStr(NDXBatchMultithreading), delegateStr(NDXBatchMultithreading, onCallBack))]
+    public static void NDXBatchMultithreading_onCallBack(NDXBatchProcessingTableHeader _nDXBatchProcessingTableHeader, NDXBatchMultiThreadingReturnContract _returnContract, NDXEventHandlerResultBatch _eventResult)
+    {
+        boolean lSGOC = false;
+        int errorsVJ;
+        int errorsLJ;
+        int reruns;
+        SysOperationExecutionMode sysOperationExecutionMode = NDXBatchProcessingParameters::find().SysOperationExecutionMode_SalesConsolidation;
+
+        switch (_nDXBatchProcessingTableHeader.BatchProcessingType)
+        {
+            case NDXBatchProcessingType::SalesCurrentYear :
+            case NDXBatchProcessingType::SalesLastYear:
+            case NDXBatchProcessingType::SalesCurrentYearRun2:
+            case NDXBatchProcessingType::SalesLastYearRun2:
+                _eventResult.parmUmsBasisLJ(_returnContract.parmUmsBasisLJ());
+
+                NDXBatchMultiThreadingContract contract = NDXBatchMultiThreadingContract::construct();
+                contract.parmSignature(_returnContract.parmSignature());
+                contract.parmNewControllerInstance(false);
+                contract.parmUmsBasisLJ(_eventResult.parmUmsBasisLJ());
+
+                if (lSGOC)                    
+                {
+                    NDXMultiThreadingCreateTaskUmsController controller = NDXMultiThreadingCreateTaskUmsController::instance(contract);
+                    NDXMultiThreadingCreateTaskController::removeInstanceFromSysGlobalObjectCach(controller.parmScope());
+                }
+                _nDXBatchProcessingTableHeader.selectForUpdate(true);
+                _nDXBatchProcessingTableHeader.Active = NoYes::No;
+                _nDXBatchProcessingTableHeader.WithError = _eventResult.parmWithError() ? NoYes::Yes : NoYes::No;
+                _nDXBatchProcessingTableHeader.MessageDetail = _eventResult.parmMessage();
+
+                ttsbegin;
+                _nDXBatchProcessingTableHeader.update();
+                ttscommit;
+
+                break;
+        }
+        switch (_nDXBatchProcessingTableHeader.BatchProcessingType)
+        {
+            case NDXBatchProcessingType::SalesCurrentYear :
+                // If Errors: check again
+                errorsLJ = NDXBatchProcessingTableProcess::countErrorsFromSignature(_returnContract.parmSignature());
+                if (errorsLJ)
+                {
+                    reruns = _nDXBatchProcessingTableHeader.setBatchProcessingType(NDXBatchProcessingType::SalesCurrentYearRun2);
+                    if (reruns && false)
+                    {
+                        ttsbegin;
+                        _nDXBatchProcessingTableHeader.selectForUpdate(true);
+                        _nDXBatchProcessingTableHeader.update();
+                        ttscommit;
+                        runAsync(classNum(NDXBatchMultithreadingSalesConsolidation),
+                            staticMethodStr(NDXBatchMultithreadingSalesConsolidation, runNDXMultiThreadingCreateTaskController),
+                            [false, sysOperationExecutionMode, _returnContract.parmSignature(), _returnContract.parmSignatureUmsVJ(), NDXNoYesBE::Yes],
+                            System.Threading.CancellationToken::None,
+                            classNum(NDXBatchMultithreading),
+                            staticMethodStr(NDXBatchMultithreading, callBackrunNDXMultiThreadingCreateTaskController));
+                        break;
+                    }
+                }
+
+                // Sales last year
+                runAsync(classNum(NDXBatchMultithreadingSalesConsolidation),
+                    staticMethodStr(NDXBatchMultithreadingSalesConsolidation, runNDXMultiThreadingCreateTaskController),
+                    [false, sysOperationExecutionMode, _returnContract.parmSignatureUmsVJ(), _returnContract.parmSignatureUmsVJ(), NDXNoYesBE::No],
+                    System.Threading.CancellationToken::None,
+                    classNum(NDXBatchMultithreading),
+                    staticMethodStr(NDXBatchMultithreading, callBackrunNDXMultiThreadingCreateTaskController));
+
+                break;
+            case NDXBatchProcessingType::SalesLastYear :
+                errorsVJ = NDXBatchProcessingTableProcess::countErrorsFromSignature(_returnContract.parmSignatureUmsVJ());
+                if (errorsVJ)
+                {
+                    reruns = _nDXBatchProcessingTableHeader.setBatchProcessingType(NDXBatchProcessingType::SalesLastYearRun2);
+                    if (reruns && false)
+                    {
+                        ttsbegin;
+                        _nDXBatchProcessingTableHeader.selectForUpdate(true);
+                        _nDXBatchProcessingTableHeader.update();
+                        ttscommit;
+                        runAsync(classNum(NDXBatchMultithreadingSalesConsolidation),
+                            staticMethodStr(NDXBatchMultithreadingSalesConsolidation, runNDXMultiThreadingCreateTaskController),
+                            [false, sysOperationExecutionMode, _returnContract.parmSignatureUmsVJ(), _returnContract.parmSignatureUmsVJ(), NDXNoYesBE::No],
+                            System.Threading.CancellationToken::None,
+                            classNum(NDXBatchMultithreading),
+                            staticMethodStr(NDXBatchMultithreading, callBackrunNDXMultiThreadingCreateTaskController));
+                    }
+                }
+                break;
+            case NDXBatchProcessingType::SalesCurrentYearRun2 :
+                ttsbegin;
+                _nDXBatchProcessingTableHeader.selectForUpdate(true);
+                _nDXBatchProcessingTableHeader.setBatchProcessingType(NDXBatchProcessingType::SalesLastYear);
+                _nDXBatchProcessingTableHeader.update();
+                ttscommit;
+
+                // Sales last year
+                runAsync(classNum(NDXBatchMultithreadingSalesConsolidation),
+                    staticMethodStr(NDXBatchMultithreadingSalesConsolidation, runNDXMultiThreadingCreateTaskController),
+                    [false, sysOperationExecutionMode, _returnContract.parmSignatureUmsVJ(), _returnContract.parmSignatureUmsVJ(), NDXNoYesBE::No],
+                    System.Threading.CancellationToken::None,
+                    classNum(NDXBatchMultithreading),
+                    staticMethodStr(NDXBatchMultithreading, callBackrunNDXMultiThreadingCreateTaskController));
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXBatchMultithreading_onProcessLoopAndFillContainer</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 29.01.25
+    /// </summary>
+    /// <param name="_returnContract">NDXBatchMultiThreadingReturnContract</param>
+    /// <param name="_eventResult">NDXEventHandlerResultBatch</param>
+    [SubscribesTo(classStr(NDXBatchMultithreading), delegateStr(NDXBatchMultithreading, onProcessLoopAndFillContainer))]
+    public static void NDXBatchMultithreading_onProcessLoopAndFillContainer(
+        NDXBatchMultiThreadingReturnContract _returnContract, 
+        NDXEventHandlerResultBatch _eventResult)
+    {
+        _returnContract.parmUmsBasisLJ(_eventResult.parmUmsBasisLJ());
+        _returnContract.parmSignatureUmsVJ(_eventResult.parmSignatureUmsVJ());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXBatchMultithreading_onRunControllerPre</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 15.01.25
+    /// last modified: PaffH 07.02.25
+    /// </summary>
+    /// <param name="_controller">NDXMultiThreadingCreateTaskController</param>
+    /// <param name="_eventResult">NDXEventHandlerResultBatch</param>
+    [SubscribesTo(classStr(NDXBatchMultithreading), delegateStr(NDXBatchMultithreading, onRunControllerPre))]
+    public static void NDXBatchMultithreading_onRunControllerPre(
+        NDXMultiThreadingCreateTaskController _controller, 
+        NDXEventHandlerResultBatch _eventResult)
+    {
+        NDXMultiThreadingCreateTaskContract contractCreateTask = _controller.getDataContractObject('_contract');
+        if (!contractCreateTask)
+        {
+            throw Error(strFmt("@SYS23264", classStr(NDXMultiThreadingCreateTaskContract)));
+        }
+        NDXTotalNumberOfTasksNeeded numberOfThreads = NDXUmsatzParametersGlobal::find().TotalNumberOfTasksNeeded;
+        if (!numberOfThreads)
+        {
+            numberOfThreads = 5;
+        }
+        contractCreateTask.parmNumberOfThreads(numberOfThreads);
+        _eventResult.parmUmsBasisLJ(contractCreateTask.parmUmsBasisLJ());
+        _eventResult.parmSignatureUmsVJ(contractCreateTask.parmSignatureUmsVJ());
+
+        //if (_controller is NDXMultiThreadingCreateTaskUmsController)
+        //{
+        //    NDXMultiThreadingCreateTaskUmsController controllerUms = _controller as NDXMultiThreadingCreateTaskUmsController;
+        //    NDXMultiThreadingCreateTaskContract contractCreateTask2 = controllerUms.getDataContractObject('_contract');
+        //    if (!contractCreateTask2)
+        //    {
+        //        throw Error(strFmt("@SYS23264", classStr(NDXMultiThreadingCreateTaskContract)));
+        //    }
+        //    NDXSignature sig = controllerUms.parmSignatureUmsVJ();
+        //    NDXSignature sig2 = contractCreateTask2.parmSignatureUmsVJ();
+        //    _eventResult.parmUmsBasisLJ(controllerUms.parmUmsBasisLJ());
+        //    _eventResult.parmSignatureVJ(controllerUms.parmSignatureUmsVJ());
+        //}
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

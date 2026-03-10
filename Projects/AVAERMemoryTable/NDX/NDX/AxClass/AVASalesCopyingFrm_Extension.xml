@@ -1,0 +1,418 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesCopyingFrm_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed by AVANADE
+/// </summary>
+[ExtensionOf(formStr(SalesCopying))]
+final class AVASalesCopyingFrm_Extension
+{
+    public boolean          avaSalesOrderCreditNote;
+    public boolean          avaSalesOrderCreditNoteSingle;
+    public SalesId          avaSalesOrderCreditNoteSingleSalesId;
+    public HcmWorkerRecId   frmCreditNoteResponsibleHCMWorkerRecId;
+    public boolean          frmAVACalcSalesLine;
+    public boolean          frmSalesOrderSearch;
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>canClosePostProcess</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    protected void canClosePostProcess()
+    {
+        /*boolean             copySales = true, setStatusId = false;
+        CustQuotationTrans  custQuotationTransLocal;
+        Args                args = new Args(this);
+        FormRun             formRun;
+        KCS_StatusId        statusId;*/
+
+        //Task 10237 : Diese Ruekfrage kann jetzt entfallen.
+        /*if (tmpFrmVirtualLines.TableNum == tableNum(CustQuotationTrans))
+        {
+            custQuotationTransLocal = CustQuotationTrans::findRecId(tmpFrmVirtualLines.RecordNo);
+            if (custQuotationTransLocal &&
+                            custQuotationTransLocal.custQuotationJour().salesQuotationTable().QuotationStatus != SalesQuotationStatus::Confirmed)
+            {
+                args.name(formStr(AVASetStatusIdSalesCopying));
+                args.record(tmpFrmVirtualLines);
+
+                formRun = classFactory.formRunClass(args);
+
+                formRun.init();
+                formRun.run();
+                formRun.wait();
+
+                copySales = formRun.parmCopySales();
+
+                setStatusId = formRun.parmSetStatusId(); 
+                statusId    = formRun.parmStatusId();
+            }
+        }
+
+        if (!copySales)
+        {
+            throw error("@NDX:NXACopyAborted");
+        }
+
+        if (setStatusId)
+        {
+            if (!statusId)
+            {
+                throw error("@NDX:NXAStatusNotSet");
+            }
+            else
+            {
+                this.updateSalesQuotationTable(statusId);
+            }
+        }*/
+
+        salesOrderCopyingContract.parmAVACalcSalesLine(frmAVACalcSalesLine);
+        salesOrderCopyingContract.parmAVASalesOrderCreditNote(avaSalesOrderCreditNote);
+        salesOrderCopyingContract.parmAVASalesOrderCreditNoteSingle(avaSalesOrderCreditNoteSingle);
+        salesOrderCopyingContract.parmAVASalesOrderSearch(frmSalesOrderSearch);
+
+        next canClosePostProcess();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateSalesQuotationTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_status">KCS_StatusId</param>
+    void updateSalesQuotationTable(KCS_StatusId _status)
+    {
+        KCS_QuotationStatus         quotationStatus;
+        AVAQuotationStatusModify    quotationStatusModify;
+        SalesQuotationTable         salesQuotationTable = CustQuotationTrans::findRecId(tmpFrmVirtualLines.RecordNo).custQuotationJour().salesQuotationTable();
+        salesQuotationTable         sqt;
+        Args                        args;
+
+        quotationStatus = KCS_QuotationStatus::find(_status);
+        args = new Args();
+        args.record(salesQuotationTable);
+        quotationStatusModify = AVAQuotationStatusModify::construct(args);
+        quotationStatusModify.init();
+        quotationStatusModify.parmStatusId(quotationStatus.KCS_StatusId);
+        quotationStatusModify.parmReasonId(quotationStatus.KCS_ReasonId);
+        quotationStatusModify.parmAltStatusId(quotationStatus.KCS_AltStatusId);
+        quotationStatusModify.parmQuotationStatus(quotationStatus.KCS_SalesQuotationStatus);
+        quotationStatusModify.parmDecisionDate(quotationStatusModify.parmDecisionDate() == dateNull() ? DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()) : quotationStatusModify.parmDecisionDate());
+        quotationStatusModify.updateSalesQuotation();
+
+        ttsbegin;
+        sqt = salesQuotationTable::find(salesQuotationTable.QuotationId, true);
+        if (sqt.RecId)
+        {
+            sqt.QuotationStatus    = SalesQuotationStatus::Confirmed;
+            sqt.doUpdate();
+        }
+        ttscommit;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pdsCWEnableFields</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>pdsCWEnableFields</c> method.
+    /// </summary>
+    /// <param name="_dataSource">
+    ///     <c>Common</c> as type
+    /// </param>
+    public void pdsCWEnableFields(Common _dataSource)
+    {
+        next pdsCWEnableFields(_dataSource);
+  
+        switch (_dataSource.TableId)
+        {
+            case tableNum(CustInvoiceTrans):
+                /*
+                this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_PdsCWQty)).visible(false);
+                this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_PdsCWUnitId)).visible(false);
+                */
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetFormObjectVisibility</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaSetFormObjectVisibility</c> method.
+    /// </summary>
+    /// <param name="_common">
+    ///     <c>Common</c> as type
+    /// </param>
+    public void avaSetFormObjectVisibility(Common _common)
+    {
+        Args locArgs;
+        
+        locArgs = this.args();
+
+        if(     locArgs.caller() 
+            && (    locArgs.caller().name() == formStr(ReturnTableListPage)
+                ||  locArgs.caller().name() == formStr(ReturnTable)         )   )
+        {
+            switch (_common.TableId)
+            {
+                case tableNum(CustInvoiceTrans):
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_LineNum)).visible(true);
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_AVAItemSet)).visible(true);
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_Name)).visible(false);
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_Name)).visible(false);
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_SalesCategory)).visible(false);
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_PdsCWQty)).visible(false);
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_PdsCWUnitId)).visible(false);
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_AVAItemSetLineAmount)).visible(true);
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_DiscAmount)).visible(false);
+                    break;
+
+                default:
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_LineNum)).visible(true);
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_AVAItemSet)).visible(true);
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_Name)).visible(false);
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_Name)).visible(false);
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_SalesCategory)).visible(false);
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_PdsCWQty)).visible(false);
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_PdsCWUnitId)).visible(false);
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_AVAItemSetLineAmount)).visible(true);
+                    this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_DiscAmount)).visible(false);
+            }
+        }
+        else
+        {
+            this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_LineNum)).visible(true);
+            this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_AVAItemSet)).visible(true);
+            this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_Name)).visible(false);
+            this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_Name)).visible(false);
+            this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_SalesCategory)).visible(false);
+            this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_PdsCWQty)).visible(false);
+            this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_PdsCWUnitId)).visible(false);
+            this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_AVAItemSetLineAmount)).visible(true);
+            this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_DiscAmount)).visible(false);
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>init</c> method.
+    /// </summary>
+    void init()
+    {
+        Args        locArgs;
+        SalesTable  locSalesTable;
+        
+        locArgs = new Args();
+        locArgs = this.args();
+
+        if(     locArgs.caller()
+            &&  (       locArgs.caller().name() == formStr(SalesTableListPage) 
+                    ||  locArgs.caller().name() == formStr(SalesTable)          )   )
+        {
+            if(locArgs.menuItemName() == menuItemDisplayStr(AVASalesCreditNoteHeaderSingle_Display))
+            {
+                if(locArgs.record().TableId == tableNum(SalesTable))
+                {
+                    locSalesTable                           = locArgs.record();
+                    avaSalesOrderCreditNoteSingle           = true;
+                    avaSalesOrderCreditNoteSingleSalesId    = locSalesTable.SalesId;
+
+                    avaSalesOrderCreditNote                 = true;
+                }
+            }
+            if(locArgs.menuItemName() == menuItemDisplayStr(SalesCreditNoteHeader_Action))  // formStr(SalesTableListPage)
+            {
+                avaSalesOrderCreditNote                     = true;
+            }
+            if(locArgs.menuItemName() == menuItemDisplayStr(SalesCreditNoteHeader))         // formStr(SalesTable)
+            {
+                avaSalesOrderCreditNote                     = true;
+            }
+        }
+        if(     locArgs.caller()
+            &&  (       locArgs.caller().name() == formStr(ReturnTableListPage)
+                    ||  locArgs.caller().name() == formStr(ReturnTable)         )   )
+        {
+            if(locArgs.menuItemName() == menuItemDisplayStr(ReturnFindSalesOrder_Action))   // formStr(ReturnTableListPage)
+            {
+                frmSalesOrderSearch                         = true;
+            }
+            if(locArgs.menuItemName() == menuItemDisplayStr(ReturnFindSalesOrder))          // formStr(ReturnTable)
+            {
+                frmSalesOrderSearch                         = true;
+            }
+            
+        }
+        next init();
+
+        this.avaSetParameter();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetParameter</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaSetParameter</c> method.
+    /// </summary>
+    public void avaSetParameter()
+    {
+        FormCheckBoxControl locFCBC;
+        FormGroupControl    locFGC;
+        FormRealControl     locFRC;
+
+        if(avaSalesOrderCreditNote)
+        {
+            locFCBC = this.design().controlName(formControlStr(SalesCopying, DeleteLines));
+            locFCBC.checked(false);
+            locFCBC.allowEdit(false);
+
+            locFCBC = this.design().controlName(formControlStr(SalesCopying, CopyMarkup));
+            locFCBC.checked(false);
+            locFCBC.allowEdit(true);
+
+            locFCBC = this.design().controlName(formControlStr(SalesCopying, AVACalcSalesLine));
+            locFCBC.checked(true);
+            locFCBC.allowEdit(true);
+            locFCBC.visible(true);
+
+            locFGC = this.design().controlName(formControlStr(SalesCopying, ReasonCode));
+            locFGC.allowEdit(false);
+            locFGC.visible(false);
+
+            locFRC = this.design().controlName(formControlStr(SalesCopying, CustInvoiceTrans_displayAVAQtyCreditNoteReturnOrder));
+            locFRC.visible(true);
+        }
+        if(frmSalesOrderSearch)
+        {
+            locFCBC = this.design().controlName(formControlStr(SalesCopying, DeleteLines));
+            locFCBC.checked(false);
+            locFCBC.allowEdit(false);
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOK</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>closeOK</c> method.
+    /// </summary>
+    public void closeOK()
+    {
+        boolean             locDialogOK;
+        SalesTable          locSalesTable;
+        FormCheckBoxControl locFCBC;
+
+        if(avaSalesOrderCreditNoteSingle && avaSalesOrderCreditNoteSingleSalesId)
+        {
+            locSalesTable   = SalesTable::find(avaSalesOrderCreditNoteSingleSalesId);
+            
+            locDialogOK     = this.avaDialogGetWorkerCreditNoteResponsible(locSalesTable.KCS_CreditNoteResponsible);
+            if(locDialogOK)
+            {
+                ttsbegin;
+                locSalesTable.selectForUpdate(true);
+                locSalesTable.KCS_CreditNoteResponsible = frmCreditNoteResponsibleHCMWorkerRecId;
+                locSalesTable.update();
+                ttscommit;
+            }
+            else
+            {
+                shouldOpenReturnTableForm = false;
+            }
+            frmCreditNoteResponsibleHCMWorkerRecId = 0;
+        }
+
+        if(avaSalesOrderCreditNote)
+        {
+            locFCBC = this.design().controlName(formControlStr(SalesCopying, AVACalcSalesLine));
+            if(locFCBC.checked() == true)
+            {
+                frmAVACalcSalesLine = true;
+            }
+        }
+
+        next closeOK();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDialogGetWorkerCreditNoteResponsible</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaDialogGetWorkerCreditNoteResponsible</c> method.
+    /// </summary>
+    /// <param name="_hcmWorkerRecId">
+    ///     <c>HCMWorkerRecId</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaDialogGetWorkerCreditNoteResponsible(HCMWorkerRecId _hcmWorkerRecId)
+    {
+        boolean         retVal;
+
+        Dialog          dialog;
+        DialogGroup     dialogGroup;
+        DialogField     dialogHCMWorkerRecId;
+        HcmWorkerRecId  locHCMWorkerRecId;
+
+        locHCMWorkerRecId = _hcmWorkerRecId;
+        if(!locHCMWorkerRecId)
+        {
+            locHCMWorkerRecId = HcmWorker::userId2Worker(curUserId());
+        }
+
+        dialog = new Dialog(strfmt("@SYS82282", "@NDX:NXADifferingCreditNoteResponsibleHelp"));
+
+        dialogGroup             = dialog.addGroup();
+        dialogGroup.caption("@NDX:NXASetResponsibility");
+        dialogHCMWorkerRecId    = dialog.addFieldValue(extendedTypeStr(HcmWorkerRecId), locHCMWorkerRecId);
+
+        dialog.run();
+
+        if (dialog.closedOk())
+        {
+            //get values from the dialog fields
+            frmCreditNoteResponsibleHCMWorkerRecId  = dialogHCMWorkerRecId.value();
+            retVal                                  = true;
+        }
+        else
+        {
+            frmCreditNoteResponsibleHCMWorkerRecId  = locHCMWorkerRecId;
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

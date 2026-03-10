@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAMarkupCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of class <c>Markup</c>
+/// </summary>
+[ExtensionOf(classStr(Markup))]
+final class AVAMarkupCls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getMarkupAmountFromMarkupCategory</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns the calculated miscellaneous charges amount for an miscellaneous charges transaction based on charge category.
+    /// </summary>
+    /// <param name="_markupTrans">
+    ///    The miscellaneous charges transaction to calculate miscellaneous charges amount from.
+    /// </param>
+    /// <param name = "_refReturnInvoiceTrans_W">
+    ///     An instance of <c>RefReturnInvoiceTrans_W</c> class.
+    /// </param>
+    /// <param name="_qty">
+    ///    The quantity to calculate miscellaneous charges amount from.
+    /// </param>
+    /// <param name="_value">
+    ///    The value to calculate miscellaneous charges amount from.
+    /// </param>
+    /// <param name="_interCompanyValue">
+    ///    The intercompany value to calculate miscellaneous charges amount from; optional.
+    /// </param>
+    /// <param name="_transDate">
+    ///    The date that is used to convert miscellaneous charges from one currency to another currency;
+    ///    optional.
+    /// </param>
+    /// <param name="_absoluteValue">
+    ///     The absolute value of the related markup transaction.
+    /// </param>
+    /// <param name="_parmId">
+    ///     The ID for the relating markup transaction.
+    /// </param>
+    /// <param name="_mcrPostingInvoice">
+    ///     The posting invoice record of the related markup transaction.
+    /// </param>
+    /// <param name="_isInterCompanyMarkup">
+    ///     Boolean value, states if calculation is performed for intercompany purchase order; optional.
+    /// </param>
+    /// <returns>
+    ///    The calculated miscellaneous charges amount.
+    /// </returns>
+    protected static MarkupAmount getMarkupAmountFromMarkupCategory(MarkupTrans             _markupTrans,
+                                                                    RefReturnInvoiceTrans_W _refReturnInvoiceTrans_W,
+                                                                    Qty                     _qty,
+                                                                    AmountCur               _value,
+                                                                    AmountCur               _interCompanyValue,
+                                                                    TransDate               _transDate,
+                                                                    AmountCur               _absoluteValue,
+                                                                    ParmId                  _parmId,
+                                                                    boolean                 _mcrPostingInvoice,
+                                                                    boolean                 _isInterCompanyMarkup)
+    {
+        MarkupAmount markupAmount = next getMarkupAmountFromMarkupCategory(_markupTrans, _refReturnInvoiceTrans_W, _qty, _value, _interCompanyValue, _transDate, _absoluteValue, _parmId, _mcrPostingInvoice, _isInterCompanyMarkup);
+        
+        switch (_markupTrans.MarkupCategory)
+        {
+            case MarkupCategory::AVAMTZ:
+                if (_markupTrans.AVACalcQty != 0 && _markupTrans.Value != 0)
+                {
+                    markupAmount = _qty / _markupTrans.AVACalcQty * _markupTrans.Value;
+                }
+                else if (_markupTrans.Value != 0)
+                {
+                    markupAmount = _qty / _markupTrans.Value;
+                }
+                break;
+
+            case MarkupCategory::Pcs:
+                if(_markupTrans.avaPriceUnit() != 0)
+                {
+                    markupAmount = _qty / _markupTrans.avaPriceUnit() * _markupTrans.Value;
+                }
+                break;
+
+            default: 
+                break;
+        }
+        
+
+        return markupAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateRelation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "code">code</param>
+    /// <param name = "relation">relation</param>
+    /// <returns>ok</returns>
+    static boolean  validateRelation(
+        TableGroupAll   code,
+        str             relation)
+    {
+        boolean ok = next validateRelation(code,relation);
+
+        if (!relation && code == TableGroupAll::GroupId)
+        {
+            ok = true;
+        }
+
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postInvoiceAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN 2024/09/06    AVA_012455_TaxMarkupLedgerAccounts
+    /// </summary>
+    /// <param name = "markupTrans">MarkupTrans</param>
+    /// <param name = "postAmount">AmountCur</param>
+    /// <param name = "newMarkupTrans">MarkupTrans</param>
+    protected void postInvoiceAmount(
+        MarkupTrans                 markupTrans,
+        AmountCur                   postAmount,
+        MarkupTrans                 newMarkupTrans)
+    {
+        MarkupTable                     markupTable = markupTrans.markupTable();
+        DimensionDynamicDefaultAccount  ledgerAccount, origAccount;
+        KCS_TaxMarkup                   taxMarkup;
+        boolean                         foundCust, foundVend;
+
+        if (markupTable.CustType == MarkupType::LedgerAccount)
+        {
+            taxMarkup = KCS_TaxMarkup::find(markupTable.MarkupCode, markupTrans.TaxGroup, CustVendACType::Cust);
+            if(taxMarkup)
+            {
+                ledgerAccount = taxMarkup.LedgerDimension;
+                foundCust = true;
+                origAccount = markupTable.CustomerLedgerDimension;
+                ttsbegin;
+                markupTable.selectForUpdate(true);
+                markupTable.CustomerLedgerDimension = ledgerAccount;
+                markupTable.update();
+                ttscommit;
+            }
+        }
+        else if (markupTable.VendType == MarkupType::LedgerAccount)
+        {
+            taxMarkup = KCS_TaxMarkup::find(markupTable.MarkupCode, markupTrans.TaxGroup, CustVendACType::Vend);
+            if(taxMarkup)
+            {
+                ledgerAccount = taxMarkup.LedgerDimension;
+                foundVend = true;
+                origAccount = markupTable.VendorLedgerDimension;
+                ttsbegin;
+                markupTable.selectForUpdate(true);
+                markupTable.VendorLedgerDimension = ledgerAccount;
+                markupTable.update();
+                ttscommit;
+            }
+
+        }
+        next postinvoiceAmount(markupTrans, postAmount, newMarkupTrans);   
+ 
+        if (foundCust)
+        {
+            ttsbegin;
+            markupTable.selectForUpdate(true);
+            markupTable.CustomerLedgerDimension = origAccount;
+            markupTable.update();
+            ttscommit;
+        }
+        else if (foundVend)
+        {
+            ttsbegin;
+            markupTable.selectForUpdate(true);
+            markupTable.VendorLedgerDimension = origAccount;
+            markupTable.update();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

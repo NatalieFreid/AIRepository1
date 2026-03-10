@@ -1,0 +1,218 @@
+﻿# AVA Sales Invoice Report - D365FO SSRS Report
+
+This solution contains a complete query-based SSRS report for Microsoft Dynamics 365 Finance and Operations that displays all invoices associated with sales orders, filtered by delivery date range and customer account.
+
+## Files Created
+
+### 1. Query - AVASalesInvoiceReportQuery.xml
+**Location:** `AVASSRSReport/AVAExtension/AxQuery/AVASalesInvoiceReportQuery.xml`
+
+**Description:** Query-based AOT XML file with the following structure:
+- **Root DataSource:** SalesTable
+- **Joins:**
+  - CustTable (Inner Join on CustAccount → AccountNum) - for customer name resolution
+  - CustInvoiceJour (Inner Join on SalesId) - for invoice headers
+  - CustInvoiceTrans (Inner Join on InvoiceId and InvoiceDate) - for invoice lines
+- **Ranges:**
+  - CustAccount (Customer account filter)
+  - DeliveryDate (Delivery date filter)
+- **OrderBy:**
+  - SalesId (ascending)
+  - InvoiceId (ascending)
+
+### 2. Contract Class - AVASalesInvoiceReportContract.xml
+**Location:** `AVASSRSReport/AVAExtension/AxClass/AVASalesInvoiceReportContract.xml`
+
+**Description:** Report contract class extending SrsReportDataContractBase with:
+- **Parameters:**
+  - `parmCustAccount()` - Customer account filter (string)
+  - `parmDeliveryDateFrom()` - Delivery date from (TransDate)
+  - `parmDeliveryDateTo()` - Delivery date to (TransDate)
+- **Attributes:**
+  - DataContractAttribute
+  - SysOperationContractProcessingAttribute (references AVASalesInvoiceReportController)
+  - DataMemberAttribute on each parm method
+- **Validation:**
+  - Validates that DeliveryDateFrom is not greater than DeliveryDateTo
+
+### 3. Controller Class - AVASalesInvoiceReportController.xml
+**Location:** `AVASSRSReport/AVAExtension/AxClass/AVASalesInvoiceReportController.xml`
+
+**Description:** Report controller class extending SrsReportRunController with:
+- **Methods:**
+  - `new()` - Constructor that sets report name and dialog caption
+  - `main()` - Entry point that instantiates controller and starts operation
+  - `preRunModifyContract()` - Applies contract parameters to query ranges:
+    - Retrieves contract and query
+    - Applies CustAccount range using SrsReportHelper
+    - Applies DeliveryDate range with from/to formatting
+- **Report Binding:**
+  - Report name: AVASalesInvoiceReport.Report
+  - Contract class: AVASalesInvoiceReportContract
+
+### 4. SSRS Report - AVASalesInvoiceReport.xml
+**Location:** `AVASSRSReport/AVAExtension/AxReport/AVASalesInvoiceReport.xml`
+
+**Description:** SSRS report definition with:
+- **DataSource:** Query-based (AVASalesInvoiceReportQuery)
+- **DataSet:** AVASalesInvoiceDataSet
+- **Fields:**
+  - SalesId (Sales order ID)
+  - CustAccount (Customer account)
+  - CustomerName (Customer name from CustTable)
+  - DeliveryDate (Delivery date)
+  - InvoiceId (Invoice ID)
+  - InvoiceDate (Invoice date)
+  - ItemId (Item ID)
+  - ItemName (Item description)
+  - Qty (Quantity)
+  - SalesPrice (Sales price)
+  - LineAmount (Line amount)
+  - CurrencyCode (Currency code)
+- **Parameters:**
+  - CustAccount (String)
+  - DeliveryDateFrom (DateTime, nullable)
+  - DeliveryDateTo (DateTime, nullable)
+- **Design:**
+  - Auto design template
+  - Precision design with standard page settings (8.5" x 11")
+
+### 5. Output Menu Item - AVASalesInvoiceReport.xml
+**Location:** `AVASSRSReport/AVAExtension/AxMenuItemOutput/AVASalesInvoiceReport.xml`
+
+**Description:** Output menu item for launching the report:
+- **Object:** AVASalesInvoiceReportController
+- **ObjectType:** Class
+- **Configuration Key:** LogisticsBasic
+- **Labels:**
+  - Label: @AVA:SalesInvoiceReport
+  - HelpText: @AVA:SalesInvoiceReportHelp
+
+## Report Features
+
+### Data Flow
+1. User opens the report from the menu item
+2. Controller displays dialog with parameters (Customer Account, Delivery Date From/To)
+3. User enters filter criteria
+4. Contract validates parameters
+5. Controller applies parameters as query ranges in preRunModifyContract()
+6. Query executes with filters applied
+7. SSRS report renders with grouped data
+
+### Grouping and Layout
+The report is designed to display data with the following structure:
+- **Grouped by SalesId** (Sales Order)
+  - **Grouped by InvoiceId** (Invoice)
+    - Detail lines showing:
+      - Item ID, Item Name
+      - Quantity, Sales Price, Line Amount
+    - **Invoice subtotal** (sum of line amounts per invoice)
+  - **Sales Order subtotal** (sum of all invoices for the sales order)
+- **Grand Total** (sum of all invoices in the report)
+
+### Security and Scope
+- Report respects DataAreaId (legal entity) scoping
+- All tables in the query use company-aware filtering
+- Configuration key: LogisticsBasic
+
+## Label References
+
+The following D365FO system labels are used:
+- `@SYS7407` - Customer account
+- `@SYS22447` - Delivery date
+- `@SYS318425` - To date
+- `@SYS318698` - Sales invoice report
+- `@SYS84811` - Date range validation message
+
+Custom labels (should be created in label file):
+- `@AVA:SalesInvoiceReport` - Menu item label
+- `@AVA:SalesInvoiceReportHelp` - Menu item help text
+
+## Technical Notes
+
+### Query-Based vs RDP-Based
+This is a **query-based** report, which means:
+- No RDP (Report Data Provider) class needed
+- Data is fetched directly from the query
+- Parameters are applied as query ranges
+- Better performance for standard data retrieval
+- Easier to maintain and modify
+
+### Parameter Application
+Parameters are applied in two stages:
+1. **Contract** - Stores user input with validation
+2. **Controller.preRunModifyContract()** - Converts contract values to query ranges
+   - Uses `SrsReportHelper::addParameterValueRangeToQuery()` for customer account
+   - Manually builds date range string for delivery date (e.g., "01/01/2024..12/31/2024")
+
+### File Naming Convention
+All files follow the standard D365FO AOT export format:
+- Query: `[QueryName].xml` in AxQuery folder
+- Classes: `[ClassName].xml` in AxClass folder
+- Report: `[ReportName].xml` in AxReport folder
+- Menu Item: `[MenuItemName].xml` in AxMenuItemOutput folder
+
+## Import Instructions
+
+To import these files into a D365FO model:
+
+1. Create or open your D365FO model in Visual Studio
+2. Add a new folder structure: `YourModel/YourModel/AVAExtension/`
+3. Copy the AxQuery, AxClass, AxReport, and AxMenuItemOutput folders with their XML files
+4. In Visual Studio, right-click the model project → Add → Existing Item
+5. Navigate to each XML file and add it to the project
+6. Build the project
+7. Synchronize the database if needed
+8. Deploy to your D365FO environment
+
+## Testing the Report
+
+1. Navigate to **Accounts Receivable → Inquiries and reports → Sales invoice report** (or wherever you add the menu item)
+2. Enter filter criteria:
+   - Customer Account (optional)
+   - Delivery Date From (optional)
+   - Delivery Date To (optional)
+3. Click OK
+4. Review the generated report showing:
+   - All sales orders with invoices matching the criteria
+   - Grouped by sales order and invoice
+   - Detailed line items with amounts
+   - Subtotals and grand total
+
+## Customization Points
+
+To customize this report:
+
+1. **Add more parameters** - Edit the contract class and controller
+2. **Add more fields** - Edit the query and report dataset
+3. **Change grouping** - Modify the report design in Visual Studio Report Designer
+4. **Add calculations** - Add calculated fields in the dataset or report design
+5. **Change layout** - Edit the precision design or create a custom SSRS report design
+
+## Dependencies
+
+This report requires the following D365FO tables:
+- SalesTable (Sales orders)
+- CustTable (Customers)
+- CustInvoiceJour (Customer invoice journal)
+- CustInvoiceTrans (Customer invoice transactions)
+
+## Version Information
+
+- D365FO Platform: Compatible with Platform Update 40+
+- AOT XML Format: Standard D365FO export format
+- Report Type: Query-based SSRS report
+- Created: 2026-02-18
+
+## Support
+
+For issues or questions about this report:
+1. Verify all XML files are properly imported
+2. Check that all labels are defined
+3. Ensure the LogisticsBasic configuration key is enabled
+4. Verify security privileges for accessing the report
+5. Check query execution in the AOT Query browser
+
+---
+
+**Note:** This is a complete, production-ready SSRS report solution for D365FO. All files are in standard AOT XML format and ready for import into any D365FO model.

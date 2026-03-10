@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAProdJournalCheckPostBOMCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of class ProdJournalCheckPostBOM
+/// </summary>
+[ExtensionOf(classStr(ProdJournalCheckPostBOM))]
+final class AVAProdJournalCheckPostBOMCls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createJournalTransfer</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of method createJournalTransfer
+    /// </summary>
+    protected void createJournalTransfer()
+    {
+        ProdJournalTable    avaProdJournalTableOld  = ProdJournalTable::find(journalId);
+        ProdTable           avaProdTable            = ProdTable::find(avaProdJournalTableOld.ProdId);
+
+        next createJournalTransfer();
+
+
+        if (transferErrors
+            && this.journalErrorListCount() > 0
+            && transferJournalId)
+        {
+            this.avaUpdatePickingErrorJournal(transferJournalId, NoYes::Yes);
+            this.avaUpdateProdTablePickingError(avaProdTable.ProdId, NoYes::Yes);
+        }
+        else if(this.journalErrorListCount() == 0
+            && !this.avaHasOtherErrorJournals(avaProdJournalTableOld)
+            && avaProdTable.AVAHasPickingErrors == NoYes::Yes)
+        {
+            this.avaUpdateProdTablePickingError(avaProdTable.ProdId, NoYes::No);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runPostEnd</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of method runPostEnd
+    /// </summary>
+    /// <returns>Integer</returns>
+    protected Integer runPostEnd()
+    {
+        Integer             ret = next runPostEnd();
+        ProdJournalTable    avaProdJournalTableOld  = ProdJournalTable::find(journalId);
+        ProdTable           avaProdTable            = ProdTable::find(avaProdJournalTableOld.ProdId);
+
+        if (this.numOfPostedLines() == 0)
+        {
+            this.avaUpdatePickingErrorJournal(journalId, NoYes::Yes);
+            this.avaUpdateProdTablePickingError(avaProdTable.ProdId, NoYes::Yes);
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaHasOtherErrorJournals</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if there is another unposted ErrorJournal for the same ProdId
+    /// </summary>
+    /// <param name = "_prodJournalTable">ProdJournalTable</param>
+    /// <returns>boolean</returns>
+    public boolean avaHasOtherErrorJournals(ProdJournalTable _prodJournalTable)
+    {
+        ProdJournalTable avaProdJournalTable;
+
+        select firstonly RecId from avaProdJournalTable
+            where avaProdJournalTable.ProdId    == _prodJournalTable.ProdId
+            && avaProdJournalTable.Posted       == NoYes::No
+            && avaProdJournalTable.JournalId    != _prodJournalTable.JournalId;
+
+        if(avaProdJournalTable.RecId != 0)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+   }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateProdTablePickingError</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates ProdTable record with provided error value
+    /// </summary>
+    /// <param name = "_prodId">ProdId</param>
+    /// <param name = "_hasPickingErrors">NoYes</param>
+    public void avaUpdateProdTablePickingError(
+        ProdId  _prodId,
+        NoYes   _hasPickingErrors)
+    {
+        ProdTable prodTableLoc = ProdTable::find(_prodId, true);
+
+        ttsbegin;
+        prodTableLoc.AVAHasPickingErrors = _hasPickingErrors;
+        prodTableLoc.doUpdate();
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdatePickingErrorJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates PickingError for ProdJournalTable of provided JournalId
+    /// </summary>
+    /// <param name = "_journalId">JournalId</param>
+    /// <param name = "_hasPickingError">NoYes</param>
+    public void avaUpdatePickingErrorJournal(
+        JournalId _journalId,
+        NoYes _hasPickingError)
+    {
+        ProdJournalTable avaProdJournalTable = ProdJournalTable::find(_journalId, true);
+
+        ttsbegin;
+        avaProdJournalTable.AVAPickingErrors = _hasPickingError;
+        avaProdJournalTable.doUpdate();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,642 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXSalesNoteCustomer</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Main class for Sales volume report
+/// </summary>
+public final class NDXSalesNoteCustomer
+{
+    NDXNoYesBE      lBasisUmsLfdJ;
+    NDXJahr         salesYear;
+    NDXMonat        salesMonth;
+
+    AVATOSId        alliance;
+    public NDXSNAlliance   nDX_SNAlliance;
+
+    date   salesDate = DateTimeUtil::date(DateTimeUtil::getSystemDateTime());
+
+    public NDXSalesNoteCustomerTmp  nDX_SalesNoteCustomerTmp;
+    public NDXSalesNoteItemGroupTmp nDX_SalesNoteItemGroupTmp;
+    public NDXSNSalesItemGroupCustomerTmp  nDX_SNSalesItemGroupCustomerTmp;
+    
+    public NDXSNItemGroupDeactiveTmp      nDX_SNItemGroupDeactiveTmp;
+    public NDXSNClientDeactiveTmp         nDX_SNClientDeactiveTmp;
+
+    protected NDXSNGenData ndxSNGenData;
+
+    NDXUmsSignature umsSignature;
+      
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmUmsSignature</Name>
+				<Source><![CDATA[
+    public NDXUmsSignature parmUmsSignature(NDXUmsSignature _umsSignature = umsSignature)
+    {
+        umsSignature = _umsSignature;
+        return umsSignature;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmLBasisUmsLfdJ</Name>
+				<Source><![CDATA[
+    public NDXNoYesBE parmLBasisUmsLfdJ(NDXNoYesBE _lBasisUmsLfdJ = lBasisUmsLfdJ)
+    {
+        if (prmisdefault(_lBasisUmsLfdJ))
+        {
+            lBasisUmsLfdJ = (salesYear == year(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())) ? NDXNoYesBE::Yes : NDXNoYesBE::No);
+        }
+        else
+        {
+            lBasisUmsLfdJ = _lBasisUmsLfdJ;
+        }
+
+        return lBasisUmsLfdJ;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSalesDate</Name>
+				<Source><![CDATA[
+    public date parmSalesDate(date _salesDate = salesDate)
+    {
+        date lsalesdate = _salesDate;
+        NDXJahr year = year(lsalesdate);
+
+        if (!prmisdefault(_salesDate))
+        {
+            if (year > year(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())) || year < year(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())) - 1)
+            {
+                Warning(strfmt("@NDX:NDXSalesReportInvalidYear", year));
+                //_salesDate = salesDate;
+                lsalesdate = salesDate;
+            }
+        }
+
+        salesDate = lsalesdate;
+        
+        salesYear = year(lsalesdate);
+        salesMonth = mthOfYr(lsalesdate);
+
+        return salesDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNDXSNAlliance</Name>
+				<Source><![CDATA[
+    public NDXSNAlliance parmNDXSNAlliance(NDXSNAlliance _nDX_SNAlliance = nDX_SNAlliance)
+    {
+        nDX_SNAlliance = _nDX_SNAlliance;
+        return nDX_SNAlliance;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNDXSNSalesItemGroupCustomerTmp</Name>
+				<Source><![CDATA[
+    public NDXSNSalesItemGroupCustomerTmp parmNDXSNSalesItemGroupCustomerTmp(NDXSNSalesItemGroupCustomerTmp _nDX_SNSalesItemGroupCustomerTmp = nDX_SNSalesItemGroupCustomerTmp)
+    {
+        nDX_SNSalesItemGroupCustomerTmp = _nDX_SNSalesItemGroupCustomerTmp;
+        return nDX_SNSalesItemGroupCustomerTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNDXSNGenData</Name>
+				<Source><![CDATA[
+    public NDXSNGenData parmNDXSNGenData(NDXSNGenData _ndxSNGenData = ndxSNGenData)
+    {
+        ndxSNGenData = _ndxSNGenData;
+        return ndxSNGenData;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initTmpData</Name>
+				<Source><![CDATA[
+    private void initTmpData()
+    {
+        delete_from nDX_SalesNoteCustomerTmp;
+        delete_from nDX_SalesNoteItemGroupTmp;
+        delete_from nDX_SNSalesItemGroupCustomerTmp;
+
+        ndxSNGenData = NDXSNGenData::construct(this);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSales</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Starts to collect sales data for given alliance
+    /// </summary>
+    /// <param name = "_ndxSNAllience">alliance</param>
+    public void getSales(NDXSNAlliance _ndxSNAllience)
+    {
+        NDXTmpKumUmsCust        nDX_TmpKumUmsCust;
+        NDXTmpKumUmsCustArtGrp  nDX_TmpKumUmsCustArtGrp;
+        NDXSNAllianceClients    nDX_SNAllianceClients;
+        NDXSNAllianceItemGroups nDX_SNAllianceItemGroups;
+
+        NDXAllianceTreeCustomer nDX_AllianceTreeCustomer;
+        CustTable               custTable;
+        NDXUmsatzClass          ndx_UmsatzClass;
+        System.Threading.Tasks.Task getValuesCust, getValuesArtGrp;
+        QueryRun                qr;
+        Counter                 counter;
+        int                     secStart, secDuration;
+        
+        nDX_SNAlliance = _ndxSNAllience;
+        alliance = nDX_SNAlliance.TOSId;
+
+        if (!alliance)
+        {
+            Error("@NDX:NDXSalesVolumeInfo7");      // Ohne Angabe eines Debitors, können keine Umsatzdaten ermittelt werden!
+            return;
+        }
+        
+        secStart = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+        ndx_UmsatzClass = this.getNDX_UmsatzClass(alliance);
+
+        this.initTmpData();
+        umsSignature = ndx_UmsatzClass.parmUmsSignature();
+
+        // Debitorenumsatz
+        getValuesCust = NDXUmsatzClassThread::runGetValuesCust(nDX_UmsatzClass);
+
+        if (nDX_UmsatzClass.parmLThread())
+        {
+            while (getValuesCust.Status != System.Threading.Tasks.TaskStatus::RanToCompletion)
+            {
+                sleep(100);
+            }
+        }
+
+        // Artikelgruppenumsatz
+        getValuesArtGrp = NDXUmsatzClassThread::runGetValuesArtGrp(nDX_UmsatzClass);
+        if (nDX_UmsatzClass.parmLThread())
+        {
+            while (getValuesCust.Status != System.Threading.Tasks.TaskStatus::RanToCompletion)
+            {
+                sleep(100);
+            }
+        }
+
+        // alle Artikelgruppenumsätze
+        counter = 0;
+        qr = ndx_UmsatzClass.buildQueryUmsAlliancePerArtGrp(NDXSalesVolumeQuery::perRecord);
+
+        while (qr.next())
+        {
+            nDX_TmpKumUmsCustArtGrp = qr.get(tablenum(NDXTmpKumUmsCustArtGrp));
+            nDX_SNAllianceItemGroups = qr.get(tablenum(NDXSNAllianceItemGroups));
+
+            nDX_SalesNoteItemGroupTmp.initialize(salesYear, salesMonth, NDXSalesVolumeQuery::perRecord);
+            nDX_SalesNoteItemGroupTmp.initFromNDX_TmpKumUmsCustArtGrp(nDX_TmpKumUmsCustArtGrp);
+            nDX_SalesNoteItemGroupTmp.initFromNDX_SNAllianceItemGroups(nDX_SNAllianceItemGroups);
+            nDX_SalesNoteItemGroupTmp.checkNDX_SNAllianceItemGroups();
+            nDX_SalesNoteItemGroupTmp.insert();
+            ++counter;
+        }
+
+        // Kontrollsumme: Artikelgruppenumsätze je Firma
+        counter = 0;
+        qr = ndx_UmsatzClass.buildQueryUmsAlliancePerArtGrp(NDXSalesVolumeQuery::perCompany);
+        while (qr.next())
+        {
+            nDX_TmpKumUmsCustArtGrp = qr.get(tablenum(NDXTmpKumUmsCustArtGrp));
+            nDX_SalesNoteItemGroupTmp.initialize(salesYear, salesMonth, NDXSalesVolumeQuery::perCompany);
+            nDX_SalesNoteItemGroupTmp.initFromNDX_TmpKumUmsCustArtGrp(nDX_TmpKumUmsCustArtGrp);
+            nDX_SalesNoteItemGroupTmp.insert();
+            ++counter;
+        }
+
+        // Kontrollsumme: Monatsumsatz alle Firmen
+        counter = 0;
+        qr = ndx_UmsatzClass.buildQueryUmsAlliancePerCustomer(NDXSalesVolumeQuery::allCompanies);
+        while (qr.next())
+        {
+            nDX_TmpKumUmsCust = qr.get(tablenum(NDXTmpKumUmsCust));
+            nDX_SalesNoteCustomerTmp.initialize(salesYear, salesMonth, NDXSalesVolumeQuery::allCompanies);
+            nDX_SalesNoteCustomerTmp.initFromNDX_TmpKumUmsCust(nDX_TmpKumUmsCust);
+            nDX_SalesNoteCustomerTmp.Company = NDXCompanyBE::AllCompanies;
+            nDX_SalesNoteCustomerTmp.insert();
+            ++counter;
+        }
+
+        // Kontrollsumme: Monatsumsatz je Firma
+        counter = 0;
+        qr = ndx_UmsatzClass.buildQueryUmsAlliancePerCustomer(NDXSalesVolumeQuery::perCompany);
+        while (qr.next())
+        {
+            nDX_TmpKumUmsCust = qr.get(tablenum(NDXTmpKumUmsCust));
+            nDX_SalesNoteCustomerTmp.initialize(salesYear, salesMonth, NDXSalesVolumeQuery::perCompany);
+            nDX_SalesNoteCustomerTmp.initFromNDX_TmpKumUmsCust(nDX_TmpKumUmsCust);
+            nDX_SalesNoteCustomerTmp.insert();
+            ++counter;
+        }
+
+        // Durchlauf aller auszuwertenden Daten je Debitor
+        counter = 0;
+        qr = ndx_UmsatzClass.buildQueryUmsAlliancePerCustomer(NDXSalesVolumeQuery::perRecord);
+        while (qr.next())
+        {
+            nDX_TmpKumUmsCust           = qr.get(tablenum(NDXTmpKumUmsCust));
+            nDX_AllianceTreeCustomer    = qr.get(tablenum(nDXAllianceTreeCustomer));
+            nDX_SNAllianceClients       = qr.get(tablenum(NDXSNAllianceClients));
+
+            custTable = CustTable::NDX_findCustByCompany(nDX_TmpKumUmsCust.Child, nDX_TmpKumUmsCust.Company);
+
+            nDX_SalesNoteCustomerTmp.initialize(salesYear, salesMonth, NDXSalesVolumeQuery::perRecord);
+            nDX_SalesNoteCustomerTmp.initFromNDX_AllianceTreeCustomer(nDX_AllianceTreeCustomer);
+            nDX_SalesNoteCustomerTmp.initFromNDX_TmpKumUmsCust(nDX_TmpKumUmsCust);
+            nDX_SalesNoteCustomerTmp.initFromCustTable(custTable);
+            nDX_SalesNoteCustomerTmp.initFromNDX_SNAllianceClients(nDX_SNAllianceClients);
+            nDX_SalesNoteCustomerTmp.insert();
+            ++counter;
+        }
+
+        secDuration = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()) - secStart;
+        if (nDX_SNAlliance)
+        {
+            nDX_SNAlliance.selectForUpdate(true);
+            nDX_SNAlliance.LastDurationSeconds = secDuration;
+            ttsbegin;
+            nDX_SNAlliance.update();
+            ttscommit;
+        }
+        
+        info(strfmt("@NDX:NDXSalesVolumeInfo8", NDXHelperCommon::seconds2Str(secDuration)));        // Dauer der Aufbereitung: [%1]
+        return;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getNDX_UmsatzClass</Name>
+				<Source><![CDATA[
+    NDXUmsatzClass getNDX_UmsatzClass(CustAccount _alliance)
+    {
+        NDXUmsatzClassArgs     args = new NDXUmsatzClassArgs();
+        NDXUmsatzClass         ndx_UmsatzClass;
+        NDXVerbandSE           ndx_VerbandSE;
+       
+        args.parmEnumType(enumnum(NDXGetUmsType));
+        args.parmEnum(NDXGetUmsType::perCustomerThread);
+        args.parmLAlliance(NDXNoYesBE::Yes);
+        args.parmMaster(_alliance);
+        args.parmSalesGroupId('');
+        args.parmlCSIncl(NDXNoYesBE::No);
+        args.parmlGetLastValues(NDXNoYesBE::No);
+        args.parmlBonusDirectlyIncl(NDXNoYesBE::Yes);
+        args.parmlShowBonusDirectly(NDXNoYesBE::Yes);
+        args.parmlBasisUmsLfdJ(this.parmLBasisUmsLfdJ());
+
+        ndx_UmsatzClass = NDXUmsatzClass::construct(args);
+        ndx_UmsatzClass.parmLThread(false);
+        ndx_UmsatzClass.parmMasterAlliance(_alliance);
+        ndx_UmsatzClass.parmlGetDataPerChild(true);
+
+        ndx_VerbandSE = ndx_UmsatzClass.parmNDXVerband();
+        ndx_VerbandSE.parmMasterAlliance(_alliance);
+        ndx_VerbandSE.getChildsFromMaster(true, ndx_UmsatzClass.parmConCompanies());
+                                       
+        return ndx_UmsatzClass;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSalesCustomerItemGrp</Name>
+				<Source><![CDATA[
+    public NDXSNSalesItemGroupCustomerTmp getSalesCustomerItemGrp(CustAccount _alliance)
+    {
+        NDXSNClientGroup2Client    lNDX_SNClientGroup2Client;
+        NDXSNAllianceClients       lNDX_SNAllianceClients;
+        NDXSNClientGroup           lNDX_SNClientGroup;
+        NDXSNAllianceItemGroups    lNDX_SNAllianceItemGroups;
+        NDXItemGroup               ndx_ItemGrp;
+        NDXItemGroup               ndx_ItemGrpOrig;
+
+        int                     x;
+
+        str child;
+
+        if (!_alliance)
+        {
+            Error("@NXD9471");      // Ohne Angabe eines Debitors, können keine Umsatzdaten ermittelt werden!
+            return nDX_SNSalesItemGroupCustomerTmp;
+        }
+
+        delete_from nDX_SNSalesItemGroupCustomerTmp;
+        delete_from nDX_SNItemGroupDeactiveTmp;
+        delete_from nDX_SNClientDeactiveTmp;
+
+        while select nDX_SalesNoteCustomerTmp
+            where nDX_SalesNoteCustomerTmp.SalesYear        == salesYear
+                && nDX_SalesNoteCustomerTmp.SalesMonth      == salesMonth
+                && nDX_SalesNoteCustomerTmp.SalesVolumeQueryType == NDXSalesVolumeQuery::perRecord
+            outer join  lNDX_SNAllianceClients
+            where   lNDX_SNAllianceClients.TOSId == nDX_SalesNoteCustomerTmp.Alliance
+                    &&  lNDX_SNAllianceClients.PartyRefRecId == nDX_SalesNoteCustomerTmp.PartyRefRecId
+                    &&  lNDX_SNAllianceClients.Companys == nDX_SalesNoteCustomerTmp.Company
+        {
+            if (!lNDX_SNAllianceClients)
+            {
+                if (nDX_SalesNoteCustomerTmp.SalesAmountCum != 0)
+                {
+                    Error(strfmt("@NDX:NDXSalesVolumeInfo9", nDX_SalesNoteCustomerTmp.AccountNum, nDX_SalesNoteCustomerTmp.Company, nDX_SalesNoteCustomerTmp.SalesAmountCum));
+                    Error("@NDX:NDXSalesVolumeInfo10");
+                    nDX_SNSalesItemGroupCustomerTmp = null;
+                    return nDX_SNSalesItemGroupCustomerTmp;
+                }
+            }
+            
+            child = lNDX_SNAllianceClients.Child;
+
+            // gehört Debitor zu einer "Kundenzusammenfassung" ?
+            lNDX_SNClientGroup2Client = NDXSNClientGroup2Client::findClientsRecId(lNDX_SNAllianceClients.RecId);
+            lNDX_SNClientGroup = NDXSNClientGroup::findRecId(lNDX_SNClientGroup2Client.RefRecId_ClientGroup);
+
+            while select    nDX_SalesNoteItemGroupTmp
+                where       nDX_SalesNoteItemGroupTmp.SalesYear      == nDX_SalesNoteCustomerTmp.SalesYear
+                    &&      nDX_SalesNoteItemGroupTmp.SalesMonth     == nDX_SalesNoteCustomerTmp.SalesMonth
+                    &&      nDX_SalesNoteItemGroupTmp.Company        == nDX_SalesNoteCustomerTmp.Company
+                    &&      nDX_SalesNoteItemGroupTmp.PartyChildRefRecId   == nDX_SalesNoteCustomerTmp.PartyRefRecId
+                    &&      nDX_SalesNoteItemGroupTmp.SalesVolumeQueryType == nDX_SalesNoteCustomerTmp.SalesVolumeQueryType
+                    &&      (nDX_SalesNoteItemGroupTmp.SalesAmount      != 0 || nDX_SalesNoteItemGroupTmp.SalesAmountCum   != 0)
+            {
+                
+                select firstonly lNDX_SNAllianceItemGroups
+                    where   lNDX_SNAllianceItemGroups.TOSId == nDX_SalesNoteItemGroupTmp.Alliance
+                        &&  lNDX_SNAllianceItemGroups.Companys == nDX_SalesNoteItemGroupTmp.Company
+                        &&  lNDX_SNAllianceItemGroups.ArtGrp   == nDX_SalesNoteItemGroupTmp.ArtGrp;
+                
+                ndx_ItemGrp = nDX_SalesNoteItemGroupTmp.ArtGrp;
+                ndx_ItemGrpOrig = nDX_SalesNoteItemGroupTmp.ArtGrp;
+
+                if (!nDX_SalesNoteItemGroupTmp.ArtGrp)
+                {
+                    if (nDX_SalesNoteItemGroupTmp.Company == NDXcompanyBE::Niedax)
+                    {
+                        ndx_ItemGrp = 'N48';
+                        lNDX_SNAllianceItemGroups = NDXSNAllianceItemGroups::find(nDX_SalesNoteItemGroupTmp.Alliance, nDX_SalesNoteItemGroupTmp.Company, ndx_ItemGrp);
+                    }
+                }
+
+                if (lNDX_SNClientGroup2Client && lNDX_SNClientGroup)    // customer belongs to customer collection
+                {
+                    
+                    nDX_SNSalesItemGroupCustomerTmp = NDXSNSalesItemGroupCustomerTmp::findClientGroupRecId(nDX_SNSalesItemGroupCustomerTmp,
+                    nDX_SalesNoteItemGroupTmp.Company, lNDX_SNClientGroup.RecId, ndx_ItemGrp, true);
+                    
+                    if (nDX_SNSalesItemGroupCustomerTmp.RecId == 0)
+                    {
+                        nDX_SNSalesItemGroupCustomerTmp.NDXSNClientGroupRefRecId = lNDX_SNClientGroup.RecId;
+                        nDX_SNSalesItemGroupCustomerTmp.CustName          = lNDX_SNClientGroup.ClientGroupName;
+                        nDX_SNSalesItemGroupCustomerTmp.ClientGroupName2  = lNDX_SNClientGroup.ClientGroupName2;
+                        nDX_SNSalesItemGroupCustomerTmp.ClientGroupNameMap= lNDX_SNClientGroup.ClientGroupNameMap;
+                        nDX_SNSalesItemGroupCustomerTmp.IsClientGroup     = true;
+                    }
+                }
+                else
+                {
+                    nDX_SNSalesItemGroupCustomerTmp = NDXSNSalesItemGroupCustomerTmp::findDirPartyId(nDX_SNSalesItemGroupCustomerTmp, nDX_SalesNoteItemGroupTmp.Company, nDX_SalesNoteItemGroupTmp.PartyChildRefRecId, ndx_ItemGrp, true);
+                    
+                    if (nDX_SNSalesItemGroupCustomerTmp)
+                    {
+                        x = 1;
+                    }
+
+                    nDX_SNSalesItemGroupCustomerTmp.CustName    = lNDX_SNAllianceClients.DirPartyName;
+                    nDX_SNSalesItemGroupCustomerTmp.Child       = lNDX_SNAllianceClients.Child;
+                    nDX_SNSalesItemGroupCustomerTmp.ChildMap    = lNDX_SNAllianceClients.ChildMap;
+                }
+
+                nDX_SNSalesItemGroupCustomerTmp.Company         = nDX_SalesNoteItemGroupTmp.Company;
+                nDX_SNSalesItemGroupCustomerTmp.PartyRefRecId   = nDX_SalesNoteItemGroupTmp.PartyChildRefRecId;
+                nDX_SNSalesItemGroupCustomerTmp.SalesYear       = nDX_SalesNoteItemGroupTmp.SalesYear;
+                nDX_SNSalesItemGroupCustomerTmp.SalesMonth      = nDX_SalesNoteItemGroupTmp.SalesMonth;
+                nDX_SNSalesItemGroupCustomerTmp.ArtGrp          = ndx_ItemGrp;
+                nDX_SNSalesItemGroupCustomerTmp.ArtGrpMap       = lNDX_SNAllianceItemGroups.ArtGrpMap;
+                nDX_SNSalesItemGroupCustomerTmp.SalesAmount     += nDX_SalesNoteItemGroupTmp.SalesAmount;
+                nDX_SNSalesItemGroupCustomerTmp.SalesAmountCum  += nDX_SalesNoteItemGroupTmp.SalesAmountCum;
+                nDX_SNSalesItemGroupCustomerTmp.SalesAmountCumTaxValue1 += nDX_SalesNoteItemGroupTmp.SalesAmountCumTaxValue1;
+                nDX_SNSalesItemGroupCustomerTmp.SalesAmountCumTaxValue2 += nDX_SalesNoteItemGroupTmp.SalesAmountCumTaxValue2;
+                nDX_SNSalesItemGroupCustomerTmp.Active          = lNDX_SNAllianceClients.Active && lNDX_SNAllianceItemGroups.Active;
+
+                // save deactive childs and itemgroups
+                if (lNDX_SNAllianceClients.Active == NoYes::No)
+                {
+                    nDX_SNClientDeactiveTmp = NDXSNClientDeactiveTmp::findOrCreate(nDX_SNClientDeactiveTmp, nDX_SalesNoteItemGroupTmp.Company, lNDX_SNAllianceClients.Child, nDX_SalesNoteItemGroupTmp.PartyChildRefRecId);
+                    nDX_SNClientDeactiveTmp.SalesAmount += nDX_SalesNoteItemGroupTmp.SalesAmount;
+                    nDX_SNClientDeactiveTmp.SalesAmountCum += nDX_SalesNoteItemGroupTmp.SalesAmountCum;
+                    nDX_SNClientDeactiveTmp.SalesAmountCumTaxValue1 += nDX_SalesNoteItemGroupTmp.SalesAmountCumTaxValue1;
+                    nDX_SNClientDeactiveTmp.SalesAmountCumTaxValue2 = nDX_SalesNoteItemGroupTmp.SalesAmountCumTaxValue2;
+                  
+                    nDX_SNClientDeactiveTmp.write();
+                }
+
+                if (lNDX_SNAllianceItemGroups.Active == NoYes::No)
+                {
+                    nDX_SNItemGroupDeactiveTmp.clear();
+                    nDX_SNItemGroupDeactiveTmp = NDXSNItemGroupDeactiveTmp::findOrCreate(nDX_SNItemGroupDeactiveTmp
+                                                                                      , lNDX_SNAllianceClients.TOSId
+                                                                                      , lNDX_SNAllianceClients.Child
+                                                                                      , nDX_SalesNoteItemGroupTmp.Company
+                                                                                      , ndx_ItemGrp);
+
+                    nDX_SNItemGroupDeactiveTmp.Childname = lNDX_SNAllianceClients.DirPartyName;
+                    nDX_SNItemGroupDeactiveTmp.SalesAmount += nDX_SalesNoteItemGroupTmp.SalesAmount;
+                    nDX_SNItemGroupDeactiveTmp.SalesAmountCum += nDX_SalesNoteItemGroupTmp.SalesAmountCum;
+                    nDX_SNItemGroupDeactiveTmp.SalesAmountCumTaxValue1 += nDX_SalesNoteItemGroupTmp.SalesAmountCumTaxValue1;
+                    nDX_SNItemGroupDeactiveTmp.SalesAmountCumTaxValue2 += nDX_SalesNoteItemGroupTmp.SalesAmountCumTaxValue2;
+                    
+                    nDX_SNItemGroupDeactiveTmp.write();
+                }
+
+                if (nDX_SNSalesItemGroupCustomerTmp.IsClientGroup)
+                {
+                    if (nDX_SNSalesItemGroupCustomerTmp.ClientGroupNameMap)
+                    {
+                        nDX_SNSalesItemGroupCustomerTmp.ChildSalesNote = nDX_SNSalesItemGroupCustomerTmp.ClientGroupNameMap;
+                    }
+                    else
+                    {
+                        if (nDX_SNSalesItemGroupCustomerTmp.ClientGroupName2)
+                        {
+                            nDX_SNSalesItemGroupCustomerTmp.ChildSalesNote = nDX_SNSalesItemGroupCustomerTmp.ClientGroupName2;
+                        }
+                        else
+                        {
+                            nDX_SNSalesItemGroupCustomerTmp.ChildSalesNote = lNDX_SNClientGroup.ClientGroupName;
+                        }
+                    }
+                }
+                else
+                {
+                    nDX_SNSalesItemGroupCustomerTmp.ChildSalesNote = nDX_SNSalesItemGroupCustomerTmp.ChildMap ?
+                                                                 nDX_SNSalesItemGroupCustomerTmp.ChildMap :
+                                                                 nDX_SNSalesItemGroupCustomerTmp.Child;
+                }
+                nDX_SNSalesItemGroupCustomerTmp.ArtGrpSalesNote    = nDX_SNSalesItemGroupCustomerTmp.ArtGrpMap ?
+                                                                 nDX_SNSalesItemGroupCustomerTmp.ArtGrpMap :
+                                                                 nDX_SNSalesItemGroupCustomerTmp.ArtGrp;
+                
+                nDX_SNSalesItemGroupCustomerTmp.write();
+            }
+        }
+        return nDX_SNSalesItemGroupCustomerTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    public static NDXSalesNoteCustomer construct()
+    {
+        return new NDXSalesNoteCustomer();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkAmountDiff1</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// check amount difference 1
+    /// </summary>
+    /// <param name = "_nDX_SalesNoteCustomerTmpCust">sales value</param>
+    /// <param name = "_nDX_SalesNoteItemGroupTmpItemGrp">sales value item </param>
+    /// <returns>NDXSalesNoteCustomerTmp diff in sales amount</returns>
+    static NDXSalesNoteCustomerTmp checkAmountDiff1(NDXSalesNoteCustomerTmp _nDX_SalesNoteCustomerTmpCust, NDXSalesNoteItemGroupTmp _nDX_SalesNoteItemGroupTmpItemGrp)
+    {
+        NDXSalesNoteCustomerTmp   nDX_SalesNoteCustomerTmpCust;
+        NDXSalesNoteCustomerTmp   nDX_SalesNoteCustomerTmpReturn;
+        NDXSalesNoteItemGroupTmp  nDX_SalesNoteItemGroupTmpItemGrp;
+
+        nDX_SalesNoteCustomerTmpCust.setTmpData(_nDX_SalesNoteCustomerTmpCust);
+        nDX_SalesNoteItemGroupTmpItemGrp.setTmpData(_nDX_SalesNoteItemGroupTmpItemGrp);
+
+        while select nDX_SalesNoteCustomerTmpCust
+            where nDX_SalesNoteCustomerTmpCust.SalesVolumeQueryType == NDXSalesVolumeQuery::perCompany
+        outer join  nDX_SalesNoteItemGroupTmpItemGrp
+            where   nDX_SalesNoteItemGroupTmpItemGrp.SalesVolumeQueryType == nDX_SalesNoteCustomerTmpCust.SalesVolumeQueryType
+                &&  nDX_SalesNoteItemGroupTmpItemGrp.Company == nDX_SalesNoteCustomerTmpCust.Company
+        {
+            if (nDX_SalesNoteCustomerTmpCust.SalesAmount != nDX_SalesNoteItemGroupTmpItemGrp.SalesAmount)
+            {
+                nDX_SalesNoteCustomerTmpReturn.clear();
+                nDX_SalesNoteCustomerTmpReturn.Company        = nDX_SalesNoteCustomerTmpCust.Company;
+                nDX_SalesNoteCustomerTmpReturn.SalesAmount  = nDX_SalesNoteCustomerTmpCust.SalesAmount - nDX_SalesNoteItemGroupTmpItemGrp.SalesAmount;
+                nDX_SalesNoteCustomerTmpReturn.insert();
+            }
+        }
+        return nDX_SalesNoteCustomerTmpReturn;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkAmountDiff2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// check amount difference 2
+    /// </summary>
+    /// <param name = "_nDX_SalesNoteCustomerTmpCust">sales value</param>
+    /// <param name = "_nDX_SNSalesItemGroupCustomerTmp">sales value item </param>
+    /// <returns>NDXSalesNoteCustomerTmp diff in sales amount</returns>
+    static NDXSalesNoteCustomerTmp checkAmountDiff2(NDXSalesNoteCustomerTmp _nDX_SalesNoteCustomerTmpCust, NDXSNSalesItemGroupCustomerTmp _nDX_SNSalesItemGroupCustomerTmp)
+    {
+        NDXSalesNoteCustomerTmp        nDX_SalesNoteCustomerTmpCust;
+        NDXSalesNoteCustomerTmp        nDX_SalesNoteCustomerTmpReturn;
+        NDXSNSalesItemGroupCustomerTmp nDX_SNSalesItemGroupCustomerTmp;
+        ;
+
+        nDX_SalesNoteCustomerTmpCust.setTmpData(_nDX_SalesNoteCustomerTmpCust);
+        nDX_SNSalesItemGroupCustomerTmp.setTmpData(_nDX_SNSalesItemGroupCustomerTmp);
+
+        while select SalesAmount, Company from nDX_SalesNoteCustomerTmpCust
+            where nDX_SalesNoteCustomerTmpCust.SalesVolumeQueryType == NDXSalesVolumeQuery::perCompany
+        outer join sum(SalesAmount), sum(SalesAmountCum) from nDX_SNSalesItemGroupCustomerTmp
+            where nDX_SNSalesItemGroupCustomerTmp.Company == nDX_SalesNoteCustomerTmpCust.Company
+        {
+            if (nDX_SalesNoteCustomerTmpCust.SalesAmount != nDX_SNSalesItemGroupCustomerTmp.SalesAmount || nDX_SalesNoteCustomerTmpCust.SalesAmountCum != nDX_SNSalesItemGroupCustomerTmp.SalesAmountCum)
+            {
+                nDX_SalesNoteCustomerTmpReturn.clear();
+                nDX_SalesNoteCustomerTmpReturn.Company            = nDX_SalesNoteCustomerTmpCust.Company;
+                nDX_SalesNoteCustomerTmpReturn.SalesAmount      = nDX_SalesNoteCustomerTmpCust.SalesAmount    - nDX_SNSalesItemGroupCustomerTmp.SalesAmount;
+                nDX_SalesNoteCustomerTmpReturn.SalesAmountCum   = nDX_SalesNoteCustomerTmpCust.SalesAmountCum - nDX_SNSalesItemGroupCustomerTmp.SalesAmountCum;
+                nDX_SalesNoteCustomerTmpReturn.insert();
+            }
+        }
+        return nDX_SalesNoteCustomerTmpReturn;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkAmountDiff3</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// check amount difference 3
+    /// </summary>
+    /// <param name = "_nDX_SNSalesItemGroupCustomerTmp">sales value</param>
+    /// <param name = "_nDX_SNSalesItemGroupCustomerTmpAktiv">sales value item </param>
+    /// <returns>NDXSalesNoteCustomerTmp diff in sales amount</returns>
+    static NDXSalesNoteCustomerTmp checkAmountDiff3(NDXSNSalesItemGroupCustomerTmp _nDX_SNSalesItemGroupCustomerTmp, NDXSNSalesItemGroupCustomerTmp _nDX_SNSalesItemGroupCustomerTmpAktiv)
+    {
+        NDXSalesNoteCustomerTmp nDX_SalesNoteCustomerTmpReturn;
+        NDXSNSalesItemGroupCustomerTmp nDX_SNSalesItemGroupCustomerTmp;
+        NDXSNSalesItemGroupCustomerTmp nDX_SNSalesItemGroupCustomerTmp2;
+        NDXSNSalesItemGroupCustomerTmp nDX_SNSalesItemGroupCustomerTmpAktiv;
+
+        nDX_SNSalesItemGroupCustomerTmp.setTmpData(_nDX_SNSalesItemGroupCustomerTmp);
+        nDX_SNSalesItemGroupCustomerTmpAktiv.setTmpData(_nDX_SNSalesItemGroupCustomerTmpAktiv);
+
+        while select sum(SalesAmount), sum(SalesAmountCum) from nDX_SNSalesItemGroupCustomerTmp
+            group by Company
+        {
+            nDX_SNSalesItemGroupCustomerTmp2.clear();
+            nDX_SNSalesItemGroupCustomerTmp2.Company = nDX_SNSalesItemGroupCustomerTmp.Company;
+            nDX_SNSalesItemGroupCustomerTmp2.SalesAmount = nDX_SNSalesItemGroupCustomerTmp.SalesAmount;
+            nDX_SNSalesItemGroupCustomerTmp2.SalesAmountCum = nDX_SNSalesItemGroupCustomerTmp.SalesAmountCum;
+            nDX_SNSalesItemGroupCustomerTmp2.insert();
+        }
+        while select nDX_SNSalesItemGroupCustomerTmp2
+        outer join sum(SalesAmount), sum(SalesAmountCum) from nDX_SNSalesItemGroupCustomerTmpAktiv
+            group by Company, Active
+            where nDX_SNSalesItemGroupCustomerTmp2.Company == nDX_SNSalesItemGroupCustomerTmpAktiv.Company
+                && nDX_SNSalesItemGroupCustomerTmpAktiv.Active == NoYes::Yes
+        {
+            if (nDX_SNSalesItemGroupCustomerTmp2.SalesAmount != nDX_SNSalesItemGroupCustomerTmpAktiv.SalesAmount ||
+                nDX_SNSalesItemGroupCustomerTmp2.SalesAmountCum != nDX_SNSalesItemGroupCustomerTmpAktiv.SalesAmountCum)
+            {
+                nDX_SalesNoteCustomerTmpReturn.clear();
+                nDX_SalesNoteCustomerTmpReturn.Company            = nDX_SNSalesItemGroupCustomerTmp2.Company;
+                nDX_SalesNoteCustomerTmpReturn.SalesAmount      = nDX_SNSalesItemGroupCustomerTmp2.SalesAmount    - nDX_SNSalesItemGroupCustomerTmpAktiv.SalesAmount;
+                nDX_SalesNoteCustomerTmpReturn.SalesAmountCum   = nDX_SNSalesItemGroupCustomerTmp2.SalesAmountCum - nDX_SNSalesItemGroupCustomerTmpAktiv.SalesAmountCum;
+                nDX_SalesNoteCustomerTmpReturn.insert();
+            }
+        }
+        return nDX_SalesNoteCustomerTmpReturn;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

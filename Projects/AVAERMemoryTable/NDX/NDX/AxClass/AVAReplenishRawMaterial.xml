@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAReplenishRawMaterial</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// contains process to create new ProdBOM record including reservation, quantity adjustment and prodTable release
+/// </summary>
+public class AVAReplenishRawMaterial
+{
+    ItemId  itemId;
+    OprNum  oprNum;
+    Qty     quantity;
+
+    ProdBOM     prodBOM;
+    ProdTable   prodTable;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA <c>construct</c> method.
+    /// </summary>
+    /// <returns>
+    /// <c>AVAReplenishRawMaterial</c> as return value
+    /// </returns>
+    public static AVAReplenishRawMaterial construct()
+    {
+        return new AVAReplenishRawMaterial();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>startOperation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Contains all steps for process completion
+    /// </summary>
+    public void startOperation()
+    {
+        try
+        {
+            this.createProdBOM();
+            this.checkReservation();
+            this.releaseCharge();
+            this.replenishRawMaterialInfo();
+        }
+        catch(Exception::Error)
+        {
+            Error("@NDX:NXAReleaseRawMaterial");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createProdBOM</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates a new ProdBOM record
+    /// </summary>
+    public void createProdBOM()
+    {
+        ttsbegin;
+
+        this.initProdBOM();
+        prodBOM.insert();
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initProdBOM</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes ProdBOM values
+    /// </summary>
+    public void initProdBOM()
+    {
+        InventTable avaInventTable = InventTable::find(itemId);
+
+        prodBOM.initFromProdTable(prodTable);
+        prodBOM.initFromInventTable(avaInventTable);
+
+        prodBOM.OprNum                  = oprNum;
+        prodBOM.PmfQtyWithoutYield      = quantity;
+        prodBOM.QtyBOMCalc              = quantity;
+        prodBOM.QtyInventCalc           = quantity;
+        prodBOM.RemainInventPhysical    = quantity;
+        prodBOM.RemainBOMPhysical       = quantity;
+        prodBOM.BOMQty                  = quantity;
+        prodBOM.BOMConsump              = BOMConsumpType::Constant;
+        prodBOM.LineNum                 = ProdBOM::lastLineNum(prodBOM.ProdId) + 1; 
+        prodBOM.ProdFlushingPrincip     = ProdBOM::prodFlushingPrincipItem2BOM(avaInventTable.ProdFlushingPrincip);
+
+        InventMovement::bufferSetTransQtyUnit(prodBOM);
+
+        prodBOM.AVAReplenishItem = NoYes::Yes;
+        prodBOM.AVAReplenishUserId = curUserId();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkReservation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// contains ProdBOM.BOMQty adjustment if less quantity was reserved
+    /// </summary>
+    public void checkReservation()
+    {
+        InventQtyReservPhysical reservedQty;
+
+        reservedQty = this.getReservedQty();
+
+        if(reservedQty < quantity)
+        {
+            this.adjustProdBOMQty(reservedQty);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getReservedQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks currently reserved quantity
+    /// </summary>
+    /// <returns>InventQtyReservPhysical</returns>
+    public InventQtyReservPhysical getReservedQty()
+    {
+        InventDim                       inventDimCriteria = prodBOM.inventDim();
+        InventMovement                  movement = InventMov_ProdLine::newFromProdBOM(prodBOM, prodBOM.type() as InventType);
+        InventDimParm                   inventDimParm = movement.initDimParmAutoReserv(inventDimCriteria);
+        InventTransIdSumSingleStatus    inventTransIdSumSingleStatus;
+
+        inventDimParm.setAllProductDimensions();
+
+        inventTransIdSumSingleStatus = InventTransIdSumSingleStatus::newTransOriginIdStatus(InventTransOriginProdBOM::findInventTransOriginId(prodBOM.DataAreaId, prodBOM.InventTransId),
+                                                                                            StatusReceipt::None,
+                                                                                            StatusIssue::ReservPhysical);
+        inventTransIdSumSingleStatus.parmInventDimCriteria(inventDimCriteria);
+        inventTransIdSumSingleStatus.parmInventDimParmCriteria(inventDimParm);
+
+        return inventTransIdSumSingleStatus.reservPhysical() * -1;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>adjustProdBOMQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Changes ProdBOMQty and opens an info Box with new Quantity
+    /// </summary>
+    /// <param name = "_qty">InventQtyReservPhysical</param>
+    public void adjustProdBOMQty(InventQtyReservPhysical _qty)
+    {
+        ttsbegin;
+
+        prodBOM.PmfQtyWithoutYield      = _qty;
+        prodBOM.QtyBOMCalc              = _qty;
+        prodBOM.QtyInventCalc           = _qty;
+        prodBOM.RemainInventPhysical    = _qty;
+        prodBOM.RemainBOMPhysical       = _qty;
+        prodBOM.BOMQty                  = _qty;
+        prodBOM.doUpdate();
+
+        ttscommit;
+        
+        Box::info(strFmt("@NDX:NXAReservedQtyLessInfo", ProdBOM.BOMQty));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>releaseCharge</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Will release the associated charge
+    /// </summary>
+    public void releaseCharge()
+    {
+        ProdMultiRelease prodMultiRelease = ProdMultiRelease::construct(new Args());
+        RunBaseMultiParm::initParm(prodMultiRelease);
+        prodMultiRelease.insert(prodTable, prodMultiRelease.defaultParmBuffer());
+
+        prodMultiRelease.runOperation();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>replenishRawMaterialInfo</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Contains info box for completed process
+    /// </summary>
+    public void replenishRawMaterialInfo()
+    { 
+        Box::info("@NDX:NXAReplenishRawMaterialInfo");
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmItemId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// parm method for itemId
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <returns>ItemId</returns>
+    public ItemId parmItemId(ItemId _itemId = itemId)
+    {
+        itemId = _itemId;
+
+        return itemId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmOprNum</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// parm method for oprNum
+    /// </summary>
+    /// <param name = "_oprNum">OprNum</param>
+    /// <returns>OprNum</returns>
+    public OprNum parmOprNum(OprNum _oprNum = oprNum)
+    {
+        oprNum = _oprNum;
+
+        return oprNum;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// parm method for quantity
+    /// </summary>
+    /// <param name = "_quantity">Qty</param>
+    /// <returns>Qty</returns>
+    public Qty parmQty(Qty _quantity = quantity)
+    {
+        quantity = _quantity;
+
+        return quantity;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmProdTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// parm method for prodTable
+    /// </summary>
+    /// <param name = "_prodTable">ProdTable</param>
+    /// <returns>ProdTable</returns>
+    public ProdTable parmProdTable(ProdTable _prodTable = prodTable)
+    {
+        prodTable = _prodTable;
+
+        return prodTable;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

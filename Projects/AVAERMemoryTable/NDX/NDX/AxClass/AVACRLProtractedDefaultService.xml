@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACRLProtractedDefaultService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extends SysOperationServiceBase class
+/// </summary>
+final class AVACRLProtractedDefaultService extends SysOperationServiceBase
+{
+    AmountMST   limit;
+    Days        daysAfterDue;
+    str         packedQuery;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>startOperation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// startOperation method
+    /// </summary>
+    /// <param name = "_dataContract">AVACRLProtractedDefaultContract</param>
+    public void startOperation(AVACRLProtractedDefaultContract _dataContract)
+    {
+        System.Exception ex;
+        #OCCRetryCount
+
+        limit                   = _dataContract.parmLimit();
+        daysAfterDue            = _dataContract.parmDaysAfterDue();
+        packedQuery             = _dataContract.parmPackedQuery();
+
+        try
+        {
+            this.processOperation();
+        }
+
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+
+        catch (Exception::Error)
+        {
+            error("@NDX:NXAErrorOccured");
+            retry;
+        }
+
+        catch (Exception::CLRError)
+        {
+            ex = ClrInterop::getLastException();
+
+            if (ex != null)
+            {
+                ex = ex.get_InnerException();
+                if (ex != null)
+                {
+                    error("@NDX:NXAErrorOccured");
+                }
+            }
+
+            retry;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processOperation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// processOperation method
+    /// </summary>
+    private void processOperation()
+    {
+        AVACRLReportResultTable         resultTable;
+        Query                           query = new Query(SysOperationHelper::base64Decode(packedQuery));
+        QueryRun                        queryRun;
+        CustTable                       custTable;
+        CredManCreditLimitCustGroupLine CRLCustGroupLine;
+        CredManCreditLimitCustGroup     CRLCustGroup;
+        CustTrans                       custTrans;
+        CustTransOpen                   custTransOpen;
+        CustInvoiceJour                 custInvoiceJour;
+        QueryBuildRange                 qbrDays/*, qbrTargetDate*/;
+        QueryBuildDataSource            qbdsInvoiceJour/*, qbdsCustTrans*/;
+
+        delete_from resultTable where resultTable.ReportType == AVACRLReportType::ProtractedDefault
+                                   && resultTable.ReportDate == dateNull();
+
+        qbdsInvoiceJour = SysQuery::findOrCreateDataSource(query, tableNum(CustInvoiceJour));
+        qbrDays = SysQuery::findOrCreateRange(qbdsInvoiceJour, fieldNum(CustInvoiceJour, DueDate));
+        //qbrDays.value(SysQuery::range(DateTimeUtil::addDays(DateTimeUtil::getSystemDateTime(), -daysAfterDue), DateTimeUtil::maxValue()));
+        qbrDays.value(SysQueryRangeUtil::lessThanDate(-daysAfterDue + 1));
+
+        queryrun = new QueryRun(query);
+
+        while (queryRun.next())
+        {
+            custTable           = queryRun.get(tableNum(CustTable));
+            CRLCustGroupLine    = queryRun.get(tableNum(CredManCreditLimitCustGroupLine));
+            custTrans           = queryRun.get(tableNum(CustTrans));
+            custTransOpen       = queryRun.get(tableNum(CustTransOpen));
+            custInvoiceJour     = queryRun.get(tableNum(CustInvoiceJour));
+
+            if (custInvoiceJour.netAmountMST() >= limit)
+            {
+                ttsbegin;
+                resultTable.clear();
+                resultTable.ReportType          = AVACRLReportType::ProtractedDefault;
+                resultTable.CustAccount         = custTable.AccountNum;
+                resultTable.CustName            = custTable.name();
+                select firstonly CreditLimitId from CRLCustGroup where CRLCustGroup.RecId == CRLCustGroupLine.CreditLimitCustGroup;
+                resultTable.CreditLimitId       = CRLCustGroup.CreditLimitId;
+                resultTable.CustInvoiceId       = custInvoiceJour.InvoiceId;
+                resultTable.InvoiceDate         = custInvoiceJour.InvoiceDate;
+                resultTable.DueDate             = custInvoiceJour.DueDate;
+                resultTable.NetAmountMST        = custInvoiceJour.netAmountMST();
+                resultTable.InvoiceAmountMST    = custInvoiceJour.InvoiceAmountMST;
+                resultTable.OpenAmountMST       = custTransOpen.AmountMST;
+                resultTable.PartPaymAmountMST   = resultTable.InvoiceAmountMST - resultTable.OpenAmountMST;
+                resultTable.CustTransRecId      = custTrans.RecId;
+                resultTable.insert();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

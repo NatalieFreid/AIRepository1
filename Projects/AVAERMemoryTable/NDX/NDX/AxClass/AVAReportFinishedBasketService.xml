@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAReportFinishedBasketService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN 2014/02/21
+/// </summary>
+class AVAReportFinishedBasketService extends SysOperationServiceBase
+{
+    AVATraverseTrans travTrans;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_contract">AVAReportFinishedBasketContract</param>
+    public void process(AVAReportFinishedBasketContract _contract)
+    {
+        ProdId prodId;       
+        #OCCRetryCount
+
+        try
+        {
+            prodId = this.setQty(_contract);
+            if (prodId)
+            {
+                this.reportFinishedBasket(prodId);
+            }
+        }
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setQty</Name>
+				<Source><![CDATA[
+    private ProdId setQty(AVAReportFinishedBasketContract _contract)
+    {
+        Qty qty = _contract.parmQty();
+        ProdId prodId = _contract.parmProdId();
+        
+        select forupdate firstonly travTrans where travTrans.ProdId == prodId 
+            && travTrans.BasketNum;
+        if (travTrans)
+        {
+            ttsbegin;
+            travTrans.Qty = qty;
+            travTrans.update();
+            prodId = travTrans.ProdId;
+            ttscommit;
+        }
+        else
+        {
+            warning(strFmt("@NDX:NXANoBasketForProd", prodId));
+            prodId = "@NDX:NDXEmptyEntry";
+        }
+        return prodId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>reportFinishedBasket</Name>
+				<Source><![CDATA[
+    private void reportFinishedBasket(ProdId _prodId)
+    {
+        ProdTable   prodTable = prodTable::find(_prodId);
+        Args args = new Args();
+        //args.record(prodTable);
+        args.parmEnum(RunChoose::Run);
+        args.record(travTrans);
+        ProdMultiReportFinished prodMultiReportFinished = ProdMultiReportFinished::construct(args);
+        RunBaseMultiParm::initFromForm(prodMultiReportFinished,args);
+
+        RunBaseMultiParm::avaInitFromProd(prodMultiReportFinished, _ProdId);
+             
+        if (!prodMultiReportFinished.prompt())
+        {
+            return;
+        }
+        prodMultiReportFinished.runOperation();
+
+        //MenuFunction menuFunction = new MenuFunction(menuItemActionStr(AVAProdReportAsFinishedTrav), MenuItemType::Action);
+
+        //menuFunction.run(args);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAGAEBExportD94Service</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed by AVANADE
+/// </summary>
+class AVAGAEBExportD94Service extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_contract">AVAGAEBExportD94Contract</param>
+    public void process(AVAGAEBExportD94Contract _contract)
+    {
+        Set                             recordSet;
+        SetEnumerator                   se;
+        Common                          record;
+        SalesQuotationTable             sqt;
+        AVACustQuotationJourPostGAEB    custQuotationJourPost;
+        Args                            args;
+        AVAGAEBExportD94CreateFile      createFile;
+        CustQuotationJour               custQuotationJour;
+        KCS_HDMSalesQuotationTableInfoFields    infoFields;
+        boolean                                 postJour;
+
+        try
+        {
+            if (conLen(_contract.parmRecordCon()) > 0)
+            {
+                recordSet = Set::create(_contract.parmRecordCon());
+                se = recordSet.getEnumerator();
+                while (se.moveNext())
+                {
+                    record = se.current();
+
+                    if (record.TableId == tableNum(SalesQuotationTable))
+                    {
+                        sqt = record;
+                        //if (sqt.KCS_GAEBImportID)
+                        //{
+                        if (sqt.avaGAEBMissingOZ())
+                        {
+                            warning("@NDX:NXAGAEBWarningMissingOZ");
+                        }
+                        else
+                        {
+                            infoFields = KCS_HDMSalesQuotationTableInfoFields::find(sqt.QuotationId, true);
+
+                            if (infoFields.InfoField2 != '' && infoFields.InfoField2Finished == NoYes::No)
+                            {
+                                if (Box::yesNo(strFmt("@NDX:NXACommitInfo2", infoFields.InfoField2), DialogButton::Yes) == DialogButton::Yes)
+                                {
+                                    ttsbegin;
+                                    infoFields.InfoField2Finished = NoYes::Yes;
+                                    infoFields.InfoField2FinishedDateTime = DateTimeUtil::getSystemDateTime();
+                                    infoFields.InfoField2FinishedUser = curUserId();
+                                    infoFields.update();
+                                    ttscommit;
+                                    postJour = true;
+                                }
+                            }
+                            else
+                            {
+                                postJour = true;
+                            }
+
+                            if (postJour)
+                            {
+                                args = new Args();
+                                args.record(sqt);
+                                args.caller(this);
+                                args.parm('GAEB');
+
+                                new MenuFunction(menuItemActionStr(AVACreateQuotationJournal), MenuItemType::Action).run(args);
+
+                                custQuotationJour = CustQuotationJour::avaFindLatestQuotation(sqt.QuotationId);
+            
+                                if (custQuotationJour)
+                                {
+                                    createFile = AVAGAEBExportD94CreateFile::construct(custQuotationJour);
+                                    createFile.sendGAEB();
+
+                                    this.attachReportFromMemmory(custQuotationJour);
+                                }
+
+                                
+                            }
+                        }
+                        
+                    }
+                }
+            }
+        }
+        catch 
+        {
+            error("@SYP4861341");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>attachReportFromMemmory</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_custQuotationjour">_custQuotationjour</param>
+    protected void attachReportFromMemmory(CustQuotationJour        _custQuotationjour)
+    {
+        PrintMgmtReportFormat       printMgmtReportFormat;
+        PrintMgmtSettings           printMgmtSettings;
+        printMgmtDocInstance        printMgmtDocInstance;
+
+        DocuRef                     addDOcuRef;
+        DocuValue                   addDocuValue;
+        String10                    fileExtension;
+        Filename                    strFileName;
+        System.IO.Stream            addStream;
+
+        boolean sendExcel = _custQuotationJour.salesQuotationTable().AVASendExcel;
+        if (!AVAEREmailCreationHelper::checkExistedPrintRun(_custQuotationJour,sendExcel))
+        {
+            AVAEREmailCreationHelper::printQuotationOrig(_custQuotationJour);
+            if (sendExcel)
+            {
+                AVAEREmailCreationHelper::printQuotationCopy(_custQuotationJour);
+            }
+        }
+
+        select firstonly printMgmtReportFormat
+                    where printMgmtReportFormat.DocumentType == PrintMgmtDocumentType::Quotation
+                    join printMgmtSettings
+                    where printMgmtSettings.ReportFormat == printMgmtReportFormat.RecId
+                        join printMgmtDocInstance
+                            where printMgmtDocInstance.RecId == printMgmtSettings.ParentId
+                    && printMgmtDocInstance.PrintType == PrintMgmtDocInstanceType::Original;
+
+        System.IO.Stream        attachmentStream = AVAEREmailCreationHelper::getReportFromMemory(_custQuotationJour,printMgmtReportFormat.Name);
+               
+        if (attachmentStream)
+        {
+            addDocuRef.initValue();
+            addDocuRef.RefCompanyId = curext();
+            addDocuRef.RefTableId = _custQuotationjour.TableId;
+            addDocuRef.RefRecId = _custQuotationjour.RecId;
+            addDocuRef.TypeId   = DocuType::findGroup(DocuTypeGroup::File).TypeId;
+           
+            addDocuRef.insert();
+            addDocuValue.initFromDocuRef(addDocuRef);
+            addDocuValue.insert();
+            
+
+            FileExtension = '.pdf';
+            strFileName = _custQuotationjour.QuotationId + FileExtension;
+          
+            DocumentManagement::attachFileForDocuRefRecord(addDocuRef.RecId, attachmentStream, strfileName, _custQuotationJour.QuotationId);
+        }
+
+        select firstonly printMgmtReportFormat
+                    where printMgmtReportFormat.DocumentType == PrintMgmtDocumentType::Quotation
+                    join printMgmtSettings
+                    where printMgmtSettings.ReportFormat == printMgmtReportFormat.RecId
+                        join printMgmtDocInstance
+                            where printMgmtDocInstance.RecId == printMgmtSettings.ParentId
+                    && printMgmtDocInstance.PrintType == PrintMgmtDocInstanceType::Copy;
+
+        attachmentStream = AVAEREmailCreationHelper::getReportFromMemory(_custQuotationJour,printMgmtReportFormat.Name);
+               
+        if (attachmentStream)
+        {
+            addDocuRef.initValue();
+            addDocuRef.RefCompanyId = curext();
+            addDocuRef.RefTableId = _custQuotationjour.TableId;
+            addDocuRef.RefRecId = _custQuotationjour.RecId;
+            addDocuRef.TypeId   = DocuType::findGroup(DocuTypeGroup::File).TypeId;
+           
+            addDocuRef.insert();
+            addDocuValue.initFromDocuRef(addDocuRef);
+            addDocuValue.insert();
+            
+
+            FileExtension = 'pdf';
+            strFileName = printMgmtReportFormat.Name + '_' + _custQuotationjour.QuotationId + FileExtension;
+          
+            DocumentManagement::attachFileForDocuRefRecord(addDocuRef.RecId, attachmentStream, strfileName, _custQuotationJour.QuotationId);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

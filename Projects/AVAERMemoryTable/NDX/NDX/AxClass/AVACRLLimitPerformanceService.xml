@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACRLLimitPerformanceService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extends SysOperationServiceBase class
+/// </summary>
+final class AVACRLLimitPerformanceService extends SysOperationServiceBase
+{
+    AmountMST   limit;
+    Days        daysAfterDue;
+    str         packedQuery;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>startOperation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// startOperation method
+    /// </summary>
+    public void startOperation()
+    {
+        System.Exception ex;
+        #OCCRetryCount
+
+        try
+        {
+            this.processOperation();
+        }
+
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+
+        catch (Exception::Error)
+        {
+            error("@NDX:NXAErrorOccured");
+            retry;
+        }
+
+        catch (Exception::CLRError)
+        {
+            ex = ClrInterop::getLastException();
+
+            if (ex != null)
+            {
+                ex = ex.get_InnerException();
+                if (ex != null)
+                {
+                    error("@NDX:NXAErrorOccured");
+                }
+            }
+
+            retry;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processOperation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// processOperation method
+    /// </summary>
+    private void processOperation()
+    {
+        AVACreditlimits                 crlPerformanceTable;
+        CredManCreditLimitCustGroup     crlCustGroup;
+        CustTable                       custTable;
+        CredManCreditLimitCustGroupLine crlCustGroupLine;
+        RecordInsertList                insertList = new RecordInsertList(tableNum(AVACreditlimits));
+
+        tmpCustVendTrans          tmpCustVendTrans;
+        AmountMST                 totalAmountMST;
+        AmountMst                 totalNetEstimatedAmount;
+
+        delete_from crlPerformanceTable;
+
+        while select crlCustGroup
+        {
+            tmpCustVendTrans = AVAFCMGroupTable::getBalanceTmpTableByGroupForBalanceForm(crlCustGroup.CreditLimitId);
+            while select sum(AmountMST), sum(AmountCur), sum(AVAFPLNetEstimatedAmount), sum(AVAFPLNetEstimatedInvoicedAmount) from tmpCustVendTrans
+            {
+                totalAmountMST          += tmpCustVendTrans.amountMST;
+                totalNetEstimatedAmount += tmpCustVendTrans.AVAFPLNetEstimatedAmount;
+            }
+            crlPerformanceTable.clear();
+            crlPerformanceTable.CredManCreditLimitId   = crlCustGroup.CreditLimitId;
+            crlPerformanceTable.CustAccount            = crlCustGroup.AVARiscDebtor;
+            crlPerformanceTable.Open                   = totalAmountMST;
+            crlPerformanceTable.Ordered                = totalNetEstimatedAmount;
+            insertList.add(crlPerformanceTable);
+        }
+
+        while select custTable where custTable.MandatoryCreditLimit
+            notexists join crlCustGroupLine where crlCustGroupLine.CustAccount == custTable.AccountNum
+        {
+            crlPerformanceTable.clear();
+            crlPerformanceTable.CustAccount        = custTable.AccountNum;
+            crlPerformanceTable.Open               = AVAFCMGroupTable::getInvoicedBalanceMSTByCustTable(custTable);
+            crlPerformanceTable.Ordered            = AVAFCMGroupTable::getNotInvoicedBalanceMSTByCustTable(custTable);
+            insertList.add(crlPerformanceTable);
+        }
+
+        insertList.insertDatabase();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

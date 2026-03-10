@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADocuRefDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA
+/// </summary>
+[ExtensionOf(tableStr(DocuRef))]
+final class AVADocuRefDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>renumFollowingDocuRef</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_curDocuRef">DocuRef</param>
+    /// <returns>boolean</returns>
+    public static boolean renumFollowingDocuRef(DocuRef   _curDocuRef)
+    {
+        DocuRef     nextDocuRef;
+        boolean     ret = false;
+
+        while select forupdate nextDocuRef order by KCS_TCVLineNum desc
+                where nextDocuRef.RefCompanyId      == _curDocuRef.RefCompanyId  &&
+                      nextDocuRef.RefTableId        == _curDocuRef.RefTableId    &&
+                      nextDocuRef.RefRecId          == _curDocuRef.RefRecId    &&
+                      nextDocuRef.RecId             != _curDocuRef.RecId
+
+        {
+            ttsBegin;
+            nextDocuRef.KCS_TCVLineNum  = nextDocuRef.KCS_TCVLineNum + 1;
+               
+            nextDocuRef.selectForUpdate(true);
+
+            nextDocuRef.update();
+            ttscommit;
+            ret = true;
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    void insert(RecId _interCompanyFromRecId)
+    {
+        this.KCS_TCVLineNum = DocuRef::KCS_TCVlastLineNum(this.RefCompanyId, this.RefTableId, this.RefRecId) + 1;
+        next insert(_interCompanyFromRecId);
+
+        if (this.RefTableId != tableNum(SalesQuotationLine))
+        {
+            return;
+        }
+
+        if (FormDataUtil::isFormDataSource(this))   //die Nummer nur reorganisieren bei Neuerstellung aus der Maske nicht beim Kopieren
+        {
+            if (!this.KCS_TCVGroupId && this.KCS_TCVLineNum == DocuRef::KCS_TCVlastLineNum(this.RefCompanyId, this.RefTableId, this.RefRecId))
+            {
+                if (DocuRef::renumFollowingDocuRef(this))
+                {
+                    ttsbegin;
+                    //this.renumFollowingDocuRef(this);
+                    this.KCS_TCVLineNum = 1;
+                    this.doUpdate();
+                    ttscommit;
+                }
+           
+                FormDataUtil::getFormDataSource(this).research(true);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>renumDocuRef</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  AVA/WEN 2024/03/19 AVA_010202
+    /// </summary>
+    /// <param name = "_refCompanyId">SelectableDataArea</param>
+    /// <param name = "_refTableId">RefTableId</param>
+    /// <param name = "_refRecId">RefRecId</param>
+    public static void renumDocuRef(SelectableDataArea _refCompanyId, RefTableId _refTableId, RefRecId _refRecId)
+    {
+        DocuRef     updDocuRef;
+        Counter     i = 1;
+        list List = new List(Types::Int64);
+        ListEnumerator listEnumerator;
+
+        while select updDocuRef order by KCS_TCVLineNum
+                where updDocuRef.RefCompanyId      == _refCompanyId  &&
+                      updDocuRef.RefTableId        == _refTableId    &&
+                        updDocuRef.RefRecId          == _refRecId
+        {
+            List.addEnd(updDocuRef.RecId);
+        }
+
+        listEnumerator = List.getEnumerator();
+        listEnumerator.reset();
+        while (listEnumerator.moveNext())
+        {
+            ttsbegin;
+            update_recordset updDocuRef setting KCS_TCVLineNum = i where updDocuRef.RecId == listEnumerator.current();
+            ttscommit;
+            i++;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>delete</Name>
+				<Source><![CDATA[
+    void delete(RecId _interCompanyFromRecId, boolean _useCreatedByUser)
+    {
+        SelectableDataArea  refCompanyId;
+        RefTableId          refTableId;
+        RefRecId            refRecId;
+        RecId               RecId;
+
+        refCompanyId    = this.RefCompanyId;
+        refTableId      = this.RefTableId;
+        refRecId        = this.RefRecId;
+        recId           = this.RecId;
+
+        next delete(_interCompanyFromRecId, _useCreatedByUser);
+
+        if (!SysUserInfo::find(curUserId()).AVADataImportUser)
+        {
+            DocuRef::renumDocuRef(refCompanyId, refTableId, refRecId);
+        }
+
+        AVADocuRestrictionReference     avaDocuRestrictionReference;
+
+        delete_from avaDocuRestrictionReference
+            where avaDocuRestrictionReference.DocuRefRecId == recId;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

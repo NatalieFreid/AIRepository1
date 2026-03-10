@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXSystemNotificationsManager_cls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 04.06.21
+/// </summary>
+[ExtensionOf(classStr(SystemNotificationsManager))]
+final class NDXSystemNotificationsManager_cls_Extension
+{
+    private List notificationListToDelete;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>DeleteNotificationsFromContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 07.06.21
+    /// </summary>
+    /// <param name = "_contract">NDXDeleteNotificationsContract</param>
+    /// <returns>int</returns>
+    public int DeleteNotificationsFromContract(NDXDeleteNotificationsContract _contract)
+    {
+        if (notificationListToDelete == null)
+        {
+            notificationListToDelete = this.GetNotificationsFromDateRange(_contract.parmUtcDateTimeFrom(), _contract.parmUtcDateTimeTo(), _contract.parmUserId());
+        }
+        if (notificationListToDelete.empty())
+        {
+            return 0;
+        }
+        return this.DeleteNotifications(notificationListToDelete);
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>DeleteNotificationsFromRange</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.06.21
+    /// </summary>
+    /// <param name = "createdDateTimeFrom">utcdatetime</param>
+    /// <param name = "createdDateTimeTo">utcdatetime</param>
+    /// <param name = "user">UserId</param>
+    /// <returns>int</returns>
+    public int DeleteNotificationsFromRange(utcdatetime createdDateTimeFrom, utcdatetime createdDateTimeTo, UserId user = curUserId())
+    {
+
+        if (notificationListToDelete == null)
+        {
+            notificationListToDelete = this.GetNotificationsFromDateRange(createdDateTimeFrom, createdDateTimeTo, user);
+        }
+        if (notificationListToDelete.empty() ||
+            Box::okCancel(strFmt("@NDX:NDXNotificationsForUserWillBeDeleted", user, createdDateTimeFrom, createdDateTimeTo, notificationListToDelete.elements()), DialogButton::Cancel) == DialogButton::Cancel)
+        {
+            return 0;
+        }
+        int deletedNotifications = this.DeleteNotifications(notificationListToDelete);
+        info(strFmt("@NDX:NDXNotificationsForUserHaveBeenDeleted", deletedNotifications, user, createdDateTimeFrom, createdDateTimeTo));
+        return deletedNotifications;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>GetNotificationsFromContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 07.06.21
+    /// </summary>
+    /// <param name = "_contract">NDXDeleteNotificationsContract</param>
+    /// <returns>List</returns>
+    public List GetNotificationsFromContract(NDXDeleteNotificationsContract _contract) 
+    {
+        return this.GetNotificationsFromDateRange(_contract.parmUtcDateTimeFrom(), _contract.parmUtcDateTimeTo(), _contract.parmUserId());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>GetNotificationsFromDateRange</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.06.21
+    /// get list of notifications for a time range
+    /// </summary>
+    /// <param name = "createdDateTimeFrom">from dateTime</param>
+    /// <param name = "createdDateTimeTo">to DateTime</param>
+    /// <param name = "user">default: current user</param>
+    /// <returns>List</returns>
+    public List GetNotificationsFromDateRange(utcdatetime createdDateTimeFrom, utcdatetime createdDateTimeTo, UserId user = curUserId())
+    {
+        SystemNotification systemNotification;
+        notificationListToDelete = new List(Types::Class);
+        Query q = new Query();
+        QueryBuildDataSource qbdsNotificationUser = q.addDataSource(tableNum(SystemNotificationUser));
+        qbdsNotificationUser.addRange(fieldNum(SystemNotificationUser, UserId)).value(queryValue(user));
+        if (createdDateTimeFrom && createdDateTimeTo)
+        {
+            qbdsNotificationUser.addRange(fieldNum(SystemNotificationUser, CreatedDateTime)).value(SysQuery::range(createdDateTimeFrom, createdDateTimeTo));
+        }
+        else if (createdDateTimeFrom)
+        {
+            qbdsNotificationUser.addRange(fieldNum(SystemNotificationUser, CreatedDateTime)).value(SysQueryRangeUtil::greaterThanUtcDate(DateTimeUtil::day(DateTimeUtil::addDays(createdDateTimeFrom, -1))));
+        }
+        else if (createdDateTimeTo)
+        {
+            qbdsNotificationUser.addRange(fieldNum(SystemNotificationUser, CreatedDateTime)).value(SysQueryRangeUtil::lessThanUtcDate(DateTimeUtil::day(DateTimeUtil::addDays(createdDateTimeTo, 1))));
+        }
+
+        QueryBuildDataSource qbdsNotification = qbdsNotificationUser.addDataSource(tableNum(SystemNotification));
+        qbdsNotification.joinMode(JoinMode::InnerJoin);
+        qbdsNotification.fetchMode(QueryFetchMode::One2One);
+        qbdsNotification.relations(true);
+
+        QueryRun qr = new QueryRun(q);
+        while (qr.next())
+        {
+            if (!qr.changed(tableNum(SystemNotification)))
+            {
+                continue;
+            }
+
+            systemNotification = qr.get(tableNum(SystemNotification));
+            SystemNotificationClientDataContract notificationClientDataContract = SystemNotificationsManager::NDXGetClientDataContract(systemNotification);
+            notificationListToDelete.addEnd(notificationClientDataContract);
+        }
+        return notificationListToDelete;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>DeleteNotifications</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.06.21
+    /// delete list of SystemNotificationClientDataContract
+    /// </summary>
+    /// <param name = "notifications">list of SystemNotificationClientDataContract</param>
+    /// <returns>number of deleted notifications</returns>
+    public int DeleteNotifications(List notifications)
+    {
+        int performed = 0;
+        if (notifications.empty())
+        {
+            return performed;
+        }
+        ListEnumerator enum = notifications.getEnumerator();
+        while (enum.moveNext())
+        {
+            SystemNotificationClientDataContract notification = enum.current() as SystemNotificationClientDataContract;
+            if (!notification)
+            {
+                continue;
+            }
+            if (this.DeleteNotification(notification))
+            {
+                ++performed;
+            }
+        }
+        return performed;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>DeleteNotification</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.06.21
+    /// delete records belong to one notification
+    /// </summary>
+    /// <param name = "notificationData">SystemNotificationClientDataContract</param>
+    /// <returns>boolean</returns>
+    [SuppressBPWarning('BPErrorMethodUnbalancedTtsbeginCommit','ttsbegin, ttscommit is balanced')]
+    private boolean DeleteNotification(SystemNotificationClientDataContract notificationData)
+    {
+        SystemNotification systemNotification;
+        SystemNotificationUser systemNotificationUser;
+        SystemNotificationAction systemNotificationAction;
+        boolean hasUserConnection = false;
+
+        UserConnection userConnection = null;
+        if (!isRunningSyncEngine())
+        {
+            userConnection = new UserConnection();
+            hasUserConnection = true;
+            systemNotificationAction.setConnection(userConnection);
+            systemNotificationUser.setConnection(userConnection);
+            systemNotification.setConnection(userConnection);
+        }
+
+        try
+        {
+            if (userConnection != null)
+            {
+                userConnection.ttsbegin();
+            }
+            else
+            {
+                ttsbegin;
+            }
+
+
+            // delete SystemNotificationUser
+            select firstonly forupdate systemNotificationUser where SystemNotificationUser.SystemNotification == notificationData.Id();
+            if (systemNotificationUser && systemNotificationUser.validateDelete())
+            {
+                systemNotificationUser.delete();
+            }
+
+            // delete SystemNotificationAction
+            if (notificationData.Actions().lastIndex() > 0)
+            {
+                for (int i = 1; i <= notificationData.Actions().lastIndex(); i++)
+                {
+                    SystemNotificationActionClientDataContract action = notificationData.Actions().value(i) as SystemNotificationActionClientDataContract;
+                    if (action)
+                    {
+                        select firstonly forupdate systemNotificationAction where systemNotificationAction.RecId == action.Id();
+                        if (systemNotificationAction && systemNotificationAction.validateDelete())
+                        {
+                            systemNotificationAction.delete();
+                        }
+                    }
+                }
+            }
+
+            // delete SystemNotification
+            select firstonly forupdate systemNotification where systemNotification.RecId == notificationData.Id();
+            if (systemNotification && systemNotification.validateDelete())
+            {
+                systemNotification.delete();
+            }
+            
+            if (userConnection != null)
+            {
+                userConnection.ttscommit();
+            }
+            else
+            {
+                ttscommit;
+            }
+        }
+        finally
+        {
+            if (userConnection)
+            {
+                userConnection.finalize();
+            }
+        }
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXGetClientDataContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.06.21
+    /// Private_Duplicate of GetClientDataContract
+    /// </summary>
+    /// <param name = "systemNotification">SystemNotification</param>
+    /// <returns>SystemNotificationClientDataContract</returns>
+    private static SystemNotificationClientDataContract NDXGetClientDataContract(SystemNotification systemNotification)
+    {
+        SystemNotificationClientDataContract notification = new SystemNotificationClientDataContract();
+        notification.Title(systemNotification.Title);
+        notification.Message(systemNotification.Message);
+        notification.Type(systemNotification.Type);
+        notification.Severity(systemNotification.Severity);
+        notification.State(systemNotification.State);
+        notification.ReminderInterval(systemNotification.ReminderInterval);
+        notification.Id(systemNotification.RecId);
+        notification.CreatedDateTime(systemNotification.CreatedDateTime);
+
+        Array actions = new Array(Types::Class);
+        SystemNotificationAction systemNotificationAction;
+        int i = 1;
+        while select RecId, Message, Data from systemNotificationAction
+              where systemNotificationAction.SystemNotification == systemNotification.RecId
+        {
+            SystemNotificationActionClientDataContract action = new SystemNotificationActionClientDataContract();
+            action.Id(systemNotificationAction.RecId);
+            action.Message(systemNotificationAction.Message);
+            action.Data(systemNotificationAction.Data);
+            actions.value(i, action);
+            i++;
+        }
+
+        notification.Actions(actions);
+
+        return notification;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

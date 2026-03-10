@@ -1,0 +1,377 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>AVALedgerAllocRuleDimValueSelection</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+/// <summary>
+/// AVA/WEN 2024/04/23     AVA_011747_LedgerAllocationDestinations
+/// </summary>
+
+[Form]
+public class AVALedgerAllocRuleDimValueSelection extends FormRun
+{
+    DimensionAttribute      dimAttribute;
+    LedgerAllocationRule    ledgerAllocationRule;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        if (this.args().record() && this.args().dataset() == tableNum(LedgerAllocationRule))
+        {
+            ledgerAllocationRule = this.args().record();
+            dimAttribute = DimensionAttribute::findByName(ledgerAllocationRule.AVADestinationDimAttributeName);
+        }
+
+        super();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>DimensionAttributeValue</Name>
+				<Methods>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            DimensionAttributeValue dimValue;
+            AVALedgerAllocRuleDestinationDimensions destDim;
+
+            SysQuery::findOrCreateRange(this.queryBuildDataSource(),fieldNum(DimensionAttributeValue, DimensionAttribute)).value(SysQuery::value(dimAttribute.RecId));
+            super();
+
+            while select destDim where destDim.RuleId == ledgerAllocationRule.RuleId
+            {
+                select firstonly dimValue where dimValue.DimensionAttribute == dimAttribute.RecId
+                                            && dimValue.DisplayValue == destDim.AVADestinationDimensionValue;
+                this.markRecord(dimValue, 1);
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            this.queryBuildDataSource().addSortField(fieldNum(DimensionAttributeValue, DisplayValue));
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>LoadDimensions</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        public void clicked()
+        {
+            DimensionAttributeValue     dimValue;
+            DimensionAttributeValueSetItem          dimensionAttributeValueSetItem, otherDimFromSet;
+            DimensionAttributeValueSetStorage   setStorage = new DimensionAttributeValueSetStorage();
+            RefRecId    result;
+            Query                   query;
+            QueryRun                qr;
+            QueryBuildDataSource    qbdsDimSetItem, qbdsDimAttributeValue, qbdsDimAttribute;
+            AVALedgerAllocRuleDestinationDimensions destDim;
+
+            //additive Selection, vorhandene Daten nicht löschen
+            //delete_from destDim where destDim.RuleId == ledgerAllocationRule.RuleId;
+
+            MultiSelectionHelper    selectionHelper = MultiSelectionHelper::construct();
+            selectionHelper.parmDatasource(dimensionattributevalue_ds);
+
+            dimValue = selectionHelper.getFirst();
+
+            while (dimValue)
+            {
+                //wenn es noch keine Kombination mit der gewählten Dimension im System gibt, wird diese angelegt
+                select firstonly dimensionAttributeValueSetItem where dimensionAttributeValueSetItem.DimensionAttributeValue == dimValue.RecId;
+                if (!dimensionAttributeValueSetItem)
+                {
+                    setStorage.addItem(dimValue);
+                    result = setStorage.save();
+                }
+                else
+                {
+                    while select dimensionAttributeValueSetItem where dimensionAttributeValueSetItem.DimensionAttributeValue == dimValue.RecId
+                    {
+                        select firstonly otherDimFromSet where otherDimFromSet.DimensionAttributeValueSet == dimensionAttributeValueSetItem.DimensionAttributeValueSet
+                                && otherDimFromSet.RecId != dimensionAttributeValueSetItem.RecId;
+
+                        if (otherDimFromSet)
+                        {
+                            setStorage.addItem(dimValue);
+                            result = setStorage.save();
+                        }
+                    }
+                }
+
+                query = new Query();
+                qbdsDimSetItem = query.addDataSource(tableNum(DimensionAttributeValueSetItem));
+                qbdsDimAttributeValue = qbdsDimSetItem.addDataSource(tableNum(DimensionAttributeValue));
+                qbdsDimAttributeValue.relations(false);
+                qbdsDimAttributeValue.addLink(fieldNum(DimensionAttributeValueSetItem, DimensionAttributeValue), fieldNum(DimensionAttributeValue, RecId));
+                qbdsDimAttributeValue.joinMode(JoinMode::InnerJoin);
+                qbdsDimAttribute = qbdsDimAttributeValue.addDataSource(tableNum(DimensionAttribute));
+                qbdsDimAttribute.relations(false);
+                qbdsDimAttribute.addLink(fieldNum(DimensionAttributeValue, DimensionAttribute), fieldNum(DimensionAttribute, RecId));
+                qbdsDimAttribute.joinMode(JoinMode::InnerJoin);
+                SysQuery::findOrCreateRange(qbdsDimAttribute, fieldNum(DimensionAttribute, Name)).value(ledgerAllocationRule.AVADestinationDimAttributeName);
+                SysQuery::findOrCreateRange(qbdsDimSetItem, fieldNum(DimensionAttributeValueSetItem, DisplayValue)).value(SysQuery::value(dimValue.DisplayValue));
+
+                qr = new QueryRun(query);
+
+                while (qr.next())
+                {
+                    dimensionAttributeValueSetItem = qr.get(tableNum(dimensionAttributeValueSetItem));
+                    select firstonly destDim where destdim.RuleId == ledgerAllocationRule.RuleId &&  destDim.DimensionAttributeValueSet == dimensionAttributeValueSetItem.DimensionAttributeValueSet;
+                    select firstonly otherDimFromSet where otherDimFromSet.DimensionAttributeValueSet == dimensionAttributeValueSetItem.DimensionAttributeValueSet
+                        && otherDimFromSet.RecId != dimensionAttributeValueSetItem.RecId;
+                    if (!destDim && !otherDimFromSet)
+                    {
+                        ttsbegin;
+                        destDim.RuleId = ledgerAllocationRule.RuleId;
+                        destDim.AVADestinationDimAttributeName = ledgerAllocationRule.AVADestinationDimAttributeName;
+                        destDim.AVADestinationDimensionValue = dimensionAttributeValueSetItem.DisplayValue;
+                        destDim.DimensionAttributeValueSet = dimensionAttributeValueSetItem.DimensionAttributeValueSet;
+                        destDim.insert();
+                        ttscommit;
+                    }
+                }
+
+                dimValue = selectionHelper.getNext();
+            }
+
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>DimensionAttributeValue</Name>
+			<Table>DimensionAttributeValue</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>ActiveFrom</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ActiveTo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAMOAMandatoryDA</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BackingRecordDataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CachedDisplayValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CachedInvariantName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CachedName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DimensionAttribute</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DisplayValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EntityInstance</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GroupDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HashKey</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsBalancing_PSN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsBlockedForManualEntry</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsDeleted</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsSuspended</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsTotal</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OriginalEntityInstance</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Owner</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PendingSuccessfulDeleteValidation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@NDX:NXALoadDimensions</Caption>
+		<Pattern xmlns="">SimpleList</Pattern>
+		<PatternVersion xmlns="">1.1</PatternVersion>
+		<Style xmlns="">SimpleList</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>FormActionPaneControl1</Name>
+				<Type>ActionPane</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonGroupControl">
+						<Name>FormButtonGroupControl1</Name>
+						<Type>ButtonGroup</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormCommandButtonControl">
+								<Name>LoadDimensions</Name>
+								<Type>CommandButton</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Command>CloseForm</Command>
+								<Text>@NDX:NXALoadDimensions</Text>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>FormGroupControl1</Name>
+				<Pattern>CustomAndQuickFilters</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl>
+						<Name>QuickFilterControl1</Name>
+						<FormControlExtension>
+							<Name>QuickFilterControl</Name>
+							<ExtensionComponents />
+							<ExtensionProperties>
+								<AxFormControlExtensionProperty>
+									<Name>targetControlName</Name>
+									<Type>String</Type>
+									<Value>FormGridControl1</Value>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>placeholderText</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>defaultColumnName</Name>
+									<Type>String</Type>
+									<Value>DimensionAttributeValue_DisplayValue</Value>
+								</AxFormControlExtensionProperty>
+							</ExtensionProperties>
+						</FormControlExtension>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+				<DataSource>DimensionAttributeValue</DataSource>
+				<FrameType>None</FrameType>
+				<Style>CustomFilter</Style>
+				<ViewEditMode>Edit</ViewEditMode>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGridControl">
+				<Name>FormGridControl1</Name>
+				<Type>Grid</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>DimensionAttributeValue_DisplayValue</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>DisplayValue</DataField>
+						<DataSource>DimensionAttributeValue</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>FormStringControl1</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataMethod>getName</DataMethod>
+						<DataSource>DimensionAttributeValue</DataSource>
+					</AxFormControl>
+				</Controls>
+				<DataSource>DimensionAttributeValue</DataSource>
+				<Style>Tabular</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXSNExportDataFegime</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class NDXSNExportDataFegime extends common 
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>pupulateData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// pupulates data
+    /// </summary>
+    /// <param name = "_NDXSNSalesItemGroupCustomerTmp">NDXSNSalesItemGroupCustomerTmp reord</param>
+    /// <param name = "_signature">signature</param>
+    /// <param name = "_companyFilter">company filter</param>
+    static void pupulateData(NDXSNSalesItemGroupCustomerTmp _NDXSNSalesItemGroupCustomerTmp,NDXSignature _signature, NDXCompanyBE _companyFilter = NDXCompanyBE::WithoutAssignment)
+    {
+        NDXSNExportDataFegime lNDXSNExportDataFegime;
+        NDXSNSalesItemGroupCustomerTmp nDX_SNSalesItemGroupCustomerTmp;
+        NDXSNSalesItemGroupCustomerTmp nDX_SNSalesItemGroupCustomerTmpGrp;
+        NDXSNSalesItemGroupCustomerTmp     nDX_SNSalesItemGroupCustomerTmpGrpCompany;
+
+        boolean lFirst = true;
+        boolean lFirst2 = true;
+
+        NDXUmsatzKum01 salesAmountCum;
+        CustAccount childSalesNote;
+        NDXItemGroup artGrp2;
+
+        Query q;
+        QueryRun qr;
+        QueryBuildDataSource qbds1;
+
+        nDX_SNSalesItemGroupCustomerTmp.setTmpData(_NDXSNSalesItemGroupCustomerTmp);
+        nDX_SNSalesItemGroupCustomerTmpGrp.setTmpData(_NDXSNSalesItemGroupCustomerTmp);
+
+        q = new Query();
+        qbds1 = q.addDataSource(tablenum(NDXSNSalesItemGroupCustomerTmp));
+        qbds1.addGroupByField(fieldnum(NDXSNSalesItemGroupCustomerTmp, Company));
+        qbds1.addRange(fieldnum(NDXSNSalesItemGroupCustomerTmp, Active)).value(QueryValue(NoYes::Yes));
+        
+        if (_companyFilter != NDXCompanyBE::WithoutAssignment)
+        {
+            qbds1.addRange(fieldnum(NDXSNSalesItemGroupCustomerTmp, Company)).value(QueryValue(_companyFilter));
+        }
+        
+        qr = new QueryRun(q);
+        qr.setCursor(_NDXSNSalesItemGroupCustomerTmp);
+
+        while (qr.next())
+        {
+            nDX_SNSalesItemGroupCustomerTmpGrpCompany = qr.get(tablenum(NDXSNSalesItemGroupCustomerTmp));
+            childSalesNote = '';
+            salesAmountCum = 0;
+
+            while select sum(SalesAmount), sum(SalesAmountCum), sum(SalesAmountCumTaxValue1), sum(SalesAmountCumTaxValue2) from nDX_SNSalesItemGroupCustomerTmpGrp
+                group by SalesYear, SalesMonth, ChildSalesNote, ArtGrpSalesNote
+                where nDX_SNSalesItemGroupCustomerTmpGrp.Active
+                    && nDX_SNSalesItemGroupCustomerTmpGrp.Company == nDX_SNSalesItemGroupCustomerTmpGrpCompany.Company
+            {
+                if (lFirst2)
+                {
+                    lFirst2 = false;
+                    childSalesNote = nDX_SNSalesItemGroupCustomerTmpGrp.ChildSalesNote;
+                }
+                
+                if (childSalesNote != nDX_SNSalesItemGroupCustomerTmpGrp.ChildSalesNote)
+                {
+                    // SalesAmount Gesamt
+                    artGrp2 = 'Gesamt';
+                    lFirst  = true;
+
+
+                    switch (nDX_SNSalesItemGroupCustomerTmpGrpCompany.Company)
+                    {
+                        case NDXCompanyBE::Niedax :
+                            artGrp2 = 'GU393';
+                            break;
+                        case NDXCompanyBE::Kleinhuis :
+                            artGrp2 = 'GU353';
+                            break;
+                        case NDXCompanyBE::Fintech :
+                            artGrp2 = 'GU459';
+                            break;
+                        default :
+                            Error(strfmt("@NDX:NDXSNExportInfo2", nDX_SNSalesItemGroupCustomerTmpGrpCompany.Company));
+                    }
+                    lNDXSNExportDataFegime.ItemGroup = artGrp2;
+                    lNDXSNExportDataFegime.CustAccount = childSalesNote;
+                    lNDXSNExportDataFegime.SalesAmount = decRound(salesAmountCum,2);
+                    lFirst = false;
+                   
+                    lNDXSNExportDataFegime.Signature = _signature;
+                    lNDXSNExportDataFegime.insert();
+
+                    childSalesNote = nDX_SNSalesItemGroupCustomerTmpGrp.ChildSalesNote;
+                    salesAmountCum = 0;
+                }
+
+                // SalesAmount Child
+                lFirst  = true;
+                lNDXSNExportDataFegime.ItemGroup = nDX_SNSalesItemGroupCustomerTmpGrp.ArtGrpSalesNote;
+                lNDXSNExportDataFegime.CustAccount = nDX_SNSalesItemGroupCustomerTmpGrp.ChildSalesNote;
+                lNDXSNExportDataFegime.SalesAmount = decRound(nDX_SNSalesItemGroupCustomerTmpGrp.SalesAmountCum, 2);
+                lNDXSNExportDataFegime.Signature = _signature;
+                lNDXSNExportDataFegime.insert();
+                lFirst = false;
+                
+                salesAmountCum += nDX_SNSalesItemGroupCustomerTmpGrp.SalesAmountCum;
+            }
+
+            // SalesAmount Gesamt
+            artGrp2 = 'Gesamt';
+            lFirst  = true;
+
+            switch (nDX_SNSalesItemGroupCustomerTmpGrpCompany.Company)
+            {
+                case NDXCompanyBE::Niedax :
+                    artGrp2 = 'GU393';
+                    break;
+                case NDXCompanyBE::Kleinhuis :
+                    artGrp2 = 'GU353';
+                    break;
+                case NDXCompanyBE::Fintech :
+                    artGrp2 = 'GU459';
+                    break;
+                default :
+                    Error(strfmt("@NDX:NDXSNExportInfo2", nDX_SNSalesItemGroupCustomerTmpGrpCompany.Company));
+            }
+            lNDXSNExportDataFegime.ItemGroup = artGrp2;
+            lNDXSNExportDataFegime.CustAccount = childSalesNote;
+            lNDXSNExportDataFegime.SalesAmount = salesAmountCum;
+            lNDXSNExportDataFegime.Signature = _signature;
+            lNDXSNExportDataFegime.insert();
+            lFirst = false;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NDXSNExportDataFegime_Dev</DeveloperDocumentation>
+	<Label>@NDX:NDXSNExportDataFegime</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>CustAccount</TitleField1>
+	<AllowRowVersionChangeTracking>Yes</AllowRowVersionChangeTracking>
+	<PrimaryIndex>FegimeIdx</PrimaryIndex>
+	<ReplacementKey>FegimeIdx</ReplacementKey>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>CustAccount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ItemGroup</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesAmount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Signature</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>CustAccount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ItemGroup</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesAmount</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CustAccount</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>CustAccount</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ItemGroup</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>NDXItemGroup</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXSNExportDataFegime</Label>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>SalesAmount</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<HelpText>@NDXBase:NDXUmsatz</HelpText>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXMonthSalesVolume</Label>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Signature</Name>
+			<ExtendedDataType>NDXSignature</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>FegimeIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>CustAccount</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>ItemGroup</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>SalesAmount</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations />
+	<StateMachines />
+</AxTable>

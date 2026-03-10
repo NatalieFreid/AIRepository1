@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASysmailerEML</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using System.IO;
+using System.Net.Mail;
+using System.Text.RegularExpressions;
+
+/// <summary>
+/// desigmed from AVA
+/// </summary>
+internal final class AVASysmailerEML
+{
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>sendInteractive</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_message">_message</param>
+    /// <param name = "_fileName">_fileName</param>
+    /// <returns>boolean</returns>
+    public boolean sendInteractive(System.Net.Mail.MailMessage _message, Filename       _fileName)
+    {
+        SysMailerFactory::logSendingEmailTelemetry(classStr(SysMailerEML), true, _message);
+        using (var emlStream = this.generateEmlFile(_message))
+        {
+            Dynamics.AX.Application.File::SendFileToUser(emlStream, _fileName + '.eml');
+        }
+        
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>generateEmlFile</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_message">_message</param>
+    /// <returns>stream</returns>
+    private System.IO.Stream generateEmlFile(System.Net.Mail.MailMessage _message)
+    {
+        var headersToRemove = ['From', 'X-Sender', 'X-Receiver'];
+
+        if (_message.get_To().get_Count() == 0)
+        {
+            // if they haven't specified a recipient, we need to add one or the SmtpClient
+            // will fail to generate the file. strip the To header after the generation is
+            // done.
+            _message.get_To().Add(new MailAddress('someone@contoso.com'));
+            headersToRemove += 'To';
+        }
+
+        _message.get_Headers().Add('X-Unsent', '1');
+
+        var pickupDirectory = Directory::CreateDirectory(Path::Combine(Path::GetTempPath(), System.Guid::NewGuid().ToString()));
+
+        var smtpClient = new SmtpClient();
+        smtpClient.set_DeliveryMethod(SmtpDeliveryMethod::SpecifiedPickupDirectory);
+        smtpClient.set_PickupDirectoryLocation(pickupDirectory.FullName);
+        smtpClient.Send(_message);
+        
+        var emlStream = new MemoryStream();
+
+        var emlFiles = pickupDirectory.GetFiles('*.eml');
+        if (emlFiles.get_Length() > 0)
+        {
+            FileInfo emlFile = emlFiles.GetValue(0);
+            using (var fileStream = emlFile.OpenRead())
+            {
+                using (var cleanedStream = this.removeHeaders(fileStream, headersToRemove))
+                {
+                    cleanedStream.CopyTo(emlStream);
+                }
+            }
+        }
+
+        pickupDirectory.Delete(true);
+
+        emlStream.Seek(0, SeekOrigin::Begin);
+
+        return emlStream;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>removeHeaders</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_emlStream">_emlStream</param>
+    /// <param name = "_headersToRemove">_headersToRemove</param>
+    /// <returns>Stream</returns>
+    private System.IO.Stream removeHeaders(System.IO.Stream _emlStream, container _headersToRemove)
+    {
+        var cleanedStream = new MemoryStream();
+
+        var reader = new StreamReader(_emlStream);
+        var writer = new StreamWriter(cleanedStream);
+        
+        Match parts = Regex::Match(reader.ReadToEnd(), '\\A(?<headers>(?:[^\r\n]+\r\n)+)(?<body>\r\n.+)\\z', RegexOptions::Singleline);
+        if (parts.get_Success())
+        {
+            var headers = Regex::Matches(parts.get_Groups().get_Item('headers').get_Value(), '(?<key>[^:]+):[^\r\n]+\r\n(?: [^\r\n]+\r\n)*', RegexOptions::Singleline);
+            for (var i = 0; i < headers.get_Count(); i++)
+            {
+                if (conFind(_headersToRemove, headers.get_Item(i).get_Groups().get_Item('key').get_Value()) == 0)
+                {
+                    writer.Write(headers.get_Item(i).get_Value());
+                }
+            }
+
+            writer.Write(parts.get_Groups().get_Item('body').get_Value());
+        }
+
+        writer.Flush();
+        cleanedStream.Seek(0, SeekOrigin::Begin);
+
+        return cleanedStream;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXDirPartyTableBaseType_Organization</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 22.11.21
+/// class with dirPartyTable specific methods (Type:Organisation)
+/// </summary>
+[NDXDirPartyTableBaseTypeAttribute(DirPartyBaseType::Organization)]
+class NDXDirPartyTableBaseType_Organization 
+    extends NDXDirPartyTableBaseType
+    implements NDXDirPartyTableBaseTypeI
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>setNameAlias</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 22.11.21
+    /// set NameAlias in dirPartyTable
+    /// feature: NameAlias depends on CityName of primary address
+    /// </summary>
+    public void setNameAlias()
+    {
+        super();
+
+        ///AVA/WEN/2025/11/04 AVA_013671_DataImportUser
+        //if (DirParameters::find().NDXAutoGenerateSearchNameDirOrganisation == NoYes::No)
+        if (DirParameters::find().NDXAutoGenerateSearchNameDirOrganisation == NoYes::No || SysUserInfo::find(curUserId()).AVADataImportUser)
+        {
+            return;
+        }
+        NameAlias nameAliasNew;
+        LogisticsPostalAddress logisticsPostalAddressPrimary;
+
+        NDXDirPartyInfo nDXDirPartyInfo = NDXDirPartyTableBaseType::findDirPartyInfo(dirPartyTable.PartyNumber);
+        if (nDXDirPartyInfo && nDXDirPartyInfo.parmLogisticsPostalAddressRecId())
+        {
+            logisticsPostalAddressPrimary = LogisticsPostalAddress::findRecId(nDXDirPartyInfo.parmLogisticsPostalAddressRecId());
+        }
+        else
+        {
+            logisticsPostalAddressPrimary = NDXDirPartyTableHelper::construct(dirPartyTable).LogisticsPostalAddressFromPrimaryAddressLocation();
+        }
+        if (logisticsPostalAddressPrimary != null && logisticsPostalAddressPrimary.RecId != 0)      // primary address exists
+        {
+            NDXTokenizerNameAlias nDXTokenizerNameAlias = NDXTokenizerNameAlias::constructFromLogisticsPostalAddress(logisticsPostalAddressPrimary);
+            NDXNameAliasChange nDXNameAliasChange = nDXTokenizerNameAlias.checkNameAlias(dirPartyTable);
+            nameAliasNew = nDXNameAliasChange.NameAliasNew;
+            
+            // if nameAlias isn't set and new DirPartyRecord
+            if (!dirPartyTable.NameAlias || nDXDirPartyInfo.parmNewDirPartyRecord())
+            {
+                dirPartyTable.NameAlias = nameAliasNew;
+                if (nDXDirPartyInfo)
+                {
+                    nDXDirPartyInfo.initialize();
+                }
+            }
+            else if (nameAliasNew != dirPartyTable.NameAlias)
+            {
+                ///AVA/WEN/2025/11/04 AVA_013671_DataImportUser
+                //if (DirParameters::find().NDXAutoGenerateSearchNameDirOrganisationOnlyNew == NoYes::No)
+                if (DirParameters::find().NDXAutoGenerateSearchNameDirOrganisationOnlyNew == NoYes::No || SysUserInfo::find(curUserId()).AVADataImportUser)
+                {
+                    if (appl.ttsLevel() == 0)
+                    {
+                        if (Box::yesNo(strFmt("@NDX:NDXChangeSearchNameFromTo", dirPartyTable.NameAlias, nameAliasNew), DialogButton::Yes) == DialogButton::Yes)
+                        {
+                            dirPartyTable.NameAlias = nameAliasNew;
+                        }
+                    }
+                    else
+                    {
+                        info(strFmt("@NDX:NDXSearchNameWasChanged", dirPartyTable.PartyNumber, dirPartyTable.NameAlias, nameAliasNew));
+                        dirPartyTable.NameAlias = nameAliasNew;
+                    }
+                }
+                else
+                {
+                    info(strFmt("@NDX:NDXSearchNameShouldHaveBeenChanged", dirPartyTable.PartyNumber, dirPartyTable.NameAlias, nameAliasNew));
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildNameAliasFromNameParts</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 23.02.23
+    /// build new NameAlias from 2 NameParts
+    /// </summary>
+    /// <param name = "_namePart1">NamePart 1</param>
+    /// <param name = "_namePart2">NamePart 2</param>
+    /// <returns>new NameAlias</returns>
+    public str buildNameAliasFromNameParts(str _namePart1, str _namePart2)
+    {
+        return this.buildNameAlias(_namePart1, 3, _namePart2, 5);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

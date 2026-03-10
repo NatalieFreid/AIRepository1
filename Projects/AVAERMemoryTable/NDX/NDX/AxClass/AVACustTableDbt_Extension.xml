@@ -1,0 +1,475 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACustTableDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of table <t>CustTable</t>
+/// </summary>
+[ExtensionOf(tableStr(CustTable))]
+final class AVACustTableDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns LogisticsInvoiceName for current record
+    /// </summary>
+    /// <returns>LogisticsInvoiceName</returns>
+    public LogisticsInvoiceName avaName()
+    {
+        LogisticsInvoiceName avaNameLoc = this.name();
+
+        var location = LogisticsLocationDefault::findSimpleDefault(this,
+            LogisticsLocationRole::findBytype(LogisticsLocationRoleType::Invoice));
+
+        if (location)
+        {
+            LogisticsPostalAddress logisticsPostalAddressLoc = LogisticsPostalAddress::findByLocation(location.RecId);
+            
+            if(logisticsPostalAddressLoc.NDXLogisticsLocationName1
+                || logisticsPostalAddressLoc.NDXLogisticsLocationName2
+                || logisticsPostalAddressLoc.NDXLogisticsLocationName3)
+            {
+                avaNameLoc = '';
+            }
+            
+            if(logisticsPostalAddressLoc.NDXLogisticsLocationName1)
+            {
+                avaNameLoc = logisticsPostalAddressLoc.NDXLogisticsLocationName1;
+            }
+
+            if(logisticsPostalAddressLoc.NDXLogisticsLocationName2)
+            {
+                if(avaNameLoc != '')
+                {
+                    avaNameLoc += '\n';
+                }
+
+                avaNameLoc += logisticsPostalAddressLoc.NDXLogisticsLocationName2;
+            }
+
+            if(logisticsPostalAddressLoc.NDXLogisticsLocationName3)
+            {
+                if(avaNameLoc != '')
+                {
+                    avaNameLoc += '\n';
+                }
+
+                avaNameLoc += logisticsPostalAddressLoc.NDXLogisticsLocationName3;
+            }
+        }
+
+        return avaNameLoc;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// extension of initValue method
+    /// </summary>
+    void initValue()
+    {
+        next initValue();
+
+        this.avaInitSalesParameters();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitSalesParameters</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Avanade init method for InterCompany salesParameters
+    /// </summary>
+    public void avaInitSalesParameters()
+    {
+        AVASalesParameters salesParametersLoc = AVASalesParameters::find();
+
+        this.InterCompanyAllowIndirectCreation  = salesParametersLoc.AllowIndirectCreation;
+        this.InterCompanyAutoCreateOrders       = salesParametersLoc.AutomaticICOrders;
+        this.InterCompanyDirectDelivery         = SalesParametersLoc.DirectDelivery;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcreditMax</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns max credit amount for specified customer
+    /// </summary>
+    /// <param name = "_custAccount">CustAccount</param>
+    /// <returns>AmountMST</returns>
+    public static AmountMST AVAcreditMax(CustAccount _custAccount)
+    {
+        AmountMST creditMax;
+
+        if (CredManFeatureManagementVisibilityManager::isEnabled())
+        {
+            creditMax = CustTable::find(_custAccount).AVAcredManCreditMax();
+        }
+
+        if (CustTable::find(_custAccount).AVACRLCreditBlocked)
+        {
+            creditMax = 0;
+        }
+
+        return creditMax;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcredManCreditMax</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// display method for max Credit
+    /// </summary>
+    /// <returns>CredManEffectiveCreditMax</returns>
+    [SysClientCacheDataMethod]
+    public display CredManEffectiveCreditMax AVAcredManCreditMax()
+    {
+        CredManCreditLimitAdvanced creditLimitAdvanced;
+        CredManCreditMaxMST creditMax;
+        TransDate           creditExpiryDate;
+
+        if (CustTable::find(this.AccountNum).AVACRLCreditBlocked)
+        {
+            creditMax = 0;
+        }
+        else
+        {
+            creditLimitAdvanced = this.AVAfindCustDate(this.AccountNum, this.dataAreaId);
+            if (creditLimitAdvanced.RecId)
+            {
+                creditMax = creditLimitAdvanced.CreditMax;
+            }
+            else
+            {
+                if (FormDataUtil::isFormDataSource(this))
+                {
+                    FormDataSource custTableDS = FormDataUtil::getFormDataSource(this);
+                    if (custTableDS && custTableDS.onlyFetchActive())
+                    {
+                        creditExpiryDate = CustTable::find(this.AccountNum).CredManCreditLimitExpiryDate;
+                        if (!creditExpiryDate || creditExpiryDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+                        {
+                            creditMax = CustTable::find(this.AccountNum).CreditMax;
+                        }
+                        else
+                        {
+                            creditMax = 0;
+                        }
+                    }
+                    else
+                    {
+                        creditExpiryDate = this.CredManCreditLimitExpiryDate;
+                        if (!creditExpiryDate || creditExpiryDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+                        {
+                            creditMax = this.CreditMax;
+                        }
+                        else
+                        {
+                            creditMax = 0;
+                        }
+                    }
+                }
+                else
+                {
+                    creditExpiryDate = this.CredManCreditLimitExpiryDate;
+                    if (!creditExpiryDate || creditExpiryDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+                    {
+                        creditMax = this.CreditMax;
+                    }
+                    else
+                    {
+                        creditMax = 0;
+                    }
+                }
+            }
+        
+            creditMax += this.AVAgetCustomerCreditInsuredTotal(this.AccountNum);
+        }        
+        return creditMax;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAfindCustDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// finds advanced creditLimit for specified parameters
+    /// </summary>
+    /// <param name = "_custAccount">CustAccount</param>
+    /// <param name = "_dataAreaId">DataAreaId</param>
+    /// <param name = "_transDate">TransDate</param>
+    /// <param name = "_forupdate">boolean, default is false</param>
+    /// <param name = "_concurrencyModel">ConcurrencyModel, default is ConcurrencyModel::Auto</param>
+    /// <returns>CredManCreditLimitAdvanced</returns>
+    internal CredManCreditLimitAdvanced AVAfindCustDate(
+        CustAccount _custAccount,
+        DataAreaId _dataAreaId,
+        TransDate _transDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()),
+        boolean _forupdate = false,
+        ConcurrencyModel _concurrencyModel = ConcurrencyModel::Auto)
+    {
+        CredManCreditLimitAdvanced creditLimitAdvanced;
+
+        if (_forUpdate && _concurrencyModel != ConcurrencyModel::Auto)
+        {
+            creditLimitAdvanced.concurrencyModel(_concurrencyModel);
+        }
+    
+        if (_custAccount && _dataAreaId)
+        {
+            select firstOnly creditLimitAdvanced
+                order by FromDate desc, ToDate desc
+                where creditLimitAdvanced.CustAccount == _custAccount &&
+                      creditLimitAdvanced.CustAccountDataArea == _dataAreaId &&
+                      creditLimitAdvanced.FromDate <= _transDate &&
+                      (!creditLimitAdvanced.ToDate || creditLimitAdvanced.ToDate >= _transDate);
+        }
+    
+        return creditLimitAdvanced;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAgetCustomerCreditInsuredTotal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// gets total insured credit for specified customer
+    /// </summary>
+    /// <param name = "_custAccount">CustAccount</param>
+    /// <returns>CredManCreditMaxMST</returns>
+    internal CredManCreditMaxMST AVAgetCustomerCreditInsuredTotal(CustAccount _custAccount)
+    {
+        CredManCustGuaranteeInsurance custGuaranteeInsurance;
+        CredManCreditMaxMST creditMax;
+        date curDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+        
+        while select CreditLimitPercent, CurrencyCode, Value, IncludeInExposure from custGuaranteeInsurance
+            where custGuaranteeInsurance.CustAccount == _custAccount &&
+                  custGuaranteeInsurance.ValidFrom <= curDate &&
+                  (!custGuaranteeInsurance.ValidTo || custGuaranteeInsurance.ValidTo >= curDate)
+        {
+            creditMax += CurrencyExchangeHelper::mstAmount(custGuaranteeInsurance.CreditLimitPercent * custGuaranteeInsurance.Value / 100, custGuaranteeInsurance.CurrencyCode);
+            if (custGuaranteeInsurance.IncludeInExposure == NoYes::Yes)
+            {
+                creditMax -= CurrencyExchangeHelper::mstAmount(custGuaranteeInsurance.Value, custGuaranteeInsurance.CurrencyCode);
+            }
+        }
+
+        return creditMax;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVACreditLimitCustGroup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// displays credit limit Id of LimitGroup associated with current CustAccount
+    /// </summary>
+    /// <returns>CredManCreditLimitId</returns>
+    display CredManCreditLimitId AVACreditLimitCustGroup()
+    {
+        CredManCreditLimitCustGroup     crlCustGroup;
+        CredManCreditLimitCustGroupLine crlCustGroupLine;
+
+        select firstonly crlCustGroupLine where crlCustGroupLine.CustAccount == this.AccountNum
+                                             && crlCustGroupLine.Company == this.DataAreaId
+            join crlCustGroup where crlCustGroup.RecId == crlCustGroupLine.CreditLimitCustGroup;
+        return crlCustGroup.CreditLimitId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAIsCreditLimitRiscDebtor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// displays if the current customer is a risk debtor
+    /// </summary>
+    /// <returns>AVAIsCreditLimitRiscDebtor</returns>
+    display AVAIsCreditLimitRiscDebtor AVAIsCreditLimitRiscDebtor()
+    {
+        AVAIsCreditLimitRiscDebtor  ret = NoYes::No;
+        CredManCreditLimitCustGroup crlCustGroup;
+
+        select firstonly crlCustGroup where crlCustGroup.AVARiscDebtor == this.AccountNum;
+        if (crlCustGroup)
+        {
+            ret = NoYes::Yes;
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaIsMemberOfCreditLimitGroup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <returns>true if customer is member of CRLGroup but not RiscDebtor</returns>
+    public boolean avaIsMemberOfCreditLimitGroup()
+    {
+        return (!this.AVAIsCreditLimitRiscDebtor() && this.AVACreditLimitCustGroup());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_010894_CRLExpirationDateInThePast
+    /// </summary>
+    /// <param name = "_fieldId">FieldId</param>
+    public void modifiedField(FieldId _fieldId)
+    {
+        next modifiedField(_fieldId);
+
+        switch(_fieldId)
+        {
+            case fieldnum(CustTable, CredManCreditLimitExpiryDate):
+                if (this.CredManCreditLimitExpiryDate < DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()))
+                {
+                    this.CreditMax = 0;
+                }
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVACustomerNames</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>displayAVACustomerNames</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>LogisticsAddressing</c> as return value
+    /// </returns>
+    display LogisticsAddressing displayAVACustomerNames()
+    {
+        LogisticsAddressing     retVal;
+
+        LogisticsPostalAddress  locLogisticsPostalAddress;
+        
+        locLogisticsPostalAddress               = this.postalAddress();
+        if(locLogisticsPostalAddress.RecId)
+        {
+            retVal = locLogisticsPostalAddress.NDXLogisticsLocationName1;
+            if(retVal && locLogisticsPostalAddress.NDXLogisticsLocationName2)
+            {
+                retVal += '\n';
+            }
+            retVal += locLogisticsPostalAddress.NDXLogisticsLocationName2;
+            if(retVal && locLogisticsPostalAddress.NDXLogisticsLocationName3)
+            {
+                retVal += '\n';
+            }
+            retVal += locLogisticsPostalAddress.NDXLogisticsLocationName3;
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVACustomerAddress</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>displayAVACustomerAddress</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>LogisticsAddressing</c> as return value
+    /// </returns>
+    display LogisticsAddressing displayAVACustomerAddress()
+    {
+        LogisticsAddressing     retVal;
+
+        LogisticsPostalAddress  locLogisticsPostalAddress;
+        
+        locLogisticsPostalAddress = this.postalAddress();
+        if(locLogisticsPostalAddress.RecId)
+        {
+            retVal = DirUtility::replaceAddressTokenLanguage(locLogisticsPostalAddress, this.languageId());
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXfindCustByFirma</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 24.08.23
+    /// </summary>
+    /// <param name = "accountNum">AccountNum</param>
+    /// <param name = "firma">NDXCompanyBE</param>
+    /// <returns>custTable</returns>
+    static custTable NDXfindCustByFirma(AccountNum accountNum, NDXCompanyBE firma)
+    {
+        CustTable       custTable;
+        container       conCompany;
+        ;
+        if (firma !=  NDXCompanyBE::WithoutAssignment && firma !=  NDXCompanyBE::AllCompanies)
+        {
+            conCompany = [NDXHelperCommon::NDXCompanys2CompanyId(firma)];
+            select crosscompany:conCompany custTable where custTable.AccountNum == accountNum;
+        }
+        return custTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaIsPartofTOSId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// checks if custTable is part or child of provided TosId
+    /// </summary>
+    /// <param name = "_tosId">AVATOSId</param>
+    /// <returns>boolean</returns>
+    public boolean avaIsPartofTOSId(AVATOSId _tosId)
+    {
+        KCS_TOSTableJour    tosTableJour = KCS_TOSTableJour::findValid(this.KCS_TOSId);
+
+        while(tosTableJour)
+        {
+            if(tosTableJour.TosId == _tosId)
+            {
+                return true;
+            }
+            else if(!tosTableJour.ParentTosId)
+            {
+                return false;
+            }
+
+            tosTableJour = KCS_TOSTableJour::findValid(tosTableJour.ParentTosId);
+        }
+
+        return false;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

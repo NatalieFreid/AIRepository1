@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADAISrsProxy_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension for srsProxy.
+/// </summary>
+[ExtensionOf(classStr(SrsProxy))]
+final class AVADAISrsProxy_Extension
+{
+    private boolean                 calledArchive;
+    private boolean                 calledRVRefreshComplete;
+    private AVADAIReportService     daiService;
+    #SRSFramework
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>AVADAIisArchiveReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Export to archive.
+    /// </summary>
+    /// <param name = "_reportPath">The report path.</param>
+    /// <returns>A  <c>boolean</c> object.</returns>
+    ///[SuppressBPWarning('BPErrorLabelIsText', 'It was Microsoft who defined the Macro with double quotes which now causes the error, not us')]
+    public boolean AVADAIisArchiveReport(str _reportPath)
+    {
+        AVADAIReportName        report;
+        AVADAIReportDesign      design;
+  
+        if(isConfigurationkeyEnabled(configurationKeyNum(AVADAI)))
+        {
+            if (!daiService)
+            {
+                daiService          = AVADAIReportService::construct();
+                [report, design]    = SrsReportRunUtil::getReportAndDesignName(_reportPath);
+                report              = strReplace(report, '/' + #ReportFolder + '/', '');
+
+                daiService.parmReport(report, design);
+            }
+
+        }
+
+        return daiService.isDAIEnabled() && daiService.isDAIReportExport() && daiService.isDAIReport();
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVADAIprintToArchive</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// call ssrs web service.
+    /// </summary>
+    /// <param name = "_reportPath">The report path.</param>
+    /// <param name = "_parameterValueArray">The report settings.</param>
+    /// <param name = "_fileFormat">The file format.</param>
+    /// <param name = "_deviceInfo">The device info.</param>
+    public void AVADAIprintToArchive(str                    _reportPath,
+                                     Microsoft.Dynamics.AX.Framework.Reporting.Shared.ReportingService.ParameterValue[] _parameterValueArray,
+                                     SRSReportFileFormat    _fileFormat,
+                                     str                    _deviceInfo,
+                                     System.Byte[]          _archiveByte)
+    {
+        System.Byte[]       archive;
+
+        calledArchive = true;
+        if(isConfigurationkeyEnabled(configurationKeyNum(AVADAI)))
+        {
+            if(_archiveByte)
+            {
+                archive = _archiveByte;
+            }
+            else
+            {
+                archive = this.renderReportToByteArray(_reportPath, _parameterValueArray, _fileFormat, _deviceInfo, '');
+            }
+        
+            AVADAIServer    dmsServer   = AVADAIServer::findServer(daiService.getReportSetup().ServerId);
+            AVADAIReport    reportSetup = daiService.getReportSetup();
+
+            UserConnection userConnection = new UserConnection();
+            userConnection.ttsBegin();
+            
+            AVADAIReportExportTable exportTable      = AVADAIReportExportTable::findOrCreate(reportSetup, reportExecutionInfo.parmExecutionId(), true, userConnection);        
+            AVADAIReportExportWork  reportExportWork = AVADAIReportExportWork::findOrCreate(exportTable, true, userConnection);
+
+            reportExportWork.ReportData = AVAMSQFileHandling::uploadBufferToContainer(archive);
+            reportExportWork.update();
+
+            userConnection.ttsCommit();
+            userConnection.ttsBegin();
+            exportTable.ProcessStatus   = AVADAIReportExportTable::getProcessStatusReportExported();
+            exportTable.ReportExported  = NoYes::Yes;
+            exportTable.update();
+
+            userConnection.ttsCommit();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVADAIparmCalledArchive</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Used to retreive private varioble "calledArchive"
+    /// </summary>
+    /// <param name = "_calledArchive">boolean.</param>
+    /// <returns>Boolean <c>calledArchive</c> object.</returns>
+    public boolean AVADAIparmCalledArchive(boolean _calledArchive = calledArchive)
+    {
+        calledArchive = _calledArchive;
+        return calledArchive;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVADAIparmCalledRVRefreshComplete</Name>
+				<Source><![CDATA[
+    public boolean AVADAIparmCalledRVRefreshComplete(boolean _calledRVRefreshComplete = calledRVRefreshComplete)
+    {
+        calledRVRefreshComplete = _calledRVRefreshComplete;
+        return calledRVRefreshComplete;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

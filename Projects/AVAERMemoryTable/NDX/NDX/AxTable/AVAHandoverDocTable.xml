@@ -1,0 +1,525 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAHandoverDocTable</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class AVAHandoverDocTable extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    public static AVAHandoverDocTable find(WHSShipmentId    _shipmentId,
+                                           InventLocationId _inventLocationId,
+                                           WMSlocationId    _wmslocationId,
+                                           boolean          _forUpdate = false)
+    {
+        AVAHandoverDocTable handoverDocTable;
+
+        if (_forUpdate)
+        {
+            handoverDocTable.selectForUpdate(_forUpdate);
+        }
+
+        select firstonly handoverDocTable
+            where handoverDocTable.ShipmentId       == _shipmentId
+               && handoverDocTable.InventLocationId == _inventLocationId
+               && handoverDocTable.WMSLocationId    == _wmslocationId;
+
+        return handoverDocTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findByRecId</Name>
+				<Source><![CDATA[
+    public static AVAHandoverDocTable findByRecId(AVAHandoverDocTableRefRecId   _recId,
+                                                  boolean                       _forUpdate = false)
+    {
+        AVAHandoverDocTable handoverDocTable;
+
+        if (_recId)
+        {
+            if (_forUpdate)
+            {
+                handoverDocTable.selectForUpdate(_forUpdate);
+            }
+
+            select firstonly handoverDocTable
+                where handoverDocTable.RecId == _recId;
+        }
+
+        return handoverDocTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayDlvModeId</Name>
+				<Source><![CDATA[
+    [
+        SysClientCacheDataMethodAttribute(true)
+    ]
+    public display DlvModeId displayDlvModeId()
+    {
+        DlvModeId           dlvModeId;
+        WHSShipmentTable    shipmentTable;
+
+        if (this.ShipmentId)
+        {
+            select firstonly AVADlvMode from shipmentTable
+                where shipmentTable.ShipmentId == this.ShipmentId;
+        }
+
+        dlvModeId = shipmentTable.AVADlvMode;
+
+        return dlvModeId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displaySalesTableInfoField3</Name>
+				<Source><![CDATA[
+    [
+        SysClientCacheDataMethodAttribute(true)
+    ]
+    public display AVAHandoverDocNotes displaySalesTableInfoField3()
+    {
+        KCS_SOCSalesTableInfoFields salesTableInfoFields;
+        Notes                       notes;
+
+        switch (this.WorkTransType)
+        {
+            case WHSWorkTransType::Sales:
+                salesTableInfoFields = KCS_SOCSalesTableInfoFields::find(AVATableInfoFieldTypes::Sales, this.OrderNum);
+                break;
+            case WHSWorkTransType::TransferIssue:
+                salesTableInfoFields = KCS_SOCSalesTableInfoFields::find(AVATableInfoFieldTypes::TransferOrderShip, this.OrderNum);
+                break;
+        }        
+
+        if (salesTableInfoFields)
+        {
+            notes = salesTableInfoFields.InfoField3;
+        }
+
+        return notes;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayCustName</Name>
+				<Source><![CDATA[
+    [
+        SysClientCacheDataMethodAttribute(true)
+    ]
+    display AVACustName displayCustName()
+    {
+        SalesTable  salesTable;
+        CustTable   custTable;
+        CustName    custName;
+
+        if (this.OrderNum
+         && this.WorkTransType == WHSWorkTransType::Sales)
+        {
+            select firstonly custTable
+                exists join salesTable
+                    where salesTable.CustAccount    == custTable.AccountNum
+                       && salesTable.SalesId        == this.OrderNum;
+
+            if (custTable)
+            {
+                custName = custTable.name();
+            }
+        }
+        return custName;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>packingWorkLocationSetup</Name>
+				<Source><![CDATA[
+    public WHSPackingWorkLocationSetup packingWorkLocationSetup()
+    {
+        WHSPackingWorkLocationSetup packingWorkLocationSetup;
+
+        packingWorkLocationSetup =  WHSPackingWorkLocationSetup::avaFind(this.InventLocationId, this.WMSLocationId);
+
+        return packingWorkLocationSetup;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateFromHandoverDocLine</Name>
+				<Source><![CDATA[
+    public void updateFromHandoverDocLine()
+    {
+        AVAHandoverDocLine  handoverDocLine;
+        WHSLoadId           loadId;
+        WHSOrderNum         orderNum;
+        WHSWorkTransType    workTransType;
+
+        while select handoverDocLine
+            group by LoadId
+            where handoverDocLine.HandoverDocId == this.RecId
+        {
+            if (!loadId)
+            {
+                loadId = handoverDocLine.LoadId;
+            }
+
+            if (loadId != handoverDocLine.LoadId)
+            {
+                loadId = '';
+                break;
+            }
+        }
+        while select handoverDocLine
+            group by WorkTransType, OrderNum
+            where handoverDocLine.HandoverDocId == this.RecId
+        {
+            if (!orderNum)
+            {
+                orderNum = handoverDocLine.OrderNum;
+            }
+
+            if (!workTransType)
+            {
+                workTransType = handoverDocLine.WorkTransType;
+            }
+
+            if (orderNum != handoverDocLine.OrderNum)
+            {
+                orderNum = '';
+                break;
+            }
+
+            if (workTransType != handoverDocLine.WorkTransType)
+            {
+                workTransType = WHSWorkTransType::None;
+                break;
+            }
+        }
+
+        this.LoadId         = loadId;
+        this.WorkTransType  = workTransType;
+        this.OrderNum       = orderNum;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:HandoverDocumentDataHelp</DeveloperDocumentation>
+	<Label>@NDX:HandoverDocumentData</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>ShipmentId</TitleField1>
+	<TitleField2>WMSLocationId</TitleField2>
+	<AllowRowVersionChangeTracking>Yes</AllowRowVersionChangeTracking>
+	<CacheLookup>Found</CacheLookup>
+	<DeleteActions>
+		<AxTableDeleteAction>
+			<Name>AVAHandoverDocLine</Name>
+			<DeleteAction>Cascade</DeleteAction>
+			<Relation>AVAHandoverDocTable</Relation>
+			<Table>AVAHandoverDocLine</Table>
+			<Tags></Tags>
+		</AxTableDeleteAction>
+	</DeleteActions>
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>InventLocationId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>WMSLocationId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ShipmentId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>WorkTransType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>OrderNum</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>LoadId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Printed</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>ShipmentId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InventLocationId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>WMSLocationId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>WorkTransType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>OrderNum</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>LoadId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Printed</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>InventLocationId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>WMSLocationId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ShipmentId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>WorkTransType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>OrderNum</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>LoadId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Printed</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>ExtendedDetail</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>LoadId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>WorkTransType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>OrderNum</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Printed</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ShipmentId</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>WHSShipmentId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>InventLocationId</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>InventLocationId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>WMSLocationId</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>WMSLocationId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>OrderNum</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>WHSOrderNum</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>LoadId</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>WorkTransType</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<EnumType>WHSWorkTransType</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Printed</Name>
+			<ExtendedDataType>AVAPrinted</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>PackingLocationSetupShipmentIdIdx</Name>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>ShipmentId</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>WHSShipmentTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>WHSShipmentTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>ShipmentId1</Name>
+					<Field>ShipmentId</Field>
+					<RelatedField>ShipmentId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>InventLocation</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>InventLocation</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>InventLocationId</Name>
+					<Field>InventLocationId</Field>
+					<RelatedField>InventLocationId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>WMSLocation</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>WMSLocation</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>WMSLocationId</Name>
+					<Field>WMSLocationId</Field>
+					<RelatedField>wMSLocationId</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>InventLocationId</Name>
+					<Field>InventLocationId</Field>
+					<RelatedField>InventLocationId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>WHSLoadTable</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<RelatedTable>WHSLoadTable</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>LoadId</Name>
+					<Field>LoadId</Field>
+					<RelatedField>LoadId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>SalesTable</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<RelatedTable>SalesTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>OrderNum</Name>
+					<Field>OrderNum</Field>
+					<RelatedField>SalesId</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintFixed">
+					<Name>WorkTransType</Name>
+					<Field>WorkTransType</Field>
+					<ValueStr>WHSWorkTransType::Sales</ValueStr>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>WHSPackingWorkLocationSetup</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>WHSPackingWorkLocationSetup</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>InventLocationId</Name>
+					<Field>InventLocationId</Field>
+					<RelatedField>InventLocationId</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>WMSLocationId</Name>
+					<Field>WMSLocationId</Field>
+					<RelatedField>WMSLocationId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

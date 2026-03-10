@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAAgreementLineQuantityCommitmentDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of table AgreementLineQuantityCommitment
+/// </summary>
+[ExtensionOf(tableStr(AgreementLineQuantityCommitment))]
+final class AVAAgreementLineQuantityCommitmentDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Specifies when a field is modified on a <c>AgreementLine</c> record.
+    /// </summary>
+    /// <param name="_fieldId">
+    /// The field ID that has been modified.
+    /// </param>
+    public void modifiedField(FieldId _fieldId)
+    {
+        AgreementCommitedQuantity avaCommitedQty;
+
+        next modifiedField(_fieldId);
+
+        switch(_fieldId)
+        {
+            case fieldNum(AgreementLineQuantityCommitment, CommitedQuantity):
+                this.avaModifiedRestQty();
+                break;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaModifiedRestQty</Name>
+				<Source><![CDATA[
+    public void avaModifiedRestQty()
+    {
+        AgreementLine aLineLoc = AgreementLine::find(this.RecId);
+
+        if(!this.RecId)
+        {
+            this.AVARestQtyCallOffItem = this.CommitedQuantity;
+        }
+        else if(this.AVAMainPosition)
+        {
+            this.AVARestQtyCallOffItem = this.avaMainRestQty();
+        }
+        else
+        {
+            this.AVARestQtyCallOffItem = this.avaSubRestQty();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaMainRestQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns Commited quantity minus lines with same itemId from same agreement
+    /// </summary>
+    /// <returns>AVARestQtyCallOfItem</returns>
+    public AVARestQtyCallOffItem avaMainRestQty()
+    {
+        AVARestQtyCallOffItem avaMainQty;
+        AgreementLineQuantityCommitment agreementLineLoc;
+
+        avaMainQty = this.CommitedQuantity;
+
+        select sum(CommitedQuantity) from agreementLineLoc
+            where  agreementLineLoc.Agreement == this.Agreement
+            && agreementLineLoc.ItemId == this.ItemId
+            && agreementLineLoc.AVAMainPosition == NoYes::No
+            && agreementLineLoc.IsDeleted == NoYes::No;
+
+        avaMainQty = avaMainQty - agreementLineLoc.CommitedQuantity;
+
+        return avaMainQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSubRestQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns sum of commited quantity minus purchLine quantity
+    /// </summary>
+    /// <returns>AVARestQtyCallOfItem</returns>
+    public AVARestQtyCallOffItem avaSubRestQty()
+    {
+        AVARestQtyCallOffItem avaSubQty;
+        PurchLine purchLineLoc;
+        UnitOfMeasureSymbol agreementLine_UnitId = this.inventTable().purchUnitId();
+
+        avaSubQty = this.CommitedQuantity;
+
+        while select PurchQty, ItemId from purchLineLoc
+            where purchLineLoc.MatchingAgreementLine == this.RecId
+        {
+            UnitOfMeasureSymbol purchLine_UnitId = InventTable::find(purchLineLoc.ItemId).purchUnitId();
+
+            if(agreementLine_UnitId != purchLine_UnitId)
+            {
+                avaSubQty -= EcoResProductUnitConverter::convertGivenUnitSymbolsForReleasedProduct(purchLineLoc.ItemId, purchLineLoc.InventDimId, purchLineLoc.PurchQty, purchLine_UnitId, agreementLine_UnitId);
+            }
+            else
+            {
+                avaSubQty -= purchLineLoc.PurchQty;
+            }
+        }
+
+        return avaSubQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calculateAgreementRemansOnServer</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calculates the remains for <c>AgreementLine</c> records and returns them in container.
+    /// </summary>
+    /// <returns>
+    /// A container that contains the <c>AgreementLine</c> records that have Remaining, Invoiced,
+    /// Delivered(Received)-But-Not-Invoiced, and Released-But-Neither-Invoiced-Nor-Delivered(Received) as
+    /// the status.
+    /// </returns>
+    public container calculateAgreementRemansOnServer()
+    {
+        #AgreementsRemains
+
+        container remains = next calculateAgreementRemansOnServer();
+       
+        PurchLine                       purchLine;
+        VendInvoiceTrans                vendInvoiceTrans;
+        SalesPurchLine                  salesPurchLine;
+
+        AgreementLineReleasedLine       agreementLineReleasedLine;
+        AgreementHeader                 agreementHeader = this.agreementHeader();
+        AgreementLineQuantityCommitment agreementLineQuantityCommitment = AgreementLineQuantityCommitment::find(this.RecId, false);
+        
+        AgreementCommitedQuantity       commitedQuantity = agreementLineQuantityCommitment.CommitedQuantity;
+
+        UnitOfMeasureSymbol             avaAgreementUnitOfMeasureSymbol = this.inventTable().purchUnitId();
+        UnitOfMeasureSymbol             avaOrderUnitOfMeasureSymbol;
+
+        real    invoicedTotal;
+        real    receivedButNotInvoiced;
+        real    releasedButNeitherInvoicedNorReceived;
+
+        if(agreementHeader is PurchAgreementHeader)
+        {
+            // PURCHASE
+            // Find invoiced numbers
+            // by querying VendInvoiceTrans
+            while select ItemId, Qty
+                from vendInvoiceTrans
+                exists join agreementLineReleasedLine
+                    where agreementLineReleasedLine.AgreementLine         == this.RecId
+                       && agreementLineReleasedLine.ReferenceRelationType == vendInvoiceTrans.TableId
+                       && agreementLineReleasedLine.VendInvoiceTrans      == vendInvoiceTrans.RecId
+                       && !agreementLineReleasedLine.IsDeleted
+            {
+                avaOrderUnitOfMeasureSymbol = vendInvoiceTrans.inventTable().purchUnitId();
+
+                if(avaAgreementUnitOfMeasureSymbol != avaOrderUnitOfMeasureSymbol)
+                {
+                    invoicedTotal += EcoResProductUnitConverter::convertGivenUnitSymbolsForReleasedProduct(vendInvoiceTrans.ItemId, vendInvoiceTrans.InventDimId, vendInvoiceTrans.Qty, avaOrderUnitOfMeasureSymbol, avaAgreementUnitOfMeasureSymbol);
+                }
+                else
+                {
+                    invoicedTotal += vendInvoiceTrans.Qty;
+                }
+            }
+
+            // For not completelly invoiced purch lines
+            // query received but not ivoiced numbers and released, but neither received, nor invoiced
+            salesPurchLine = this.getCachedSalesPurchLine();
+
+            if (salesPurchLine && salesPurchLine.TableId == tableNum(PurchLine))
+            {
+                while select ItemId, RemainPurchFinancial, RemainPurchPhysical
+                    from purchLine
+                    where purchLine.LineDeliveryType                        != LineDeliveryType::OrderLineWithMultipleDeliveries
+                       && purchLine.PurchStatus                             != PurchStatus::Invoiced
+                       && PurchLine.LineDeliveryType                        == salesPurchLine.LineDeliveryType
+                    exists join agreementLineReleasedLine
+                        where agreementLineReleasedLine.AgreementLine           == this.RecId
+                           && agreementLineReleasedLine.ReferenceRelationType   == purchLine.TableId
+                           && agreementLineReleasedLine.PurchLineDataAreaId     == purchLine.DataAreaId
+                           && agreementLineReleasedLine.PurchLineInventTransId  == purchLine.InventTransId
+                           && !agreementLineReleasedLine.IsDeleted
+                {
+                    avaOrderUnitOfMeasureSymbol = purchLine.inventTable().purchUnitId();
+
+                    if(avaAgreementUnitOfMeasureSymbol != avaOrderUnitOfMeasureSymbol)
+                    {
+                        receivedButNotInvoiced                  += EcoResProductUnitConverter::convertGivenUnitSymbolsForReleasedProduct(purchLine.ItemId, purchLine.InventDimId, purchLine.RemainPurchFinancial, avaOrderUnitOfMeasureSymbol, avaAgreementUnitOfMeasureSymbol);
+                        releasedButNeitherInvoicedNorReceived   += EcoResProductUnitConverter::convertGivenUnitSymbolsForReleasedProduct(purchLine.ItemId, purchLine.InventDimId, purchLine.RemainPurchPhysical, avaOrderUnitOfMeasureSymbol, avaAgreementUnitOfMeasureSymbol);
+                    }
+                    else
+                    {
+                        receivedButNotInvoiced                  += purchLine.RemainPurchFinancial;
+                        releasedButNeitherInvoicedNorReceived   += purchLine.RemainPurchPhysical;
+                    }
+
+                }
+            }
+            else
+            {
+                while select ItemId, RemainPurchFinancial, RemainPurchPhysical
+                    from purchLine
+                    where purchLine.LineDeliveryType                        != LineDeliveryType::OrderLineWithMultipleDeliveries
+                       && purchLine.PurchStatus                             != PurchStatus::Invoiced
+                    exists join agreementLineReleasedLine
+                        where agreementLineReleasedLine.AgreementLine           == this.RecId
+                           && agreementLineReleasedLine.ReferenceRelationType   == purchLine.TableId
+                           && agreementLineReleasedLine.PurchLineDataAreaId     == purchLine.DataAreaId
+                           && agreementLineReleasedLine.PurchLineInventTransId  == purchLine.InventTransId
+                           && !agreementLineReleasedLine.IsDeleted
+                {
+                    avaOrderUnitOfMeasureSymbol = purchLine.inventTable().purchUnitId();
+
+                    if(avaAgreementUnitOfMeasureSymbol != avaOrderUnitOfMeasureSymbol)
+                    {
+                        receivedButNotInvoiced                  += EcoResProductUnitConverter::convertGivenUnitSymbolsForReleasedProduct(purchLine.ItemId, purchLine.InventDimId, purchLine.RemainPurchFinancial, avaOrderUnitOfMeasureSymbol, avaAgreementUnitOfMeasureSymbol);
+                        releasedButNeitherInvoicedNorReceived   += EcoResProductUnitConverter::convertGivenUnitSymbolsForReleasedProduct(purchLine.ItemId, purchLine.InventDimId, purchLine.RemainPurchPhysical, avaOrderUnitOfMeasureSymbol, avaAgreementUnitOfMeasureSymbol);
+                    }
+                    else
+                    {
+                        receivedButNotInvoiced                  += purchLine.RemainPurchFinancial;
+                        releasedButNeitherInvoicedNorReceived   += purchLine.RemainPurchPhysical;
+                    }
+                }
+
+            }
+           
+            // Packing results:
+            remains = conPoke(remains, #RemainingIndex,                         ( commitedQuantity
+                                                                                - invoicedTotal
+                                                                                - receivedButNotInvoiced
+                                                                                - releasedButNeitherInvoicedNorReceived
+                                                                                  ));
+            remains = conPoke(remains, #InvoicedIndex,                          invoicedTotal);
+            remains = conPoke(remains, #ReceivedNotInvoicedIndex,               receivedButNotInvoiced);
+            remains = conPoke(remains, #ReleasedNotInvoicedNorReceivedIndex,    releasedButNeitherInvoicedNorReceived);
+        }
+
+        return remains;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

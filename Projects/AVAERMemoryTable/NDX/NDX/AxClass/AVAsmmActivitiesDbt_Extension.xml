@@ -1,0 +1,574 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAsmmActivitiesDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>AVAsmmActivitiesDbt_Extension</c> is the execution class for table <c>smmActivities</c>
+/// </summary>
+[ExtensionOf(tableStr(smmActivities))]
+final class AVAsmmActivitiesDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaDisplayLinkedParentBVRelationID</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaDisplayLinkedParentBVRelationID</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>KCS_KBVRelationID</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display KCS_KBVRelationID avaDisplayLinkedParentBVRelationID()
+    {
+        KCS_KBVRelationID           retVal;
+
+        SmmActivityParentLinkTable  smmActivityParentLinkTable;
+
+        KCS_KBVBuildingProjectID    kcs_KBVBuildingProjectID;
+
+        KCS_KBVRelationsToBV        kcs_KBVRelationsToBV;
+        KCS_KBVRelations            kcs_KBVRelations;
+
+        select firstonly smmActivityParentLinkTable
+        where   smmActivityParentLinkTable.ActivityNumber   == this.ActivityNumber
+            &&  smmActivityParentLinkTable.ParentType       == smmActivityParentType::BuildingProject;
+
+        //bei Kontakt auch GB anzeigen
+        if(smmActivityParentLinkTable.ParentType == smmActivityParentType::BuildingProject)
+        {
+            kcs_KBVBuildingProjectID = smmActivityParentLinkTable.linkedParentId();
+
+            select firstonly kcs_KBVRelationsToBV
+            order by    kcs_KBVRelations.KCS_KBVSalesPriority desc
+            where       kcs_KBVRelationsToBV.KCS_KBVBuildingProjectID == kcs_KBVBuildingProjectID
+                join    kcs_KBVRelations
+                where   kcs_KBVRelations.KCS_KBVRelationID == kcs_KBVRelationsToBV.KCS_KBVRelationID;
+
+            if(kcs_KBVRelationsToBV)
+            {
+                retVal = kcs_KBVRelationsToBV.KCS_KBVRelationID;
+            }
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayLinkedParentBVRelationName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaDisplayLinkedParentBVRelationName</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>RelationName</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display RelationName avaDisplayLinkedParentBVRelationName()
+    {
+        RelationName                retVal;
+
+        SmmActivityParentLinkTable  smmActivityParentLinkTable;
+
+        KCS_KBVBuildingProjectID    kcs_KBVBuildingProjectID;
+
+        KCS_KBVRelationsToBV        kcs_KBVRelationsToBV;
+        KCS_KBVRelations            kcs_KBVRelations;
+
+        select firstonly smmActivityParentLinkTable
+        where   smmActivityParentLinkTable.ActivityNumber   == this.ActivityNumber
+            &&  smmActivityParentLinkTable.ParentType       == smmActivityParentType::BuildingProject;
+
+        //bei Kontakt auch GB anzeigen
+        if(smmActivityParentLinkTable.ParentType == smmActivityParentType::BuildingProject)
+        {
+            kcs_KBVBuildingProjectID = smmActivityParentLinkTable.linkedParentId();
+
+            select firstonly kcs_KBVRelationsToBV
+            order by kcs_KBVRelations.KCS_KBVSalesPriority desc
+            where   kcs_KBVRelationsToBV.KCS_KBVBuildingProjectID == kcs_KBVBuildingProjectID
+                join    kcs_KBVRelations 
+                where   kcs_KBVRelations.KCS_KBVRelationID == kcs_KBVRelationsToBV.KCS_KBVRelationID;
+
+            if(kcs_KBVRelationsToBV)
+            {
+                retVal = DirPartyTable::findRec(kcs_KBVRelationsToBV.DirPartyId).Name;
+            }
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayLinkedParentName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaDisplayLinkedParentName</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>Name</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display Name avaDisplayLinkedParentName()
+    {
+        Name                        retVal;
+        Name                        locName;
+
+        //smmActivityParentLinkId     locsmmActivityParentLinkId;
+
+        SmmActivityParentLinkTable  locSmmActivityParentLinkTable;
+
+        ContactPersonId             locContactPersonId;
+        ContactPerson               locContactPerson;
+
+        DirPartyTable               locDirPartyTable;
+
+        locSmmActivityParentLinkTable = smmActivityParentLinkTable::findPrimaryLink(this.ActivityNumber);
+
+        if(locSmmActivityParentLinkTable.RecId)
+        {
+            //bei Kontakt auch GB anzeigen
+            if(locSmmActivityParentLinkTable.ParentType == smmActivityParentType::ContactPerson)
+            {
+                /* 2009
+                select contactPersonId, OrgPartyId
+                from    contactPerson
+                where   contactPerson.ContactPersonId == locContactPersonId;
+
+                name = DirPartyTable::findRec(contactPerson.OrgPartyId).Name + ': ';
+                */
+
+                locContactPersonId = locSmmActivityParentLinkTable.linkedParentId();
+            
+                locContactPerson    = ContactPerson::find(locContactPersonId);
+
+                retVal              = locContactPerson.partyName() + ': ';
+            }
+            switch (locSmmActivityParentLinkTable.ParentType)
+            {
+                case smmActivityParentType::Person :
+                case smmActivityParentType::Organization :
+                    locDirPartyTable    =  DirPartyTable::findRec(locSmmActivityParentLinkTable.RefRecId);
+                    locName             = locDirPartyTable.Name;
+                    break;
+
+                case smmActivityParentType::ContactPerson:
+                    locName             = locContactPerson.personName();
+                    break;
+            }
+            retVal += locName; // 2009 locSmmActivityParentLinkTable.linkedParentName();
+        }
+
+        return retVal;
+    
+        /*
+        //  1.0 : NDX/Heckk/05.10.2011 - Erste Version
+
+        //BP deviation documented
+        display Name NDX_linkedParentName()
+        {
+
+            SmmActivityParentLinkTable  smmActivityParentLinkTable;
+            ContactPerson               contactPerson;
+
+            ContactPersonId             contactPersonId;
+            Name                        name='';
+            ;
+
+            select firstonly    smmActivityParentLinkTable
+                where           smmActivityParentLinkTable.ActivityNumber == this.ActivityNumber &&
+                                smmActivityParentLinkTable.PrimaryLink;
+
+            //bei Kontakt auch GB anzeigen
+            if(smmActivityParentLinkTable.ParentType == smmActivityParentType::ContactPerson)
+            {
+                contactPersonId = smmActivityParentLinkTable.linkedParentId();
+
+                select contactPersonId, OrgPartyId from contactPerson
+                    where contactPerson.ContactPersonId == contactPersonId;
+
+                name = DirPartyTable::find(contactPerson.OrgPartyId).Name + ': ';
+            }
+
+            return name + smmActivityParentLinkTable.linkedParentName();
+        */
+        /*
+            // To get primary name for current activity
+            //BP Deviation documented
+            display smmActivityParentName linkedParentName()
+            {
+            fieldId                 fieldId;
+            DictTable               dictTable;
+            DictField               dictField;
+            Common                  common;
+            ;
+
+            if (!this.RecId)
+            {
+            return '';
+            }
+
+            fieldId = smmActivityParentLink::parentType2FieldName(this.ParentType);
+            dictTable = new DictTable(this.RefTableId);
+            common = dictTable.makeRecord();
+            if (dictTable && dictTable.rights() >= AccessType::View)
+            {
+            dictField = new DictField(common.TableId, fieldId);
+            if (dictField && dictField.rights() >= AccessType::View)
+            {
+            select common where common.RecId == this.RefRecId;
+            }
+            }
+            return (common.RecId ? common.(fieldId) : '');
+            }
+        */
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitFromKCS_KBVBuildingProjectTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaInitFromKCS_KBVBuildingProjectTable</c> method.
+    /// </summary>
+    /// <param name="_kcs_KBVBuildingProjectTable">
+    ///    <c>KCS_KBVBuildingProjectTable</c> as type
+    /// </param>
+    /// <param name="_smmResponsibleWorker">
+    ///    <c>HcmWorkerRecId</c> as type
+    /// </param>
+    void avaInitFromKCS_KBVBuildingProjectTable(KCS_KBVBuildingProjectTable _kcs_KBVBuildingProjectTable, HcmWorkerRecId _smmResponsibleWorker) // smmResponsibilityId _kcsSmmResponsibilityId = '')
+    {
+        KCS_KBVParameters                   kcs_KBVParameters;
+        smmActivityTypeGroup                smmActivityTypeGroup;
+        smmActivityParentRefRecId           parentRefRecId;
+        smmActivityParentType               parentType;
+        DirPartyView                        dirPartyView;
+        KCS_KBVRelationsToBV                kcs_KBVRelationsToBV;
+        DirPartyTable                       dirPartyTable;
+        smmBusRelTable                      smmBusRelTable;
+        CustTable                           custTable;
+        ContactPerson                       contactPerson;
+
+        kcs_KBVParameters = KCS_KBVParameters::find();
+        this.initValue(kcs_KBVParameters.KCS_KBVActivityCategory);
+
+        this.ResponsibleWorker  = _smmResponsibleWorker;
+        this.TypeId             = kcs_KBVParameters.KCS_KBVActivityTypeId;
+
+        select firstOnly smmActivityTypeGroup 
+        where smmActivityTypeGroup.TypeId == this.TypeId;
+        if (smmActivityTypeGroup.RecId)
+        {
+            this.Purpose = strfmt("@NDX:NXAP1SpaceP2SpaceP3",   smmActivityTypeGroup.Description,
+                                                                _kcs_KBVBuildingProjectTable.KCS_KBVBuildingProjectID,
+                                                                _kcs_KBVBuildingProjectTable.KCS_KBVSubject);
+        }
+
+        this.StartDateTime = DateTimeUtil::getSystemDateTime();
+
+        this.initFromWorkerTable(this.ResponsibleWorker);
+
+        this.avaSetEndDateTimeFromBP(_kcs_KBVBuildingProjectTable);
+
+        if (this.ReminderMinutes > 0)
+        {
+            this.ReminderActive     = NoYes::Yes;
+        }
+        else
+        {
+            this.ReminderActive     = NoYes::No;
+        }
+
+        kcs_KBVRelationsToBV = AVAKBVHelperClass::getHighestRelation(_kcs_KBVBuildingProjectTable.KCS_KBVBuildingProjectID);
+        if (kcs_KBVRelationsToBV.RecId)
+        {
+            dirPartyTable = DirPartyTable::findRec(kcs_KBVRelationsToBV.DirPartyId);
+            if (dirPartyTable.RecId)
+            {
+                // Customer
+                select firstonly dirPartyView 
+                where   dirPartyView.Party              == dirPartyTable.RecId
+                    &&  dirPartyView.unionAllBranchId   == 1;
+                if (dirPartyView)
+                {
+                    custTable = CustTable::findByPartyRecId(dirPartyView.Party);
+                    if (custTable)
+                    {
+                        parentType      = smmActivityParentType::Customer;
+                        parentRefRecId  = custTable.RecId;
+                        this.insertParentLink(parentType, parentRefRecId, false);
+                    }
+                }
+                else
+                {
+                    // BusRel
+                    select firstonly dirPartyView
+                    where   dirPartyView.Party              == dirPartyTable.RecId
+                        &&  dirPartyView.unionAllBranchId   == 3;
+                    if (dirPartyView)
+                    {
+                        smmBusRelTable = smmBusRelTable::findByParty(dirPartyView.Party);
+                        if (smmBusRelTable)
+                        {
+                            parentType = smmActivityParentType::BusRel;
+                            parentRefRecId = smmBusRelTable.RecId;
+                            this.insertParentLink(parentType, parentRefRecId, false);
+                        }
+                    }
+                }
+            }
+
+            // ContactPerson
+            dirPartyTable = DirPartyTable::findRec(ContactPerson::find(kcs_KBVRelationsToBV.ContactPersonId).Party);
+            if (dirPartyTable)
+            {
+                contactPerson = ContactPerson::findByPartyRecId(dirPartyTable.RecId);
+                if (contactPerson)
+                {
+                    parentType      = smmActivityParentType::ContactPerson;
+                    parentRefRecId  = contactPerson.RecId;
+                    this.insertParentLink(parentType, parentRefRecId, false);
+                }
+                else
+                {
+                    parentType      = smmActivityParentType::Person;
+                    parentRefRecId  = dirPartyTable.RecId;
+                    this.insertParentLink(parentType, parentRefRecId, false);
+                }
+            }
+        }
+
+        _kcs_KBVBuildingProjectTable.selectForUpdate(true);
+        //_kcs_KBVBuildingProjectTable.KCS_KBVReminderDate = DateTimeUtil::date(this.EndDateTime);
+        _kcs_KBVBuildingProjectTable.update();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitFromCommon</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaInitFromCommon</c> method.
+    /// </summary>
+    /// <param name="_table">
+    ///    <c>Common</c> as type
+    /// </param>
+    /// <param name="_responsibleWorker">
+    ///    <c>HcmWorkerRecId</c> as type
+    /// </param>
+    void avaInitFromCommon(Common _table, HcmWorkerRecId _responsibleWorker)
+    {
+        smmActivityParentRefRecId   parentRefRecId;
+        smmActivityParentType       parentType;
+
+        KCS_KBVBuildingProjectTable locKCS_KBVBuildingProjectTable;
+
+        // Initalize activity based on the type of record
+        switch (_table.TableId)
+        {
+            case tableNum(KCS_KBVBuildingProjectTable):
+                locKCS_KBVBuildingProjectTable = _table;
+                this.avaInitFromKCS_KBVBuildingProjectTable(locKCS_KBVBuildingProjectTable, _responsibleWorker);
+                parentType      = smmActivityParentType::BuildingProject;
+                parentRefRecId  = _table.RecId;
+                
+                // Insert link to parent
+                this.insertParentLink(parentType, parentRefRecId, true, _table);
+                break;
+
+            default:
+                this.initFromCommon(_table);
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetEndDateTimeFromBP</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaSetEndDateTimeFromBP</c> method.
+    /// </summary>
+    /// <param name="_kcs_KBVBuildingProjectTable">
+    ///    <c>KCS_KBVBuildingProjectTable</c> as type
+    /// </param>
+    public void avaSetEndDateTimeFromBP(KCS_KBVBuildingProjectTable _kcs_KBVBuildingProjectTable)
+    {
+        smmQuotationProbabilityGroup        locsmmQuotationProbabilityGroup;
+        int                                 daysToAdd;
+        KCS_KBVParameters                   locKCS_KBVParameters;
+        utcdatetime                         LocUtcdatetime;
+
+        if(_kcs_KBVBuildingProjectTable.RecId)
+        {
+
+            locsmmQuotationProbabilityGroup = smmQuotationProbabilityGroup::find(_kcs_KBVBuildingProjectTable.smmQuotationProbabilityId);
+        
+            // check existing probability group days to add
+            if(_kcs_KBVBuildingProjectTable.smmQuotationProbabilityId)
+            {
+                locsmmQuotationProbabilityGroup = smmQuotationProbabilityGroup::find(_kcs_KBVBuildingProjectTable.smmQuotationProbabilityId);
+                if(locsmmQuotationProbabilityGroup.RecId && locsmmQuotationProbabilityGroup.KCS_KBVActivityDays)
+                {
+                    daysToAdd = locsmmQuotationProbabilityGroup.KCS_KBVActivityDays;
+                }
+            }
+            // check if building project has submission date defined and use days after submission
+            else if(_kcs_KBVBuildingProjectTable.KCS_KBVSubmissionDate != dateNull())
+            {
+                this.EndDateTime        = DateTimeUtil::newDateTime(_kcs_KBVBuildingProjectTable.KCS_KBVSubmissionDate, 0);
+                locKCS_KBVParameters    = KCS_KBVParameters::find();
+                daysToAdd               = locKCS_KBVParameters.AVAKBVDaysAfterSubmission;
+            }
+            // default using parameter settings for days to add
+            else
+            {
+                locKCS_KBVParameters    = KCS_KBVParameters::find();
+                daysToAdd               = locKCS_KBVParameters.KCS_KBVActivityDays;
+            }
+            if(daysToAdd)
+            {
+                this.EndDateTime        = DateTimeUtil::addDays(this.EndDateTime, daysToAdd);
+            }
+            if(     this.StartDateTime // != utcDateTimeNull()
+                &&  this.StartDateTime > this.EndDateTime   )
+            {
+                daysToAdd               = locKCS_KBVParameters.KCS_KBVActivityDays;
+                this.EndDateTime        = this.StartDateTime;
+                this.EndDateTime        = DateTimeUtil::addDays(this.EndDateTime, daysToAdd);
+            }
+            if(this.EndDateTime) // != utcDateTimeNull())
+            {
+                locUtcdatetime = DateTimeUtil::minValue();
+                if(this.EndDateTime  < locUtcdatetime )
+                {
+                    daysToAdd           = 1;
+                    this.EndDateTime    = locUtcdatetime;
+                    this.EndDateTime    = DateTimeUtil::addDays(this.EndDateTime, daysToAdd);
+                }
+            }
+
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetResponsibleFieldWorker</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaGetResponsibleFieldWorker</c> method.
+    ///     AVA - Schneider 28.05.2024
+    /// </summary>
+    /// <param name="_planned">
+    ///     <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>HCMWorker</c> as return value
+    /// </returns>
+    public HCMWorker avaGetResponsibleFieldWorker(boolean _planned = false)
+    {
+        HCMWorker                       retVal;
+        
+        smmResponsibilityId             locsmmResponsibilityId;
+        KCS_KBVActivitiesForBP          locKCS_KBVActivitiesForBP;
+        KCS_KBVResponsibilitiesTable    locKCS_KBVResponsibilitiesTable;
+        smmWorker                       locsmmWorker;
+
+        locsmmResponsibilityId = smmResponsibilityGroup::avaResponsibleFieldWorkerResponsibilityId(); // ADM
+        if(locsmmResponsibilityId)
+        {
+            select firstOnly locKCS_KBVActivitiesForBP
+            where  locKCS_KBVActivitiesForBP.smmActivityNumber == this.ActivityNumber;
+ 
+            if(     locKCS_KBVActivitiesForBP.RecId
+                &&  locKCS_KBVActivitiesForBP.KCS_KBVBuildingProjectID  )
+            {
+                locKCS_KBVResponsibilitiesTable = KCS_KBVResponsibilitiesTable::find(locKCS_KBVActivitiesForBP.KCS_KBVBuildingProjectID, locsmmResponsibilityId);
+                
+                if(locKCS_KBVResponsibilitiesTable.RecId)
+                {
+                    if(_planned)
+                    {
+                        if(locKCS_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate == dateNull())
+                        {
+                            locsmmWorker = locKCS_KBVResponsibilitiesTable.smmWorker;
+                        }
+                    }
+                    else
+                    {
+                        locsmmWorker = locKCS_KBVResponsibilitiesTable.smmWorker;
+                    }
+                }
+            }
+        }
+
+        if(locsmmWorker)
+        {
+            retVal = HcmWorker::find(locsmmWorker);
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVAGetResponsibleFieldWorkerName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>displayAVAGetResponsibleFieldWorkerName</c> method.
+    ///     AVA - Schneider 28.05.2024
+    /// </summary>
+    /// <returns>
+    ///     <c>HCMWorkerName</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display HCMWorkerName displayAVAGetResponsibleFieldWorkerName()
+    {
+        HCMWorkerName retVal;
+        
+        retVal = this.avaGetResponsibleFieldWorker().name();
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVAGetResponsibleFieldWorkerNamePlanned</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>displayAVAGetResponsibleFieldWorkerNamePlanned</c> method.
+    ///     AVA - Schneider 28.05.2024
+    /// </summary>
+    /// <returns>
+    ///     <c>HCMWorkerName</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display HCMWorkerName displayAVAGetResponsibleFieldWorkerNamePlanned()
+    {
+        HCMWorkerName retVal;
+        
+        retVal = this.avaGetResponsibleFieldWorker(true).name();
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

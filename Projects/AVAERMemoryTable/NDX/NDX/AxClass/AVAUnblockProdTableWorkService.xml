@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAUnblockProdTableWorkService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class AVAUnblockProdTableWorkService
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>unblock</Name>
+				<Source><![CDATA[
+    [
+        SysEntryPointAttribute(false)
+    ]
+    public void unblock(AVAUnblockProdTableWorkContract _contract)
+    {
+        List            recIds;
+        ListEnumerator  listEnumerator;
+        ProdTable       prodTable;
+
+        ttsBegin;
+
+        setPrefix(strFmt('%1 - %2', "@NDX:AVAMaterialRequirements", DateTimeUtil::utcNow()));
+
+        if (_contract.parmInitFromRecord())
+        {
+            recIds          = _contract.parmRecIdList();
+            listEnumerator  = recIds.getEnumerator();
+
+            while (listEnumerator.moveNext())
+            {
+                prodTable = ProdTable::findRecId(listEnumerator.current(), true);
+                this.doUnblock(prodTable);
+            }
+        }
+
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>doUnblock</Name>
+				<Source><![CDATA[
+    protected void doUnblock(ProdTable _prodTable)
+    {
+        WHSWorkTable    workTable;
+        WHSWorkLine     workLine;
+        ProdBOM         prodBOM;
+
+        while select workTable
+            where workTable.Frozen == NoYes::Yes
+               && workTable.WorkStatus != WHSWorkStatus::Cancelled
+               && workTable.WorkStatus != WHSWorkStatus::Closed
+            exists join RecId from workLine
+                where workLine.WorkId == workTable.WorkId
+                join RecId from prodBOM
+                    where prodBOM.InventTransId == workLine.InventTransId
+                       && prodBOM.ProdId        == _prodTable.ProdId
+        {
+            WHSWorkManualUnblock::tryManualUnblockWork(workTable);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

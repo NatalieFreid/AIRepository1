@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXUmsSalesGroupMember</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// DebuC 16.10.23
+/// </summary>
+public class NDXUmsSalesGroupMember extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>existsAccountInSalesGroup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.10.23
+    /// </summary>
+    /// <param name = "accountNum">CustAccount</param>
+    /// <param name = "salesGroup">CommissSalesGroup</param>
+    /// <param name = "firma">NDXCompanys</param>
+    /// <returns>boolean</returns>
+    static boolean existsAccountInSalesGroup(CustAccount           accountNum,
+                                  CommissSalesGroup     salesGroup,
+                                  NDXCompanys             firma)
+    {
+        return ((select recId
+                from        NDXUmsSalesGroupMember
+                    where   NDXUmsSalesGroupMember.SalesGroup  == salesGroup
+                        &&  NDXUmsSalesGroupMember.AccountNum  == accountNum
+                        &&  NDXUmsSalesGroupMember.Company       == firma
+             ).RecId > 0);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fill</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.10.23
+    /// </summary>
+    static void fill()
+    {
+        CustTable                   custTableComp, custTable;
+        NDXUmsSalesGroupMember      nDX_UmsSalesGroupMember, nDX_UmsSalesGroupMemberGrp;
+
+        container                   conComp;
+        NDXUmsatzClass             ndxUmsClass;
+        NDXUmsatzClassArgs         args = new NDXUmsatzClassArgs();
+        int                         i;
+        CompanyId                   company;
+        NDXCompanys                 firma;
+        RecordInsertList            rilUmsSalesGroupMember;
+        ;
+        info(strfmt("@NDX:NDXDeterminationCustomerPerCompanySalesGrp", NDXHelperCommon::seconds2Str()));       // [%1] Start: Ermittlung der Debitoren je UK je Verkaufsgruppe (Prov.)
+        args.parmlGetLastValues(NDXNoYesBE::No);
+        ndxUmsClass = NDXUmsatzClass::construct(args);
+        conComp = ndxUmsClass.parmConCompanies();       // umsatzbeteiligte UK's
+
+        delete_from nDX_UmsSalesGroupMember;
+
+        // über alle Provisionsgruppen aller Debitoren aller Umsatz-UK's
+        while select crosscompany:conComp custTableComp
+        group by custTableComp.SalesGroup
+        {
+            // Abarbeitung der Umsatz-UK's dieser Provisionsgruppe
+            for (i = 1; i <= conlen(conComp); i++)
+            {
+                company = conpeek(conComp, i);
+                firma   = NDXHelperCommon::CompanyId2NDXCompany(company, false);
+                changecompany(company)
+                {
+                    rilUmsSalesGroupMember = new RecordInsertList(tableNum(NDXUmsSalesGroupMember));
+                    custTable = null;
+                    while select    custTable
+                    where       custTable.SalesGroup == custTableComp.SalesGroup
+                    {
+                        ttsbegin;
+                        nDX_UmsSalesGroupMember.CompanyId   = company;
+                        nDX_UmsSalesGroupMember.SalesGroup  = custTableComp.SalesGroup;
+                        nDX_UmsSalesGroupMember.Party       = custTable.Party;
+                        nDX_UmsSalesGroupMember.AccountNum  = custTable.AccountNum;
+                        nDX_UmsSalesGroupMember.Company     = firma;
+                        rilUmsSalesGroupMember.add(nDX_UmsSalesGroupMember);
+                        ttscommit;
+                    }
+                    rilUmsSalesGroupMember.insertDatabase();
+                }
+            }
+        }
+
+        // Prüfung der Debitoren, die unterschiedliche Kontonummern haben
+        setprefix("@NDX:NDXDebitorsWithDiffentAccountingNumbers");
+        while select        nDX_UmsSalesGroupMemberGrp
+            group by    AccountNum, Party
+            exists join nDX_UmsSalesGroupMember
+                where   nDX_UmsSalesGroupMember.SalesGroup  == nDX_UmsSalesGroupMemberGrp.SalesGroup
+                    &&  nDX_UmsSalesGroupMember.AccountNum  != nDX_UmsSalesGroupMemberGrp.AccountNum
+                    &&  nDX_UmsSalesGroupMember.Party       == nDX_UmsSalesGroupMemberGrp.Party
+        {
+            //info(strfmt('AccountNum [%1], PartyId [%2], CompanyId [%3], SalesGroup [%4]',nDX_UmsSalesGroupMemberGrp.AccountNum, nDX_UmsSalesGroupMemberGrp.PartyId ));
+            info(strfmt('AccountNum [%1], PartyId [%2]',nDX_UmsSalesGroupMemberGrp.AccountNum, nDX_UmsSalesGroupMemberGrp.Party ));
+        }
+
+
+        // Prüfung: Existieren Datensätze mit gleichen Kontonummern und unterschiedlichen PartyId's
+        setprefix("@NDX:NDXDebitorsWithDifferentGlobalAddresses");
+        while select nDX_UmsSalesGroupMemberGrp
+            group by    AccountNum, Party
+            exists join nDX_UmsSalesGroupMember
+                where   nDX_UmsSalesGroupMember.SalesGroup  == nDX_UmsSalesGroupMemberGrp.SalesGroup
+                    &&  nDX_UmsSalesGroupMember.AccountNum  == nDX_UmsSalesGroupMemberGrp.AccountNum
+                    &&  nDX_UmsSalesGroupMember.Party       != nDX_UmsSalesGroupMemberGrp.Party
+        {
+            //info(strfmt('AccountNum [%1], PartyId [%2], CompanyId [%3], SalesGroup [%4]',nDX_UmsSalesGroupMemberGrp.AccountNum, nDX_UmsSalesGroupMemberGrp.PartyId ));
+            info(strfmt('AccountNum [%1], PartyId [%2]',nDX_UmsSalesGroupMemberGrp.AccountNum, nDX_UmsSalesGroupMemberGrp.Party ));
+        }
+
+        info(strfmt("@NDX:NDXDeterminationCustomerPerCompanySalesGrpEnd", NDXHelperCommon::seconds2Str()));    // [%1] Ende: Ermittlung der Debitoren je UK je Verkaufsgruppe (Prov.)
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NDXUmsSalesGroupMemberDev</DeveloperDocumentation>
+	<Label>@NDX:NDXUmsSalesGroupMember</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>SalesGroup</TitleField1>
+	<ClusteredIndex>SalesGroupIdx</ClusteredIndex>
+	<PrimaryIndex>AccountNumIdx</PrimaryIndex>
+	<SaveDataPerCompany>No</SaveDataPerCompany>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>Accountnum</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Party</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesGroup</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CompanyId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Company</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Accountnum</Name>
+			<ExtendedDataType>CustAccount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>Party</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SalesGroup</Name>
+			<ExtendedDataType>CommissSalesGroup</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CompanyId</Name>
+			<ExtendedDataType>CompanyId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Company</Name>
+			<ExtendedDataType>NDXCompanys</ExtendedDataType>
+			<EnumType>NDXCompanyBE</EnumType>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>SalesGroupIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>SalesGroup</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Accountnum</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Company</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>AccountNumIdx</Name>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>Accountnum</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>CompanyId</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>CommissionSalesGroup</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<RelatedTable>CommissionSalesGroup</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>SalesGroup</Name>
+					<SourceEDT>CommissSalesGroup</SourceEDT>
+					<Field>SalesGroup</Field>
+					<RelatedField>GroupId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>CustTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<RelatedTable>CustTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Accountnum</Name>
+					<SourceEDT>CustAccount</SourceEDT>
+					<Field>Accountnum</Field>
+					<RelatedField>AccountNum</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

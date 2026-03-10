@@ -1,0 +1,997 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACustCollectionJourDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Dataprovider of the report KCS_KFBCustCollectionJourDB
+/// </summary>
+[
+    SRSReportQueryAttribute(queryStr(CustCollectionLetterJour)),
+    SRSReportParameterAttribute(classStr(AVAFPLCustCollectionJourContract))
+]
+ 
+public class AVACustCollectionJourDP extends SrsReportDataProviderPreProcess
+{
+    TmpTaxWorkTrans tmpTaxWorkTrans;
+    KCS_KFBCustCollectionJourTmp custCollectionJourTmp;
+    CustFormletterParameters custFormletterParameters;
+    CompanyInfo companyInfo;
+    CustParameters custParameters;
+
+    boolean inlineGIRO; // GIRO: Remove this when GIRO no longer prints as a separate report
+    boolean tSpec;
+    boolean formRemarks;
+    boolean flag;
+    boolean collecTrans;
+    boolean isTaxAmountMSTVisible;
+    boolean oneCollectionPerCustomer;
+    boolean showFooter;
+    boolean showFooterEuro;
+    boolean payRef;
+    boolean taxPrintTaxFreeBalance;
+
+    str taxAmountLabel;
+    str taxAmountMSTLabel;
+
+    CurrencyCode currencyCode, prevCurrencyCode;
+    AmountCur    sumAmountCur;
+    TransDate dueDate;
+
+    // Giro
+    PaymentStubCollectionId     giroType;
+    PaymMoneyTransferSlip       moneyTransferSlip;
+    PaymMoneyTransferSlip_FI    moneyTransferSlip_FI;
+    PaymMoneyTransferSlip_BE    moneyTransferSlip_BE;
+    PaymMoneyTransferSlip_CH    moneyTransferSlip_CH;
+    InvoiceId invoiceId;
+
+    
+    AVAFPLCollectionCreatedBy   emplId;
+    HcmWorker                   worker;
+   
+    #ISOCountryRegionCodes
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>accountNo2_CH</Name>
+				<Source><![CDATA[
+      private str accountNo2_CH()
+    {
+        if(moneyTransferSlip_CH.ocr_AccountNo2())
+        {
+            return moneyTransferSlip_CH.ocr_AccountNo2() + '>';
+        }
+        return '';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>amountCheckId</Name>
+				<Source><![CDATA[
+    private str amountCheckId(CustCollectionLetterJour _custCollectionLetterJour)
+    {
+        return moneyTransferSlip.amountCheckId(_custCollectionLetterJour.sumAmountFeeInclTax());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>amountDecimals_CH</Name>
+				<Source><![CDATA[
+    private str amountDecimals_CH(CustCollectionLetterJour _custCollectionLetterJour)
+    {
+        if(moneyTransferSlip_CH.checkCurrency() && _custCollectionLetterJour.sumAmountFeeInclTax() >= 0)
+        {
+            return moneyTransferSlip_CH.invoiceAmountPenny();
+        }
+        return 'xx';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>amountNoDecimals_CH</Name>
+				<Source><![CDATA[
+    private str amountNoDecimals_CH(CustCollectionLetterJour _custCollectionLetterJour)
+    {
+        if(moneyTransferSlip_CH.checkCurrency() && _custCollectionLetterJour.sumAmountFeeInclTax() >= 0)
+        {
+            return moneyTransferSlip_CH.invoiceAmountMST();
+        }
+        return strRep('x', 8);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>bankGroupIdName_CH</Name>
+				<Source><![CDATA[
+    private Description bankGroupIdName_CH(CustCollectionLetterJour _custCollectionLetterJour)
+    {
+        if(giroType == PaymentStub::ESR_red_bank)
+        {
+            return BankAccountTable::find(_custCollectionLetterJour.paymentBankAccountId()).Name;
+        }
+        return '';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>bankZipCode_CH</Name>
+				<Source><![CDATA[
+    private str bankZipCode_CH(CustCollectionLetterJour _custCollectionLetterJour)
+    {
+        LogisticsPostalAddress address;
+    
+        if(giroType == PaymentStub::ESR_red_bank)
+        {
+            address = BankAccountTable::find(_custCollectionLetterJour.paymentBankAccountId()).postalAddress();
+            return address.ZipCode + ' ' + address.City;
+        }
+        return '';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>collectionAmountDecimals</Name>
+				<Source><![CDATA[
+    private str collectionAmountDecimals(CustCollectionLetterJour _custCollectionLetterJour)
+    {
+        str ret;
+        AmountCur fees = _custCollectionLetterJour.sumAmountFeeInclTax();
+    
+        if(fees >= 0)
+        {
+            ret = System.String::Format("{0:00}", frac(abs(fees))*100);
+        }
+        else
+        {
+            ret = 'XX';
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>collectionAmountNoDecimals</Name>
+				<Source><![CDATA[
+    private str collectionAmountNoDecimals(CustCollectionLetterJour _custCollectionLetterJour)
+    {
+        AmountCur amount = _custCollectionLetterJour.sumAmountFeeInclTax();
+        str ret;
+    
+        if (amount >= 0)
+        {
+            ret = System.String::Format("{0:#}", trunc(abs(amount)));
+        }
+        else
+        {
+            ret = 'XXXXXX';
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>collectionLetterTitle</Name>
+				<Source><![CDATA[
+    /// </summary>
+    /// <param name="_custCollectionLetterJour">
+    /// <returns>
+    /// CollectionLetterTitle
+    /// </returns>
+    protected str collectionLetterTitle(CustCollectionLetterJour _custCollectionLetterJour)
+    {
+    
+    LabelId labelId = literalStr("@SYS13960");
+    switch(_custCollectionLetterJour.CollectionLetterCode)
+    {
+        case CustCollectionLetterCode::CollectionLetter1:
+			labelId = literalStr("@KFB:KFB600");
+            break;
+        case CustCollectionLetterCode::CollectionLetter2:
+            labelId = literalStr("@KFB:KFB601");
+            break;
+        case CustCollectionLetterCode::CollectionLetter3:
+            labelId = literalStr("@KFB:KFB602");
+            break;
+        case CustCollectionLetterCode::CollectionLetter4:
+            labelId = literalStr("@KFB:KFB603");
+            break;
+        case CustCollectionLetterCode::Collection:
+            labelId = literalStr("@SYS11611");
+            break;
+    }
+    return SysLabel::labelId2String(labelId, _custCollectionLetterJour.LanguageId);
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>currencyCodeISO_CH</Name>
+				<Source><![CDATA[
+    private CurrencyCodeISO currencyCodeISO_CH()
+    {
+        if(moneyTransferSlip_CH.parmIsEUR())
+        {
+            return ISOCurrencyCodeHelper::getISOCurrencyCodeAlpha(ISOCurrencyCodes::EUR);
+        }
+        else if(moneyTransferSlip_CH.parmIsCHF())
+        {
+            return ISOCurrencyCodeHelper::getISOCurrencyCodeAlpha(ISOCurrencyCodes::CHF);
+        }
+        return '';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>encodePaymId</Name>
+				<Source><![CDATA[
+    private PaymId encodePaymId(InvoiceId _invoiceId)
+    {
+        PaymId paymId = subStr(strKeep(_invoiceId, '0123456789'), 1, 10);
+        int controlDigits = any2int(str2num(paymId)) mod 97;
+    
+        return strRep('0', 10 - strLen(paymId)) + paymId + (controlDigits < 10 ? '0' : '') + int2str(controlDigits);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fiCreditorId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Gets the <c>fiCreditorID_DK</c> data type.
+    /// </summary>
+    /// <returns>
+    ///    The <c>fiCreditorID_DK</c> data type.
+    /// </returns>
+    private str fiCreditorId()
+    {
+        CompanyInfoHelper::checkFICreditorIDEmpty(companyInfo.fiCreditorID_DK);
+        return companyInfo.fiCreditorID_DK;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCustCollectionJourTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Gets the <c>CustCollectionJourTmp</c> table data.
+    /// </summary>
+    /// <returns>
+    ///    The <c>CustCollectionJourTmp</c> table data.
+    /// </returns>
+    [
+        SRSReportDataSetAttribute(tableStr(KCS_KFBCustCollectionJourTmp))
+    ]
+    public KCS_KFBCustCollectionJourTmp getCustCollectionJourTmp()
+    {
+        select custCollectionJourTmp;
+        return custCollectionJourTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFormTextType</Name>
+				<Source><![CDATA[
+    private FormTextType getFormTextType(CustCollectionLetterCode _custCollectionLetterCode)
+    {
+        switch(_custCollectionLetterCode)
+        {
+        case CustCollectionLetterCode::CollectionLetter1: return FormTextType::CustCollectionLetter1;
+        case CustCollectionLetterCode::CollectionLetter2: return FormTextType::CustCollectionLetter2;
+        case CustCollectionLetterCode::CollectionLetter3: return FormTextType::CustCollectionLetter3;
+        case CustCollectionLetterCode::CollectionLetter4: return FormTextType::CustCollectionLetter4;
+        case CustCollectionLetterCode::Collection: return FormTextType::CustCollectionLetter5;
+        }
+        throw error(strFmt("@SYS19306", funcName()));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initGiro</Name>
+				<Source><![CDATA[
+    private void initGiro(CustCollectionLetterJour _custCollectionLetterJour)
+    {
+        moneyTransferSlip = PaymMoneyTransferSlip::construct(giroType);
+    
+        switch(giroType)
+        {
+            case PaymentStub::ESR_orange:
+            case PaymentStub::ESR_red_bank:
+                moneyTransferSlip_CH = moneyTransferSlip;
+                break;
+    
+            case PaymentStub::FIK752:
+                moneyTransferSlip.bankAccountId(_custCollectionLetterJour.paymentBankAccountId());
+                break;
+    
+            case PaymentStub::BelSMS101:
+            case PaymentStub::BelSMS102:
+                moneyTransferSlip_BE = new PaymMoneyTransferSlip_BE();
+                break;
+    
+            case PaymentStub::Finnish:
+                moneyTransferSlip_FI = new PaymMoneyTransferSlip_FI();
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertCustCollectionJourTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Inserts records into <c>CustCollectionJourTmp</c> table.
+    /// </summary>
+    /// <param name="_custCollectionLetterJour">
+    /// custCollectionLetterJour buffer.
+    /// </param>
+    /// <param name="_custTable">
+    /// CustTable buffer.
+    /// </param>
+    /// <param name="_custCollectionLetterTrans">
+    /// CustCollectionLetterTrans buffer.
+    /// </param>
+    /// <param name="_formLetterRemarks">
+    /// FormLetterRemarks buffer.
+    /// </param>
+    /// <param name="_taxSpec">
+    /// TaxSpec buffer.
+    /// </param>
+    /// <param name="_postingsUntil">
+    /// Date parameter.
+    /// </param>
+    protected void insertCustCollectionJourTmp(
+            CustCollectionLetterJour _custCollectionLetterJour,
+            CustTable _custTable,
+            CustCollectionLetterTrans _custCollectionLetterTrans,
+            FormLetterRemarks _formLetterRemarks,
+            TaxSpec _taxSpec,
+            TransDate _postingsUntil)
+    {
+        SysDocuBrandDetails sysDocuBrandDetails = SysDocuBrandDetails::getBrandDocument(this.parmDocuBrandContract());
+        if(flag)
+        {
+            custCollectionJourTmp.Flag = 1;
+        }
+    
+        custCollectionJourTmp.DateOfCreation = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+        custCollectionJourTmp.CompanyName = companyInfo.name();
+        custCollectionJourTmp.CompanyAddress = companyInfo.postalAddress().Address;
+        custCollectionJourTmp.CompanyLogo = CompanyImage::find(companyInfo.DataAreaId, companyInfo.TableId, companyInfo.RecId).Image;
+        custCollectionJourTmp.AVACompanyAddressLine = sysDocuBrandDetails.AVASender;
+        custCollectionJourTmp.AVAFooterImage = sysDocuBrandDetails.Image3;
+    
+        custCollectionJourTmp.PrintLogo = conLen(custCollectionJourTmp.CompanyLogo) == 0 ? NoYes::No : NoYes::Yes;
+    
+        custCollectionJourTmp.CompanyPhone = companyInfo.phone();
+        custCollectionJourTmp.CompanyTeleFax = companyInfo.teleFax();
+        custCollectionJourTmp.CompanyGiro = companyInfo.Giro;
+        custCollectionJourTmp.CompanyCoRegNum = companyInfo.CoRegNum;
+        custCollectionJourTmp.CompanyVATNum = custFormletterParameters.PrintInvoiceVATNum ? companyInfo.vatNum : '';
+    
+        
+        custCollectionJourTmp.AccountNum            = _custCollectionLetterJour.AccountNum;
+        custCollectionJourTmp.CourseId              = _custCollectionLetterJour.KCS_KFBCollectionLetterCourseID;
+        custCollectionJourTmp.PostingProfile        = _custCollectionLetterJour.PostingProfile;
+        custCollectionJourTmp.CollectionCreatedBy   = _custCollectionLetterJour.KCS_KFBCollectionCreatedBy;
+        this.KCS_KFBGetEmplId();
+        worker                               = HcmWorker::find(emplId);
+        custCollectionJourTmp.CollectionWorkerName  = worker.name();
+        if (worker.phoneLocal())
+        {
+            custCollectionJourTmp.CollectionWorkerPhone = worker.phone() + '-' + worker.phoneLocal();
+        }
+        else
+        {
+            custCollectionJourTmp.CollectionWorkerPhone = worker.phone();
+        }
+        custCollectionJourTmp.CollectionWorkerFax   = HcmWorker::KCS_KFBFax(worker); //AX7 Upgrade
+        custCollectionJourTmp.CollectionWorkerEmail = worker.email();
+       
+        custCollectionJourTmp.CustomerName = _custCollectionLetterJour.Name;
+        custCollectionJourTmp.CustomerAddress = _custCollectionLetterJour.collectionAddress();
+        custCollectionJourTmp.CollectionLetterTitle = this.collectionLetterTitle(_custCollectionLetterJour);
+        custCollectionJourTmp.CollectionLetterNum = _custCollectionLetterJour.CollectionLetterNum;
+        custCollectionJourTmp.CollectionLetterDate = _custCollectionLetterJour.CollectionLetterDate;
+        custCollectionJourTmp.CustCollectionLetterJour_AccountNum = _custCollectionLetterJour.AccountNum;
+        custCollectionJourTmp.CollectionLetterDueDate = dueDate;
+        custCollectionJourTmp.CollectionLetterCurrencyCode = _custCollectionLetterJour.CurrencyCode;
+        custCollectionJourTmp.CollectionLetterPaymentReference = this.paymentReference(_custCollectionLetterJour);
+        custCollectionJourTmp.PayReference = payRef;
+        custCollectionJourTmp.CollectionLetterOCRField  = _custCollectionLetterJour.PaymId;
+        custCollectionJourTmp.CustVATNum = custFormletterParameters.PrintInvoiceVATNum ? _custTable.vatNum : '';
+        custCollectionJourTmp.CustCollectnLetterJour_NPIBankPaymId = SysCountryRegionCode::isLegalEntityInCountryRegion([#isoNO]) ? _custCollectionLetterJour.PaymId : '';
+        custCollectionJourTmp.CustCollectionLetterJour_Fee = _custCollectionLetterJour.Fee;
+        custCollectionJourTmp.CurrencyCode = currencyCode;
+        custCollectionJourTmp.PaymentCondition = PaymTerm::txt(_custCollectionLetterJour.PaymTermId, _custCollectionLetterJour.LanguageId);
+        custCollectionJourTmp.ShowTotals = showFooter && !taxPrintTaxFreeBalance;
+        custCollectionJourTmp.ShowTotalsTaxBalances = showFooter && taxPrintTaxFreeBalance;
+        custCollectionJourTmp.ShowTotalsEuro = showFooterEuro && !taxPrintTaxFreeBalance;
+        custCollectionJourTmp.ShowTotalsTaxBalancesEuro = showFooterEuro && taxPrintTaxFreeBalance;
+    
+        if(collecTrans)
+        {
+            custCollectionJourTmp.CustCollectionTrans_TransDate = _custCollectionLetterTrans.TransDate;
+            custCollectionJourTmp.CustCollectionTrans_DueDate = _custCollectionLetterTrans.DueDate;
+            custCollectionJourTmp.CustCollectionTrans_Invoice = _custCollectionLetterTrans.Invoice;
+            custCollectionJourTmp.CustCollectionTrans_Txt = _custCollectionLetterTrans.Txt;
+            custCollectionJourTmp.CustCollectionTrans_CurrencyCode = _custCollectionLetterTrans.CurrencyCode;
+            custCollectionJourTmp.CustCollectionTrans_RemainAmount = _custCollectionLetterTrans.RemainAmount;
+            custCollectionJourTmp.CollectionLineAmountCur = _custCollectionLetterTrans.CalculationAmount;
+            custCollectionJourTmp.CollectionLinePaid      = custCollectionJourTmp.CollectionLineAmountCur - custCollectionJourTmp.CustCollectionTrans_RemainAmount;
+            custCollectionJourTmp.CollectionLetterCode = _custCollectionLetterTrans.CollectionLetterCode;
+            custCollectionJourTmp.AVACustCollectionTrans_Code = enum2int(_custCollectionLetterTrans.CollectionLetterCode);
+            custCollectionJourTmp.AVASumCur = sumAmountCur;
+            if (prevCurrencyCode != "" && prevCurrencyCode != _custCollectionLetterTrans.CurrencyCode)
+            {
+                custCollectionJourTmp.AVASumLine = 1;
+            }
+            else
+            {
+                custCollectionJourTmp.AVASumLine = 0;
+            }
+        }
+    
+        if(_taxSpec && tSpec)
+        {
+            custCollectionJourTmp.PrintCode = _taxSpec.taxWriteCode();
+            custCollectionJourTmp.TaxCode = _taxSpec.taxCode();
+            custCollectionJourTmp.TaxBaseAmount = -_taxSpec.taxBaseAmount();
+            custCollectionJourTmp.TaxBaseQty = -_taxSpec.taxBaseQty();
+            custCollectionJourTmp.TaxAmount = -_taxSpec.taxAmount();
+            custCollectionJourTmp.TaxAmountMST = -_taxSpec.taxAmountMST();
+            custCollectionJourTmp.TaxExemptDescription = _taxSpec.taxExemptDescription();
+        }
+    
+        if(isTaxAmountMSTVisible)
+        {
+            custCollectionJourTmp.PrintTaxAmounts = 1;
+            custCollectionJourTmp.TaxAmountLabel = taxAmountLabel;
+            custCollectionJourTmp.TaxAmountMSTLabel = taxAmountMSTLabel;
+        }
+    
+        if(formRemarks)
+        {
+            custCollectionJourTmp.FormLetterRemarks_Txt = this.KCS_KFBFillLetterTxt(_formLetterRemarks.Txt);
+        }
+    
+        custCollectionJourTmp.CustCollectionLetterJour_Notes = _custCollectionLetterJour.Notes;
+    
+        if (_postingsUntil != dateNull())
+        {
+            custCollectionJourTmp.PostingsUntil = strFmt("@SYS77945") + ' ' + date2str(_postingsUntil, -1, -1, -1, -1, -1, -1, DateFlags::FormatAll);
+        }
+    
+        custCollectionJourTmp.Total = _custCollectionLetterJour.Fee + _custCollectionLetterJour.TaxAmount;
+    
+        custCollectionJourTmp.TaxableBalance = _custCollectionLetterJour.taxableBalance(tmpTaxWorkTrans);
+        custCollectionJourTmp.TaxFreeBalance = _custCollectionLetterJour.taxFreeBalance(tmpTaxWorkTrans);
+        custCollectionJourTmp.CustCollectionTaxAmount = _custCollectionLetterJour.TaxAmount;
+        custCollectionJourTmp.TaxFreeBalanceEuro = _custCollectionLetterJour.taxFreeBalanceEuro(tmpTaxWorkTrans);
+        custCollectionJourTmp.TaxableBalanceEuro = _custCollectionLetterJour.taxableBalanceEuro(tmpTaxWorkTrans);
+        custCollectionJourTmp.FeeAmountEuro = _custCollectionLetterJour.amountMST2Euro(_custCollectionLetterJour.Fee);
+        custCollectionJourTmp.TaxAmountEuro = _custCollectionLetterJour.amountMST2Euro(_custCollectionLetterJour.taxAmountCur());
+        custCollectionJourTmp.FeeInclTaxEuro = _custCollectionLetterJour.amountMST2Euro(_custCollectionLetterJour.feeInclTax());
+        custCollectionJourTmp.CurrencyCodeEuro = Currency::findEuroCurrencyCode();
+    
+        custCollectionJourTmp.GiroType = giroType;
+    
+        switch(giroType)
+        {
+            case PaymentStub::FIK751:
+            case PaymentStub::FIK752:
+                custCollectionJourTmp.CollectionName = _custTable.name();
+                custCollectionJourTmp.CollectionAddress = _custCollectionLetterJour.collectionAddress();
+                custCollectionJourTmp.CollectionAmountDecimals = this.collectionAmountDecimals(_custCollectionLetterJour);
+                custCollectionJourTmp.CollectionAmountNoDecimals = this.collectionAmountNoDecimals(_custCollectionLetterJour);
+                custCollectionJourTmp.CollectionLetterOCRField = moneyTransferSlip.ocrField(_custCollectionLetterJour.AccountNum,
+                        _custCollectionLetterJour.CollectionLetterNum,
+                        strLen(int642str(NumberSeq::highestV2(SalesParameters::numRefInvoiceId().NumberSequenceId))));
+    
+                custCollectionJourTmp.fiCreditorID_DK = this.fiCreditorId();
+                if (giroType == PaymentStub::FIK752 && _custCollectionLetterJour.CurrencyCode != 'DKK')
+                {
+                    giroType = PaymentStub::FIK751;
+                    custCollectionJourTmp.GiroType = PaymentStub::FIK751;
+                    info("@SYS343346");
+                }
+                break;
+    
+            case PaymentStub::BBS:
+                custCollectionJourTmp.RemainAmountToBePaid          = _custCollectionLetterJour.sumCollectionAmountFee() + _custCollectionLetterJour.taxAmountCur();
+                custCollectionJourTmp.CollectionName                = _custTable.name();
+                custCollectionJourTmp.CollectionAddress             = _custCollectionLetterJour.collectionAddress();
+                custCollectionJourTmp.CollectionLetterOCRField      = this.ocrField(_custCollectionLetterJour);
+                custCollectionJourTmp.CollectionAmountDecimals      = this.collectionAmountDecimals(_custCollectionLetterJour);
+                custCollectionJourTmp.CollectionAmountNoDecimals    = this.collectionAmountNoDecimals(_custCollectionLetterJour);
+                custCollectionJourTmp.AmountCheckId = this.amountCheckId(_custCollectionLetterJour);
+                break;
+    
+            case PaymentStub::ESR_red_bank:
+                custCollectionJourTmp.BankGroupIdName_CH            = this.bankGroupIdName_CH(_custCollectionLetterJour);
+                custCollectionJourTmp.BankZipCode_CH                = this.bankZipCode_CH(_custCollectionLetterJour);
+                custCollectionJourTmp.Description_CH                = "@SYS12128";
+                custCollectionJourTmp.PaymentRef1_CH                = moneyTransferSlip_CH.ocr_paymentRef1();
+                custCollectionJourTmp.PaymentRef2_CH                = moneyTransferSlip_CH.ocr_paymentRef2();
+                custCollectionJourTmp.BankAccountTable_AccountNum_CH = moneyTransferSlip.bankAccountTable().AccountNum;
+                custCollectionJourTmp.BankAccountTable_Clearing_CH  = moneyTransferSlip.bankAccountTable().RegistrationNum;
+                custCollectionJourTmp.AccountNo1_CH                 = moneyTransferSlip_CH.ocr_AccountNo1();
+                custCollectionJourTmp.CollectionAmountNoDecimals    = this.amountNoDecimals_CH(_custCollectionLetterJour);
+                custCollectionJourTmp.CollectionAmountDecimals      = this.amountDecimals_CH(_custCollectionLetterJour);
+                custCollectionJourTmp.PaymentId2_PaymentId3_CH      = moneyTransferSlip_CH.ocr_PaymentId2() + ' ' + moneyTransferSlip_CH.ocr_PaymentId3();
+                custCollectionJourTmp.CustName_CH                   = _custTable.name();
+                custCollectionJourTmp.CustAddress_CH                = _custTable.postalAddress().Address;
+                custCollectionJourTmp.LayoutCode_CH                 = moneyTransferSlip_CH.layoutCode();
+                custCollectionJourTmp.OcrLine_CH                    = moneyTransferSlip_CH.ocrLine();
+                custCollectionJourTmp.AccountNo2_CH                 = this.accountNo2_CH();
+                break;
+    
+            case PaymentStub::ESR_orange:
+                custCollectionJourTmp.CollectionAmountNoDecimals    = this.amountNoDecimals_CH(_custCollectionLetterJour);
+                custCollectionJourTmp.CollectionAmountDecimals      = this.amountDecimals_CH(_custCollectionLetterJour);
+                custCollectionJourTmp.CurrencyCodeISO_CH            = this.currencyCodeISO_CH();
+                custCollectionJourTmp.AccountNo1_CH                 = moneyTransferSlip_CH.ocr_AccountNo1();
+                custCollectionJourTmp.PaymentId2_PaymentId3_CH      = moneyTransferSlip_CH.ocr_PaymentId2() + ' ' + moneyTransferSlip_CH.ocr_PaymentId3();
+                custCollectionJourTmp.CustName_CH                   = _custTable.name();
+                custCollectionJourTmp.CustAddress_CH                = _custTable.postalAddress().Address;
+                custCollectionJourTmp.LayoutCode_CH                 = moneyTransferSlip_CH.layoutCode();
+                custCollectionJourTmp.OcrLine_CH                    = moneyTransferSlip_CH.ocrLine();
+                break;
+    
+            case PaymentStub::Finnish:
+                custCollectionJourTmp.AccountNum1_FI = moneyTransferSlip_FI.ocr_AccountNum1();
+                custCollectionJourTmp.AccountNum2_FI = moneyTransferSlip_FI.ocr_AccountNum2();
+                custCollectionJourTmp.AccountNum3_FI = moneyTransferSlip_FI.ocr_AccountNum3();
+                custCollectionJourTmp.AccountNum4_FI = moneyTransferSlip_FI.ocr_AccountNum4();
+                custCollectionJourTmp.AccountNum5_FI = moneyTransferSlip_FI.ocr_AccountNum5();
+                custCollectionJourTmp.AccountNum6_FI = moneyTransferSlip_FI.ocr_AccountNum6();
+                custCollectionJourTmp.InvoiceReferenceNumber = _custCollectionLetterJour.PaymId;
+                custCollectionJourTmp.CollectionName = _custTable.name();
+                custCollectionJourTmp.CollectionAddress = _custCollectionLetterJour.collectionAddress();
+                custCollectionJourTmp.OcrLine_FI = moneyTransferSlip_FI.ocrLine(_custCollectionLetterJour.AccountNum,
+                                                                                _custCollectionLetterJour.sumCollectionAmountFee(),
+                                                                                _custCollectionLetterTrans.DueDate);
+                break;
+        }
+    
+        // GIRO: Remove this block of code when GIRO no longer prints as a separate report
+        if(GiroReportController::needGiroReport(custCollectionJourTmp.GiroType) && !inlineGIRO)
+        {
+            custCollectionJourTmp.GiroType = PaymentStub::None;
+        }
+    
+        custCollectionJourTmp.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_KFBFillLetterTxt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// fill the letter text
+    /// </summary>
+    /// <param name="text">
+    /// The value to set.
+    /// </param>
+    /// <returns>
+    /// The value of the <c>WithTransactionText</c> parameter.
+    /// </returns>
+    str KCS_KFBFillLetterTxt(str    text)
+    {
+        Date    Until;
+        Date    Expect;
+        Date    checkUntil;
+        CustCollectionLetterTable CustCollectionLetterTable;
+        int     i = 1;
+    
+        str     tmpUntil, tmpExpect;
+        str     ret;
+        CollectionLetterCourseId  locCollectionLetterCourseId;
+    
+        #define.ALLG('ALLG')
+    
+        ;
+    
+        if (custCollectionJourTmp.CourseId && CustCollectionLetterTable::exist(custCollectionJourTmp.CourseId))
+            locCollectionLetterCourseId = custCollectionJourTmp.CourseId;
+        else
+            locCollectionLetterCourseId = CustLedgerAccounts::collectionLetterCourse(custCollectionJourTmp.AccountNum, custCollectionJourTmp.PostingProfile);
+    
+        CustCollectionLetterTable = CustCollectionLetterTable::find(locCollectionLetterCourseId);
+    
+        checkUntil  = CustCollectionJourTmp.CollectionLetterDate;
+    
+        while (i<= CustCollectionLetterTable.KCS_KFBCustCollectionLetterUntil)
+        {
+            CheckUntil = AVAFPLWorkCalendarTable_Extension::KCS_KFBfindPreviousWorkDay(CustCollectionLetterTable.KCS_KFBCalendarID, checkUntil);//CHA
+            i++;
+        }
+    
+        Until = checkUntil;
+    
+        i = 1;
+        Expect = CustCollectionJourTmp.CollectionLetterDate;
+        while (i <= CustCollectionLetterTable.KCS_KFBCustCollectionLetterExpect)
+        {
+            Expect = AVAFPLWorkCalendarTable_Extension::KCS_KFBfindNextWorkDay(custCollectionLetterTable.KCS_KFBCalendarID,expect);//CHA
+            i++;
+        }
+    
+        tmpUntil    = date2str(Until,123,2,2,2,2,4, DateFlags::None);
+        tmpExpect   = date2str(Expect,123,2,2,2,2,4, DateFlags::None);
+    
+        ret = text;
+    
+        ret = strReplace(ret, '$$1',tmpUntil);
+        ret = strReplace(ret, '$$2',tmpExpect);
+    
+        ret = strReplace(ret, '$$3',companyInfo.Name);                               
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_KFBGetEmplId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// get the emplid of the collection letter
+    /// </summary>
+    
+    void KCS_KFBGetEmplId()
+    {
+    ;
+        emplId = custCollectionJourTmp.CollectionCreatedBy;
+        if (!emplId)
+        {
+            emplId = HcmWorkerLookup::currentWorker();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ocrField</Name>
+				<Source><![CDATA[
+    private str ocrField(CustCollectionLetterJour _custCollectionLetterJour)
+    {
+        return moneyTransferSlip.ocrField(_custCollectionLetterJour.AccountNum, _custCollectionLetterJour.CollectionLetterNum,
+                                          strLen(int642str(NumberSeq::highestV2(CustParameters::numRefCollectionLetterNum().NumberSequenceId))));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>paymentIdReport</Name>
+				<Source><![CDATA[
+    private PaymId paymentIdReport(InvoiceId _invoiceId)
+    {
+        PaymId paymId = this.encodePaymId(_invoiceId);
+    
+        return strFmt('+++%1/%2/%3+++', subStr(paymId, 1, 3), subStr(paymId, 4, 4), subStr(paymId, 8, strLen(paymId)));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>paymentReference</Name>
+				<Source><![CDATA[
+    private PaymReference paymentReference(CustCollectionLetterJour _custCollectionLetterJour)
+    {
+        CustCollectionLetterTrans custCollectionLetterTrans;
+        PaymReference paymRef;
+    
+        select AccountNum, CollectionLetterNum, CollectionLetterIssued, CollectionLetterCode, RecId, Invoice
+            from custCollectionLetterTrans
+            where custCollectionLetterTrans.CollectionLetterNum == _custCollectionLetterJour.CollectionLetterNum  &&
+                    custCollectionLetterTrans.AccountNum == _custCollectionLetterJour.AccountNum &&
+                    custCollectionLetterTrans.CollectionLetterIssued &&
+                    custCollectionLetterTrans.CollectionLetterCode != _custCollectionLetterJour.CollectionLetterCode;
+    
+        if(custCollectionLetterTrans.RecId)
+        {
+            invoiceId = custCollectionLetterTrans.Invoice;
+        }
+        else
+        {
+            while select AccountNum, CollectionLetterNum, CollectionLetterIssued, CollectionLetterCode, CurrencyCode, TransDate, Invoice, Fee
+                from custCollectionLetterTrans
+                order by CurrencyCode, CollectionLetterCode, TransDate
+                where custCollectionLetterTrans.CollectionLetterNum == _custCollectionLetterJour.CollectionLetterNum  &&
+                        custCollectionLetterTrans.AccountNum        == _custCollectionLetterJour.AccountNum &&
+                        custCollectionLetterTrans.CollectionLetterIssued &&
+                        !custCollectionLetterTrans.Fee
+            {
+                invoiceId = custCollectionLetterTrans.Invoice;
+            }
+        }
+    
+        if(moneyTransferSlip_BE)
+        {
+            payRef = true;
+            paymRef = this.paymentIdReport(invoiceId);
+        }
+        else
+        {
+            payRef = false;
+        }
+    
+        return paymRef;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>preProcessing</Name>
+				<Source><![CDATA[
+    //  Reprint CustCollectionLetter
+    
+    /// /// <summary>
+    /// Updates the several tables.
+    /// </summary>
+    /// <param name="_custCollectionLetterJourRecId">
+    /// A <c>CustCollectionLetterJour</c> table record identifier.
+    /// </param>
+    public void preProcessing(RecId _custCollectionLetterJourRecId)
+    {
+        TaxCustCollectionLetter taxCustCollectionLetter;
+        CustCollectionLetter custCollectionLetter;
+        CustCollectionLetterJour jour;
+        CustTable custTable;
+        LedgerPostingController controller = LedgerPostingController::construct();
+    
+        // make sure to use user connection, since transaction could be started somewhere in calling stack
+        // and could be aborted.
+        jour.setConnection(this.parmUserConnection());
+        this.parmUserConnection().ttsbegin();
+    
+        jour = CustCollectionLetterJour::findRecId(_custCollectionLetterJourRecId, true);
+        // Reprint CustCollectionLetter
+        custCollectionLetter    = new CustCollectionLetter(jour);
+        taxCustCollectionLetter = new TaxCustCollectionLetter(NoYes::No, custCollectionLetter, '', dateNull());
+        //<-- KCS/HET/DE_KFB 6.0-1.3/05.02.2013 - Reprint CustCollectionLetter
+    
+        if (!jour.Updated ||
+            (custParameters.CollectionLetterCodeUpdate == CustPostedPrinted::Printed &&
+             jour.JournalPrinted))
+        {
+            custCollectionLetter    = new CustCollectionLetter(jour);
+            taxCustCollectionLetter = new TaxCustCollectionLetter(NoYes::No, custCollectionLetter, '', dateNull());
+    
+            // pass null because it is configured to not post to GL
+            jour.TaxAmount = -taxCustCollectionLetter.calcAndPost(controller);
+            jour.update();
+        }
+    
+        this.parmUserConnection().ttscommit();
+    
+        tmpTaxWorkTrans = taxCustCollectionLetter.tmpTaxWorkTrans();
+    
+        if(jour.Block == NoYes::Yes && custParameters.CollectionLetterCodeUpdate == CustPostedPrinted::Printed)
+        {
+            custTable.setConnection(this.parmUserConnection());
+            this.parmUserConnection().ttsbegin();
+    
+            custTable = CustTable::find(jour.AccountNum, true);
+            if(custTable.Blocked == CustVendorBlocked::No)
+            {
+                custTable.Blocked = CustVendorBlocked::Invoice;
+                custTable.update();
+            }
+    
+            this.parmUserConnection().ttscommit();
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>printEuroTotals</Name>
+				<Source><![CDATA[
+    private boolean printEuroTotals()
+    {
+        return custFormletterParameters.PrintEuroAmount && Currency::findEuroCurrencyCode();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Processes the business logic for the <c>CustCollectionJour</c> report.
+    /// </summary>
+    public void processReport()
+    {
+        AVAFPLCustCollectionJourContract contract = this.parmDataContract() as AVAFPLCustCollectionJourContract;
+        CustCollectionLetterJour custCollectionLetterJour;
+        CustTable custTable;
+        CustCollectionLetterTrans custCollectionLetterTrans;
+        FormTextType formTextType;
+        FormLetterRemarks formLetterRemarks;
+        TaxSpecPrintLevel taxSpecPrintLevel;
+        TaxSpec taxSpec;
+    
+        // Set the userconnection to use on table.
+        // This is required to ensure that createdTransactionId of inserted record is different than default transaction.
+        custCollectionJourTmp.setConnection(this.parmUserConnection());
+    
+        custParameters = CustParameters::find();
+        companyInfo = CompanyInfo::find();
+    
+        custFormletterParameters = CustFormletterParameters::find();
+        taxPrintTaxFreeBalance = custFormletterParameters.TaxPrintTaxFreeBalance;
+    
+        this.preProcessing(contract.parmRecordId());
+        custCollectionLetterJour = CustCollectionLetterJour::findRecId(contract.parmRecordId());
+        custTable = CustTable::find(custCollectionLetterJour.AccountNum);
+    
+        showFooter = true;
+        showFooterEuro = this.printEuroTotals();
+    
+        currencyCode = '';
+    
+        select firstonly custCollectionLetterTrans
+                where custCollectionLetterTrans.CollectionLetterNum == custCollectionLetterJour.CollectionLetterNum &&
+                        custCollectionLetterTrans.AccountNum        == custCollectionLetterJour.AccountNum &&
+                        custCollectionLetterTrans.CollectionLetterIssued &&
+                        custCollectionLetterTrans.CollectionLetterCode != custCollectionLetterJour.CollectionLetterCode;
+    
+        oneCollectionPerCustomer = custCollectionLetterTrans.RecId != 0;
+    
+        if(SysCountryRegionCode::isLegalEntityInCountryRegion([#isoNO]))
+        {
+            giroType = custTable.GiroTypeCollectionletter;
+            this.initGiro(custCollectionLetterJour);
+            moneyTransferSlip.init(giroType);
+    
+            if (giroType == PaymentStub::ESR_red_bank || giroType == PaymentStub::ESR_orange)
+            {
+                moneyTransferSlip_CH.initOCRLineCollectionLetter_CH(custCollectionLetterJour);
+            }
+            else if(giroType == PaymentStub::Finnish)
+            {
+                moneyTransferSlip_FI.initOCRLine_FI();
+            }
+    
+            dueDate = custCollectionLetterJour.DueDate;
+        }
+        else
+        {
+            giroType = custCollectionLetterJour.GiroType;
+            this.initGiro(custCollectionLetterJour);
+        }
+    
+        dueDate = custCollectionLetterJour.DueDate;
+        moneyTransferSlip.init(giroType);
+    
+        if(giroType == PaymentStub::ESR_red_bank || giroType == PaymentStub::ESR_orange)
+        {
+            moneyTransferSlip_CH.initOCRLineCollectionLetter_CH(custCollectionLetterJour);
+        }
+        else if(giroType == PaymentStub::Finnish)
+        {
+            moneyTransferSlip_FI.initOCRLine_FI();
+        }
+    
+        formTextType = this.getFormTextType(custCollectionLetterJour.CollectionLetterCode);
+        formLetterRemarks = FormLetterRemarks::find(custCollectionLetterJour.LanguageId, formTextType);
+    
+        if(formLetterRemarks)
+        {
+            formRemarks = true;
+        }
+    
+        taxSpecPrintLevel = custFormletterParameters.TaxSpecPrintLevel;
+    
+        if(taxSpecPrintLevel != TaxSpecPrintLevel::None)
+        {
+            if(taxSpecPrintLevel == TaxSpecPrintLevel::Currency ||
+                    custCollectionLetterJour.CurrencyCode == Ledger::accountingCurrency(companyInfo.RecId))
+            {
+                isTaxAmountMSTVisible = false;
+            }
+            else
+            {
+                isTaxAmountMSTVisible = true;
+                taxAmountMSTLabel = strFmt('%1 %2', literalStr("@SYS22646"), Ledger::accountingCurrency(companyInfo.RecId));
+                taxAmountLabel = strFmt('%1 %2', literalStr("@SYS22646"), custCollectionLetterJour.CurrencyCode);
+            }
+    
+            taxSpec = TaxSpec::construct('', naDate(), custCollectionLetterJour.RecId);
+            taxSpec.parmLanguageId(custCollectionLetterJour.LanguageId);
+            taxSpec.setTmpTaxWorkTrans(tmpTaxWorkTrans);
+    
+            if(custCollectionLetterJour.TaxWriteCode || custCollectionLetterJour.TaxAmount)
+            {
+                flag = true;
+            }
+    
+            while(taxSpec.parmTaxSpec())
+            {
+                tSpec = true;
+            }
+        }
+    
+        while select custCollectionLetterTrans
+            order by CurrencyCode, CollectionLetterCode, TransDate
+            where custCollectionLetterTrans.CollectionLetterNum == custCollectionLetterJour.CollectionLetterNum &&
+                    custCollectionLetterTrans.AccountNum == custCollectionLetterJour.AccountNum &&
+                    custCollectionLetterTrans.CollectionLetterIssued &&
+                    !custCollectionLetterTrans.Fee
+        {
+            collecTrans = true;
+
+            prevCurrencyCode = currencyCode;
+            if (prevCurrencyCode != custCollectionLetterTrans.CurrencyCode)
+            {
+                sumAmountCur = 0;
+            }
+            sumAmountCur += custCollectionLetterTrans.RemainAmount;
+    
+            this.insertCustCollectionJourTmp(custCollectionLetterJour, custTable, custCollectionLetterTrans, formLetterRemarks, taxSpec, contract.parmPostingsUntil());
+    
+            currencyCode = custCollectionLetterTrans.CurrencyCode;
+
+        }
+    
+        if(!custCollectionLetterJour.JournalPrinted)
+        {
+            this.updatePrinted(custCollectionLetterJour.RecId);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updatePrinted</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// updatePrinted method
+    /// </summary>
+    /// <param name = "_custCollectionJourRecId"></param>
+    protected void updatePrinted(RecId _custCollectionJourRecId)
+    {
+        CustCollectionLetterJour jour;
+    
+        jour.setConnection(this.parmUserConnection());
+        this.parmUserConnection().ttsbegin();
+    
+        jour = CustCollectionLetterJour::findRecId(_custCollectionJourRecId, true);
+    
+        jour.setPrinted();
+        jour.update();
+    
+        if(custParameters.CollectionLetterCodeUpdate == CustPostedPrinted::Printed)
+        {
+            jour.updateCollectionLetterCodeCustTrans();
+        }
+    
+        this.parmUserConnection().ttscommit();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

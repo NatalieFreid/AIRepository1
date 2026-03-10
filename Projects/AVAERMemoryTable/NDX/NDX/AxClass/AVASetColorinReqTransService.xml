@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASetColorinReqTransService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extends class SysOperationServiceBase
+/// </summary>
+class AVASetColorinReqTransService extends SysOperationServiceBase
+{
+    Set                             recordsToUpdate;
+    SetEnumerator                   setenumerator;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// process method
+    /// </summary>
+    /// <param name = "_contract">AVASetColoringReqTransContract</param>
+    public void process(AVASetColorinReqTransContract _contract)
+    {
+        Query                           query = new Query(SysOperationHelper::base64Decode(_contract.parmQuery()));
+        QueryRun                        queryRun;
+        ReqPO                           reqPO;
+        ReqTrans                        reqtrans;
+        EcoResColorName                 color;
+        const EcoResColorName           defColor = 'RAL 0000';
+
+        queryRun = new QueryRun(query);
+        while (queryRun.next())
+        {
+            if (queryRun.changed(tableNum(reqtrans)))
+            {
+                reqPO = queryRun.get(tableNum(reqpo));
+                reqtrans = queryRun.get(tableNum(reqtrans));
+                Info (strFmt('%1, %2', reqtrans.RefType, reqtrans.RefId));
+                recordsToUpdate = new Set(Types::Record);
+                if (reqtrans && !recordsToUpdate.in(reqtrans))
+                {
+                    recordsToUpdate.add(reqtrans);
+                }
+                color = this.findColor(reqtrans);
+                if (color != defColor)
+                {
+                    this.setColor(color);
+                }
+
+
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setColor</Name>
+				<Source><![CDATA[
+    private void setColor(EcoResColorName _color)
+    {
+        ReqTrans    reqTrans;
+        ReqPO       reqPO;
+        InventDim   updInventDim;
+        const str prodStr = '%1 :  :  : %2 :';
+
+        if (!recordsToUpdate.empty())
+        {
+            setEnumerator = recordsToUpdate.getEnumerator();
+            setEnumerator.reset();
+            while (setEnumerator.moveNext())
+            {
+                reqTrans = setEnumerator.current();
+
+                if (reqTrans)
+                {
+                    Info (strFmt('%1, %2', reqtrans.RefType, reqtrans.RefId));
+                    reqTrans.selectForUpdate(true);
+                    updInventDim = reqTrans.inventDim();
+                    updInventDim.InventColorId = _color;
+                    updInventDim = InventDim::findOrCreate(updInventDim);
+                    ttsbegin;
+                    reqTrans.CovInventDimId = updInventDim.inventDimId;
+                    reqTrans.doUpdate();
+                    ttscommit;
+
+                    AVASetColourHelper::createProductVariant(reqTrans.ItemId, updInventDim);
+                
+
+                    while select forupdate reqPO where reqPO.RefId == reqTrans.RefId
+                                                && reqPO.RefType == reqTrans.RefType
+                                                && reqPO.PlanVersion == reqTrans.PlanVersion
+                    {
+                        updInventDim = reqPO.inventDim();
+                        updInventDim.InventColorId = _color;
+                        updInventDim = InventDim::findOrCreate(updInventDim);
+                        ttsbegin;
+                        reqPO.CovInventDimId = updInventDim.inventDimId;
+                        reqPO.Product = EcoResProduct::findByDisplayProductNumber(strFmt(prodStr, reqtrans.ItemId, _color)).RecId;
+                        reqPO.doUpdate();
+                        ttscommit;
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findColor</Name>
+				<Source><![CDATA[
+    private EcoResColorName findColor(ReqTrans _reqTrans)
+    {
+        ReqTransCov         reqTransCov;
+        ReqTrans            reqTransSettled, nextReqTrans;
+        RefRecId            settledRecId;
+        ReqRefType          settledRefType;
+        InventTransRefId    settledRefId;
+        EcoResColorName     ret;
+        InventTransOriginId invTrans;
+        SalesLine           salesLine;
+
+        select firstonly reqTransCov where reqtranscov.ReceiptRecId == _reqtrans.RecId
+                    join reqTransSettled where reqTransCov.IssueRecId == reqTransSettled.RecId;
+        settledRecId = reqTransSettled.RecId;
+        recordsToUpdate.add(reqTransSettled);
+        settledRefType = reqTransSettled.RefType;
+        settledRefId = reqTransSettled.RefId;
+        invTrans = reqTransSettled.inventTransOrigin;
+        while (settledRefType == ReqRefType::PmfFormulaLine)
+        {
+            select firstonly nextreqtrans where nextReqTrans.RefId == settledRefId && nextReqTrans.RefType == ReqRefType::PmfPlannedProdBatch;
+            recordsToUpdate.add(nextReqTrans);
+            select firstonly reqTransCov where reqtranscov.ReceiptRecId == nextReqTrans.RecId
+                    join reqTransSettled where reqTransCov.IssueRecId == reqTransSettled.RecId;
+            settledRecId = reqTransSettled.RecId;
+            recordsToUpdate.add(reqTransSettled);
+            settledRefType = reqTransSettled.RefType;
+            settledRefId = reqTransSettled.RefId;
+            invTrans = reqTransSettled.inventTransOrigin;
+        }
+        if (settledRefType == ReqRefType::Sales)
+        {
+            salesLine = salesLine::findInventTransId(InventTransOrigin::find(invTrans).InventTransId);
+            ret = salesLine.inventDim().InventColorId;
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

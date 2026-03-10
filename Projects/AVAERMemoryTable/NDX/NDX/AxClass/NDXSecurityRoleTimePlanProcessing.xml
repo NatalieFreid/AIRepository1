@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXSecurityRoleTimePlanProcessing</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// DebuC 27.04.23
+/// </summary>
+class NDXSecurityRoleTimePlanProcessing
+    extends SysOperationServiceBase
+{  
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 27.04.23
+    /// </summary>
+    protected void process()
+    {
+        this.checkTimePlan();
+        this.assignTimePlanUserRights();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkTimePlan</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 27.04.23
+    /// </summary>
+    /// <param name = "_securityRoleTimePlan">NDXSecurityRoleTimePlan</param>
+    public void checkTimePlan(NDXSecurityRoleTimePlan  _securityRoleTimePlan = null)
+    { 
+        NDXSecurityRoleTimePlan         securityRoleTimePlanGrp, securityRoleTimePlanForProt;
+        NDXSecurityRoleTimePlanProt     securityRoleTimePlanProt;
+        FormDataSource                  formDataSource;
+        Date                            dateNow = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+        NDX_Time                        timeNow = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+        boolean                         lFirst;
+
+        void setValidNow(NoYes _validNow = NoYes::No)
+        {
+            ;
+            _securityRoleTimePlan.selectForUpdate(true);
+
+            if (_securityRoleTimePlan.ValidNow != _validNow)
+            {
+                _securityRoleTimePlan.ValidNow = _validNow;
+                ttsbegin;
+                _securityRoleTimePlan.update();
+                ttscommit;
+            }
+        }
+
+        ;
+
+        while select _securityRoleTimePlan
+        {
+            // gültiges "von-Datum"
+            if (_securityRoleTimePlan.DateFrom > dateNow)
+            {
+                if (_securityRoleTimePlan.ValidNow == NoYes::Yes)
+                {
+                    setValidNow();
+                }
+                continue;
+            }
+            // gültiges "bis-Datum"
+            if (_securityRoleTimePlan.DateTo < dateNow)
+            {
+                if (_securityRoleTimePlan.ValidNow == NoYes::Yes)
+                {
+                    setValidNow();
+                }
+                continue;
+            }
+            // Zeiteinschränkung "von-Zeit"
+            if (_securityRoleTimePlan.TimeFrom && timeNow < _securityRoleTimePlan.TimeFrom)
+            {
+                setValidNow();
+                continue;
+            }
+
+            // Zeiteinschränkung "bis-Zeit"
+            if (_securityRoleTimePlan.TimeTo && timeNow > _securityRoleTimePlan.TimeTo)
+            {
+                setValidNow();
+                continue;
+            }
+
+            // Umsetzung ist erforderlich
+            if (_securityRoleTimePlan.ValidNow == NoYes::No)
+            {
+                setValidNow(NoYes::Yes);
+            }
+
+        }
+
+        // Nur ein gültiger Eintrag je User
+        // gülig ist der Eintrag mit dem aktuellsten "von"-Datum
+        while select UserId, count(RecId) from  securityRoleTimePlanGrp
+        group by UserId
+        where       securityRoleTimePlanGrp.ValidNow == NoYes::Yes
+        {
+            if (securityRoleTimePlanGrp.RecId < 2)
+            {
+                continue;
+            }
+
+            lFirst = true;
+            while select forUpdate _securityRoleTimePlan
+            order by DateFrom desc, TimeFrom desc
+            where    _securityRoleTimePlan.UserId == securityRoleTimePlanGrp.UserId
+                &&   _securityRoleTimePlan.ValidNow == NoYes::Yes
+            {
+                if (!lFirst)
+                {
+                    setValidNow();
+                }
+                if (lFirst)
+                {
+                    lFirst = false;
+                }
+            }
+
+        }
+        while select forUpdate _securityRoleTimePlan
+        where _securityRoleTimePlan.ValidNow == NoYes::Yes
+        {
+            select firstOnly securityRoleTimePlanProt
+            order by CreatedDateTime desc
+                join securityRoleTimePlanForProt
+            where securityRoleTimePlanForProt.RecId == securityRoleTimePlanProt.NDXSecurityRoleTimePlan
+            &&  securityRoleTimePlanForProt.UserId == _securityRoleTimePlan.UserId;
+
+            if (securityRoleTimePlanProt.NDXSecurityRoleTimePlan == _securityRoleTimePlan.RecId)
+            {
+                setValidNow();
+            }
+        }
+        if (FormDataUtil::isFormDataSource(_securityRoleTimePlan))
+        {
+            formDataSource = FormDataUtil::getFormDataSource(_securityRoleTimePlan);
+            formDataSource.executeQuery();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>assignTimePlanUserRights</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 27.04.23
+    /// </summary>
+    /// <param name = "_securityRoleTimePlan">NDXSecurityRoleTimePlan</param>
+    public void assignTimePlanUserRights(NDXSecurityRoleTimePlan  _securityRoleTimePlan = null)
+    {
+        Query                           q = new Query();
+        QueryRun                        qr;
+        QueryBuildDataSource            qbds;
+        FormDataSource                  fds;
+        NDXSecurityRoleTimePlan         securityRoleTimePlan = _securityRoleTimePlan;
+        NDXSecurityRoleTimePlanProt     securityRoleTimePlanProt;
+        RecordInsertList                recordInsertListProt;
+        ;
+        qbds = q.addDataSource(tablenum(NDXSecurityRoleTimePlan));
+        if (securityRoleTimePlan)
+        {
+            qbds.addRange(fieldnum(NDXSecurityRoleTimePlan, RecId)).value(QueryValue(securityRoleTimePlan.RecId));
+            fds = FormDataUtil::getFormDataSource(securityRoleTimePlan);
+        }
+        else
+        {
+            qbds.addRange(fieldnum(NDXSecurityRoleTimePlan, ValidNow)).value(QueryValue(NoYes::Yes));
+        }
+        qr = new QueryRun(q);
+        while (qr.next())
+        {
+            recordInsertListProt = new RecordInsertList(tableNum(NDXSecurityRoleTimePlanProt));
+            securityRoleTimePlan = qr.get(tablenum(NDXSecurityRoleTimePlan));
+            ttsbegin;
+            this.clearRoleAssignments(securityRoleTimePlan.UserId);
+            this.assignRoles(securityRoleTimePlan);
+            securityRoleTimePlanProt.NDXSecurityRoleTimePlan = securityRoleTimePlan.RecId;
+            recordInsertListProt.add(securityRoleTimePlanProt);
+            ttscommit;
+        }
+        recordInsertListProt.insertDatabase();
+        if (fds)
+        {
+            fds.research(true);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>clearRoleAssignments</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 27.04.23
+    /// </summary>
+    /// <param name = "_userId">UserId</param>
+    private void clearRoleAssignments(UserId _userId)
+    {
+        SecurityUserRole    securityUserRole;
+        ;
+        delete_from securityUserRole
+            where securityUserRole.User == _userId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>assignRoles</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 27.04.23
+    /// </summary>
+    /// <param name = "_securityRoleTimePlan">NDXSecurityRoleTimePlan</param>
+    private void assignRoles(NDXSecurityRoleTimePlan _securityRoleTimePlan)
+    {
+        NDXSecurityRoleTimePlanRoleSet      securityRoleTimePlanRoleSet;
+        SecurityUserRole                    securityUserRole;
+        SecurityRole                        securityRole;
+        ;
+
+        while select securityRoleTimePlanRoleSet
+            where securityRoleTimePlanRoleSet.NDXSeccurityRoleTimePlan == _securityRoleTimePlan.RecId
+        {
+            select firstonly securityRole
+                where securityRole.AotName == securityRoleTimePlanRoleSet.SecurityRoleAotName;
+
+            if(!securityRole)
+            {
+                throw error(strFmt("@NDX:NDXRoleNotFound", securityRoleTimePlanRoleSet.SecurityRoleAotName));
+            }
+
+            securityUserRole.User               = _securityRoleTimePlan.UserId;
+            securityUserRole.SecurityRole       =  securityRole.RecId;
+            securityUserRole.AssignmentMode     = RoleAssignmentMode::Manual;
+            securityUserRole.AssignmentStatus   = RoleAssignmentStatus::Enabled;
+
+            if(securityUserRole.validateWrite())
+            {
+                securityUserRole.insert();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

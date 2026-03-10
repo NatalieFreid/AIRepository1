@@ -1,0 +1,920 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXRicoReqDocuTransfer</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Class for Document transfer
+/// </summary>
+internal final class NDXRicoReqDocuTransfer
+{
+    const DataAreaId ric = 'ric';
+    const str RICOKI17proAlpha = 'RICOKI17.proAlpha';
+
+    DocuRef     docuRef;
+    DocuValue   docuValue;
+    DocuType    docuType;
+
+    KCS_KBVRequestID mKCS_KBVRequestID;
+    KCS_KBVBuildingProjectID mKCS_KBVBuildingProjectID;
+    NDXRicoKalkBVNr mNDX_RicoKalkBVNr;
+
+    Niedax.RICOSchnittstelle_Nx.RICOtblAx2Rk_DMS rICOtblAx2Rk_DMS;
+
+    KCS_KBVParameters lKCS_KBVParameters = KCS_KBVParameters::find();
+    Niedax.AzureRelayHelper.AzureRelayParameter azureRelayParameter;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    protected void new(DocuRef _docuRef, DocuValue _docuValue = null, int _abruf = 0)
+    {
+        const str RicoDocDepositionError = "@NDX:NDXRicoReqDocuTransferInfo";
+
+        KCS_KBVRequestTable lKCS_KBVRequestTable;
+        azureRelayParameter = new Niedax.AzureRelayHelper.AzureRelayParameter();
+        
+        str secretValue = KeyVaultCertificateHelper::getManualSecretValue(KeyVaultCertificateTable::findByName(KCS_KBVParameters::find().NDXKeyVaultSecretNameConnectionStringAzureRelayD365FO).RecId);
+        azureRelayParameter =  Niedax.AzureRelayHelper.AzureRelayParameter::deserialize(secretValue);
+
+       
+        docuRef = _docuRef;
+
+        if(docuRef != null)
+        {
+            select firstonly lKCS_KBVRequestTable
+                where lKCS_KBVRequestTable.RecId == _docuRef.RefRecId;
+
+            if(!lKCS_KBVRequestTable)
+            {
+                select firstonly crosscompany lKCS_KBVRequestTable
+                    where lKCS_KBVRequestTable.RecId == _docuRef.RefRecId;
+            }
+
+            // if there is no KCS_KBVRequestTable record then we need to stop here. It does not make any sence to proceed
+            if(!lKCS_KBVRequestTable)
+            {
+                return;
+            }
+
+            mKCS_KBVRequestID = lKCS_KBVRequestTable.KCS_KBVRequestID;
+            mKCS_KBVBuildingProjectID = KCS_KBVRequestTable::find(mKCS_KBVRequestID).KCS_KBVBuildingProjectID;
+
+            docuType            = docuRef.docuType();
+            docuValue           = docuRef.docuValue();
+        }
+
+        //Overwrite  docuValue with _docuvalue only if docuValue was not found for valueRecId in docuref
+        if(_docuValue != null && docuValue == null)
+        {
+            docuValue = _docuValue;
+        }
+
+        //this.checkRicoBVNr();
+        this.init();
+        rICOtblAx2Rk_DMS.AbrufNr = _abruf;
+       
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// init RICOtblAx2Rk_DMS object member
+    /// </summary>
+    private void init()
+    {
+        str fileExtension = '';
+        rICOtblAx2Rk_DMS = new Niedax.RICOSchnittstelle_Nx.RICOtblAx2Rk_DMS(lKCS_KBVParameters.NDXTestEnvironment);
+        rICOtblAx2Rk_DMS.KBVRequestID = mKCS_KBVRequestID;
+        rICOtblAx2Rk_DMS.BVNr = mNDX_RicoKalkBVNr;
+        
+        if(docuref != null)
+        {
+            fileExtension = docuRef.fileExtension();
+            
+            if(docuValue != null)
+            {
+                fileExtension = docuValue.FileType;
+            }
+            
+            rICOtblAx2Rk_DMS.Benutzer = docuRef.CreatedBy;
+            rICOtblAx2Rk_DMS.Dateiname = guid2StrWithoutBraces(docuRef.DocumentId) + '.' + fileExtension;
+            rICOtblAx2Rk_DMS.Betreff = docuRef.Name;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initByNDX_RicoReqDocProt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// init from Rico transfer protocol
+    /// </summary>
+    /// <param name = "_NDX_RicoReqDocProt">NDXRicoReqDocProt record</param>
+    void initByNDX_RicoReqDocProt(NDXRicoReqDocProt _NDX_RicoReqDocProt)
+    {
+        mKCS_KBVBuildingProjectID = _NDX_RicoReqDocProt.KCSKBVBuildingProjectID;
+        mKCS_KBVRequestID = _NDX_RicoReqDocProt.KCSKBVRequestID;
+        mNDX_RicoKalkBVNr = _NDX_RicoReqDocProt.NDXRicoKalkBVNr;
+
+        this.init();
+
+        //init with protocol values
+        rICOtblAx2Rk_DMS.ID = _ndx_RicoReqDocProt.RicoLogID;
+        rICOtblAx2Rk_DMS.Benutzer = _ndx_RicoReqDocProt.CreatedBy;
+        rICOtblAx2Rk_DMS.Aktion = enum2Symbol(enumNum(NDXRICODMSAction), _NDX_RicoReqDocProt.Action);
+        rICOtblAx2Rk_DMS.Dateiname = _ndx_RicoReqDocProt.Filename;
+        rICOtblAx2Rk_DMS.Betreff = _ndx_RicoReqDocProt.Name;
+
+        //init doc ref if resending the filecontent again
+        this.docuRef = DocuRef::findRecId(_ndx_RicoReqDocProt.DocuRefRecId);
+
+        // If docuvalue is empty
+        if(docuRef != null && docuValue == null && _NDX_RicoReqDocProt.Action == NDXRICODMSAction::Anlage)
+        {
+            docuvalue = DocuValue::find(docuRef.ValueRecId);
+        }
+       
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertDocument</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Insert document to RICO by azure relay
+    /// </summary>
+    /// <returns>True or false if record was inserted</returns>
+    private boolean insertDocument()
+    {
+        boolean ret;
+        System.Exception ex;
+        System.Net.Http.HttpResponseMessage httpResponseMessage;
+
+        const str Test = 'Test';
+
+        Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferRequest request = new  Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferRequest();
+        Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferResponseContent responseContent  = new Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferResponseContent();
+
+        str message = '';
+
+        rICOtblAx2Rk_DMS.Aktion = enum2Symbol(enumNum(NDXRICODMSAction), NDXRICODMSAction::Anlage);
+
+        if(docuRef && docuValue)
+        {
+            System.IO.Stream stream = new System.IO.MemoryStream();
+            DocumentManagement::getAttachmentStream(docuRef).CopyTo(stream);
+
+            request.rICOtblAx2Rk_DMS = rICOtblAx2Rk_DMS;
+            request.FileContent = stream;
+            
+            request.RicoDocumentFolder = lKCS_KBVParameters.NDXRICODMSFolder;
+            request.StartFileFolder = lKCS_KBVParameters.NDXRICOProgramStartFolder;
+
+            if(lKCS_KBVParameters.NDXTestEnvironment)
+            {
+                request.RicoDocumentFolder += Test;
+                request.StartFileFolder += Test;
+            }
+            
+            request.FileCreationAt = docuValue.CreatedDateTime;
+            
+            httpResponseMessage = Niedax.AzureRelayHelper.AzureRelayHelperNew::sendRequestToListener(azureRelayParameter, request);
+
+            if(httpResponseMessage.StatusCode == System.Net.HttpStatusCode::OK)
+            {
+                try
+                {
+                    responseContent =  NDXRicoRelayCommunication::analyzeResponse(httpResponseMessage);
+                    message = responseContent.Message;
+                    ret = !responseContent.Error;
+                }
+                catch(ex)
+                {
+                    message = ex.Message;
+                }
+            }
+            else
+            {
+                message = strFmt('%1', httpResponseMessage.ReasonPhrase);
+            }
+
+            if(ret)
+            {
+                info(message);
+            }
+            else
+            {
+                responseContent.record = rICOtblAx2Rk_DMS;
+                warning(message);
+            }
+        }
+        
+        responseContent.Message = message;
+        
+        //Log transfer information 
+        this.logNDX(NDXRICODMSAction::Anlage, !ret, responseContent);
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateDocument</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Update document to RICO by azure relay
+    /// </summary>
+    /// <returns>true or false if document was updated</returns>
+    private boolean updateDocument()
+    {
+        boolean ret;
+        System.Exception ex;
+        System.Net.Http.HttpResponseMessage httpResponseMessage;
+
+        Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferRequest request = new  Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferRequest();
+        Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferResponseContent responseContent = new Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferResponseContent();
+            
+        str message = '';
+        
+        rICOtblAx2Rk_DMS.Aktion = enum2Symbol(enumNum(NDXRICODMSAction), NDXRICODMSAction::AendBetr);
+        request.rICOtblAx2Rk_DMS = rICOtblAx2Rk_DMS;
+        httpResponseMessage = Niedax.AzureRelayHelper.AzureRelayHelperNew::sendRequestToListener(azureRelayParameter, request);
+
+        if(httpResponseMessage.StatusCode == System.Net.HttpStatusCode::OK)
+        {
+            try
+            {
+                responseContent =  NDXRicoRelayCommunication::analyzeResponse(httpResponseMessage);
+                message = responseContent.Message;
+                ret = !responseContent.Error;
+            }
+            catch(ex)
+            {
+                message = ex.Message;
+            }
+        }
+        else
+        {
+            message = strFmt('%1', httpResponseMessage.ReasonPhrase);
+        }
+
+        if(ret)
+        {
+            info(message);
+        }
+        else
+        {
+            responseContent.record = rICOtblAx2Rk_DMS;
+            warning(message);
+        }
+        
+        responseContent.Message = message;
+
+        //Log transfer information
+        this.logNDX(NDXRICODMSAction::AendBetr, !ret, responseContent);
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteDocument</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Update document to RICO by azure relay
+    /// </summary>
+    /// <returns>true or false if document deleted</returns>
+    private boolean deleteDocument()
+    {
+        boolean ret;
+        System.Exception ex;
+        System.Net.Http.HttpResponseMessage httpResponseMessage;
+
+        Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferRequest request = new  Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferRequest();
+        Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferResponseContent responseContent = new Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferResponseContent();
+            
+        str message = '';
+        rICOtblAx2Rk_DMS.Aktion = enum2Symbol(enumNum(NDXRICODMSAction), NDXRICODMSAction::Loeschen);
+        request.rICOtblAx2Rk_DMS = rICOtblAx2Rk_DMS;
+
+        httpResponseMessage = Niedax.AzureRelayHelper.AzureRelayHelperNew::sendRequestToListener(azureRelayParameter, request);
+
+        if(httpResponseMessage.StatusCode == System.Net.HttpStatusCode::OK)
+        {
+            try
+            {
+                responseContent =  NDXRicoRelayCommunication::analyzeResponse(httpResponseMessage);
+                message = responseContent.Message;
+                ret = !responseContent.Error;
+            }
+            catch(ex)
+            {
+                message = ex.Message;
+            }
+        }
+        else
+        {
+            message = strFmt('%1', httpResponseMessage.ReasonPhrase);
+        }
+
+        if(ret)
+        {
+            info(message);
+        }
+        else
+        {
+            responseContent.record = rICOtblAx2Rk_DMS;
+            warning(message);
+        }
+        
+        responseContent.Message = message;
+
+        //Log transfer information
+        this.logNDX(NDXRICODMSAction::Loeschen, !ret, responseContent);
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>logFromRico</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// transfer information from RICO log
+    /// </summary>
+    /// <param name = "_ndxRicoReqDocProt">RICOtblAx2Rk_DMS record</param>
+    static void logFromRico(NDXRicoReqDocProt _ndxRicoReqDocProt)
+    {
+        boolean ret;
+        System.Exception ex;
+        System.Net.Http.HttpResponseMessage httpResponseMessage;
+
+        Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferRequest request;
+        Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferResponseContent responseContent = new Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferResponseContent();
+        NDXRicoReqDocuTransfer lNDX_RicoReqDocuTransfer = new NDXRicoReqDocuTransfer(null, null);
+        
+        str message = '';
+
+        if(_ndxRicoReqDocProt)
+        {
+            request = new Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferRequest();
+            lNDX_RicoReqDocuTransfer.initByNDX_RicoReqDocProt(_ndxRicoReqDocProt);
+            request.rICOtblAx2Rk_DMS = lNDX_RicoReqDocuTransfer.rICOtblAx2Rk_DMS;
+            
+            httpResponseMessage = Niedax.AzureRelayHelper.AzureRelayHelperNew::sendRequestToListener(lNDX_RicoReqDocuTransfer.azureRelayParameter, request);
+
+            if(httpResponseMessage.StatusCode == System.Net.HttpStatusCode::OK)
+            {
+                try
+                {
+                    responseContent =  NDXRicoRelayCommunication::analyzeResponse(httpResponseMessage);
+                    message = responseContent.Message;
+                    ret = !responseContent.Error;
+                }
+                catch(ex)
+                {
+                    message = ex.Message;
+                }
+            }
+            else
+            {
+                message = strFmt('%1', httpResponseMessage.ReasonPhrase);
+            }
+        }
+        else
+        {
+            message = "@NDX:NDXRicoReqDocuTransferResultsImportInfo";
+        }
+
+        if(ret)
+        {
+            lNDX_RicoReqDocuTransfer.prozessRicoLog(responseContent, _ndxRicoReqDocProt);
+            Info(message);
+        }
+        else
+        {
+            responseContent.Error = true;
+            warning(message);
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>prozessRicoLog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Process the the recieved request content
+    /// </summary>
+    /// <param name = "_responseContent">response content</param>
+    /// <param name = "_ndxRicoReqDocProt">NDX_TRU_XML_Table record</param>
+    private void prozessRicoLog(Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferResponseContent _responseContent, NDXRicoReqDocProt _ndxRicoReqDocProt)
+    {
+        NDXRicoReqDocProt lNDXRicoReqDocProt = NDXRicoReqDocProt::find(_ndxRicoReqDocProt.RecId, true);
+        Niedax.RICOSchnittstelle_Nx.RICOtblAx2Rk_DMS record;
+        
+        //do nothing
+        if(_responseContent == null || !lNDXRicoReqDocProt)
+        {
+            return;
+        }
+
+        record = _responseContent.record;
+
+        //if only Error but no record something wen wrong with the request
+        if(_responseContent.Error && record == null)   //if content
+        {
+            return;
+        }
+        //if error and record id is < 0 this means the log on RICO side was deleted so we do not need it also on the AX side
+        else if(_responseContent.Error && record.ID < 0)
+        {
+            ttsbegin;
+            lNDXRicoReqDocProt.delete();
+            ttscommit;
+        }
+        //if error and record id is >= 0 this means there was some error in proceeding the request. Log the error message
+        else if(_responseContent.Error && record.ID >= 0)
+        {
+            lNDXRicoReqDocProt.RICOComment = _responseContent.Message;
+            lNDXRicoReqDocProt.update();
+        }
+        //Everything was fine the log the answer
+        else
+        {
+            ttsbegin;
+            lNDXRicoReqDocProt.RicoSatusStr = record.Status;
+            lNDXRicoReqDocProt.RICOStatus = NDXRicoReqDocuTransfer::parse2NDXRICODMSStatus(lNDXRicoReqDocProt.RicoSatusStr);
+            lNDXRicoReqDocProt.RICOComment = record.Bemerkung;
+            lNDXRicoReqDocProt.Transfer2RK = record.Transfer2RK;
+            lNDXRicoReqDocProt.update();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkRicoBVNr</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// check if RICO BV is already assigned
+    /// </summary>
+    /// <param name = "_action"></param>
+    /// <returns></returns>
+    boolean checkRicoBVNr(NDXRICODMSAction _action = NDXRICODMSAction::Anlage)
+    {
+        mNDX_RicoKalkBVNr = NDX_KBV2RicoKalkMap::get_BVNrRicoKalk(mKCS_KBVBuildingProjectID);
+        
+        if(mNDX_RicoKalkBVNr == 0)
+        {
+            this.logNDX(_action,true,null, "@NDX:NDXRicoReqDocuTransferInfo1");
+            return false;
+        }
+        rICOtblAx2Rk_DMS.BVNr = mNDX_RicoKalkBVNr;
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>logNDX</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Logs transfer information
+    /// </summary>
+    /// <param name = "_action">Request action</param>
+    /// <param name = "_errorOccured">error occured flag</param>
+    /// <param name = "_responseContent">response content</param>
+    private void logNDX(NDXRICODMSAction _action, boolean _errorOccured = false, Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferResponseContent _responseContent = null, str _comment = '')
+    {
+        NDXRicoReqDocProt lNDX_RicoReqDocProt;
+        Niedax.RICOSchnittstelle_Nx.RICOtblAx2Rk_DMS record;
+        Filename filename;
+        str fileType;
+
+        UserConnection connection = new UserConnection();
+
+        if(docuRef == null || docuRef.RecId == 0 || docuValue == null)
+        {
+            return;
+        }
+        lNDX_RicoReqDocProt.setConnection(connection);
+        
+        if(_action == NDXRICODMSAction::Loeschen && !docuValue)
+        {
+            lNDX_RicoReqDocProt = NDXRicoReqDocProt::findLastDocRefRecId(docuRef.RecId, true);
+
+            if(!lNDX_RicoReqDocProt)
+            {
+                return;
+            }
+
+            filename = lNDX_RicoReqDocProt.FileName;
+            fileType = lNDX_RicoReqDocProt.FileType;
+
+            while(lNDX_RicoReqDocProt)
+            {
+                ttsbegin;
+                lNDX_RicoReqDocProt.Deleted = NoYes::Yes;
+                lNDX_RicoReqDocProt.update();
+                ttscommit;
+                next lNDX_RicoReqDocProt;
+            }
+
+            lNDX_RicoReqDocProt.FileName = filename;
+            lNDX_RicoReqDocProt.FileType = fileType;
+        }
+        else
+        {
+            lNDX_RicoReqDocProt.FileName = docuValue.FileName;
+            lNDX_RicoReqDocProt.FileName = rICOtblAx2Rk_DMS.Dateiname;
+            
+            lNDX_RicoReqDocProt.FileType = docuValue.FileType;
+            
+            lNDX_RicoReqDocProt.Deleted = NoYes::No;
+        }
+
+        lNDX_RicoReqDocProt.KCSKBVRequestID = mKCS_KBVRequestID;
+        lNDX_RicoReqDocProt.KCSKBVBuildingProjectID = mKCS_KBVBuildingProjectID;
+        lNDX_RicoReqDocProt.NDXRicoKalkBVNr = mNDX_RicoKalkBVNr;
+        lNDX_RicoReqDocProt.Action = _action;
+        lNDX_RicoReqDocProt.DocuRefRecId = docuRef.RecId;
+        lNDX_RicoReqDocProt.Name = docuRef.Name;
+
+        lNDX_RicoReqDocProt.TransferedToRico = !_errorOccured;
+        lNDX_RicoReqDocProt.TypeId = docuRef.TypeId;
+        lNDX_RicoReqDocProt.Comment = _comment;
+        
+        if(_responseContent != null)
+        {
+            lNDX_RicoReqDocProt.Comment = _responseContent.Message;
+
+            if(_responseContent.record != null)
+            {
+                record = _responseContent.record;
+                lNDX_RicoReqDocProt.RicoLogID = record.ID;
+            }
+        }
+
+        lNDX_RicoReqDocProt.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>logRIC</Name>
+				<Source><![CDATA[
+    private void logRIC(NDXRicoReqDocProt _NDX_RicoReqDocProt)
+    {
+        this.initByNDX_RicoReqDocProt(_NDX_RicoReqDocProt);
+
+        switch(_NDX_RicoReqDocProt.Action)
+        {
+            case NDXRICODMSAction::Anlage:
+                NDXRicoReqDocuTransfer::transferToRico(DocuRef::findRecId(_ndx_RicoReqDocProt.DocuRefRecId), null, _ndx_RicoReqDocProt.Action);
+                this.insertDocument();
+                break;
+            case NDXRICODMSAction::AendBetr:
+                this.updateDocument();
+                break;
+            case NDXRICODMSAction::Loeschen:
+                this.deleteDocument();
+                break;
+        
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parse2NDXRICODMSStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Parse Rico status string to enum
+    /// </summary>
+    /// <param name = "_value">string value</param>
+    /// <returns>NDXRICODMSStatus enum</returns>
+    static public NDXRICODMSStatus parse2NDXRICODMSStatus(str _value)
+    {
+        NDXRICODMSStatus parsed;
+
+        switch(_value)
+        {
+            case 'uebernommen':
+                parsed = NDXRICODMSStatus::Accepted;
+                break;
+            case 'nicht uebernommen':
+                parsed = NDXRICODMSStatus::NotAccepted;
+                break;
+            case 'geloescht':
+                parsed = NDXRICODMSStatus::Deleted;
+                break;
+            default:
+                parsed = NDXRICODMSStatus::Processing;
+                break;
+        }
+
+        return  parsed;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>transferToRico</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Transfer docuRef docu value to RICO
+    /// </summary>
+    /// <param name = "_docuRef">docuref record</param>
+    /// <param name = "_docuValue">docuvalue record</param>
+    /// <param name = "_action">action</param>
+    /// <param name = "_abruf">Abruf number</param>
+    static public void transferToRico(DocuRef _docuRef, DocuValue _docuValue = null, NDXRICODMSAction _action = NDXRICODMSAction::Anlage, int _abruf = 0)
+    {
+        System.Exception ex;
+
+        KCS_KBVParameters lKCS_KBVParameters = KCS_KBVParameters::find();
+        NDXRicoReqDocuTransfer lNDX_RicoReqDocuTransfer;
+        DocuValue docuValue = _docuValue;
+
+        str message = '';
+
+        boolean transfered;
+
+        if(!lKCS_KBVParameters || lKCS_KBVParameters.NDXRICODMSExchange == NoYes::No)
+        {
+            return;
+        }
+
+        //if not a request and not ric dataareaId
+        if( !_docuRef || _docuRef.RefTableId != tablenum(KCS_KBVRequestTable) || _docuRef.RefCompanyId != 'RIC')
+        {
+            return;
+        }
+
+        //Nothing to transfer (We transfer only real file content)
+        if(_docuRef.ValueRecId <= 0)
+        {
+            return;
+        }
+
+        changecompany(_docuRef.RefCompanyId)
+        {
+            // If docuvalue is empty 
+            if(docuValue == null && _action == NDXRICODMSAction::Anlage)
+            {
+                docuvalue = DocuValue::find(_docuRef.ValueRecId);
+            }
+            
+            if(_docuRef)
+            {
+                lNDX_RicoReqDocuTransfer = new NDXRicoReqDocuTransfer(_docuRef, docuvalue, _abruf);
+
+                if(!lNDX_RicoReqDocuTransfer.checkRicoBVNr(_action))
+                {
+                    return;
+                }
+                
+                
+                if(!lNDX_RicoReqDocuTransfer.mKCS_KBVRequestID)
+                {
+                    return;
+                }
+
+                switch(_action)
+                {
+                    case NDXRICODMSAction::Anlage:
+                        transfered = lNDX_RicoReqDocuTransfer.insertDocument();
+                        if(!transfered)
+                        {
+                            message = "@NDX:NDXRicoReqDocuTransferInfo2";
+                        }
+                        break;
+                    case NDXRICODMSAction::AendBetr:
+                        transfered= lNDX_RicoReqDocuTransfer.updateDocument();
+                        if(!transfered)
+                        {
+                            message = "@NDX:NDXRicoReqDocuTransferInfo3";
+                        }
+                        
+                        break;
+                    case NDXRICODMSAction::Loeschen:
+                        transfered = lNDX_RicoReqDocuTransfer.deleteDocument();
+                        if(!transfered)
+                        {
+                            message = "@NDX:NDXRicoReqDocuTransferInfo4";
+                        }
+                        break;
+                }
+
+                if(transfered)
+                {
+                    info("@NDX:NDXRicoReqDocuTransferInfo5");
+                }
+                else
+                {
+                    Warning(strFmt('%1 \n %2',message,"@NDX:NDXRicoReqDocuTransferInfo6"));
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendRequestAgain</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Resend request
+    /// </summary>
+    /// <param name = "_ndx_RicoReqDocProt">request transfer protocol record</param>
+    static void sendRequestAgain(NDXRicoReqDocProt _ndx_RicoReqDocProt)
+    {
+        DocuRef docuRef;
+        NDXRicoReqDocProt lNDX_RicoReqDocProt;
+
+        NDXRicoReqDocuTransfer lNDX_RicoReqDocuTransfer = new NDXRicoReqDocuTransfer(null, null);
+        lNDX_RicoReqDocuTransfer.initByNDX_RicoReqDocProt(_NDX_RicoReqDocProt);
+
+        //if it was processed by rico do not resend
+        if(_ndx_RicoReqDocProt.Transfer2RK > DateTimeUtil::minValue() && _ndx_RicoReqDocProt.NDXRicoKalkBVNr > 0 && _ndx_RicoReqDocProt.RICOStatus == NDXRICODMSStatus::Accepted && _ndx_RicoReqDocProt.Comment == 'O.K.')
+        {
+            return;
+        }
+
+        if(_ndx_RicoReqDocProt.Transfer2RK > DateTimeUtil::minValue() && _ndx_RicoReqDocProt.NDXRicoKalkBVNr == 0 && _ndx_RicoReqDocProt.RICOStatus == NDXRICODMSStatus::NotAccepted)
+        {
+            if(NDX_KBV2RicoKalkMap::get_BVNrRicoKalk(_ndx_RicoReqDocProt.KCSKBVBuildingProjectID) > 0)
+            {
+                _ndx_RicoReqDocProt.TransferedToRico = NoYes::No;
+                _ndx_RicoReqDocProt.NDXRicoKalkBVNr = NDX_KBV2RicoKalkMap::get_BVNrRicoKalk(_ndx_RicoReqDocProt.KCSKBVBuildingProjectID);
+            }
+        }
+
+        //if file was not uploaded then resend
+        if(!_ndx_RicoReqDocProt.TransferedToRico)
+        {
+            //check if file was allready uploaded (What if the file must be send again?)
+            select firstonly lNDX_RicoReqDocProt
+                where lNDX_RicoReqDocProt.FileName == _ndx_RicoReqDocProt.FileName
+                    && lNDX_RicoReqDocProt.RecId != _ndx_RicoReqDocProt.RecId
+                    && lNDX_RicoReqDocProt.TransferedToRico
+                    && lNDX_RicoReqDocProt.Action == _ndx_RicoReqDocProt.Action;
+
+            if(lNDX_RicoReqDocProt)
+            {
+                info("@NDX:NDXRicoReqDocuTransferInfo7");
+                return;
+            }
+           
+            lNDX_RicoReqDocuTransfer.logRIC(_NDX_RicoReqDocProt);
+        }
+        //protcol entry where file is not deleted
+        else if(!_ndx_RicoReqDocProt.Deleted)
+        {
+            switch(_ndx_RicoReqDocProt.Action)
+            {
+                case NDXRICODMSAction::Anlage:
+                    docuRef = DocuRef::findRecId(_ndx_RicoReqDocProt.DocuRefRecId);
+                    if(docuRef)
+                    {
+                        NDXRicoReqDocuTransfer::transferToRico(docuRef, null, _ndx_RicoReqDocProt.Action);
+                    }
+                    break;
+                default:
+                    lNDX_RicoReqDocuTransfer.logRIC(_NDX_RicoReqDocProt);
+                    break;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>logToRico</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// logs information to RICO
+    /// </summary>
+    /// <param name = "_NDX_RicoReqDocProt">NDXRicoReqDocProt record</param>
+    static void logToRico(NDXRicoReqDocProt _NDX_RicoReqDocProt)
+    {
+        NDXRicoReqDocuTransfer lNDX_RicoReqDocuTransfer = new NDXRicoReqDocuTransfer(null, null);
+        lNDX_RicoReqDocuTransfer.initByNDX_RicoReqDocProt(_NDX_RicoReqDocProt);
+        lNDX_RicoReqDocuTransfer.logRIC(_NDX_RicoReqDocProt);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>constructor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Constructor
+    /// </summary>
+    /// <param name = "_docuRef">DocuRef record</param>
+    /// <param name = "_docuValue">DocuValue record</param>
+    /// <returns>NDXRicoReqDocuTransfer instance object</returns>
+    static public NDXRicoReqDocuTransfer constructor(DocuRef _docuRef, DocuValue _docuValue = null)
+    {
+        return new NDXRicoReqDocuTransfer(_docuRef, _docuValue);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    static void main(Args args = new Args())
+    {
+        NDXRicoReqDocProt lNDX_RicoReqDocProt;
+        DocuRef docuRef;
+
+        if(args)
+        {
+            switch(args.dataset())
+            {
+                case tablenum(NDXRicoReqDocProt):
+                    lNDX_RicoReqDocProt = args.record();
+                    NDXRicoReqDocuTransfer::sendRequestAgain(lNDX_RicoReqDocProt);
+                    break;
+                case tablenum(DocuRef):
+                    docuRef = args.record();
+                    //check if it was tranfered
+                    lNDX_RicoReqDocProt = NDXRicoReqDocProt::findLastDocRefRecId(docuRef.RecId);
+                    if(!lNDX_RicoReqDocProt || (lNDX_RicoReqDocProt && !lNDX_RicoReqDocProt.TransferedToRico))
+                    {
+                        NDXRicoReqDocuTransfer::transferToRico(docuRef, null, NDXRICODMSAction::Anlage);
+                    }
+                    break;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>transferDocumentsToRicoByRequest</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// transfer documents that are connected to KCS_KBVRequestTable record
+    /// </summary>
+    /// <param name = "_kCS_KBVRequestTable">KCS_KBVRequestTable record</param>
+    /// <param name = "_abruf">abruf number</param>
+    static void transferDocumentsToRicoByRequest(KCS_KBVRequestTable _kCS_KBVRequestTable, int _abruf = 0)
+    {
+        DocuRef lDocuRef = DocuRef::findTableIdRecId('ric', tableNum(KCS_KBVRequestTable), _kCS_KBVRequestTable.RecId);
+        DocuValue lDocuValue;
+        while(lDocuRef)
+        {
+            lDocuValue = DocuValue::find(lDocuRef.ValueRecId);
+            
+            NDXRicoReqDocuTransfer::transferToRico(lDocuRef, lDocuValue, NDXRICODMSAction::Anlage, _abruf);
+            next lDocuRef;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>resendFailedDocumentsToRico</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// transfer documents that were not transfered because of an error
+    /// </summary>
+    static void resendFailedDocumentsToRico()
+    {
+        NDXRicoReqDocProt lNDXRicoReqDocProt, alreadyTransferedlNDXRicoReqDocProt ;
+
+        while select lNDXRicoReqDocProt
+            where !lNDXRicoReqDocProt.TransferedToRico
+                && lNDXRicoReqDocProt.NDXRicoKalkBVNr != 0
+            notexists join alreadyTransferedlNDXRicoReqDocProt 
+                where alreadyTransferedlNDXRicoReqDocProt.TransferedToRico
+                && alreadyTransferedlNDXRicoReqDocProt.Action == lNDXRicoReqDocProt.Action
+                && alreadyTransferedlNDXRicoReqDocProt.DocuRefRecId == lNDXRicoReqDocProt.DocuRefRecId
+                && alreadyTransferedlNDXRicoReqDocProt.NDXRicoKalkBVNr == lNDXRicoReqDocProt.NDXRicoKalkBVNr
+        {
+            NDXRicoReqDocuTransfer::sendRequestAgain(lNDXRicoReqDocProt);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

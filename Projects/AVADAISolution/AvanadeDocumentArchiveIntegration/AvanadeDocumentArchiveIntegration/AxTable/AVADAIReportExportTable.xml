@@ -1,0 +1,828 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADAIReportExportTable</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class AVADAIReportExportTable extends common
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>hasMetaDataLines</Name>
+				<Source><![CDATA[
+    public boolean hasMetaDataLines()
+    {
+        return (select firstonly RecId from AVADAIReportExportLine
+            where AVADAIReportExportLine.ExportId == this.ExportId).RecId != 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    public static AVADAIReportExportTable find(
+        AVADAIExecutionId _executionId,
+        boolean _forUpdate = false,
+        UserConnection _userConnection = null)
+    {
+        AVADAIReportExportTable export;
+
+        if (_executionId)
+        {
+            export.selectForUpdate(_forUpdate);
+            if (_userConnection)
+            {
+                export.setConnection(_userConnection);
+            }
+
+            select firstonly export
+                where export.ExecutionId ==_executionId;
+        }
+
+        return export;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findAckFileName</Name>
+				<Source><![CDATA[
+    public static AVADAIReportExportTable findAckFileName(
+        AVADAIServerId _serverId,
+        AVADAIFileNameAck _fileNameAck, 
+        boolean _forUpdate = false,
+        UserConnection _userConnection = null)
+    {
+        AVADAIReportExportTable export;
+
+        if (_serverId && _fileNameAck)
+        {
+            export.selectForUpdate(_forUpdate);
+            if (_userConnection)
+            {
+                export.setConnection(_userConnection);
+            }
+
+            select firstonly export
+                where export.ServerId ==_serverId
+                    && export.AckFileName == _fileNameAck;
+        }
+
+        return export;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findAckByExecutionId</Name>
+				<Source><![CDATA[
+    public static AVADAIReportExportTable findAckByExecutionId(
+        AVADAIServerId      _serverId,
+        AVADAIExecutionId   _executionId,
+        boolean             _forUpdate = false)
+    {
+        AVADAIReportExportTable export;
+
+        if (_serverId && _executionId)
+        {
+            export.selectForUpdate(_forUpdate);
+
+            select firstonly export
+                where export.ServerId ==_serverId
+                    && export.ExecutionId == _executionId;
+
+        }
+
+        return export;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findPrevious</Name>
+				<Source><![CDATA[
+    public static AVADAIReportExportTable findPrevious(
+        AVADAIServerId _serverId, 
+        AVADAIReportName _reportName,
+        AVADAIReportDesign _designName,
+        AVADAIRefNum _refNum,
+        RecId _ignoreRecId)
+    {
+        AVADAIReportExportTable exportTable;
+
+        select firstonly exportTable
+            where exportTable.ServerId == _serverId
+                && exportTable.Report == _reportName
+                && exportTable.Design == _designName
+                && exportTable.RefNum == _refNum
+                && exportTable.ProcessStatus != AVADAIProcessStatus::Error
+                && exportTable.RecId != _ignoreRecId;
+
+        return exportTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteRecId</Name>
+				<Source><![CDATA[
+    public static void deleteRecId(RecId _recId)
+    {
+        AVADAIReportExportTable exportTable;
+
+        ttsbegin;
+
+        delete_from exportTable
+            where exportTable.RecId == _recId;
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findOrCreate</Name>
+				<Source><![CDATA[
+    public static AVADAIReportExportTable findOrCreate(
+        AVADAIReport _reportSetup,
+        AVADAIExecutionId _executionId,
+        boolean _forUpdate = false,
+        UserConnection _userConnection = null)
+    {
+        #OCCRetryCount
+        AVADAIReportExportTable exportTable, newExportTable;
+        
+        if (!_executionId)
+        {
+            throw error(strFmt("@SYS89866", fieldPName(AVADAIReportExportTable, ExecutionId)));
+        }
+
+        try
+        {
+            exportTable = AVADAIReportExportTable::find(_executionId, _forUpdate, _userConnection);
+            
+            if (!exportTable.RecId)
+            {        
+                if (_userConnection)
+                {
+                    newExportTable.setConnection(_userConnection);
+                }
+                newExportTable.clear();
+                newExportTable.ExportId        = _executionId;
+                newExportTable.ExecutionId     = _executionId;
+                newExportTable.Company         = curExt();
+                newExportTable.ServerId        = _reportSetup.ServerId;
+                newExportTable.Report          = _reportSetup.Report;
+                newExportTable.ReportType      = _reportSetup.ReportType;
+                newExportTable.Design          = _reportSetup.Design;
+                newExportTable.ProcessStatus   = AVADAIProcessStatus::InProgress;
+                newExportTable.insert();
+
+                exportTable.selectForUpdate(_forUpdate);
+                if (_userConnection)
+                {
+                    exportTable.setConnection(_userConnection);
+                }
+                select firstonly exportTable 
+                    where exportTable.RecId == newExportTable.RecId;
+            }
+        }
+        catch (Exception::DuplicateKeyException)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw Exception::DuplicateKeyExceptionNotRecovered;
+            }
+        }
+
+        return exportTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildReportWorkFileName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Buld file name for PDF export.
+    /// </summary>
+    /// <param name = "_report">Report configuration</param>
+    /// <param name = "_exportId">DMS export id</param>
+    /// <returns>Unique file name for pdf file</returns>
+    public static Filename buildReportWorkFileName(AVADAIReport _report, AVADAIExecutionId _executionId)
+    {
+        return _report.ReportFilePrefix + _executionId +'.' + _report.ReportFileExt;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildMetadataWorkFileName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Buld file name for meta data export.
+    /// </summary>
+    /// <param name = "_report">Report configuration</param>
+    /// <param name = "_executionId">Report execution id</param>
+    /// <returns>Unique file name for meta data file</returns>
+    public static Filename buildMetadataWorkFileName(AVADAIReport _report, AVADAIExecutionId _executionId)
+    {
+        return _report.ReportFilePrefix + _executionId + '.' + _report.MetadataFileExt;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getNewExportId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Generate new export id for entry in the table.
+    /// </summary>
+    /// <returns>New export id</returns>
+    public static AVADAIExportId getNewExportId()
+    {
+        System.DateTime dateTime    = System.DateTime::get_Now();
+        return dateTime.ToString('yyyMMddHHmmssffff');
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getProcessStatusReportExported</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Determines the process status at the point when the PDF is exported.
+    /// </summary>
+    /// <returns>In progress</returns>
+    public static AVADAIProcessStatus getProcessStatusReportExported()
+    {
+        return AVADAIProcessStatus::InProgress;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getProcessStatusReportPrepared</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Determines the process status at the point when the PDF is exported.
+    /// </summary>
+    /// <returns>In progress</returns>
+    public static AVADAIProcessStatus getProcessStatusReportPrepared()
+    {
+        return AVADAIProcessStatus::Prepared;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getProcessStatusMetadataExported</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Determines the process status at the point when the meta data is exported.
+    /// </summary>
+    /// <returns>In progress</returns>
+    public static AVADAIProcessStatus getProcessStatusMetadataExported()
+    {
+        return AVADAIProcessStatus::InProgress;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendToMessageQueue</Name>
+				<Source><![CDATA[
+    public void sendToMessageQueue()
+    {
+        ttsbegin;
+
+        AVADAIReport DAIReport = AVADAIReport::find(
+            this.ServerId,
+            this.Report,
+            this.Design);
+
+        if ( (DAIReport.ExportMetadata == NoYes::No || this.MetaDataExported == NoYes::Yes)
+            && (DAIReport.ExportReport == NoYes::No || this.ReportExported == NoYes::Yes)
+            && this.ProcessStatus != AVADAIProcessStatus::Exported 
+            && DAIReport.Active == NoYes::Yes)
+        {
+            if (DAIReport.ExportMetadata == NoYes::Yes)
+            {
+                AVAMSQTransformationDefinition transformationDefinition = AVAMSQTransformationDefinition::findId(DAIReport.MetadataTransfDefId);
+                if (transformationDefinition)
+                {
+                    AVAMSQProcessingQueue::insertIntoProcessQueue
+                    (transformationDefinition,
+                    int642Str(this.RecId),
+                    "",
+                    this.MetadataFileName);
+                }
+            }
+
+            if (DAIReport.ExportReport == NoYes::Yes)
+            {
+                AVADAIReportExportWork reportExportWork = AVADAIReportExportWork::find(this);
+
+                if (reportExportWork)
+                {
+                    AVAMSQProcessingQueue::insertIntoProcessQueueContainer(DAIReport.ReportTransfDefId, reportExportWork.ReportData, this.ReportFileName);//, this.ExecutionId);
+                }
+            }
+
+            this.ProcessStatus = AVADAIProcessStatus::Prepared;
+        }
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    public void update()
+    {
+        //only for the first time
+        if(this.ProcessStatus == AVADAIProcessStatus::InProgress)
+        {
+            this.sendToMessageQueue();
+        }
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// insert
+    /// </summary>
+    public void insert()
+    {
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteTempExportTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// delete the temporary export table
+    /// </summary>
+    /// <param name = "_executionId"></param>
+    static public void deleteTempExportTable(AVADAIExecutionId _executionId)
+    {
+        // delete PDF and protocol entry if it was created
+        UserConnection userConnection = new UserConnection();
+        userConnection.ttsBegin();
+        AVADAIReportExportTable exportTable = AVADAIReportExportTable::find(_executionId, true, userConnection);
+        if (exportTable)
+        {
+            exportTable.delete();
+        }
+        userConnection.ttsCommit();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<ConfigurationKey>AVADAI</ConfigurationKey>
+	<DeveloperDocumentation>@AVADAI:ReportExportTableDevDoc</DeveloperDocumentation>
+	<FormRef>AVADAIReportExportForm</FormRef>
+	<Label>@AVADAI:ReportExport</Label>
+	<TableGroup>WorksheetHeader</TableGroup>
+	<TitleField1>ExportId</TitleField1>
+	<TitleField2>ExecutionId</TitleField2>
+	<CacheLookup>NotInTTS</CacheLookup>
+	<CreatedBy>Yes</CreatedBy>
+	<CreatedDateTime>Yes</CreatedDateTime>
+	<ModifiedBy>Yes</ModifiedBy>
+	<ModifiedDateTime>Yes</ModifiedDateTime>
+	<ReplacementKey>ExecutionIdIdx</ReplacementKey>
+	<SaveDataPerCompany>No</SaveDataPerCompany>
+	<DeleteActions>
+		<AxTableDeleteAction>
+			<Name>DeleteAction1</Name>
+			<DeleteAction>Cascade</DeleteAction>
+			<Relation>ReportExportTable</Relation>
+			<Table>AVADAIReportExportWork</Table>
+			<Tags></Tags>
+		</AxTableDeleteAction>
+	</DeleteActions>
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>CreatedDateTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ServerId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ExecutionId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Report</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Design</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Company</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>RefNum</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MetaDataId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MetaDataFileName</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AckFileName</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DMSDocumentId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DMSDocumentUrl</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ReportLanguage</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CompanyLanguage</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProcessStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ErrorMsg</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>ServerId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Design</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ExecutionId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>RefNum</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Report</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MetaDataId</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>ExecutionId</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Overview</Name>
+			<Label>@SYS9039</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>CreatedDateTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProcessStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ServerId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ExportId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ExecutionId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Report</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Design</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Company</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>RefNum</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MetaDataId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MetaDataExported</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ReportExported</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DMSDocumentId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DMSDocumentUrl</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ReportLanguage</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CompanyLanguage</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MetaDataExportDateTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ErrorMsg</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ReportType</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Filenames</Name>
+			<Label>@AVADAI:Files</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>ReportFileName</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MetaDataFileName</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AckFileName</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ExportId</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>AVADAIExportId</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ServerId</Name>
+			<ExtendedDataType>AVADAIServerId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Design</Name>
+			<ExtendedDataType>AVADAIReportDesign</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ExecutionId</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>AVADAIExecutionId</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>RefNum</Name>
+			<ExtendedDataType>AVADAIRefNum</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Report</Name>
+			<ExtendedDataType>AVADAIReportName</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>MetaDataId</Name>
+			<ExtendedDataType>AVADAIMetaDataId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>MetaDataFileName</Name>
+			<ExtendedDataType>AVADAIMetaDataFileName</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>AckFileName</Name>
+			<ExtendedDataType>AVADAIFileNameAck</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>DMSDocumentId</Name>
+			<ExtendedDataType>AVADAIDocumentId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>DMSDocumentUrl</Name>
+			<ExtendedDataType>AVADAIDocumentUrl</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Company</Name>
+			<ExtendedDataType>DataAreaId</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ReportLanguage</Name>
+			<ExtendedDataType>LanguageId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@AVADAI:ReportLanguage</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CompanyLanguage</Name>
+			<ExtendedDataType>LanguageId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@AVADAI:CompanyLanguage</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ProcessStatus</Name>
+			<EnumType>AVADAIProcessStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>MetaDataExported</Name>
+			<ExtendedDataType>AVADAIMetaDataExported</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ReportExported</Name>
+			<ExtendedDataType>AVADAIReportExported</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ErrorMsg</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>AVADAIErrorMsg</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ReportFileName</Name>
+			<ExtendedDataType>AVADAIReportFileName</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>MetaDataExportDateTime</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>AVADAIMetaDataExportDateTime</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ReportType</Name>
+			<EnumType>AVADAIReportType</EnumType>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>ExportIdIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>ExportId</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>createdDateTimeIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>CreatedDateTime</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>ExecutionIdIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>ExecutionId</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>AVADAIReportMetadata</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>AVADAIReportMetadata</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Role>setup</Role>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>MetaDataId</Name>
+					<Field>MetaDataId</Field>
+					<RelatedField>MetaDataId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>DMSServer</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>AVADAIServer</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>ServerId</Name>
+					<Field>ServerId</Field>
+					<RelatedField>ServerId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>DataArea</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>DataArea</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Company</Name>
+					<Field>Company</Field>
+					<RelatedField>id</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>CompanyLanguage</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>LanguageTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>CompanyLanguage</Name>
+					<Field>CompanyLanguage</Field>
+					<RelatedField>LanguageId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>ReportLanguage</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>LanguageTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>ReportLanguage</Name>
+					<Field>ReportLanguage</Field>
+					<RelatedField>LanguageId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

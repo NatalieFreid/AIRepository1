@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACustQuotationTransDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed by AVANADE
+/// </summary>
+[ExtensionOf(tableStr(CustQuotationTrans))]
+final class AVACustQuotationTransDbt_Extension
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>AVAsetWeightPE</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE KCS_setWeightPE from AX2009 
+    /// </summary>
+    /// <param name = "_quotLine">SalesQuotationLine</param>
+    /// <returns>Weight</returns>
+    Weight AVAsetWeightPE(SalesQuotationLine _quotLine)
+    {
+        InventTable         inventTable;
+        InventTableModule   inventTableModule;
+        Weight              ret;
+
+        inventTable       = InventTable::find(_quotLine.ItemId);
+        inventTableModule = inventTableModule::find(_quotLine.ItemId, ModuleInventPurchSales::Sales);
+        ret = inventTable.NetWeight * inventTableModule.PriceUnit;        
+        ret = EcoResProductUnitConverter::convertForReleasedProduct(_quotLine.ItemId, _quotLine.InventDimId, ret, UnitOfMeasure::findBySymbol('g').RecId, UnitOfMeasure::findBySymbol('kg').RecId, NoYes::No, NoYes::No);
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAsetWeightTotal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE KCS_setWeightTotal from AX2009
+    /// </summary>
+    /// <param name = "_quotLine">SalesQuotationLine</param>
+    /// <param name = "_peWeight">Weight</param>
+    /// <returns>Weight</returns>
+    Weight AVAsetWeightTotal(SalesQuotationLine _quotLine, Weight _peWeight)
+    {
+        return _peWeight * _quotLine.SalesQty / _quotLine.PriceUnit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromSalesQuotationLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_salesQuotationLine">SalesQuotationLine</param>
+    void initFromSalesQuotationLine(SalesQuotationLine  _salesQuotationLine)
+    {
+        next initFromSalesQuotationLine(_salesQuotationLine);
+
+        this.KCS_CRMIsAlternativeLine   = _salesQuotationLine.KCS_CRMIsAlternativeLine;
+        this.KCS_Span                   = _salesQuotationLine.KCS_Span;
+        this.KCS_QLLVPosition           = _salesQuotationLine.KCS_QLLVPosition;
+        this.KCS_QLInternalPosition     = _salesQuotationLine.KCS_QLInternalPosition;
+        this.KCS_QLLVAmount             = _salesQuotationLine.KCS_QLLVAmount;
+        this.KCS_QLLVPrice              = _salesQuotationLine.KCS_QLLVPrice;
+        this.KCS_NotCalculated          = _salesQuotationLine.KCS_NotCalculated;
+        this.KCS_SonderHK               = _salesQuotationLine.KCS_SonderHK;
+        this.KCS_BOSSpecialPrice        = _salesQuotationLine.KCS_BOSSpecialPrice;
+        //this.KCS_GrossWeightME          = this.AVAsetWeightPE(_salesQuotationLine);
+        //this.KCS_GrossWeightTotal       = this.AVAsetWeightTotal(_salesQuotationLine, this.KCS_GrossWeightME);
+        this.KCS_QuotationShorttext     = _salesQuotationLine.KCS_QuotationShorttext;
+        this.KCS_GAEBOZ                 = _salesQuotationLine.KCS_GAEBOZ;
+        this.KCS_ModelNumber            = _salesQuotationLine.KCS_ModelNumber;
+        this.AVAPriceSurchargeCode          = _salesQuotationLine.AVAPriceSurchargeCode;
+        this.AVAPriceSurchargePercentage    = _salesQuotationLine.AVAPriceSurchargePercentage;
+        this.AVABarCode                 = _salesQuotationLine.BarCode;
+        this.AVABarCodeType             = _salesQuotationLine.BarCodeType;
+        this.AVAIntrastatCommodity      = _salesQuotationLine.IntrastatCommodity;
+        this.AVAPAInfo                  = _salesQuotationLine.AVAPAInfo;
+        this.AVAPriceDate               = _salesQuotationLine.KCS_PriceDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetLVLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns first CustQuotationTrans matching this record and having QLInternalPosition equal to 1
+    /// </summary>
+    /// <returns>CustQuotationTrans</returns>
+    public CustQuotationTrans avaGetLVLine()
+    {
+        CustQuotationTrans custQuotationTransLoc;
+
+        select firstonly custQuotationTransLoc
+            where custQuotationTransLoc.KCS_QLLVPosition == this.KCS_QLLVPosition
+            && custQuotationTransLoc.QuotationDate == this.QuotationDate
+            && custQuotationTransLoc.QuotationId == this.QuotationId
+            && custQuotationTransLoc.KCS_QLInternalPosition == 1;
+
+        return custQuotationTransLoc;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaIsLastInternalLVLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns the CustQuotationTrans matching this record and having the highest QLInternalPosition
+    /// </summary>
+    /// <returns>CustQuotationTrans</returns>
+    public boolean avaIsLastInternalLVLine()
+    {
+        CustQuotationTrans custQuotationTransLoc;
+
+        select firstonly custQuotationTransLoc
+            order by custQuotationTransLoc.KCS_QLInternalPosition desc
+            where custQuotationTransLoc.KCS_QLLVPosition == this.KCS_QLLVPosition
+            && custQuotationTransLoc.QuotationDate == this.QuotationDate
+            && custQuotationTransLoc.QuotationId == this.QuotationId;
+
+        if(custQuotationTransLoc.KCS_QLInternalPosition == this.KCS_QLInternalPosition)
+        {
+            return true;
+        }
+        
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetQLLVAmountSum</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns sum of KCS_QLLVAmount from all related CustQuotationTrans lines
+    /// </summary>
+    /// <returns>KCS_QLLVAmount</returns>
+    public KCS_QLLVAmount avaGetQLLVAmountSum()
+    {
+        CustQuotationTrans custQuotationTransLoc;
+
+        select sum(KCS_QLLVAmount) from custQuotationTransLoc
+            where custQuotationTransLoc.KCS_QLLVPosition == this.KCS_QLLVPosition
+            && custQuotationTransLoc.QuotationDate == this.QuotationDate
+            && custQuotationTransLoc.QuotationId == this.QuotationId;
+
+        return custQuotationTransLoc.KCS_QLLVAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAMaxInternalPosition</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/05/06    AVA_013252_AltItemsWithSpan
+    /// </summary>
+    /// <param name = "_quotationId">QuotationIdBase</param>
+    /// <param name = "_lVPosition">KCS_QLLVPosition</param>
+    /// <returns>KCS_QLInternalPosition</returns>
+    static KCS_QLInternalPosition  AVAMaxInternalPosition(QuotationIdBase   _quotationId, KCS_QLLVPosition _lVPosition)
+    {
+        CustQuotationTrans      custQuotationTrans;
+
+        select maxof(KCS_QLInternalPosition) from custQuotationTrans where CustQuotationTrans.QuotationId                == _quotationId      &&
+                                                  CustQuotationTrans.KCS_QLLVPosition           == _lVPosition;
+        return CustQuotationTrans.KCS_QLInternalPosition;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

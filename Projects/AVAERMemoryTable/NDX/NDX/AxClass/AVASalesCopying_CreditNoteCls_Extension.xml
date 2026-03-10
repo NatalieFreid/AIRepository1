@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesCopying_CreditNoteCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>AVASalesCopying_CreditNoteCls_Extension</c> class is the extension for <c>SalesCopying_CreditNote</c>
+/// </summary>
+[ExtensionOf(classStr(SalesCopying_CreditNote))]
+final class AVASalesCopying_CreditNoteCls_Extension
+{
+    public boolean clsAVACalcSalesLine;
+    public boolean clsAVASalesOrderCreditNote;
+    public boolean clsAVASalesOrderCreditNoteSingle;
+    public boolean clsAVASalesOrderSearch;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>copyLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>parmDlvModeIdParmeterVisible</c> method.
+    /// </summary>
+    /// <param name="_salesLine">
+    ///    <c>SalesLine</c> as type
+    /// </param>
+    /// <param name="_salesLineCopyFromSource">
+    ///    <c>SalesLineCopyFromSource</c> as type
+    /// </param>
+    protected void copyLine(    SalesLine               _salesLine,
+                                SalesLineCopyFromSource _salesLineCopyFromSource)
+    {
+        CustInvoiceJour     locCustInvoiceJour;
+        CustInvoiceTrans    locCustInvoiceTrans;
+        SalesLine           locSalesLineOrig;
+
+        next copyLine(  _salesLine, 
+                        _salesLineCopyFromSource);
+
+        locCustInvoiceJour  = custInvoiceJour;
+        locSalesLineOrig    = SalesLine::findInventTransId(_salesLine.InventTransIdReturn);
+        locCustInvoiceTrans = CustInvoiceTrans::findInventTransId(locSalesLineOrig.InventTransId);
+        
+        _salesLine          = this.avaSetSalesLineFieldsForCreditNote(  _salesLine, 
+                                                                        locCustInvoiceTrans,
+                                                                        locSalesLineOrig    );
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetSalesLineFieldsForCreditNote</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaSetSalesLineFieldsForCreditNote</c> method.
+    /// </summary>
+    /// <param name="_salesLine">
+    ///     <c>SalesLine</c> as type
+    /// </param>
+    /// <param name="_custInvoiceTrans">
+    ///     <c>CustInvoiceTrans</c> as type
+    /// </param>
+    /// <param name="_salesLineInvoiced">
+    ///     <c>SalesLine</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>SalesLine</c> as return value
+    /// </returns>
+    public SalesLine avaSetSalesLineFieldsForCreditNote(    SalesLine           _salesLine, 
+                                                            CustInvoiceTrans    _custInvoiceTrans,
+                                                            SalesLine           _salesLineInvoiced  )
+    {
+        SalesLine           locSalesLine;
+        InventTransOrigin   locInventTransOriginSaleLine;
+        AVASpecialDiscCopy  locAVASpecialDiscCopy;
+        SalesLine           locSalesLineRecalc;
+        InventTransOrigin   locInventTransOriginSaleLineRecalc;
+        SalesQty            locSalesQtyNegated;
+
+        InventMovementQuantityErrorCorrectionMethod locIMQECM;
+        InventMovementQuantityErrorCorrectionMethods locInventMovementQuantityErrorCorrectionMethods;
+
+        if(     _salesLine.RecId 
+            &&  _custInvoiceTrans.RecId )
+        {
+            ttsbegin;
+            locSalesLine = _salesLine;
+            locSalesLine.selectForUpdate(true);
+
+            locSalesLine.InventDimId                    = this.getCreditNoteInventDimId(_custInvoiceTrans);
+            locSalesLine.AVAQuotationId                 = _custInvoiceTrans.AVAQuotationId;
+            locSalesLine.AVAPriceSurchargeCode          = _custInvoiceTrans.AVAPriceSurchargeCode;
+            locSalesLine.AVAPriceSurchargePercentage    = _custInvoiceTrans.AVAPriceSurchargePercentage;
+            if(_custInvoiceTrans.AVAItemSet)
+            {
+                if(clsAVASalesOrderCreditNote)
+                {
+                    locSalesLine.AVAItemSet             = NoYes::No;
+                }
+                locSalesLine.StockedProduct             = NoYes::No;
+            }
+
+            locSalesLine.LineAmount                     = locSalesLine.calcLineAmount();
+
+            if(clsAVASalesOrderCreditNote)
+            {
+                locSalesLine.ExpectedRetQty             = locSalesLine.SalesQty;
+                locSalesLine.LineAmount                 = locSalesLine.returnLineAmount(); //base is ExpectedRetQty
+
+                locIMQECM = InventMovementQuantityErrorCorrectionMethod::AcceptUserInput;
+                locInventMovementQuantityErrorCorrectionMethods = locSalesLineRecalc.parmQuantityErrorCorrectionMethods();
+                locInventMovementQuantityErrorCorrectionMethods.setAllErrorCorrectionMethods(locIMQECM);
+                locSalesLine.parmQuantityErrorCorrectionMethods(locInventMovementQuantityErrorCorrectionMethods);
+                /*
+                locSalesLine.parmQuantityErrorCorrectionMethods().parmLowerLimitErrorCorrectionMethod(locIMQECM);
+                locSalesLine.parmQuantityErrorCorrectionMethods().parmUpperLimitErrorCorrectionMethod(locIMQECM);
+                locSalesLine.parmQuantityErrorCorrectionMethods().parmMultiplicityErrorCorrectionMethod(locIMQECM);
+                */
+            }
+            locSalesLine.SalesDeliverNow                = locSalesLine.SalesQty;
+            locSalesLine.InventDeliverNow               = EcoResProductUnitConverter::convertGivenUnitSymbolsForReleasedProduct(locSalesLine.ItemId,
+                                                                                                                                locSalesLine.InventDimId,
+                                                                                                                                locSalesLine.SalesQty,
+                                                                                                                                locSalesLine.SalesUnit,
+                                                                                                                                locSalesLine.inventTable(locSalesLine.ItemId).inventUnitId(),
+                                                                                                                                true);
+
+            locSalesLine.update();
+        
+            // copy special discounts
+            /*
+            locAVASpecialDiscCopy = new AVASpecialDiscCopy();
+            locAVASpecialDiscCopy.copyFromTo(_custInvoiceTrans, _salesLine);
+            */
+
+            // recalc
+            if(clsAVACalcSalesLine)
+            {
+                /*
+                buf2Buf(locSalesLine, locSalesLineRecalc);
+                locSalesLineRecalc.InventTransId    = '';
+                */
+                locSalesQtyNegated = locSalesLine.SalesQty * (-1);
+
+                locSalesLineRecalc.initFromSalesTable(SalesTable::find(locSalesLine.SalesId));
+                locSalesLineRecalc.initFromSalesLine(_salesLineInvoiced, true, true, true, locSalesQtyNegated, locSalesQtyNegated);
+                locSalesLineRecalc.itemIdChanged(true);
+                locSalesLineRecalc.InventDimId          = this.getCreditNoteInventDimId(_custInvoiceTrans);
+                locSalesLineRecalc.LineNum              += locSalesLine.LineNum + 0.1;
+                locSalesLineRecalc.RemainSalesPhysical  = locSalesQtyNegated;
+                locSalesLineRecalc.RemainInventPhysical = locSalesLineRecalc.QtyOrdered;
+                locSalesLineRecalc.LineAmount           = locSalesLineRecalc.calcLineAmount();
+                locSalesLineRecalc.SalesDeliverNow      = locSalesQtyNegated;
+                locSalesLineRecalc.InventDeliverNow     = EcoResProductUnitConverter::convertGivenUnitSymbolsForReleasedProduct(locSalesLineRecalc.ItemId,
+                                                                                                                                locSalesLineRecalc.InventDimId,
+                                                                                                                                locSalesQtyNegated,
+                                                                                                                                locSalesLineRecalc.SalesUnit,
+                                                                                                                                locSalesLineRecalc.inventTable(locSalesLineRecalc.ItemId).inventUnitId(),
+                                                                                                                                true);
+
+                locSalesLineRecalc.AVACalcSalesLine     = NoYes::Yes;
+                if(locSalesLineRecalc.AVAItemSet)
+                {
+                    if(clsAVASalesOrderCreditNote)
+                    {
+                        locSalesLineRecalc.AVAItemSet           = NoYes::No;
+                        locSalesLineRecalc.AVAItemSetExpanded   = NoYes::No;
+                    }
+                }
+                locSalesLineRecalc.insert();
+                //locSalesLineRecalc.insert(false, false);
+
+                if(clsAVASalesOrderCreditNote)
+                {
+                    locIMQECM = InventMovementQuantityErrorCorrectionMethod::AcceptUserInput;
+                    locInventMovementQuantityErrorCorrectionMethods = locSalesLineRecalc.parmQuantityErrorCorrectionMethods();
+                    locInventMovementQuantityErrorCorrectionMethods.setAllErrorCorrectionMethods(locIMQECM);
+                    locSalesLineRecalc.parmQuantityErrorCorrectionMethods(locInventMovementQuantityErrorCorrectionMethods);
+                }
+
+
+                locSalesLineRecalc.salesQtyModifiedInteraction(false);
+                //SalesLine::modifySalesQty(locSalesLineRecalc, locSalesLineRecalc.inventDim(), true, false);
+
+                // copy special discounts
+                /*
+                locAVASpecialDiscCopy                   = new AVASpecialDiscCopy();
+                locAVASpecialDiscCopy.copyFromTo(_salesLineInvoiced, locSalesLineRecalc, true);
+                */
+
+                // marking
+                locInventTransOriginSaleLine            = InventTransOrigin::findByInventTransId(locSalesLine.InventTransId);
+                locInventTransOriginSaleLineRecalc      = InventTransOrigin::findByInventTransId(locSalesLineRecalc.InventTransId);
+
+                //Establish hard marking between this credit note line and the sales order line
+                InventTransOrigin::updateMarking(   locInventTransOriginSaleLineRecalc.RecId,
+                                                    locInventTransOriginSaleLine.RecId,
+                                                    -locSalesLine.SalesQty                      );
+                InventTransOrigin::updateMarking(   locInventTransOriginSaleLine.RecId,
+                                                    locInventTransOriginSaleLineRecalc.RecId,
+                                                    locSalesLineRecalc.SalesQty                 );
+            }
+
+            ttscommit;
+        }
+        return locSalesLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCreditNoteInventDimId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>getCreditNoteInventDimId</c> method.
+    /// </summary>
+    /// <param name="_custInvoiceTrans">
+    ///     <c>CustInvoiceTrans</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>InventDimId</c> as return value
+    /// </returns>
+    public InventDimId getCreditNoteInventDimId(CustInvoiceTrans _custInvoiceTrans)
+    {
+        InventDimId retVal;
+        
+        InventTable         locInventTable;
+        InventDim           locInventDimBase;
+        InventDim           locInventDimNew;
+        AVASalesParameters  locAVASalesParameters;
+
+        locAVASalesParameters   = AVASalesParameters::find();
+        
+        locInventTable          = _custInvoiceTrans.inventTable();
+        locInventDimBase        = InventDim::find(_custInvoiceTrans.InventDimId);
+
+        buf2Buf(locInventDimBase, locInventDimNew);
+        //locInventDimNew.InventSiteId        = locInventDimBase.InventSiteId;
+        //locInventDimNew.ConfigId            = locInventTable.StandardConfigId;
+
+        locInventDimNew.wMSLocationId       = InventLocation::find(locInventDimBase.InventLocationId).DefaultReturnCreditOnlyLocation; //Standardlagerplatz für Rücklieferungen vom Typ "Nur gutschreiben"
+        if(clsAVASalesOrderCreditNote)
+        {
+            locInventDimNew.InventStatusId  = locAVASalesParameters.InventStatusId; //WHSInventStatusId „Bestandsstatus GS“
+        }
+
+        locInventDimNew                     = InventDim::findOrCreate(locInventDimNew);
+        
+        retVal                              = locInventDimNew.InventDimId;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initParametersFromContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Initializes current instance with Credit Note creation parameters from the <c>SalesOrderCreditNoteContract</c> object.
+    /// </summary>
+    /// <param name="_salesOrderCopyingContract">
+    ///     An instance of <c>SalesOrderCreditNoteContract</c> class.
+    /// </param>
+    public void initParametersFromContract(SalesOrderCopyingContract _salesOrderCopyingContract)
+    {
+        clsAVACalcSalesLine                 = _salesOrderCopyingContract.parmAVACalcSalesLine();
+        clsAVASalesOrderCreditNote          = _salesOrderCopyingContract.parmAVASalesOrderCreditNote();
+        clsAVASalesOrderCreditNoteSingle    = _salesOrderCopyingContract.parmAVASalesOrderCreditNoteSingle();
+        clsAVASalesOrderSearch              = _salesOrderCopyingContract.parmAVASalesOrderSearch();
+
+        next initParametersFromContract(_salesOrderCopyingContract);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

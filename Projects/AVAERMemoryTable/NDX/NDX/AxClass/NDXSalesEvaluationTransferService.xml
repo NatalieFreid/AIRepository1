@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXSalesEvaluationTransferService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using Niedax.SalesEvaluationTransfer.Models;
+
+public class NDXSalesEvaluationTransferService
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>transferInvoices</Name>
+				<Source><![CDATA[
+    public void transferInvoices(str _dataSet)
+    {
+        NDXCustInvoiceJourContract custInvoiceJourContract = NDXCustInvoiceJourContract::deserialize(_dataSet); 
+
+        changecompany(custInvoiceJourContract.DATAAREAID)
+        {
+            CustInvoiceJour custInvoiceJour;
+            MarkupTrans markUpTrans;
+            CustInvoiceTrans custInvoiceTrans;
+            markUpTrans markUpTransTrans;
+            InventTransOrigin inventTransOrigin;
+            InventTrans inventTrans;
+
+            ttsbegin;
+            custInvoiceJour.CustGroup       = custInvoiceJourContract.CustGroup;
+            custInvoiceJour.InvoiceAccount  = custInvoiceJourContract.INVOICEACCOUNT;
+            custInvoiceJour.InvoiceDate     = custInvoiceJourContract.INVOICEDATE;
+            custInvoiceJour.OrderAccount    = custInvoiceJourContract.ORDERACCOUNT;
+            custInvoiceJour.LanguageId      = custInvoiceJourContract.LANGUAGEID;
+            custInvoiceJour.InvoiceId       = custInvoiceJourContract.INVOICEID;
+            custInvoiceJour.CurrencyCode    = custInvoiceJourContract.CURRENCYCODE;
+            custInvoiceJour.SalesBalance    = custInvoiceJourContract.SALESBALANCE;
+            custInvoiceJour.SalesId         = custInvoiceJourContract.SALESID;
+            custInvoiceJour.SalesBalanceMST = custInvoiceJourContract.SALESBALANCEMST;
+            custInvoiceJour.SalesType       = custInvoiceJourContract.SALESTYPE;
+            custInvoiceJour.doInsert();
+
+            NDXCustInvoiceTransContract custInvoiceTransContract = custInvoiceJourContract.getFirstInvoiceTrans();
+            
+                
+            while(custInvoiceTransContract)
+            {
+                custInvoiceTrans.ItemId                         = custInvoiceTransContract.ITEMID;
+                custInvoiceTrans.InvoiceId                      = custInvoiceTransContract.INVOICEID;
+                custInvoiceTrans.SalesId                        = custInvoiceTransContract.SALESID;
+                custInvoiceTrans.InvoiceDate                    = custInvoiceTransContract.INVOICEDATE;
+                custInvoiceTrans.CurrencyCode                   = custInvoiceTransContract.CURRENCYCODE;
+                custInvoiceTrans.LineCreationSequenceNumber     = custInvoiceTrans.nextLineCreationSequence();
+                custInvoiceTrans.LineAmount                     = custInvoiceTransContract.LINEAMOUNT;
+                custInvoiceTrans.LineAmountMST                  = custInvoiceTransContract.LINEAMOUNTMST;
+                custInvoiceTrans.InventTransId                  = custInvoiceTransContract.INVENTTRANSID;
+                custInvoiceTrans.doInsert();
+
+
+                NDXInventTransContract inventTransContract = custInvoiceTransContract.getFirstInventTrans();
+                while(inventTransContract)
+                {
+                    inventTransOrigin = InventTransOrigin::findByInventTransId(inventTransContract.INVENTTRANSID);
+                    if(!inventTransOrigin)
+                    {
+                        inventTransOrigin.InventTransId = inventTransContract.INVENTTRANSID;
+                        inventTransOrigin.ItemId = inventTransContract.ITEMID;
+                        inventTransOrigin.doInsert();
+                    }
+                    inventTrans.CostAmountPosted        = inventTransContract.COSTAMOUNTPOSTED;
+                    inventTrans.CostAmountAdjustment    = inventTransContract.COSTAMOUNTADJUSTMENT;
+                    inventTrans.Qty                     = inventTransContract.QTY;
+                    inventTrans.inventTransOrigin       = inventTransOrigin.RecId;
+                    inventTrans.inventDimId             = inventTransContract.INVENTDIMID;
+                    inventTrans.StatusIssue             = inventTransContract.STATUSISSUE;
+                    inventTrans.StatusReceipt           = inventTransContract.STATUSRECEIPT;
+                    inventTrans.PackingSlipReturned     = inventTransContract.PACKINGSLIPRETURNED;
+                    inventTrans.InvoiceId               = inventTransContract.INVOICEID;
+                    inventTrans.DateFinancial           = inventTransContract.DATEFINANCIAL;
+                    inventTrans.doInsert();
+
+                    inventTransContract = custInvoiceTransContract.nextInventTrans();
+                }
+
+                NDXMarkupTransContract markUpTransContract = custInvoiceTransContract.getFirstMarkUpTrans();
+                while(markUpTransContract)
+                {
+                    markUpTransTrans.MarkupCode         = markUpTransContract.MARKUPCODE;
+                    markUpTransTrans.TransTableId       = custInvoiceTrans.TableId;
+                    markUpTransTrans.TransRecId         = custInvoiceTrans.RecId;
+                    markUpTransTrans.LineNum            = markUpTransContract.LINENUM;
+                    markUpTransTrans.CalculatedAmount   = markUpTransContract.CALCULATEDAMOUNT;
+                    markUpTransTrans.Value              = markUpTransContract.VALUE;
+                    markUpTransTrans.doInsert();
+
+                    markUpTransContract = custInvoiceTransContract.nextMarkupTrans();
+                }
+
+                custInvoiceTransContract = custInvoiceJourContract.nextInvoiceTrans();
+            }
+
+            NDXMarkupTransContract markupTransInvoiceContract = custInvoiceJourContract.getFirstMarkUpTrans();
+            while(markupTransInvoiceContract)
+            {
+                markUpTrans.MarkupCode          = markupTransInvoiceContract.MARKUPCODE;
+                markUpTrans.TransTableId        = custInvoiceJour.TableId;
+                markUpTrans.TransRecId          = custInvoiceJour.RecId;
+                markUpTrans.LineNum             = markupTransInvoiceContract.LINENUM;
+                markUpTrans.CalculatedAmount    = markupTransInvoiceContract.CALCULATEDAMOUNT;
+                markUpTrans.Value               = markupTransInvoiceContract.VALUE;
+                markUpTrans.doInsert();
+
+                markupTransInvoiceContract = custInvoiceJourContract.nextMarkupTrans();
+            }
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,290 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAMarkupAutoLineDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of table <t>MarkupAutoLine</t>
+/// </summary>
+[ExtensionOf(tableStr(MarkupAutoLine))]
+final class AVAMarkupAutoLineDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of modifiedField method
+    /// </summary>
+    /// <param name = "_fieldId">field id</param>
+    public void modifiedField(FieldId _fieldId)
+    {
+        next modifiedField(_fieldId);
+
+        switch(_fieldId)
+        {
+            case fieldnum(MarkupAutoLine, MarkupCategory) :
+                if (this.MarkupCategory == MarkupCategory::Pcs 
+                    || this.MarkupCategory == MarkupCategory::Percent)
+                {
+                    // commentary added to trigger deployment - FINTHI
+                    this.Keep = NoYes::Yes;
+                }
+                else
+                {
+                    this.Keep = NoYes::No;
+                }
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of validateWrite method
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean validateWrite()
+    {
+        boolean ret = next validateWrite();
+
+        if(this.AVAFromDate != dateNull()
+            && (this.MarkupCategory == MarkupCategory::Pcs
+                || this.MarkupCategory == MarkupCategory::Percent))
+        {
+            ret = ret && this.avaCheckDatePeriod();
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaFindByRecId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// find MarkupAutoLine record by RecId
+    /// </summary>
+    /// <param name = "_recId">RecId</param>
+    /// <param name = "_selectForUpdate">boolean</param>
+    /// <returns>MarkupAutoLine</returns>
+    public static MarkupAutoLine avaFindByRecId(
+        RecId _recId,
+        boolean _selectForUpdate = false)
+    {
+        MarkupAutoLine markupAutoLineLoc;
+
+        if(_selectForUpdate)
+        {
+            markupAutoLineLoc.selectForUpdate(true);
+        }
+
+        select firstonly markupAutoLineLoc
+            where markupAutoLineLoc.RecId == _recId;
+
+        return markupAutoLineLoc;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaMarkupAutoTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns the related <t>MarkupAutoTable</t> record
+    /// </summary>
+    /// <returns>MarkupAutoTable</returns>
+    public MarkupAutoTable avaMarkupAutoTable()
+    {
+        MarkupAutoTable avaMarkupAutoTable;
+
+        select firstonly avaMarkupAutoTable
+            where avaMarkupAutoTable.TableId == this.TableTableId
+            && avaMarkupAutoTable.RecId == this.TableRecId;
+
+        return avaMarkupAutoTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findByTableRecIdTableIdLineNum</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// find record
+    /// </summary>
+    /// <param name = "_tableRecId">recid of prent Table</param>
+    /// <param name = "_tableId">tableId</param>
+    /// <param name = "_linenum">lineNum</param>
+    /// <param name = "_forupdate">for update</param>
+    /// <returns>MarkupAutoLine record</returns>
+    public static MarkupAutoLine findByTableRecIdTableIdLineNum(RecId _tableRecId, TableId _tableId, Linenum _linenum, boolean _forupdate = false)
+    {
+        MarkupAutoLine lMarkupAutoLine;
+
+        lMarkupAutoLine.selectForUpdate(_forupdate);
+
+        select firstonly lMarkupAutoLine
+            where lMarkupAutoLine.TableRecId == _tableRecId
+                && lMarkupAutoLine.TableTableId == _tableId
+                && lMarkupAutoLine.LineNum == _linenum;
+
+        return lMarkupAutoLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of method update
+    /// </summary>
+    public void  update()
+    {
+        FromDate fromDateLoc = this.orig().AVAFromDate;
+
+        next update();
+
+        if(this.AVAFromDate != dateNull()
+            && fromDateLoc == dateNull())
+        {
+            this.avaClosePreviousAutoMarkup();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of method insert
+    /// </summary>
+    public void  insert()
+    {
+        next insert();
+
+        if(this.AVAFromDate != dateNull())
+        {
+            this.avaClosePreviousAutoMarkup();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaClosePreviousAutoMarkup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// closes all markupAutolines with empty AVAToDate that have the same TableRecId/TableTableId/CurrencyCode/MarkupCode/MarkupCategory/TaxGroup/InventSiteId/InventLocationId
+    /// </summary>
+    public void avaClosePreviousAutoMarkup()
+    {
+        MarkupAutoLine avaAutoLine;
+
+        ttsbegin;
+
+        update_recordset avaAutoLine
+            setting AVAToDate = DateTimeUtil::addDays(this.AVAFromDate, -1)
+            where avaAutoLine.TableRecId    == this.TableRecId
+            && avaAutoLine.TableTableId     == this.TableTableId
+            && avaAutoLine.CurrencyCode     == this.CurrencyCode
+            && avaAutoLine.MarkupCode       == this.MarkupCode
+            && avaAutoLine.MarkupCategory   == this.MarkupCategory
+            && avaAutoLine.TaxGroup         == this.TaxGroup
+            && avaAutoLine.InventSiteId     == this.InventSiteId
+            && avaAutoLine.InventLocationId == this.InventLocationId
+            && avaAutoLine.AVAToDate        == dateNull()
+            && avaAutoLine.RecId            != this.RecId;
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckDatePeriod</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// checks if a similar record within the Date period or same Start Date exists
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean avaCheckDatePeriod()
+    {
+        MarkupAutoLine avaAutoLine;
+
+        select firstonly avaAutoLine
+            where avaAutoLine.TableRecId    == this.TableRecId
+            && avaAutoLine.TableTableId     == this.TableTableId
+            && avaAutoLine.RecId            != this.RecId
+            && avaAutoLine.CurrencyCode     == this.CurrencyCode
+            && avaAutoLine.MarkupCode       == this.MarkupCode
+            && avaAutoLine.MarkupCategory   == this.MarkupCategory
+            && avaAutoLine.TaxGroup         == this.TaxGroup
+            && avaAutoLine.InventSiteId     == this.InventSiteId
+            && avaAutoLine.InventLocationId == this.InventLocationId
+            && (avaAutoLine.AVAFromDate     == this.AVAFromDate
+                || (avaAutoLine.AVAFromDate < this.AVAFromDate
+                    && avaAutoLine.AVAToDate >= this.AVAFromDate));
+
+        if(avaAutoLine.RecId)
+        {
+            return checkFailed("@NDX:NXAMarkupAutoLineDateCheck");//;
+        }
+        else
+        {
+            return true;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaPriceUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// display method to show priceUnit
+    /// </summary>
+    /// <returns>PriceUnit</returns>
+    display public PriceUnit avaPriceUnit()
+    {
+        PriceUnit avaPriceUnit = 0;  
+        InventTable avaInventTable;
+        MarkupAutoTable avaMarkupAutoTable = this.avaMarkupAutoTable();
+
+        if(avaMarkupAutoTable.ItemCode == TableGroupAll::Table)
+        {
+            avaInventTable = InventTable::find(avaMarkupAutoTable.ItemRelation);
+        }
+
+        if(avaInventTable
+            && this.ModuleType == MarkupModuleType::Cust)
+        {
+            avaPriceUnit = avaInventTable.inventTableModuleSales().priceUnit();
+        }
+        else if(avaInventTable
+            && this.ModuleType == MarkupModuleType::Vend)
+        {
+            avaPriceUnit = avaInventTable.inventTableModulePurch().priceUnit();
+        }
+        else if(avaInventTable
+            && this.ModuleType == MarkupModuleType::Invent)
+        {
+            avaPriceUnit = avaInventTable.inventTableModuleInvent().priceUnit();
+        }
+
+        return avaPriceUnit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVALedgerJournalCheckPostCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// The <c>LedgerJournalCheckPost</c> class validates and posts ledger journals.
+/// </summary>
+[ExtensionOf(classStr(LedgerJournalCheckPost))]
+final class AVALedgerJournalCheckPostCls_Extension
+{
+    private     boolean     bec_use_autoSwapNumberSeq;
+    private     RefRecId    bec_use_NumberSequenceId;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getNumberSeq</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets a <c>NumberSeq</c> object.
+    /// </summary>
+    /// <param name = "_numberSequenceId">
+    /// A number sequence id.
+    /// </param>
+    /// <returns>
+    /// A <c>NumberSeq</c> object.
+    /// </returns>
+    protected final NumberSeq getNumberSeq(RefRecId _numberSequenceId)
+    {
+        RefRecId numberSequenceId = _numberSequenceId;
+
+        if (bec_use_autoSwapNumberSeq && bec_use_NumberSequenceId)
+        {
+            numberSequenceId = bec_use_NumberSequenceId;
+        }
+
+        return next getNumberSeq(numberSequenceId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Replaces temporary voucher numbers in the journal with real voucher numbers.
+    /// </summary>
+    /// <returns>
+    /// A number sequence id.
+    /// </returns>
+    /*protected RefRecId replaceTmpVoucher()
+    {
+        #ISOCountryRegionCodes
+
+        RefRecId    numberSequenceId;
+
+        if (SysCountryRegionCode::isLegalEntityInCountryRegion([#isoBE])
+            && LedgerParameters::find().AVAAutoChangeVoucherSeriesCodeByDate_BE
+            && ledgerJournalTable.VoucherAllocatedAtPosting)
+        {
+            numberSequenceId       = ledgerJournalName.NumberSequenceTable;
+
+            NumberSequenceCode                  voucherSeriesCode = NumberSequenceTable::find(numberSequenceId).NumberSequence;
+            LedgerPostingJournalVoucherSeries   ledgerPostingJournalVoucherSeries = LedgerPostingJournalVoucherSeries::find(voucherSeriesCode);
+
+            if (ledgerPostingJournalVoucherSeries)
+            {
+                LedgerJournalTrans                  ledgerJournalTrans;
+
+                select maxof(TransDate) from ledgerJournalTrans
+                    where ledgerJournalTrans.JournalNum == ledgerJournalTable.JournalNum;
+
+                ledgerPostingJournalVoucherSeries = LedgerPostingJournalVoucherSeries::findByDateLedgerPostingJournalId(ledgerPostingJournalVoucherSeries.LedgerPostingJournalId, ledgerJournalTrans.TransDate);
+
+                if (ledgerPostingJournalVoucherSeries)
+                {
+                    bec_use_NumberSequenceId    = NumberSequenceTable::findByNaturalKey(ledgerPostingJournalVoucherSeries.VoucherSeries).RecId;
+                    if (bec_use_NumberSequenceId)
+                    {
+                        bec_use_autoSwapNumberSeq = true;
+                    }
+                }
+            }
+        }
+
+        numberSequenceId = next replaceTmpVoucher();
+
+        if (bec_use_autoSwapNumberSeq && bec_use_NumberSequenceId)
+        {
+            numberSequenceId            = bec_use_NumberSequenceId;
+            bec_use_autoSwapNumberSeq   = false;
+        }
+
+        return numberSequenceId;
+    }*/
+
+    /// <summary>
+    ///    Posts the current instance of a journal.
+    /// </summary>
+    /// <returns>
+    ///    true if the journal was posted; otherwise, false.
+    /// </returns>
+    /// <exception cref="M:Exception::Error">
+    ///    The journal is not approved or balanced.
+    /// </exception>
+    /// <exception cref="M:Exception::Error">
+    ///    The account or amount is not set.
+    /// </exception>
+    /// <exception cref="M:Exception::Error">
+    ///    The voucher number is not set for the ledger journal line.
+    /// </exception>
+    protected container postJournal()
+    {
+        container con = next postJournal();
+
+        // BEC/KNMAR/T11780/2019-07-18
+        // Update of ledger import table data for successfully posted ledger
+        //BEC_MsqlLedgerImportTable::markAsPostedByJournal(ledgerJournalTable);
+
+        if (conPeek(con, 1))
+        {
+            if (ledgerJournalTable.AVAAllocationRefRecId)
+            {
+                ttsbegin;
+                //LedgerJournalTable allocLedgerJournalTable_bec = LedgerJournalTable::findRecId(ledgerJournalTable.AVAAllocationRefRecId, true);
+                ledgerJournalTable allocLedgerJournalTable_bec = ledgerJournalTable::findByRecId(ledgerJournalTable.AVAAllocationRefRecId, true);
+                if (allocLedgerJournalTable_bec)
+                {
+                    allocLedgerJournalTable_bec.AVAPostedWithDifLayer = NoYes::Yes;
+                    allocLedgerJournalTable_bec.doUpdate();
+                }
+                ttscommit;
+            }
+        }
+
+        return con;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of the method validate
+    /// </summary>
+    /// <param name = "_calledFrom">Identifies the object from which this method is called. Default value is null.</param>
+    /// <returns>true if the journal is valid for posting; otherwise, false.</returns>
+    public boolean validate(Object _calledFrom)
+    {
+        boolean isValid = next validate(_calledFrom);
+
+        if (ledgerJournalTable.AVAPostedWithDifLayer || ledgerJournalTable.AVACopiedWithDifLayer)
+        {
+            isValid = false;
+        }
+
+        return isValid;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

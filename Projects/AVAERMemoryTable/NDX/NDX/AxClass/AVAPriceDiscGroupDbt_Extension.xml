@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPriceDiscGroupDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(tableStr(PriceDiscGroup))]
+final class AVAPriceDiscGroupDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>AVAPriceGroupTypeLookup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_ctrl">_ctrl</param>
+    /// <param name = "_priceGroupType">_priceGroupType</param>
+    public static void AVAPriceGroupTypeLookup(FormStringControl        _ctrl, AVAPriceGroupType        _priceGroupType)
+    {
+        SysTableLookup          sysTableLookup = SysTableLookup::newParameters(tableNum(PriceDiscGroup),_ctrl);
+        Query                   query = new Query();
+        QueryBuildDataSource    priceGroupDiscDS;
+
+        priceGroupDiscDS = query.addDataSource(tableNum(PriceDiscGroup));
+        priceGroupDiscDS.addRange(fieldNum(PriceDiscGroup,AVAPriceGroupType)).value(enum2Str(_priceGroupType));
+
+        priceGroupDiscDS.addRange(fieldNum(PriceDiscGroup,Type)).value(enum2Str(PriceGroupType::PriceGroup));
+        priceGroupDiscDS.addRange(fieldNum(PriceDiscGroup,Module)).value(enum2Str(ModuleInventCustVend::Cust));
+
+        sysTableLookup.addLookupfield(fieldNum(PriceDiscGroup,GroupId),true);
+        sysTableLookup.addLookupfield(fieldNum(PriceDiscGroup,Name));
+        sysTableLookup.addLookupfield(fieldNum(PriceDiscGroup,Type));
+        sysTableLookup.addLookupfield(fieldNum(PriceDiscGroup,AVAPriceGroupType));
+        sysTableLookup.addLookupfield(fieldNum(PriceDiscGroup,AVAPriceDiscRegion));
+
+        sysTableLookup.parmQuery(query);
+
+        sysTableLookup.performFormLookup();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVAPriceIncreaseNoOfCustomers</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVAPriceIncreaseNoOfCustomers</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>int</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AVANoOfCustomers displayAVAPriceIncreaseNoOfCustomers()
+    {
+        int retVal;
+        //ToDo: no of Customers
+        PriceDiscGroup  locPriceDiscGroup;
+        PriceDiscTable  locPriceDiscTable;
+        CustTable       locCustTable;
+        
+        select count(RecId)
+        from    locPriceDiscTable
+        join    locPriceDiscGroup
+        join    locCustTable
+        where   locPriceDiscGroup.GroupId           == this.GroupId
+            &&  locPriceDiscGroup.Type              == PriceGroupType::PriceGroup
+            &&  locPriceDiscGroup.Module            == ModuleInventCustVend::Cust
+            &&  locPriceDiscTable.relation          == PriceType::PriceSales
+            &&  locPriceDiscTable.AccountCode       == PriceDiscPartyCodeType::Table
+            &&  locPriceDiscTable.AccountRelation   == locCustTable.AccountNum;
+        
+        retVal = int642int(locPriceDiscTable.RecId);
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVAPriceIncreaseNoOfPrices</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVAPriceIncreaseNoOfPrices</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>int</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AVANoOfPrices displayAVAPriceIncreaseNoOfPrices()
+    {
+        int retVal;
+
+        PriceDiscGroup  locPriceDiscGroup;
+        PriceDiscTable  locPriceDiscTable;
+        
+        select count(RecId)
+        from    locPriceDiscTable
+        join    locPriceDiscGroup
+        where   locPriceDiscGroup.GroupId           == this.GroupId
+            &&  locPriceDiscGroup.Type              == PriceGroupType::PriceGroup
+            &&  locPriceDiscGroup.Module            == ModuleInventCustVend::Cust
+            &&  locPriceDiscTable.relation          == PriceType::PriceSales
+            &&  locPriceDiscTable.AccountCode       == PriceDiscPartyCodeType::GroupId
+            &&  locPriceDiscTable.AccountRelation   == this.GroupId
+            &&  locPriceDiscTable.ToDate            == dateNull();
+        
+        retVal = int642int(locPriceDiscTable.RecId);
+        
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetKCS_GoodsIdSet</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>getKCS_GoodsIdSet</c> method.
+    /// </summary>
+    /// <param name="onlyActual">
+    ///     <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>boolean</c> as return value
+    /// </returns>
+    public Set avaGetKCS_GoodsIdSet(boolean onlyActual = true)
+    {
+        PriceDiscGroup                  locPriceDiscGroup;
+
+        PriceDiscTable                  locPriceDiscTable;
+        InventTable                     locInventTable;
+
+        Set                             locKCS_GoodsIdSet;
+
+        date                            locToday;
+        date                            locTodayBefore;
+
+
+        locToday            = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        locTodayBefore      = locToday - 1;
+
+        locPriceDiscGroup   = this;
+
+        locKCS_GoodsIdSet   = new Set(Types::String);
+
+        while select locPriceDiscTable
+        where   locPriceDiscTable.AccountCode       == PriceDiscPartyCodeType::GroupId
+            &&  locPriceDiscTable.AccountRelation   == locPriceDiscGroup.GroupId
+            &&  locPriceDiscTable.Module            == ModuleInventCustVend::Cust
+            &&  locPriceDiscTable.ItemCode          == PriceDiscProductCodeType::Table
+            &&  (   locPriceDiscTable.relation      == PriceType::KCS_PRCSalesPrice             // Basispreis (Verkauf)
+                ||  locPriceDiscTable.relation      == PriceType::KCS_PRCActionPriceSales       // Aktionspreis (Verkauf)
+                ||  locPriceDiscTable.relation      == PriceType::PriceSales                )   // Preis (Verkauf)
+        {
+            if (locPriceDiscTable.RecId)
+            {
+                if(     !onlyActual 
+                    ||  (       onlyActual 
+                            &&  locPriceDiscTable.FromDate          <= locTodayBefore
+                            &&  (   locPriceDiscTable.ToDate        >= locTodayBefore
+                                ||  locPriceDiscTable.ToDate        == dateNull()       )   )   )
+                {
+                    locInventTable = InventTable::find(locPriceDiscTable.ItemRelation);
+                    if(     locInventTable.KCS_GoodsId
+                        &&  !locKCS_GoodsIdSet.in(locInventTable.KCS_GoodsId)   )
+                    {
+                        //Info(strFmt("AccountRelation: %1, Module: %2, KCS_GoodsId %3", locPriceDiscTable.AccountRelation, locPriceDiscTable.Module, locInventTable.KCS_GoodsId));
+                        locKCS_GoodsIdSet.add(locInventTable.KCS_GoodsId);
+                    }
+                }
+            }
+        }
+        /*
+        if (!locKCS_GoodsIdSet.empty())
+        {
+            locKCS_GoodsIdSetEnumerator = locKCS_GoodsIdSet.getEnumerator();
+            locKCS_GoodsIdSetEnumerator.reset();
+            while (locKCS_GoodsIdSetEnumerator.moveNext())
+            {
+                info(strfmt("KCS_GoodsId: %1", locKCS_GoodsIdSetEnumerator.current()));
+            }
+        }
+        */
+        return locKCS_GoodsIdSet;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcheckNotPostedJour</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    public int64 AVAcheckNotPostedJour()
+    {
+        PriceDiscAdmTable       priceDiscAdmTable;
+        PriceDiscAdmTrans       priceDiscAdmTrans;
+        int64                     ret = 0;
+
+        select firstonly count(RecId) from  priceDiscAdmTable
+            where priceDiscAdmTable.Posted == NoYes::No
+              join RecId from  priceDiscAdmTrans
+                  where priceDiscAdmTrans.JournalNum == priceDiscAdmTable.JournalNum
+                     && priceDiscAdmTrans.AccountCode == PriceDiscPartyCodeType::GroupId
+                     && priceDiscAdmTrans.AccountRelation == this.GroupId
+                     && priceDiscAdmTrans.Relation == PriceType::PriceSales;
+        ret = priceDiscAdmTable.RecId;
+           
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXfind</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// find pricediscgroup
+    /// </summary>
+    /// <param name = "_module">module</param>
+    /// <param name = "_type">type</param>
+    /// <param name = "_priceGroupId">price group id</param>
+    /// <param name = "_uk">company</param>
+    /// <param name = "_update">for update</param>
+    /// <returns>PriceDiscGroup record</returns>
+    static PriceDiscGroup NDXfind(ModuleInventCustVend _module, PriceGroupType _type, PriceGroupId _priceGroupId, DataAreaId _uk = curext(), boolean _update = false)
+    {
+        if (_uk == curext())
+        {
+            return PriceDiscGroup::find(_module, _type, _priceGroupId, _update);
+        }
+        else
+        {
+            changecompany(_uk)
+            {
+                return PriceDiscGroup::find(_module, _type, _priceGroupId, _update);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,310 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACRLCreditLimitService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extends SysOperationServiceBase class
+/// </summary>
+final class AVACRLCreditLimitService extends SysOperationServiceBase
+{
+    boolean     calcGroupValues, calcLimitExceed, calcOnlyExceedValues;
+
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>startOperation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// startOperation method
+    /// </summary>
+    /// <param name = "_dataContract">AVACRLCreditLimitContract</param>
+    public void startOperation(AVACRLCreditLimitContract _dataContract)
+    {
+        System.Exception ex;
+        #OCCRetryCount
+
+        calcGroupValues = _dataContract.parmcalcGroupValues();
+        calcLimitExceed = _dataContract.parmccalcLimitExceed();
+        calcOnlyExceedValues = _dataContract.parmcalcOnlyExceedValues();
+
+        try
+        {
+            this.processOperation();
+        }
+
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+
+        catch (Exception::Error)
+        {
+            error("@NDX:NXAErrorOccured");
+            retry;
+        }
+
+        catch (Exception::CLRError)
+        {
+            ex = ClrInterop::getLastException();
+
+            if (ex != null)
+            {
+                ex = ex.get_InnerException();
+                if (ex != null)
+                {
+                    error("@NDX:NXAErrorOccured");
+                }
+            }
+
+            retry;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processOperation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// processOperation method
+    /// </summary>
+    private void processOperation()
+    {
+        if (calcGroupValues)
+        {
+            this.calcGroupValues();
+        }
+        if (calcLimitExceed || calcGroupValues)
+        {
+            this.calcLimitExceed();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcGroupValues</Name>
+				<Source><![CDATA[
+    private void calcGroupValues()
+    {
+        AVACreditLimitGroupValues       creditLimitGroupValues;
+        AVACreditLimitExceed            creditLimitExceed;
+        CredManCreditLimitCustGroup     crlCustGroup;
+        CredManCreditLimitCustGroupLine crlCustGroupLine;
+        //CustTrans                       custTrans;
+        //CustTransOpen                   custTransOpen;
+        //CustInvoiceJour                 custInvoiceJour;
+        SalesTable                      salesTable;
+        CustTable                       custTable;
+        RecordInsertList                insertList = new RecordInsertList(tableNum(AVACreditLimitGroupValues));
+
+        delete_from creditLimitGroupValues;
+        delete_from creditLimitExceed;
+
+        while select crlCustGroup where crlCustGroup.AVACompanyId == curExt()
+            join crlCustGroupLine where crlCustGroupLine.CreditLimitCustGroup == crlCustGroup.RecId
+        {
+            creditLimitGroupValues.clear();
+            creditLimitGroupValues.CredManCreditLimitId = crlCustGroup.CreditLimitId;
+            creditLimitGroupValues.CustAccount          = crlCustGroupLine.CustAccount;
+            creditLimitGroupValues.CustName             = CustTable::find(crlCustGroupLine.CustAccount).name();
+            creditLimitGroupValues.AVARiscDebtor        = crlCustGroup.AVARiscDebtor;
+            /*select sum(AmountMST) from custTransOpen where custTransOpen.AccountNum == crlCustGroupLine.CustAccount;
+            creditLimitGroupValues.SumOpenTrans         = custTransOpen.AmountMST;*/
+            /*select sum(AVANetAmountMST) from custInvoiceJour where custInvoiceJour.InvoiceAccount == crlCustGroupLine.CustAccount
+                exists join custTrans where custTrans.AccountNum == custInvoiceJour.InvoiceAccount
+                                            && custTrans.Invoice == custInvoiceJour.InvoiceId
+                                            && custTrans.TransDate == custInvoiceJour.InvoiceDate
+                                            && custTrans.Voucher == custInvoiceJour.LedgerVoucher
+                exists join custTransOpen where custTransOpen.RefRecId == custTrans.RecId;
+            creditLimitGroupValues.SumOpenTrans         = custInvoiceJour.AVANetAmountMST;*/
+            custTable       = CustTable::find(crlCustGroupLine.CustAccount);
+            //creditLimitGroupValues.SumOpenTrans         = AVAFCMGroupTable::getInvoicedBalanceMSTByCustTable(custTable);
+            //creditLimitGroupValues.SumOpenTrans         = AVAFCMGroupTable::getInvoicedAmountWithoutTaxesByCustTable(custTable);
+            creditLimitGroupValues.SumOpenTrans         = AVAFCMGroupTable::getInvoicedAmountWithoutTaxesWithMarkupsByCustTable(custTable);
+            /*select sum(AmountMST) from custTrans where custTrans.AccountNum == crlCustGroupLine.CustAccount
+                && custTrans.TransType == LedgerTransType::Sales
+                && !custTrans.Invoice;*/
+            select sum(AVAFPLNetEstimate) from Salestable where salesTable.CustAccount == crlCustGroupLine.CustAccount && salesTable.SalesStatus != SalesStatus::Invoiced;
+            //creditLimitGroupValues.SumOrdered           = custTrans.AmountMST;
+            //creditLimitGroupValues.SumOrdered           = salesTable.AVAFPLNetEstimate;
+            creditLimitGroupValues.SumOrdered           = AVAFCMGroupTable::getNotInvoicedBalanceMSTByCustTable(custTable);
+            creditLimitGroupValues.SumUsedLimit         = creditLimitGroupValues.SumOpenTrans + creditLimitGroupValues.SumOrdered;
+            //if (!calcOnlyExceedValues || (calcOnlyExceedValues && creditLimitGroupValues.SumUsedLimit > crlCustGroup.CreditMax))
+            //{
+            insertList.add(creditLimitGroupValues);
+            //}
+        }
+        insertList.insertDatabase();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcLimitExceed</Name>
+				<Source><![CDATA[
+    private void calcLimitExceed()
+    {
+        AVACreditLimitExceed            creditLimitExceed;
+        CredManCreditLimitCustGroup     crlCustGroup;
+        CredManCreditLimitCustGroupLine crlCustGroupLine;
+        CustTable                       custTable;
+        AVACreditLimitGroupValues       creditLimitGroupValues;
+        //CustTransOpen                   custTransOpen;
+        //CustTrans                       custTrans;
+        //CustInvoiceJour                 custInvoiceJour;
+        //SalesTable                      salesTable;
+        AmountCur                       /*invoicedAmountWithoutTaxes, deliveredNetAmount, notInvoicedAmountWithoutTaxes, */balanceCur, notInvoicedBalanceCur;
+        RecordInsertList                insertList = new RecordInsertList(tableNum(AVACreditLimitExceed));
+
+        delete_from creditLimitExceed;
+        
+        if (calcGroupValues)
+        {
+            while select crlCustGroup where crlCustGroup.AVACompanyId == curExt()
+            {
+                creditLimitExceed.clear();
+                creditLimitExceed.CustAccount           = crlCustGroup.AVARiscDebtor;
+                custTable                               = CustTable::find(crlCustGroup.AVARiscDebtor);
+                creditLimitExceed.CustName              = custTable.name();
+                creditLimitExceed.CredManCreditLimitId  = crlCustGroup.CreditLimitId;
+                select sum(SumOpenTrans), sum(SumOrdered) from creditLimitGroupValues where creditLimitGroupValues.CredManCreditLimitId == crlCustGroup.CreditLimitId;
+                creditLimitExceed.SumOpenTrans          = creditLimitGroupValues.SumOpenTrans;
+                creditLimitExceed.SumOrdered            = creditLimitGroupValues.SumOrdered;
+                creditLimitExceed.SumUsedLimit          = creditLimitExceed.SumOpenTrans + creditLimitExceed.SumOrdered;
+                creditLimitExceed.InsuredLimit          = this.getCustomerCreditInsuredTotal(custTable.AccountNum);
+                creditLimitExceed.TotalLimit            = custTable.AVAcredManCreditMax();
+                creditLimitExceed.WorkingLimit          = creditLimitExceed.TotalLimit - creditLimitExceed.InsuredLimit;
+                if (creditLimitExceed.InsuredLimit > 0 && creditLimitExceed.SumUsedLimit > creditLimitExceed.InsuredLimit)
+                {
+                    creditLimitExceed.InsuredExceed     = creditLimitExceed.SumUsedLimit - creditLimitExceed.InsuredLimit;
+                }
+                if (!creditLimitExceed.InsuredLimit)
+                {
+                    creditLimitExceed.InsuredExceed     = creditLimitExceed.SumUsedLimit;
+                }
+                if (creditLimitExceed.SumUsedLimit > creditLimitExceed.TotalLimit)
+                {
+                    creditLimitExceed.TotalExceed       = creditLimitExceed.SumUsedLimit - creditLimitExceed.TotalLimit;
+                }
+                //if (calcGroupValues || (!calcOnlyExceedValues || (calcOnlyExceedValues && creditLimitExceed.InsuredExceed > 0 || creditLimitExceed.TotalExceed > 0)))
+                if (!calcOnlyExceedValues || (calcOnlyExceedValues && creditLimitExceed.InsuredExceed || creditLimitExceed.TotalExceed))
+                {
+                    insertList.add(creditLimitExceed);
+                }
+            }
+        }
+
+        if (calcLimitExceed)
+        {
+            while select custTable where custTable.MandatoryCreditLimit
+            notexists join crlCustGroupLine where crlCustGroupLine.CustAccount == custTable.AccountNum
+            {
+                creditLimitExceed.clear();
+                creditLimitExceed.CustAccount           = custTable.AccountNum;
+                creditLimitExceed.CustName              = custTable.name();
+                creditLimitExceed.CredManCreditLimitId  = '';
+                creditLimitExceed.CreditBlocked = custTable.AVACRLCreditBlocked;
+
+                //select sum(AmountMST) from custTransOpen where custTransOpen.AccountNum == custTable.AccountNum;
+                //creditLimitGroupValues.SumOpenTrans     = custTransOpen.AmountMST;
+                /*select sum(AVANetAmountMST) from custInvoiceJour where custInvoiceJour.InvoiceAccount == custTable.InvoiceAccount
+                exists join custTrans where custTrans.AccountNum == custInvoiceJour.InvoiceAccount
+                                            && custTrans.Invoice == custInvoiceJour.InvoiceId
+                                            && custTrans.TransDate == custInvoiceJour.InvoiceDate
+                                            && custTrans.Voucher == custInvoiceJour.LedgerVoucher
+                exists join custTransOpen where custTransOpen.RefRecId == custTrans.RecId;*/
+                //balanceCur                      = AVAFCMGroupTable::getInvoicedBalanceMSTByCustTable(custTable);
+                //balanceCur                      = AVAFCMGroupTable::getInvoicedAmountWithoutTaxesByCustTable(custTable);
+                balanceCur                      = AVAFCMGroupTable::getInvoicedAmountWithoutTaxesWithMarkupsByCustTable(custTable);
+                notInvoicedBalanceCur           = AVAFCMGroupTable::getNotInvoicedBalanceMSTByCustTable(custTable);
+                /*invoicedAmountWithoutTaxes      = AVAFCMGroupTable::getInvoicedAmountWithoutTaxesByCustTable(custTable);
+            notInvoicedAmountWithoutTaxes   = AVAFCMGroupTable::getnotInvoicedAmountWithoutTaxesByCustTable(custTable);
+            deliveredNetAmount              = AVAFCMGroupTable::getDeliveredAmountByCustTable(custTable);*/
+    
+                creditLimitExceed.SumOpenTrans     = balanceCur;
+                /*select sum(AmountMST) from custTrans where custTrans.AccountNum == custTable.AccountNum
+                && custTrans.TransType == LedgerTransType::Sales
+                && !custTrans.Invoice;
+            creditLimitGroupValues.SumOrdered       = custTrans.AmountMST;*/
+                creditLimitExceed.SumOrdered       = notInvoicedBalanceCur;
+
+                creditLimitExceed.SumUsedLimit          = creditLimitExceed.SumOpenTrans + creditLimitExceed.SumOrdered;
+                creditLimitExceed.InsuredLimit          = this.getCustomerCreditInsuredTotal(custTable.AccountNum);
+                creditLimitExceed.TotalLimit            = custTable.AVAcredManCreditMax();
+                creditLimitExceed.WorkingLimit          = creditLimitExceed.TotalLimit - creditLimitExceed.InsuredLimit;
+                if (creditLimitExceed.InsuredLimit > 0 && creditLimitExceed.SumUsedLimit > creditLimitExceed.InsuredLimit)
+                {
+                    creditLimitExceed.InsuredExceed     = creditLimitExceed.SumUsedLimit - creditLimitExceed.InsuredLimit;
+                }
+                if (!creditLimitExceed.InsuredLimit)
+                {
+                    creditLimitExceed.InsuredExceed     = creditLimitExceed.SumUsedLimit;
+                }
+                if (creditLimitExceed.SumUsedLimit > creditLimitExceed.TotalLimit)
+                {
+                    creditLimitExceed.TotalExceed       = creditLimitExceed.SumUsedLimit - creditLimitExceed.TotalLimit;
+                }
+                if (!calcOnlyExceedValues || (calcOnlyExceedValues && creditLimitExceed.InsuredExceed > 0 || creditLimitExceed.TotalExceed > 0))
+                {
+                    insertList.add(creditLimitExceed);
+                }
+            }
+        }
+        insertList.insertDatabase();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCustomerCreditInsuredTotal</Name>
+				<Source><![CDATA[
+    private CredManCreditMaxMST getCustomerCreditInsuredTotal(CustAccount _custAccount)
+    {
+        CredManCustGuaranteeInsurance custGuaranteeInsurance;
+        CredManCreditMaxMST creditMax;
+        date                todaysDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+        
+        while select CreditLimitPercent, CurrencyCode, Value, IncludeInExposure from custGuaranteeInsurance
+            where custGuaranteeInsurance.CustAccount == _custAccount &&
+                  custGuaranteeInsurance.ValidFrom <= todaysDate &&
+                  (!custGuaranteeInsurance.ValidTo || custGuaranteeInsurance.ValidTo >= todaysDate)
+        {
+            creditMax += CurrencyExchangeHelper::mstAmount(custGuaranteeInsurance.CreditLimitPercent * custGuaranteeInsurance.Value / 100, custGuaranteeInsurance.CurrencyCode);
+            if (custGuaranteeInsurance.IncludeInExposure == NoYes::Yes)
+            {
+                creditMax -= CurrencyExchangeHelper::mstAmount(custGuaranteeInsurance.Value, custGuaranteeInsurance.CurrencyCode);
+            }
+        }
+
+        return creditMax;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

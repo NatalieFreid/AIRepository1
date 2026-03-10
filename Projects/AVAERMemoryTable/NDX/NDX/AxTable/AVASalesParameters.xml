@@ -1,0 +1,1336 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesParameters</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class AVASalesParameters extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaEmailContent</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns the EmailContent field in the table and replaces the subString '%Anrede%' with the correct introduction based on LanguageId and gender of provided contact
+    /// </summary>
+    /// <param name = "_contactId">ContactPersonId</param>
+    /// <param name = "_languageId">LanguageId, default = 'de'</param>
+    /// <returns>emailContent with introduction</returns>
+    public str avaEmailContent(ContactPersonId _contactId, LanguageId _languageId = 'de')
+    {
+        str avaIntroduction, avaEmailContent;
+        str avaReplacementStr = '%Anrede%';
+        ContactPerson avaContact = ContactPerson::find(_contactId);
+        DirPerson avaPerson = DirPerson::find(avaContact.Party);
+        DirPersonName avaPersonName = DirPersonName::find(avaPerson.RecId);
+
+        if(avaPerson.Gender == Gender::Male)
+        {
+            avaIntroduction = SysLabel::labelId2String(literalStr("@NDX:DearMr"), _languageId) + ' ';
+
+            if(avaPersonName.LastNamePrefix)
+            {
+                avaIntroduction += avaPersonName.LastNamePrefix + ' ';
+            }
+
+            avaIntroduction += avaPersonName.LastName;
+        }
+        else if(avaPerson.Gender == Gender::Female)
+        {
+            avaIntroduction = SysLabel::labelId2String(literalStr("@NDX:DearMrs"), _languageId) + ' ';
+
+            if(avaPersonName.LastNamePrefix)
+            {
+                avaIntroduction += avaPersonName.LastNamePrefix + ' ';
+            }
+
+            avaIntroduction += avaPersonName.LastName;
+        }
+        else    // Gender unkown or unspecified
+        {
+            avaIntroduction = SysLabel::labelId2String(literalStr("@NDX:DearSirOrMadam"), _languageId);
+        }
+
+        avaEmailContent = strReplace(this.EmailContent, avaReplacementStr, avaIntroduction);        
+
+        return avaEmailContent;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  designed from AVA
+    /// </summary>
+    /// <param name = "_update">_update</param>
+    /// <returns>AVASAlesParameters buffer</returns>
+    public static AVASalesParameters  find(boolean _update = false)
+    {
+        AVASalesParameters      avaSalesParameters;
+        avaSalesParameters.selectForUpdate(_update);  
+
+        select firstonly avaSalesParameters;
+
+        return avaSalesParameters;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>numRefID</Name>
+				<Source><![CDATA[
+    /// <summary>
+   /// designed from ava
+   /// </summary>
+   /// <returns>return</returns>
+    public client server static NumberSequenceReference numRefID()
+    {
+        return   NumberSeqReference::findReference(extendedTypeNum(AVAGAEBImportId));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkDirectCustomerCreation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>checkDirtectCustomerCreation</c> method.
+    /// </summary>
+    /// <param name="_showMessage">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>NoYes</c> as return value
+    /// </returns>
+    public static NoYes checkDirectCustomerCreation(boolean _showMessage = NoYes::No)
+    {
+        NoYes retVal;
+
+        retVal = AVASalesParameters::find().DirectCustomerCreation;
+        
+        if(_showMessage && !retVal)
+        {
+            warning("@NDX:NXACustomerCreationByTransformingBusinessRelations");
+        }
+
+        return   retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>salesQuotExcelReportLookup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_formControl">FormControl</param>
+    public static  void salesQuotExcelReportLookup(FormControl          _formControl)
+    {
+        SysTableLookup          sysTableLookup = SysTableLookup::newParameters(tableNum(PrintMgmtReportFormat),_formControl);
+        Query                   query = new Query();
+        QueryBuildDataSource    printMgmtReportFormatDS;
+
+        sysTableLookup.addLookupfield(fieldNum(PrintMgmtReportFormat,Name),true);
+        sysTableLookup.addLookupfield(fieldNum(PrintMgmtReportFormat,Description));
+
+        printMgmtReportFormatDS = query.addDataSource(tableNum(PrintMgmtReportFormat));
+        printMgmtReportFormatDS.addRange(fieldNum(PrintMgmtReportFormat,DocumentType)).value(enum2Str(PrintMgmtDocumentType::Quotation));
+
+        sysTableLookup.parmQuery(query);
+
+        sysTableLookup.performFormLookup();
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>editSalesQuotExcelReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_set">_set</param>
+    /// <param name = "_reportName">_reportName</param>
+    /// <returns>Description</returns>
+    public edit Description editSalesQuotExcelReport(boolean    _set,
+                                                     PrintMgmtReportFormatName      _reportName)
+    {
+        PrintMgmtReportFormat       printMgmtReportFormat;
+
+        if (_set)
+        {
+            this.SalesQuotationExcelReport = _reportName;
+        }
+
+        select firstonly printMgmtReportFormat 
+            where printMgmtReportFormat.Name == this.SalesQuotationExcelReport;
+
+        return printMgmtReportFormat.Description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateField</Name>
+				<Source><![CDATA[
+    boolean  validateField(FieldId  _fieldId)
+    {
+        boolean     ok              = true;
+        CompanyId   allowedCompany  = 'NDG';
+
+        ok = super(_fieldId);
+
+        if(ok)
+        {
+            switch(_fieldId)
+            {
+                case fieldNum(AVASalesParameters, HKFromSupportTable):
+                    if(curExt() != allowedCompany
+                        && this.HKFromSupportTable)
+                    {
+                        ok = ok & checkFailed(strFmt("@NDX:NXAHKFromSupportTableCheckFailed", allowedCompany));
+                    }
+                    break;
+
+                default:
+                    break;
+            }
+        }
+
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NXASalesParameters</DeveloperDocumentation>
+	<Label>@NDX:NXASalesParameters</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>DataAreaId</TitleField1>
+	<CreatedBy>Yes</CreatedBy>
+	<CreatedDateTime>Yes</CreatedDateTime>
+	<ModifiedBy>Yes</ModifiedBy>
+	<ModifiedDateTime>Yes</ModifiedDateTime>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>SalesQuotationNoStockedItem</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>SalesQuotationSettings</Name>
+			<Label>@SYS37997</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>SalesQuotationNoStockedItem</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KBVQuotationOnly</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>OPKLinkOutput</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesQuotationNoTaxCalc</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesQuotationNoDlvDateControl</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesQuotationNumOfDays</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HKFromSupportTable</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesQuotImportModus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PartitionLines</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Currency</Name>
+			<Label>@SYS301348</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>LimitPriceExchRateType</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>General</Name>
+			<Label>@SYS104288</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>TradeCreditInsurance</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KBVFunctions</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SecondaryDataAreaIdBPRequests</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ForceSecondaryRequest</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DirectCustomerCreation</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ModuleType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InventStatusId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EnableBlockedCustomer</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>DefaultValue</Name>
+			<Label>@SYS40175</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>PositionIncrement</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CustPriceGroup</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>LimitGroupName</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>StatusId</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Intercompany</Name>
+			<Label>@NDX:NXAIntercompany</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>AllowIndirectCreation</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AutomaticICOrders</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DirectDelivery</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_IC_Reduction</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>InvoceCalc</Name>
+			<Label>@NDX:NXAIncomeCalc</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>VuV</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CommissionRate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CashDisc</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MiscCosts</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>GAEBSettings</Name>
+			<Label>@SYS37997</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>GAEBProg</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>GAEBAdditionText</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>GAEBCleanAtachmentInDays</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>GAEBD94</Name>
+			<Label>@NDX:NXAGAEBD94</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>GAEBD94Version</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>GAEBD94VersionMonat</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>GAEBD94VersionYear</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>GAEBD94CharSet</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>GAEBX94</Name>
+			<Label>@NDX:NXAGAEBX94</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>GAEBX94VersionYear</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>GAEBX94VersionMonat</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>GAEBX94Version</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>QuotationSpecialDiscount</Name>
+			<Label>@SYS5864</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>QuotationSpecialDiscount1</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>QuotationSpecialDiscount2</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>QuotationSpecialDiscount3</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>SalesOrderSpecialDiscount</Name>
+			<Label>@SYS7443</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>SalesOrderSpecialDiscount1</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesOrderSpecialDiscount2</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesOrderSpecialDiscount3</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>SocialDiscountGrp</Name>
+			<Label>@NDX:NXARackDiscount</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>SocialDiscount</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>SalesOrderMarkupCodes</Name>
+			<Label>@AVAEDI:AVAEDIVMarkupSumPurch</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>MarkupCodePickUpFee</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MarkupCodeFreight</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>SalesOrderPriceParam</Name>
+			<Label>@NDX:NDASOParam</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>PriceSearch</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EDIQuotationStatusId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MaxAgeFeaturedItemCalculation</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>RepPckSlipDaysCheck</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>SalesOrderBundleSettings</Name>
+			<Label>@NDX:NXABundleSettings</Label>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Overview</Name>
+			<Label>@SYS9039</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>SecondaryDataAreaIdBPRequests</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ForceSecondaryRequest</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>PreferenceAuth</Name>
+			<Label>@NDX:NXAPreferenceAuth</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>PreferenceAuthorityCheck</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Email</Name>
+			<Label>@NDX:NXAEmailParameter</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>EmailCC</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EmailContent</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesQuotationExcelReport</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>IncreaseInPrices</Name>
+			<Label>@NDX:NXAIncreaseInPrices</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>RelationshipTypeIdPriceInfo</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>RelationshipTypeIdPriceFile</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AzureFileStorageId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ERPriceListFormat</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>RICO</Name>
+			<Label>@NDX:NXARICO</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>RICOItemCustGroup</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>SalesOrderQtyParm</Name>
+			<Label>@NDX:NXAProdOrderQty</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>PreferredQtyForCentralWH</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>SalesOrderEmailSettings</Name>
+			<Label>@SYS96654</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>EmailSetupId</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>SalesQuotationNoStockedItem</Name>
+			<ExtendedDataType>AVASalesQuotationNoStockedItem</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>LimitPriceExchRateType</Name>
+			<ExtendedDataType>ExchangeRateTypeRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>TradeCreditInsurance</Name>
+			<ExtendedDataType>AVATradeCreditInsurance</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>OPKLinkOutput</Name>
+			<ExtendedDataType>AVAOPKLinkOutput</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>SalesQuotationNoTaxCalc</Name>
+			<ExtendedDataType>AVASalesQuotationNoTaxCalc</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>SalesQuotationNoDlvDateControl</Name>
+			<ExtendedDataType>AVASalesQuotationNoDlvDateControl</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>PositionIncrement</Name>
+			<ExtendedDataType>AVAPositionIncrement</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>LimitGroupName</Name>
+			<ExtendedDataType>KCS_LimitGroupName</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CustPriceGroup</Name>
+			<ExtendedDataType>CustPriceGroup</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>GAEBProg</Name>
+			<ExtendedDataType>AVAGAEBProg</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>GAEBAdditionText</Name>
+			<ExtendedDataType>AVAGAEBAdditionText</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>GAEBCleanAtachmentInDays</Name>
+			<ExtendedDataType>AVAGAEBCleanAtachmentInDays</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>GAEBD94Version</Name>
+			<ExtendedDataType>AVAGAEBVersion</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>GAEBD94VersionMonat</Name>
+			<ExtendedDataType>AVAGAEBVersionMonat</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>GAEBD94VersionYear</Name>
+			<ExtendedDataType>AVAGAEBVersionYear</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>GAEBX94Version</Name>
+			<ExtendedDataType>AVAGAEBVersion</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>GAEBX94VersionMonat</Name>
+			<ExtendedDataType>AVAGAEBVersionMonat</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>GAEBX94VersionYear</Name>
+			<ExtendedDataType>AVAGAEBVersionYear</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>KBVFunctions</Name>
+			<ExtendedDataType>AVAKBVFunctions</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>KBVQuotationOnly</Name>
+			<ExtendedDataType>AVAKBVQuotationOnly</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VuV</Name>
+			<ExtendedDataType>AVAVuV</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>CommissionRate</Name>
+			<ExtendedDataType>CommissionRate</ExtendedDataType>
+			<Label>@SYS2489</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>CashDisc</Name>
+			<ExtendedDataType>DiscPct</ExtendedDataType>
+			<Label>@NDX:NXACashDiscPct</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>MiscCosts</Name>
+			<ExtendedDataType>Percent</ExtendedDataType>
+			<Label>@NDX:NXAMicsCosts</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>QuotationSpecialDiscount1</Name>
+			<ExtendedDataType>AVASpecialDiscountId</ExtendedDataType>
+			<Label>@NDX:NXASP1</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>QuotationSpecialDiscount2</Name>
+			<ExtendedDataType>AVASpecialDiscountId</ExtendedDataType>
+			<Label>@NDX:NXASP2</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>QuotationSpecialDiscount3</Name>
+			<ExtendedDataType>AVASpecialDiscountId</ExtendedDataType>
+			<Label>@NDX:NXASP3</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SalesOrderSpecialDiscount1</Name>
+			<ExtendedDataType>AVASpecialDiscountId</ExtendedDataType>
+			<Label>@NDX:NXASP4</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SalesOrderSpecialDiscount2</Name>
+			<ExtendedDataType>AVASpecialDiscountId</ExtendedDataType>
+			<Label>@NDX:NXASP5</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SalesOrderSpecialDiscount3</Name>
+			<ExtendedDataType>AVASpecialDiscountId</ExtendedDataType>
+			<Label>@NDX:NXASP6</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SocialDiscount</Name>
+			<ExtendedDataType>AVASpecialDiscountId</ExtendedDataType>
+			<Label>@NDX:NXASP7</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>StatusId</Name>
+			<ExtendedDataType>KCS_StatusId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>DirectCustomerCreation</Name>
+			<ExtendedDataType>AVADirectCustomerCreation</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>GAEBD94CharSet</Name>
+			<ExtendedDataType>String20</ExtendedDataType>
+			<Label>@NDX:NXAGAEBCharSet</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ModuleType</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>MarkupModule</ExtendedDataType>
+			<EnumType>MarkupModuleType</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>MarkupCodeFreight</Name>
+			<ExtendedDataType>AVAMarkupCodeFreight</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>MarkupCodePickUpFee</Name>
+			<ExtendedDataType>AVAMarkupCodePickUpFee</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>PriceSearch</Name>
+			<ExtendedDataType>AVAPriceSearch</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>SalesQuotationNumOfDays</Name>
+			<ExtendedDataType>SalesQuotationNumOfDays</ExtendedDataType>
+			<HelpText>@NDX:NXASQNumOfDaysHT</HelpText>
+			<Label>@NDX:NXASQNumOfDays</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>EDIQuotationStatusId</Name>
+			<ExtendedDataType>KCS_StatusId</ExtendedDataType>
+			<Visible>No</Visible>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SecondaryDataAreaIdBPRequests</Name>
+			<ExtendedDataType>AVASecondaryDataAreaIdBPRequests</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ForceSecondaryRequest</Name>
+			<ExtendedDataType>AVAForceSecondaryRequest</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>AllowIndirectCreation</Name>
+			<ExtendedDataType>AVAAllowIndirectCreation</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>AutomaticICOrders</Name>
+			<ExtendedDataType>AVAAutomaticICOrders</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>DirectDelivery</Name>
+			<ExtendedDataType>AVADirectDelivery</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KCS_IC_Reduction</Name>
+			<ExtendedDataType>KCS_IC_Reduction</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>PreferenceAuthorityCheck</Name>
+			<ExtendedDataType>AVAPreferenceAuthorityCheck</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>EmailCC</Name>
+			<ExtendedDataType>AVAEmailCC</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>EmailContent</Name>
+			<ExtendedDataType>AVAEmailContent</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>InventStatusId</Name>
+			<ExtendedDataType>WHSInventStatusId</ExtendedDataType>
+			<HelpText>@NDX:NXAStockStatusCNHelp</HelpText>
+			<Label>@NDX:NXAStockStatusCN</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>MaxAgeFeaturedItemCalculation</Name>
+			<ExtendedDataType>AVAMaxAgeFeaturedItemCalculation</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SalesQuotationExcelReport</Name>
+			<ExtendedDataType>PrintMgmtReportFormatName</ExtendedDataType>
+			<Label>@NDX:NXASalesQuotExcetReport</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>RelationshipTypeIdPriceInfo</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>DirRelationshipTypeId</ExtendedDataType>
+			<HelpText>@NDX:NXARelationPriceInformationHelp</HelpText>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NXARelationPriceInformation</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>RelationshipTypeIdPriceFile</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>DirRelationshipTypeId</ExtendedDataType>
+			<HelpText>@NDX:NXARelationPriceFileHelp</HelpText>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NXARelationPriceFile</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>AzureFileStorageId</Name>
+			<ExtendedDataType>AVAMSQAzureFileStorageId</ExtendedDataType>
+			<HelpText>@NDX:NXAIdAzureFileStorageHelp</HelpText>
+			<Label>@NDX:NXAIdAzureFileStorage</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>RICOItemCustGroup</Name>
+			<ExtendedDataType>AVARICOItemCustGroup</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ERPriceListFormat</Name>
+			<ExtendedDataType>AVAERPriceListFormat</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>RepPckSlipDaysCheck</Name>
+			<ExtendedDataType>AVARepPckSlipDaysCheck</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>HKFromSupportTable</Name>
+			<ExtendedDataType>AVAHKFromSupportTable</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>EnableBlockedCustomer</Name>
+			<ExtendedDataType>AVAEnableBlockedCustomer</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Visible>No</Visible>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>EmailSetupId</Name>
+			<ExtendedDataType>AVAPCMEmailSetupId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>PreferredQtyForCentralWH</Name>
+			<ExtendedDataType>AVA_PreferredQtyForCentralWH</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>SalesQuotImportModus</Name>
+			<ExtendedDataType>AVAImportModus</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Visible>No</Visible>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>SalesQuotQuickPost</Name>
+			<ExtendedDataType>AVASalesQuotQuickPost</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>PartitionLines</Name>
+			<ExtendedDataType>AVAPartitionLines</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes />
+	<Mappings />
+	<Relations>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>ExchangeRateType</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>ExchangeRateType</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>ExchRateType</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Role>ExchRateTypeRole</Role>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>LimitPriceExchRateType</Name>
+					<Field>LimitPriceExchRateType</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>LimitGroup</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>KCS_LimitGroups</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>LimitGroupName</Name>
+					<Field>LimitGroupName</Field>
+					<RelatedField>GroupName</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>CustPriceGroup</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<RelatedTable>PriceDiscGroup</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>CustPriceGroup</Name>
+					<SourceEDT>CustPriceGroup</SourceEDT>
+					<Field>CustPriceGroup</Field>
+					<RelatedField>GroupId</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>Type</Name>
+					<SourceEDT>CustPriceGroup</SourceEDT>
+					<RelatedField>Type</RelatedField>
+					<ValueStr>PriceGroupType::PriceGroup</ValueStr>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>Module</Name>
+					<SourceEDT>CustPriceGroup</SourceEDT>
+					<RelatedField>Module</RelatedField>
+					<ValueStr>ModuleInventCustVend::Cust</ValueStr>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>QuotationSpecialDiscount1</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>AVASpecialDiscount</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>QuotationSpecialDiscount1</Name>
+					<Field>QuotationSpecialDiscount1</Field>
+					<RelatedField>SpecialDiscountId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>QuotationSpecialDiscount2</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>AVASpecialDiscount</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>QuotationSpecialDiscount2</Name>
+					<Field>QuotationSpecialDiscount2</Field>
+					<RelatedField>SpecialDiscountId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>QuotationSpecialDiscount3</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>AVASpecialDiscount</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>QuotationSpecialDiscount3</Name>
+					<Field>QuotationSpecialDiscount3</Field>
+					<RelatedField>SpecialDiscountId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>SalesOrderSpecialDiscount1</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>AVASpecialDiscount</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>SalesOrderSpecialDiscount1</Name>
+					<Field>SalesOrderSpecialDiscount1</Field>
+					<RelatedField>SpecialDiscountId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>SalesOrderSpecialDiscount2</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>AVASpecialDiscount</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>SalesOrderSpecialDiscount2</Name>
+					<Field>SalesOrderSpecialDiscount2</Field>
+					<RelatedField>SpecialDiscountId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>SalesOrderSpecialDiscount3</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>AVASpecialDiscount</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>SalesOrderSpecialDiscount3</Name>
+					<Field>SalesOrderSpecialDiscount3</Field>
+					<RelatedField>SpecialDiscountId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>SocialDiscount</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>AVASpecialDiscount</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>SocialDiscount</Name>
+					<Field>SocialDiscount</Field>
+					<RelatedField>SpecialDiscountId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>QuotationStatus</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>KCS_QuotationStatus</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>StatusId</Name>
+					<Field>StatusId</Field>
+					<RelatedField>KCS_StatusId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>MarkupTablePickUpFee</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>MarkupTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>ModuleType</Name>
+					<Field>ModuleType</Field>
+					<RelatedField>ModuleType</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>MarkupCodePickUpFee</Name>
+					<Field>MarkupCodePickUpFee</Field>
+					<RelatedField>MarkupCode</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>MarkupTableFreight</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>MarkupTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>ModuleType</Name>
+					<Field>ModuleType</Field>
+					<RelatedField>ModuleType</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>MarkupCodeFreight</Name>
+					<Field>MarkupCodeFreight</Field>
+					<RelatedField>MarkupCode</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>KCS_QuotationStatus</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>KCS_QuotationStatus</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>EDIQuotationStatusId</Name>
+					<Field>EDIQuotationStatusId</Field>
+					<RelatedField>KCS_StatusId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>WHSInventStatus</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>WHSInventStatus</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>WHSInventStatus</Name>
+					<SourceEDT>WHSInventStatusId</SourceEDT>
+					<Field>InventStatusId</Field>
+					<RelatedField>InventStatusId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>DirRelationshipTypeTablePriceInfo</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>DirRelationshipTypeTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>DirRelationshipTypeTablePriceInfo</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>RelationshipTypeIdPriceInfo</Name>
+					<Field>RelationshipTypeIdPriceInfo</Field>
+					<RelatedField>RelationshipTypeId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>DirRelationshipTypeTablePriceFile</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>DirRelationshipTypeTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>DirRelationshipTypeTablePriceInfo</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>RelationshipTypeIdPriceFile</Name>
+					<Field>RelationshipTypeIdPriceFile</Field>
+					<RelatedField>RelationshipTypeId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>AVAMSQAzureFileStorageDefinition</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>AVAMSQAzureFileStorageDefinition</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>AzureFileStorageId</Name>
+					<Field>AzureFileStorageId</Field>
+					<RelatedField>AzureFileStorageId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>CustVendItemGroup_RICO</Name>
+			<Cardinality>OneMore</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>CustVendItemGroup</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>RICOItemCustGroup</Name>
+					<Field>RICOItemCustGroup</Field>
+					<RelatedField>GroupId</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>Module</Name>
+					<RelatedField>Module</RelatedField>
+					<ValueStr>ModuleInventCustVend::Cust</ValueStr>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>ERFormatMappingTable</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<RelatedTable>ERFormatMappingTable</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>ERPriceListFormat</Name>
+					<Field>ERPriceListFormat</Field>
+					<RelatedField>Name</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>AVAPCMEmailSetup</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>AVAPCMEmailSetup</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>AVAPCMEmailSetup</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>EmailSetupId</Name>
+					<Field>EmailSetupId</Field>
+					<RelatedField>EmailSetupId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

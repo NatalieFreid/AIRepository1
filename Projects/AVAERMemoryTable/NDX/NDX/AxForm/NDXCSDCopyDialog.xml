@@ -1,0 +1,340 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>NDXCSDCopyDialog</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class NDXCSDCopyDialog extends FormRun
+{
+    boolean closedOK;
+    NDXCSD lNDX_CSD;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closedCancel</Name>
+				<Source><![CDATA[
+    public boolean closedCancel()
+    {
+        boolean ret;
+    
+        closedOK = false;
+        
+        ret = super();
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>activateOKButton</Name>
+				<Source><![CDATA[
+    void activateOKButton()
+    {
+        CommandButtonOK.enabled(false);
+        if(CentralStoreTo.valueStr() != '')
+        {
+            CommandButtonOK.enabled(true);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    public void closeOk()
+    {
+        closedOK = true;
+
+        super();
+
+        if(lNDX_CSD)
+        {
+            lNDX_CSD.targetCentralStoreId = CentralStoreTo.text();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canClose</Name>
+				<Source><![CDATA[
+    public boolean canClose()
+    {
+        NDX_CentralStore NDX_CentralStoreTo;
+        NDXTmpVerband NDX_TmpVerbandTo;
+        QueryRun qr;
+        boolean ret;
+
+        ret = super();
+
+        if(closedOK && CentralStoreFrom.valueStr() != '' && CentralStoreTo.valueStr() != '')
+        {
+            qr = new QueryRun(this.StoreLookup(CentralStoreTo));
+
+            while(qr.next())
+            {
+                if(CentralStoreFrom.valueStr() != '')
+                {
+                    NDX_TmpVerbandTo = qr.get(tablenum(NDXTmpVerband));
+                    NDX_CentralStoreTo = NDX_CentralStore::find(NDX_TmpVerbandTo.CentralStoreId);
+                }
+                else
+                {
+                    NDX_CentralStoreTo = qr.get(tablenum(NDX_CentralStore));
+                }
+
+                if(NDX_CentralStoreTo.CentralStoreId == CentralStoreTo.valueStr())
+                {
+                    break;
+                }
+                else
+                {
+                    NDX_CentralStoreTo.clear();
+                }
+            }
+        }
+
+        if(closedOK && !NDX_CentralStoreTo)
+        {
+            Box::info("@NDX:NDXCentralStoreInfo12");
+            ret = false;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>StoreLookup</Name>
+				<Source><![CDATA[
+    Query StoreLookup(FormControl  _ctrl)
+    {
+
+        SysTableLookup          sysTableLookup;
+        Query                   query = new Query();
+        QueryBuildDataSource    queryBuildDataSource;
+        NDX_CentralStore        lNDX_CentralStore;
+
+        NDXVerband              lVerband;
+
+        if(CentralStoreFrom.text() != '')
+        {
+            sysTableLookup = SysTableLookup::newParameters(tablenum(NDXTmpVerband), _ctrl);
+            sysTableLookup.addLookupfield(fieldnum(NDXTmpVerband, CentralStoreId), true);
+            sysTableLookup.addLookupMethod(tableMethodStr(NDXTmpVerband, dispCustName));
+            queryBuildDataSource = query.addDataSource(tableNum(NDXTmpVerband));
+        }
+        else
+        {
+            sysTableLookup = SysTableLookup::newParameters(tablenum(NDX_CentralStore), _ctrl);
+            sysTableLookup.addLookupfield(fieldnum(NDX_CentralStore, CentralStoreId), true);
+            sysTableLookup.addLookupMethod(tableMethodStr(NDX_CentralStore, dispCustName));
+            queryBuildDataSource = query.addDataSource(tableNum(NDX_CentralStore));
+        }
+
+        if(CentralStoreFrom.text() != '' && _ctrl.name() == 'CentralStoreTo')
+        {
+            lNDX_CentralStore = NDX_CentralStore::find(CentralStoreFrom.text());
+            lVerband = NDXVerband::constructor();
+            
+            lVerband.getMaster(lNDX_CentralStore.CentralStoreId);
+            
+            lVerband.copyChildrenSetToList(lVerband.getDebitorsFromMaster(lVerband.masterAlliance));
+            lVerband.getCSFromMaster([NDXHelperCommon::CompanyId2NDXCompany(curext(), false)], null, CentralStoreFrom.text());
+            
+            queryBuildDataSource.addRange(fieldnum(NDXTmpVerband, UmsSignature)).value(curuserid());
+            queryBuildDataSource.addRange(fieldnum(NDXTmpVerband, Company)).value(curext());
+
+        }
+
+        sysTableLookup.parmQuery(query);
+        
+        if(CentralStoreFrom.text() != '' && _ctrl.name() == 'CentralStoreTo')
+        {
+            sysTableLookup.parmTmpBuffer(lVerband.parmNDXTmpVerband());
+        }            
+        sysTableLookup.performFormLookup();
+
+        return query;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        NDX_CentralStoreDistributionTable lNDX_CentralStoreDistributionTable;
+
+        super();
+
+        if (!element.args() ||
+        !element.args().record() || element.args().dataset() != tablenum(NDX_CentralStoreDistributionTable))
+        {
+            throw error("@SYS22539");
+        }
+        else
+        {
+            lNDX_CSD = element.args().caller();
+            lNDX_CentralStoreDistributionTable = element.args().record();
+            CentralStoreFrom.text(lNDX_CentralStoreDistributionTable.CentralStoreId);
+            CentralStoreFrom.allowEdit(false);
+            super();
+        }
+
+        this.activateOKButton();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>CentralStoreFrom</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            //super();
+            element.StoreLookup(this);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>CentralStoreTo</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+    
+            ret = super();
+            element.activateOKButton();
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>textChange</Name>
+						<Source><![CDATA[
+        public void textChange()
+        {
+            super();
+            element.activateOKButton();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            //super();
+            element.StoreLookup(this);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<Caption xmlns="">@NDX:NDXCSDCopySet</Caption>
+		<Pattern xmlns="">Dialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">Dialog</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>Content</Name>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Pattern>FieldsFieldGroups</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>CentralStoreFrom</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>NDXCentralStoreId</ExtendedDataType>
+						<Label>@NDXBase:NDXFrom</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>CentralStoreTo</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>NDXCentralStoreId</ExtendedDataType>
+						<Label>@NDXBase:NDXTo</Label>
+					</AxFormControl>
+				</Controls>
+				<ColumnsMode>Fill</ColumnsMode>
+				<FrameType>None</FrameType>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>FormButtonGroupControl1</Name>
+				<Type>ButtonGroup</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>CommandButtonOK</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>CommandButton</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>CommandButtonCancel</Name>
+						<Type>CommandButton</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>Cancel</Command>
+						<SaveRecord>No</SaveRecord>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

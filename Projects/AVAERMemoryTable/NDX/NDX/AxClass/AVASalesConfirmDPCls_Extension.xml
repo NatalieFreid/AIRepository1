@@ -1,0 +1,485 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesConfirmDPCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// extension of class SalesConfirmDP
+/// </summary>
+[ExtensionOf(classStr(SalesConfirmDP))]
+final class AVASalesConfirmDPCls_Extension
+{
+    public LineNum avaLineNum = 0;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createSalesOrderConfirmationLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates a sales order confirmation line.
+    /// </summary>
+    /// <param name = "_salesConfirmHeaderTmp">
+    /// A <c>SalesConfirmHeaderTmp</c> record which is the sales order confirmation header.
+    /// </param>
+    /// <param name = "_confirmationLineSelection">
+    /// A <c>SalesConfirmDPConfirmationLineQuerySelection</c> object which the sales order confirmation line should be created for.
+    /// </param>
+    /// <returns>
+    /// The created <c>SalesConfirmDetailsTmp</c> sales order confirmation line record.
+    /// </returns>
+    protected SalesConfirmDetailsTmp createSalesOrderConfirmationLine(
+        SalesConfirmHeaderTmp                           _salesConfirmHeaderTmp,
+        SalesConfirmDPConfirmationLineQuerySelection    _confirmationLineSelection)
+    {
+        SalesConfirmDetailsTmp salesConfirmDetailsTmpLoc = next createSalesOrderConfirmationLine(_salesConfirmHeaderTmp, _confirmationLineSelection);
+
+        this.avaAddSpecialDiscount(_confirmationLineSelection);
+
+        return salesConfirmDetailsTmpLoc;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaAddSpecialDiscount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Adds special discount tmp records
+    /// </summary>
+    /// <param name = "_confirmationLineSelection">SalesConfirmDPConfirmationLineQuerySelection</param>
+    public void avaAddSpecialDiscount(SalesConfirmDPConfirmationLineQuerySelection _confirmationLineSelection)
+    {
+        SalesConfirmDetailsTmp salesConfirmDetailsTmpLoc;
+        AVASpecialDiscConfirmTrans avaSpecialDisc;
+
+        while select avaSpecialDisc
+            where avaSpecialDisc.CustConfirmTransRefRecId == _confirmationLineSelection.parmCustConfirmTrans().RecId
+        {
+            salesConfirmDetailsTmpLoc.clear();
+            salesConfirmDetailsTmpLoc.AVAIsSpecialDiscLine  = NoYes::Yes;
+            salesConfirmDetailsTmpLoc.AVALineNum            = _confirmationLineSelection.parmCustConfirmTrans().LineNum;
+            salesConfirmDetailsTmpLoc.CustConfirmTrans      = _confirmationLineSelection.parmCustConfirmTrans().RecId;
+            salesConfirmDetailsTmpLoc.DiscPercent           = avaSpecialDisc.SpecialDiscPct;
+
+            if(avaSpecialDisc.PriceAdjustmentType == AVAPriceAdjustmentType::SpecialDiscount)
+            {
+                salesConfirmDetailsTmpLoc.DiscAmount        = avaSpecialDisc.SpecialDiscAmount * -1;
+                salesConfirmDetailsTmpLoc.Name              = AVASpecialDiscount::txt(avaSpecialDisc.SpecialDiscountId, this.parmcustConfirmJour().LanguageId);
+            }
+            else
+            {
+                salesConfirmDetailsTmpLoc.DiscAmount        = avaSpecialDisc.SpecialDiscAmount;
+                salesConfirmDetailsTmpLoc.Name              = AVAPriceSurchargeTable::txt(avaSpecialDisc.SpecialDiscountId, this.parmcustConfirmJour().LanguageId);
+            }
+
+            salesConfirmDetailsTmpLoc.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeSalesOrderConfirmationHeader</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes a sales order confirmation header.
+    /// </summary>
+    /// <returns>
+    /// The initialized <c>SalesConfirmHeaderTmp</c> sales order confirmation header record.
+    /// </returns>
+    protected SalesConfirmHeaderTmp initializeSalesOrderConfirmationHeader()
+    {
+        Label                   avaLabel                = new Label(this.parmCustConfirmJour().LanguageId);
+        SalesConfirmHeaderTmp   salesConfirmHeaderTmp   = next initializeSalesOrderConfirmationHeader();
+        HcmWorker               avaDlvResponsible       = HcmWorker::find(this.parmCustConfirmJour().AVADlvResponsible);
+        SalesTable              avaSalesTable           = this.parmCustConfirmJour().salesTable();
+        PurchTable              avaPurchTable_IC        = avaSalesTable.referencePurchTable();
+        SalesTable              avaSalesTable_IC        = avaPurchTable_IC.interCompanySalesTable();
+        
+        FormLetterRemarks avaFormLetterRemarks = FormLetterRemarks::find(this.parmCustConfirmJour().LanguageId, FormTextType::AVASalesOrder_YieldReduction);
+        salesConfirmHeaderTmp.AVADlvMode                            = this.parmCustConfirmJour().DlvMode;
+        salesConfirmHeaderTmp.AVADlvTerm                            = this.parmCustConfirmJour().DlvTerm;
+        salesConfirmHeaderTmp.AVAFormLetterRemaks_YieldReduction    = this.parmCustConfirmJour().KCS_DecreaseProf ? avaFormLetterRemarks.Txt : '';
+        salesConfirmHeaderTmp.AVASalesGroup                         = this.parmCustConfirmJour().AVASalesGroup;
+        salesConfirmHeaderTmp.AVAContactName                        = CustTable::find(this.parmCustConfirmJour().OrderAccount).avaName();
+        salesConfirmHeaderTmp.AVAVATNum                             = this.parmCustConfirmJour().AVAVATNum;
+        salesConfirmHeaderTmp.CashDiscTxt                           = CashDisc::txt(this.parmCustConfirmJour().CashDiscCode, this.parmCustConfirmJour().LanguageId);
+        salesConfirmHeaderTmp.AVAEmailRecipient                     = this.parmCustConfirmJour().AVAEmailRecipient;
+        salesConfirmHeaderTmp.AVAShipCarrierDeliveryContact         = this.parmCustConfirmJour().AVAShipCarrierDeliveryContact;
+        salesConfirmHeaderTmp.AVAShipCarrierDeliveryMobile          = this.parmCustConfirmJour().AVAShipCarrierDeliveryMobile;
+        salesConfirmHeaderTmp.NDX_ShipCarrierDeliveryPhone          = this.parmCustConfirmJour().NDX_ShipCarrierDeliveryPhone;
+        salesConfirmHeaderTmp.NDX_ShipCarrierDeliveryFax            = this.parmCustConfirmJour().NDX_ShipCarrierDeliveryFax;
+        salesConfirmHeaderTmp.AVAValutaExtensionDays                = this.parmCustConfirmJour().AVAValutaExtensionDays;
+        salesConfirmHeaderTmp.AVAPreferenceOutput                   = this.parmCustConfirmJour().AVAPreferenceOutput;
+
+        if(this.parmCustConfirmJour().AVAContactName != '')
+        {
+            salesConfirmHeaderTmp.AVAContactName += '\n' + this.parmCustConfirmJour().AVAContactName;
+        }
+        
+        if(this.parmCustConfirmJour().CustomerRef != '')
+        {
+            salesConfirmHeaderTmp.AVAPurchaseOrder = strFmt("@NDX:NXAVar1FromVar2CommaVar3", this.parmCustConfirmJour().PurchaseOrder, this.parmCustConfirmJour().KCS_PurchRefDate, this.parmCustConfirmJour().CustomerRef);
+        }
+        else
+        {
+            salesConfirmHeaderTmp.AVAPurchaseOrder = strFmt(avaLabel.extractString("@NDX:NXAVar1FromVar2"), this.parmCustConfirmJour().PurchaseOrder, this.parmCustConfirmJour().KCS_PurchRefDate);
+        }
+
+        if(avaSalesTable_IC)
+        {
+            changecompany(avaSalesTable_IC.InterCompanyCompanyId)
+            {
+                HcmWorker   avaDlvResponsibleLoc    = HcmWorker::find(avaSalesTable_IC.AVADlvResponsible);
+                
+                salesConfirmHeaderTmp.AVADlvResponsibleMail     = avaDlvResponsibleLoc.email();
+                salesConfirmHeaderTmp.AVADlvResponsibleName     = avaDlvResponsibleLoc.avaPersonName();
+                salesConfirmHeaderTmp.AVADlvResponsiblePhone    = avaDlvResponsibleLoc.phone() + " " + avaDlvResponsibleLoc.phoneLocal();
+
+                if(avaSalesTable_IC.InventSiteId)
+                {
+                    LogisticsPostalAddress avaPostalAddress = InventSite::find(avaSalesTable_IC.InventSiteId).logisticsPostalAddress();
+
+                    salesConfirmHeaderTmp.AVAInventSiteSender = avaPostalAddress.avaName() + '\n' + avaPostalAddress.Address;
+                }
+
+            }
+        }
+        else
+        {
+            salesConfirmHeaderTmp.AVADlvResponsibleMail     = avaDlvResponsible.email();
+            salesConfirmHeaderTmp.AVADlvResponsibleName     = avaDlvResponsible.avaPersonName();
+            salesConfirmHeaderTmp.AVADlvResponsiblePhone    = avaDlvResponsible.phone() + " " + avaDlvResponsible.phoneLocal();
+
+            if(this.parmCustConfirmJour().AVAInventSiteId)
+            {
+                LogisticsPostalAddress avaPostalAddress = InventSite::find(this.parmCustConfirmJour().AVAInventSiteId).logisticsPostalAddress();
+
+                salesConfirmHeaderTmp.AVAInventSiteSender = avaPostalAddress.avaName() + '\n' + avaPostalAddress.Address;
+            }
+        }
+
+        return salesConfirmHeaderTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeSalesOrderConfirmationLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes a sales order confirmation line.
+    /// </summary>
+    /// <param name = "_salesConfirmHeaderTmp">
+    /// A <c>SalesConfirmHeaderTmp</c> record which is the sales order confirmation header.
+    /// </param>
+    /// <param name = "_confirmationLineSelection">
+    /// A <c>SalesConfirmDPConfirmationLineQuerySelection</c> object which the sales order confirmation line should be initialized from.
+    /// </param>
+    /// <returns>
+    /// The initialized <c>SalesConfirmDetailsTmp</c> sales order confirmation line record.
+    /// </returns>
+    protected SalesConfirmDetailsTmp initializeSalesOrderConfirmationLine(
+        SalesConfirmHeaderTmp                           _salesConfirmHeaderTmp,
+        SalesConfirmDPConfirmationLineQuerySelection    _confirmationLineSelection)
+    {
+        SalesConfirmDetailsTmp avaSalesConfirmDetailsTmp = next initializeSalesOrderConfirmationLine(_salesConfirmHeaderTmp, _confirmationLineSelection);
+
+        if(_confirmationLineSelection.parmCustConfirmTrans().AVAItemSetComponent == NoYes::No)
+        {
+            avaLineNum++;
+            avaSalesConfirmDetailsTmp.AVALineNumNew             = avaLineNum;
+        }
+
+        avaSalesConfirmDetailsTmp.AVAIsSpecialDiscLine          = NoYes::No;
+        avaSalesConfirmDetailsTmp.AVALineNum                    = _confirmationLineSelection.parmCustConfirmTrans().LineNum;
+        avaSalesConfirmDetailsTmp.AVAInventColorId              = _confirmationLineSelection.parmCustConfirmTransInventDim().InventColorId;
+        avaSalesConfirmDetailsTmp.AVAItemSetComponent           = _confirmationLineSelection.parmCustConfirmTrans().AVAItemSetComponent;
+        avaSalesConfirmDetailsTmp.AVAModelNumber                = _confirmationLineSelection.parmCustConfirmTrans().inventTable().NDXModelNumber;
+        avaSalesConfirmDetailsTmp.AVAPriceSurchargeCode         = _confirmationLineSelection.parmCustConfirmTrans().AVAPriceSurchargeCode;
+        avaSalesConfirmDetailsTmp.AVAPriceSurchargePercentage   = _confirmationLineSelection.parmCustConfirmTrans().AVAPriceSurchargePercentage;
+        avaSalesConfirmDetailsTmp.AVAPriceUnit                  = _confirmationLineSelection.parmCustConfirmTrans().PriceUnit;
+        avaSalesConfirmDetailsTmp.AVAQuotationId                = _confirmationLineSelection.parmCustConfirmTrans().AVAQuotationId;
+        avaSalesConfirmDetailsTmp.AVADescription                = _confirmationLineSelection.parmCustConfirmTrans().AVADescription;
+        avaSalesConfirmDetailsTmp.AVAReceiptDateConfirmed       = this.avaGetReceiptDateString(_confirmationLineSelection);
+        avaSalesConfirmDetailsTmp.AVAShippingDateConfirmed      = this.avaGetShippingDateString(_confirmationLineSelection);
+        avaSalesConfirmDetailsTmp.AVAPreferenceAuthorized       = _confirmationLineSelection.parmCustConfirmTrans().AVAPreferenceAuthorized;
+
+        if(this.parmCustConfirmJour().DlvMode != _confirmationLineSelection.parmCustConfirmTrans().AVADlvMode)
+        {
+            avaSalesConfirmDetailsTmp.AVADlvMode                = _confirmationLineSelection.parmCustConfirmTrans().AVADlvMode;
+        }
+
+        if(this.parmCustConfirmJour().AVADlvReason
+            || this.parmCustConfirmJour().postalAddress().CountryRegionId != CompanyInfo::find().postalAddress().CountryRegionId)
+        {
+            avaSalesConfirmDetailsTmp.AVAOrigCountryName        = _confirmationLineSelection.parmCustConfirmTrans().inventTable().OrigCountryRegionId;
+            avaSalesConfirmDetailsTmp.AVAIntrastatCommodity     = EcoResCategory::find(_confirmationLineSelection.parmCustConfirmTrans().AVAIntrastatCommodity).Code;
+        }
+
+        if(_confirmationLineSelection.parmCustConfirmTrans().AVAInventSiteId != this.parmCustConfirmJour().AVAInventSiteId)
+        {
+            avaSalesConfirmDetailsTmp.AVAInventSiteName         = InventSite::find(_confirmationLineSelection.parmCustConfirmTrans().AVAInventSiteId).Name;
+        }
+
+        if(CompanyInfo::find().NDXEldasFunctionality)
+        {
+            avaSalesConfirmDetailsTmp.AVAEldasENo               = NDXEldas::find(_confirmationLineSelection.parmCustConfirmTrans().ItemId).EldasENo;
+        }
+
+        [avaSalesConfirmDetailsTmp.AVATotalMarkupAmount, avaSalesConfirmDetailsTmp.AVAMarkupCodeList, avaSalesConfirmDetailsTmp.AVAMarkupValueList] = this.avaMarkUpValues(_confirmationLineSelection);
+
+        return avaSalesConfirmDetailsTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetShippingDateString</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// creates and returns a string containing the shipping date depending on logic, takes next Record in line if current one is an ItemSet
+    /// </summary>
+    /// <param name = "_confirmationLineSelection">SalesConfirmDPConfirmationLineQuerySelection</param>
+    /// <returns>str</returns>
+    public str avaGetShippingDateString(SalesConfirmDPConfirmationLineQuerySelection _confirmationLineSelection)
+    {
+        str avaShippingDateString;
+        AVAQtyReserved reservedQtyLoc, remainInventPhysicalLoc;
+        SalesShippingDateConfirmed shippingDateConfirmedLoc;
+        SalesUnit salesUnitLoc;
+        SalesConfirmedQty qtyLoc;
+        Label avaLabel = new Label(this.parmCustConfirmJour().LanguageId);
+
+
+        if(_confirmationLineSelection.parmCustConfirmTrans().salesLine().isInterCompanyOrigin())
+        {
+            [reservedQtyLoc, remainInventPhysicalLoc, shippingDateConfirmedLoc, salesUnitLoc, qtyLoc] = this.avaGetShippingFields_IC(_confirmationLineSelection.parmCustConfirmTrans());
+        }
+        else
+        {
+            [reservedQtyLoc, remainInventPhysicalLoc, shippingDateConfirmedLoc, salesUnitLoc, qtyLoc] = this.avaGetShippingFields(_confirmationLineSelection.parmCustConfirmTrans());
+        }
+
+        if(shippingDateConfirmedLoc == dateNull())
+        {
+            avaShippingDateString = avaLabel.extractString("@NDX:NXAFollowing");
+        }
+        else if(reservedQtyLoc > 0
+            && reservedQtyLoc < remainInventPhysicalLoc)
+        {
+            avaShippingDateString = strFmt(avaLabel.extractString("@NDX:NXAVar1ForVar2Var3")
+                                        , date2Str(shippingDateConfirmedLoc, 123, DateDay::Digits2, DateSeparator::Dot, DateMonth::Digits2, DateSeparator::Dot, DateYear::Digits4)
+                                        , reservedQtyLoc
+                                        , salesUnitLoc);
+        }
+        else
+        {
+            avaShippingDateString = date2Str(shippingDateConfirmedLoc, 123, DateDay::Digits2, DateSeparator::Dot, DateMonth::Digits2, DateSeparator::Dot, DateYear::Digits4);
+        }
+
+        return avaShippingDateString;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetShippingFields_IC</Name>
+				<Source><![CDATA[
+    public container avaGetShippingFields_IC(CustConfirmTrans _custConfirmTrans)
+    {
+        CustConfirmTrans confirmTransLoc_IC, confirmTransLoc;
+        SalesLine salesLineLoc_IC, salesLineLoc;
+        PurchLine purchLineLoc;
+        AVAQtyReserved reservedQtyLoc, remainInventPhysicalLoc;
+        SalesShippingDateConfirmed shippingDateConfirmedLoc;
+        SalesUnit salesUnitLoc;
+        SalesConfirmedQty qtyLoc;
+
+        purchLineLoc    = _custConfirmTrans.salesLine().referencedPurchLine();
+        salesLineLoc_IC = purchLineLoc.interCompanySalesLine();
+
+        changecompany(purchLineLoc.purchTable().InterCompanyCompanyId)
+        {
+            if(salesLineLoc_IC.AVAItemSet)
+            {
+
+                select firstonly salesLineLoc
+                    order by salesLineLoc.LineNum
+                    where salesLineLoc.SalesId == salesLineLoc_IC.SalesId
+                    && salesLineLoc.LineNum > salesLineLoc_IC.LineNum;
+
+                reservedQtyLoc              = salesLineLoc.reservedPhysicalinSalesUnit();;
+                remainInventPhysicalLoc     = salesLineLoc.RemainInventPhysical;
+                shippingDateConfirmedLoc    = salesLineLoc.ShippingDateConfirmed;
+                salesUnitLoc                = salesLineLoc.SalesUnit;
+                qtyLoc                      = salesLineLoc.SalesQty;
+
+                if(confirmTransLoc.AVAItemSetSerie != 0
+                    && confirmTransLoc.AVAItemSetCompQtyPerSerie != 0)
+                {
+                    reservedQtyLoc          = reservedQtyLoc * salesLineLoc.AVAItemSetSerie / salesLineLoc.AVAItemSetCompQtyPerSerie;
+                    remainInventPhysicalLoc = remainInventPhysicalLoc * salesLineLoc.AVAItemSetSerie / salesLineLoc.AVAItemSetCompQtyPerSerie;
+                    qtyLoc                  = qtyLoc * salesLineLoc.AVAItemSetSerie / salesLineLoc.AVAItemSetCompQtyPerSerie;
+                }
+            }
+            else
+            {
+                reservedQtyLoc              = salesLineLoc_IC.reservedPhysicalinSalesUnit();;
+                remainInventPhysicalLoc     = salesLineLoc_IC.RemainInventPhysical;
+                shippingDateConfirmedLoc    = salesLineLoc_IC.ShippingDateConfirmed;
+                salesUnitLoc                = salesLineLoc_IC.SalesUnit;
+                qtyLoc                      = salesLineLoc_IC.SalesQty;
+            }
+        }
+
+        Info(strFmt("ReservedQty: %1, RemainingQty: %2, ShippingDateConfirmed: %3, SalesUnit: %4, Qty: %5, SalesId: %6", reservedQtyLoc, remainInventPhysicalLoc, shippingDateConfirmedLoc, salesUnitLoc, qtyLoc, salesLineLoc_IC.SalesId));
+
+        return [reservedQtyLoc, remainInventPhysicalLoc, shippingDateConfirmedLoc, salesUnitLoc, qtyLoc];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetShippingFields</Name>
+				<Source><![CDATA[
+    public container avaGetShippingFields(CustConfirmTrans _custConfirmTrans)
+    {
+        AVAQtyReserved reservedQtyLoc, remainInventPhysicalLoc;
+        SalesShippingDateConfirmed shippingDateConfirmedLoc;
+        SalesUnit salesUnitLoc;
+        SalesConfirmedQty qtyLoc;
+
+        if(_custConfirmTrans.AVAItemSet)
+        {
+            CustConfirmTrans confirmTransLoc;
+
+            select firstonly confirmTransLoc
+                order by confirmTransLoc.LineNum
+                where confirmTransLoc.SalesId == _custConfirmTrans.SalesId
+                && confirmTransLoc.ConfirmId == _custConfirmTrans.ConfirmId
+                && confirmTransLoc.ConfirmDate == _custConfirmTrans.ConfirmDate
+                && confirmTransLoc.LineNum > _custConfirmTrans.LineNum;
+
+            reservedQtyLoc              = confirmTransLoc.AVAQtyReserved;
+            remainInventPhysicalLoc     = confirmTransLoc.AVARemainInventPhysical;
+            shippingDateConfirmedLoc    = confirmTransLoc.AVAShippingDateConfirmed;
+            salesUnitLoc                = confirmTransLoc.SalesUnit;
+            qtyLoc                      = confirmTransLoc.Qty;
+
+            if(confirmTransLoc.AVAItemSetSerie != 0
+                && confirmTransLoc.AVAItemSetCompQtyPerSerie != 0)
+            {
+                reservedQtyLoc          = confirmTransLoc.AVAQtyReserved * confirmTransLoc.AVAItemSetSerie / confirmTransLoc.AVAItemSetCompQtyPerSerie;
+                remainInventPhysicalLoc = confirmTransLoc.AVARemainInventPhysical * confirmTransLoc.AVAItemSetSerie / confirmTransLoc.AVAItemSetCompQtyPerSerie;
+                qtyLoc                  = confirmTransLoc.Qty * confirmTransLoc.AVAItemSetSerie / confirmTransLoc.AVAItemSetCompQtyPerSerie;
+            }
+        }
+        else
+        {
+            reservedQtyLoc              = _custConfirmTrans.AVAQtyReserved;
+            remainInventPhysicalLoc     = _custConfirmTrans.AVARemainInventPhysical;
+            shippingDateConfirmedLoc    = _custConfirmTrans.AVAShippingDateConfirmed;
+            salesUnitLoc                = _custConfirmTrans.SalesUnit;
+            qtyLoc                      = _custConfirmTrans.Qty;
+        }
+
+        return [reservedQtyLoc, remainInventPhysicalLoc, shippingDateConfirmedLoc, salesUnitLoc, qtyLoc];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetReceiptDateString</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// creates and returns a string containing the receipt date depending on logic
+    /// </summary>
+    /// <param name = "_confirmationLineSelection">SalesConfirmDPConfirmationLineQuerySelection</param>
+    /// <returns>str</returns>
+    public str avaGetReceiptDateString(SalesConfirmDPConfirmationLineQuerySelection _confirmationLineSelection)
+    {
+        str avaReceiptDateString;
+        Label avaLabel = new Label(this.parmCustConfirmJour().LanguageId);
+
+        if(!_confirmationLineSelection.parmCustConfirmTrans().salesLine().salesTable().AVAPrintReceiptDate)
+        {
+            avaReceiptDateString = '';
+        }
+        else if(_confirmationLineSelection.parmCustConfirmTrans().AVAReceiptDateConfirmed == dateNull())
+        {
+            avaReceiptDateString = avaLabel.extractString("@NDX:NXAFollowing");
+        }
+        else
+        {
+            avaReceiptDateString = date2Str(_confirmationLineSelection.parmCustConfirmTrans().AVAReceiptDateConfirmed, 123, DateDay::Digits2, DateSeparator::Dot, DateMonth::Digits2, DateSeparator::Dot, DateYear::Digits4);
+        }
+
+        return avaReceiptDateString;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaMarkupValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA <c>avaMarkupValues</c>
+    /// </summary>
+    /// <param name = "_confirmationLineSelection">SalesConfirmDPConfirmationLineQuerySelection</param>
+    /// <returns>container</returns>
+    public container avaMarkupValues(SalesConfirmDPConfirmationLineQuerySelection _confirmationLineSelection)
+    {
+        str avaMarkupCodeList, avaMarkupCodeValue;
+        CustConfirmTrans avaCustConfirmTrans = _confirmationLineSelection.parmCustConfirmTrans();
+        MarkupAmount avaTotalMarkupAmount;
+        MarkupTrans avaMarkupTrans;
+        TableId avaTableId = avaCustConfirmTrans.TableId;
+        Label avaLabel = new Label(this.parmCustConfirmJour().LanguageId);
+
+        while select avaMarkupTrans
+            where avaMarkupTrans.TransTableId == avaTableId
+            && avaMarkupTrans.TransRecId == avaCustConfirmTrans.RecId
+        {
+            if(avaMarkupCodeList != ''
+                || avaMarkupCodeValue != '')
+            {
+                avaMarkupCodeList += '\n';
+                avaMarkupCodeValue += '\n';
+            }
+
+            avaTotalMarkupAmount += avaMarkupTrans.calcDistributionAmount(avaCustConfirmTrans.Qty, avaCustConfirmTrans.LineAmount, avaCustConfirmTrans.ConfirmDate);
+            avaMarkupCodeList += avaMarkupTrans.MarkupCode + ': ' + avaMarkupTrans.Txt;
+
+            if(avaMarkupTrans.MarkupCategory == MarkupCategory::Fixed)
+            {
+                avaMarkupCodeValue += strFmt('%1 %2', avaMarkupTrans.Value, avaMarkupTrans.CurrencyCode);
+            }
+            else if(avaMarkupTrans.MarkupCategory == MarkupCategory::Percent)
+            {
+                avaMarkupCodeValue += strFmt('%1 %', avaMarkupTrans.Value);
+            }
+            else if(avaMarkupTrans.MarkupCategory == MarkupCategory::Pcs)
+            {
+                avaMarkupCodeValue += strFmt(avaLabel.extractString("@NDX:NXAPOPerPiece"), avaMarkupTrans.Value, avaMarkupTrans.CurrencyCode);
+            }
+            else if(avaMarkupTrans.MarkupCategory == MarkupCategory::AVAMTZ)
+            {
+                avaMarkupCodeValue += strFmt(avaLabel.extractString("@NDX:NXAPOFixed"), avaMarkupTrans.Value);
+            }
+            else
+            {
+                avaMarkupCodeValue += strFmt('%1', avaMarkupTrans.Value);
+            }
+        }
+
+        return [avaTotalMarkupAmount, avaMarkupCodeList, avaMarkupCodeValue];
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

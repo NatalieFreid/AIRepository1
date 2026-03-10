@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACreateContactPersonBasedOnGABService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// The <c>AVACreateContactPersonBasedOnGABService</c> class is the service class for <c>Creating contact persons based on GAB</c>
+/// </summary>
+class AVACreateContactPersonBasedOnGABService extends SysOperationServiceBase
+{
+    AVACreateContactPersonBasedOnGABContract    dataContract;
+    QueryRun                                    serviceQueryRun; 
+    smmBusRelAccount                            serviceSmmBusRelAccount;
+    int                                         clsContactsCreated;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>runService</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>runService</c> method.
+    /// </summary>
+    /// <param name="_dataContract">
+    ///    <c>AVABPCleanUpContract</c> as type
+    /// </param>
+    void runService(AVACreateContactPersonBasedOnGABContract _dataContract)
+    {
+        dataContract = _dataContract;
+
+        if(dataContract.parmDirPartyRoleType() ==  DirPartyRoleType::BusRel)
+        {
+            if(dataContract.parmBusRelAccount())
+            {
+                serviceSmmBusRelAccount = dataContract.parmBusRelAccount();
+            }
+            
+            this.newQueryRunBusRelTable();
+
+            this.executeService();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>newQueryRunBusRelTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>newQueryRunBusRelTable</c> method.
+    /// </summary>
+    protected void newQueryRunBusRelTable()
+    {
+        Query                   query;
+        QueryBuildDataSource    qbdsBusRel;
+        QueryBuildDataSource    qbdsPartyRelationsShip;
+        QueryBuildDataSource    qbdsContact;
+        QueryBuildRange         qbrBusRelAccount;
+        QueryBuildRange         qbrRelationType;
+        //QueryBuildRange         qbrRelationActive;
+        
+        #define.RelationTypeContactPerson('ContactPerson')
+
+        query = new Query();
+
+        // Interessent/Geschäftsbeziehung
+        qbdsBusRel = query.addDataSource(tablenum(smmBusRelTable));
+        qbdsBusRel.addRange(fieldnum(smmBusRelTable, BusRelAccount));
+        if(dataContract.parmBusRelAccount())
+        {
+            qbrBusRelAccount = qbdsBusRel.addRange(fieldnum(smmBusRelTable, BusRelAccount));
+            qbrBusRelAccount.value(queryValue(dataContract.parmBusRelAccount()));
+        }
+        // Beziehung
+        qbdsPartyRelationsShip  = qbdsBusRel.addDataSource(tablenum(DirPartyRelationship));
+        qbdsPartyRelationsShip.addLink(fieldnum(smmBusRelTable, Party), fieldnum(DirPartyRelationship, ParentParty));
+        qbrRelationType         = qbdsPartyRelationsShip.addRange(fieldnum(DirPartyRelationship, RelationshipTypeId));
+        qbrRelationType.value(queryvalue(#RelationTypeContactPerson));
+        /*
+        //--> KCS/STORS/LU_TASK1235002068/07.12.2010
+        qbrRelationActive = qbdsPartyRelationsShip.addRange(fieldnum(DirPartyRelationship, Status));
+        qbrRelationActive.value(QueryValue(DirRelationshipStatus::Active));
+        //<-- KCS/STORS/LU_TASK1235002068/07.12.2010
+        */
+        // Kontaktperson
+        qbdsContact = qbdsPartyRelationsShip.addDataSource(tablenum(ContactPerson));
+        qbdsContact.joinMode(JoinMode::NoExistsJoin);
+        qbdsContact.addLink(fieldnum(DirPartyRelationship, ChildParty), fieldnum(ContactPerson, Party));
+
+        serviceQueryRun = new QueryRun(query);
+
+    //    info(strfmt(" %1", queryRun.query().dataSourceNo(1).toString()));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>executeService</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>executeService</c> method.
+    /// </summary>
+    public void executeService()
+    {
+        #OCCRetryCount
+
+        try
+        {
+            while (serviceQueryRun.next())
+            {
+                if (serviceQueryRun.changed(tablenum(DirPartyRelationship)))
+                {
+                    this.createContactPerson(serviceQueryRun.get(tablenum(DirPartyRelationship)));
+                }
+            }
+            if(     this.isExecutingInBatch() == false 
+                &&  clsContactsCreated                  )
+            {
+                info("@NDX:NXAMissingContactsFoundAndCreated");
+            }
+
+        }
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createContactPerson</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>createContactPerson</c> method.
+    /// </summary>
+    /// <param name="_dirPartyRelationship">
+    ///    <c>DirPartyRelationship</c> as type
+    /// </param>
+    void createContactPerson(DirPartyRelationship _dirPartyRelationship)
+    {
+        ContactPerson               locContactPersonExisting;
+        ContactPerson               locContactPersonNew;
+
+        container                   containerAllBPCompanies;
+
+        containerAllBPCompanies = AVAKBVBuildingProjectHelper::getAllBPCompanies();
+
+        select firstonly crosscompany: containerAllBPCompanies *
+        from    locContactPersonExisting
+        where   locContactPersonExisting.Party == _dirPartyRelationship.ChildParty;
+
+        if(locContactPersonExisting.RecId)
+        {
+            ttsbegin;
+            locContactPersonNew.clear();
+            buf2Buf(locContactPersonExisting, locContactPersonNew);
+            locContactPersonNew.ContactPersonId         = NumberSeq::newGetNum(ContactPerson::numRefContactPersonId()).num();
+            locContactPersonNew.ContactPersonParentId   = '';
+            locContactPersonNew.insert();
+            clsContactsCreated++;
+            ttscommit;
+        }
+        /* alternative creation with following
+        locContactPersonNew            = ContactPerson::findOrCreateNameParty(locDirPartyRecId, locContactPersonExisting.personName());
+        */
+
+
+        /* 2009
+        locContactPerson.clear();
+        //locContactPerson.initFromDirParty(locDirParty);
+        locContactPerson.initFromParty(locDirPartyTable);
+        locContactPerson.Party              = _dirPartyRelationship.ChildParty;
+        locContactPerson.ContactForParty    = _dirPartyRelationship.ParentParty;
+        locContactPerson.insert();
+
+        //    info(strfmt('Kontakt angelegt: %1', contactPerson.ContactPersonId));
+
+        //    info(strfmt('%1 - %2 - %3 - Contact angelegt: %4', _dirPartyRelationship.ParentPartyId,
+        //        _dirPartyRelationship.RelationshipTypeId, _dirPartyRelationship.ChildPartyId, contactPerson.ContactPersonId));
+        */
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

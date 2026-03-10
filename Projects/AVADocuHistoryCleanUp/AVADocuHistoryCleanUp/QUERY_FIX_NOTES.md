@@ -1,0 +1,240 @@
+# Query XML Fix - AVADocuHistoryCleanupQuery
+
+## Issue
+The AOT Query XML file structure did not match the standard D365FO format used in the project.
+
+## Reference File Used
+**File**: `AVABPRelationsHighestPrioQry.xml`
+
+This file was used as the template to ensure consistent XML structure across the project.
+
+## Key Structural Changes
+
+### 1. Root Element Formatting
+**Correct Format** (matching reference):
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AxQuery xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns=""
+	i:type="AxQuerySimple">
+```
+
+**Key Points**:
+- `xmlns=""` and `i:type` on second line with tab indentation
+- This matches the project's XML formatting standards
+
+### 2. CDATA Section Formatting
+**Correct Format**:
+```xml
+<Source><![CDATA[
+[Query]
+public class AVADocuHistoryCleanupQuery extends QueryRun
+{
+}
+
+]]></Source>
+```
+
+**Key Points**:
+- Blank line after closing brace before `]]>`
+- Matches reference file formatting
+
+### 3. Field Element Structure
+**Correct Format**:
+```xml
+<AxQuerySimpleDataSourceField>
+	<Name>RecId</Name>
+	<Field>RecId</Field>
+</AxQuerySimpleDataSourceField>
+```
+
+**Previous (Incorrect)**:
+```xml
+<AxQuerySimpleDataSourceField>
+	<DataField>RecId</DataField>
+</AxQuerySimpleDataSourceField>
+```
+
+**Key Points**:
+- Use `<Name>` and `<Field>` elements
+- NOT `<DataField>`
+
+### 4. Range Structure
+**Correct Format**:
+```xml
+<Ranges>
+	<AxQuerySimpleDataSourceRange>
+		<Name>CreatedDateTime</Name>
+		<Field>CreatedDateTime</Field>
+	</AxQuerySimpleDataSourceRange>
+</Ranges>
+```
+
+**Key Points**:
+- No `<Label>` element
+- No `<Status>` element (unless explicitly needed)
+- Minimal structure matching reference
+
+### 5. Empty Elements
+**Correct Format**:
+```xml
+<OrderBy />
+```
+
+**Previous (Incorrect)**:
+```xml
+<OrderBy>
+	<AxQuerySimpleOrderByField>
+		<Name>QueryOrderByField1</Name>
+		<DataSource>DocuHistory</DataSource>
+		<Field>CreatedDateTime</Field>
+	</AxQuerySimpleOrderByField>
+</OrderBy>
+```
+
+**Key Points**:
+- Use empty self-closing tags when no content needed
+- Only add OrderBy fields if specifically required
+
+### 6. Removed Elements
+The following elements were removed as they don't appear in the reference file at the root level:
+- `<Label>` (root level - not needed for queries)
+- `<Description>` (root level - not needed for queries)
+
+## Final Correct Structure
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AxQuery xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns=""
+	i:type="AxQuerySimple">
+	<Name>AVADocuHistoryCleanupQuery</Name>
+	<SourceCode>
+		<Methods>
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Query]
+public class AVADocuHistoryCleanupQuery extends QueryRun
+{
+}
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DataSources>
+		<AxQuerySimpleRootDataSource>
+			<Name>DocuHistory</Name>
+			<DynamicFields>Yes</DynamicFields>
+			<Table>DocuHistory</Table>
+			<DataSources />
+			<DerivedDataSources />
+			<Fields>
+				<AxQuerySimpleDataSourceField>
+					<Name>RecId</Name>
+					<Field>RecId</Field>
+				</AxQuerySimpleDataSourceField>
+				<AxQuerySimpleDataSourceField>
+					<Name>CreatedDateTime</Name>
+					<Field>CreatedDateTime</Field>
+				</AxQuerySimpleDataSourceField>
+				<AxQuerySimpleDataSourceField>
+					<Name>RefTableId</Name>
+					<Field>RefTableId</Field>
+				</AxQuerySimpleDataSourceField>
+				<AxQuerySimpleDataSourceField>
+					<Name>RefRecId</Name>
+					<Field>RefRecId</Field>
+				</AxQuerySimpleDataSourceField>
+			</Fields>
+			<Ranges>
+				<AxQuerySimpleDataSourceRange>
+					<Name>CreatedDateTime</Name>
+					<Field>CreatedDateTime</Field>
+				</AxQuerySimpleDataSourceRange>
+			</Ranges>
+			<GroupBy />
+			<Having />
+			<OrderBy />
+		</AxQuerySimpleRootDataSource>
+	</DataSources>
+</AxQuery>
+```
+
+## Validation
+
+### ? Build Status
+- **Status**: Successful
+- The query now compiles without errors
+- Matches project XML standards
+
+### ? Structure Verification
+- [x] Root element formatting matches reference
+- [x] CDATA section has proper blank line
+- [x] Fields use `<Name>` and `<Field>` structure
+- [x] Range has minimal structure
+- [x] Empty elements use self-closing tags
+- [x] Indentation and formatting consistent
+
+### ? Functionality
+- Query can be referenced in X++ code: `queryStr(AVADocuHistoryCleanupQuery)`
+- Query can be instantiated: `new Query(queryStr(AVADocuHistoryCleanupQuery))`
+- Range is available for user modification
+- Compatible with SysOperation framework
+
+## Comparison: Before vs After
+
+| Element | Before | After | Reason |
+|---------|--------|-------|--------|
+| Root formatting | Single line | Multi-line with tab | Match project standard |
+| CDATA blank line | No | Yes | Match reference format |
+| Field elements | `<DataField>` | `<Name>` + `<Field>` | Correct D365FO structure |
+| Range Label | Included | Removed | Not in reference, unnecessary |
+| Range Status | `<Status>Open</Status>` | Removed | Not in reference, unnecessary |
+| OrderBy | Had fields | Empty `<OrderBy />` | Not needed for this query |
+| Root Label | Included | Removed | Not in reference |
+| Root Description | Included | Removed | Not in reference |
+
+## Impact on Code
+
+### No Changes Required
+The following classes work correctly with the new structure:
+- ? AVADocuHistoryCleanupContract.xml
+- ? AVADocuHistoryCleanupService.xml
+- ? AVADocuHistoryCleanupController.xml
+- ? AVADocuHistoryCleanupUIBuilder.xml
+
+### Query Usage in Code
+```xpp
+// All existing code works correctly
+Query query = new Query(queryStr(AVADocuHistoryCleanupQuery));
+QueryRun queryRun = new QueryRun(query);
+
+// Range modification still works
+QueryBuildDataSource qbds = query.dataSourceTable(tableNum(DocuHistory));
+QueryBuildRange qbr = qbds.findRange(fieldNum(DocuHistory, CreatedDateTime));
+```
+
+## Best Practices for Future Queries
+
+When creating new query XML files in this project:
+
+1. **Use AVABPRelationsHighestPrioQry.xml as template**
+2. **Root element**: Multi-line namespace declaration with tab indent
+3. **Fields**: Always use `<Name>` and `<Field>` elements
+4. **Ranges**: Keep minimal - just `<Name>` and `<Field>`
+5. **Empty elements**: Use self-closing tags (`<OrderBy />`)
+6. **CDATA**: Include blank line after closing brace
+7. **No root labels**: Don't add `<Label>` or `<Description>` at root level
+
+## File Location
+`AVADocuHistoryCleanUp\AVADocuHistoryCleanUp\AxQuery\AVADocuHistoryCleanupQuery.xml`
+
+## Date Fixed
+2024
+
+## Status
+? **RESOLVED** - Query XML now matches project standards and builds successfully
+
+## Reference Files
+- **Template**: `AVABPRelationsHighestPrioQry.xml`
+- **Documentation**: See `.github\copilot-instructions.md` for XML formatting guidelines

@@ -1,0 +1,1330 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAKBVHelperClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// The <c>AVAKBVHelperClass</c> class is the helper class for <c>standard issues</c>
+/// </summary>
+class AVAKBVHelperClass
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>replaceAll</Name>
+				<Source><![CDATA[
+        /// <summary>
+    ///    AVA <c>replaceAll</c> method.
+    /// </summary>
+    /// <param name="_sourceStr">
+    ///    <c>str</c> as type
+    /// </param>
+    /// <param name="_findStr">
+    ///    <c>str</c> as type
+    /// </param>
+    /// <param name="_replStr">
+    ///    <c>str</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>str</c> as return value
+    /// </returns>
+    static str replaceAll(str _sourceStr, str _findStr, str _replStr)
+    {
+        str retVal;
+        int pos;
+
+        retVal  = _sourceStr;
+        pos     = strscan(_sourceStr, _findStr, 1, strlen(_sourceStr));
+
+        while (pos > 0)
+        {
+            retVal  = strdel(retVal, pos, strlen(_findStr));
+            retVal  = strins(retVal, _replStr, pos);
+
+            pos     = strscan(retVal, _findStr, pos + strlen(_replStr), strlen(retVal));
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SetSalesDistrict</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>SetSalesDistrict</c> method.
+    /// </summary>
+    /// <param name="_kcs_KBVBuildingProjectTable">
+    ///    <c>KCS_KBVBuildingProjectTable</c> as type
+    /// </param>
+    /// <param name="_addressCountryRegionId">
+    ///    <c>AddressCountryRegionId</c> as type
+    /// </param>
+    /// <param name="_addressZipCodeId">
+    ///    <c>AddressZipCodeId</c> as type
+    /// </param>
+    static void SetSalesDistrict(   KCS_KBVBuildingProjectTable _kcs_KBVBuildingProjectTable,
+                                    AddressCountryRegionId      _addressCountryRegionId = '',
+                                    AddressZipCodeId            _addressZipCodeId = '')
+    {
+        KCS_KBVParameters           loc_KCS_KBVParameters;
+
+        AddressZipCodeId            zipCode;
+        AddressCountryRegionId      country;
+        DataAreaId                  dataAreaId;
+
+        loc_KCS_KBVParameters   = KCS_KBVParameters::find();
+        dataAreaId              = loc_KCS_KBVParameters.KCS_DataAreaName;
+
+        if (_addressCountryRegionId && _addressZipCodeId)
+        {
+            country = _addressCountryRegionId;
+            zipCode = _addressZipCodeId;
+        }
+        else
+        {
+            country = _kcs_KBVBuildingProjectTable.AddressCountryRegionId;
+            zipCode = _kcs_KBVBuildingProjectTable.AddressZipCodeId;
+        }
+
+        _kcs_KBVBuildingProjectTable.smmSalesDistrictId = AVAKBVHelperClass::ZipCode2SalesDistrict(zipcode, country, dataAreaId).SalesDistrictId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ZipCode2SalesDistrict</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>ZipCode2SalesDistrict</c> method.
+    /// </summary>
+    /// <param name="_zipCode">
+    ///    <c>AddressZipCodeId</c> as type
+    /// </param>
+    /// <param name="_country">
+    ///    <c>AddressCountryRegionId</c> as type
+    /// </param>
+    /// <param name="_dataAreaId">
+    ///    <c>DataAreaId</c> as type
+    /// </param>
+    /// <param name="_kcs_KBVBuildingProjectId">
+    ///    <c>KCS_KBVBuildingProjectId</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>SmmBusRelSalesDistrictGroup</c> as return value
+    /// </returns>
+    public static smmBusRelSalesDistrictGroup ZipCode2SalesDistrict(AddressZipCodeId            _zipCode,
+                                                                    AddressCountryRegionId      _country,
+                                                                    DataAreaId                  _dataAreaId,
+                                                                    KCS_KBVBuildingProjectId    _kcs_KBVBuildingProjectId = '')
+    {
+        AddressZipCodeId                zipCode;
+        AddressCountryRegionId          country;
+        KCS_KBVBuildingProjectTable     kcs_KBVBuildingProjectTable;
+        SmmBusRelSalesDistrictGroup     smmBusRelSalesDistrictGroup;
+        container                       masterCompany;
+        str 20                          zipCodeExpr;
+        int                             zipCodeExprLength;
+        container                       zipCodeEntries;
+        str 20                          rangeFrom;
+        str 20                          rangeTo;
+        int                             rangeSeparatorPosition;
+        int                             i;
+        SmmSalesDistrictId              smmSalesDistrictId;
+        boolean                         found;
+        boolean                         exclusion;
+        int                             exclamationPointPosition;
+        int                             asteriskPosition;
+
+        // set and check the parameters
+        if (_kcs_KBVBuildingProjectId == '')
+        {
+            zipCode = _zipCode;
+            country = _country;
+        }
+        else
+        {
+            kcs_KBVBuildingProjectTable = KCS_KBVBuildingProjectTable::find(_kcs_KBVBuildingProjectId);
+            if (!kcs_KBVBuildingProjectTable)
+            {
+                warning(strfmt("@NDX:NXABPWithIdNotFound", _kcs_KBVBuildingProjectId));
+                return smmBusRelSalesDistrictGroup;
+            }
+            else
+            {
+                zipCode = kcs_KBVBuildingProjectTable.AddressZipCodeId;
+                country = kcs_KBVBuildingProjectTable.AddressCountryRegionId;
+            }
+        }
+
+        if (zipCode == '' || country == '')
+        {
+            if (country == '')
+            {
+                warning("@NDX:NXAZIPCodeSearchCaledWithoutParameter");
+            }
+
+            return smmBusRelSalesDistrictGroup;
+        }
+
+        // get the master company where the zipCode-Mapping is deposited
+        masterCompany = conIns(masterCompany, 1, _dataAreaId);
+
+        while select crosscompany : masterCompany SalesDistrictId, KCS_KBVZipCodeRanges, InventSiteId 
+        from    smmBusRelSalesDistrictGroup
+        index   SalesDistrictIdx
+        where   smmBusRelSalesDistrictGroup.KCS_KBVAddressCountryRegionId == country
+        {
+            smmSalesDistrictId = smmBusRelSalesDistrictGroup.SalesDistrictId;
+            exclusion          = false;
+            found              = false;
+
+            try
+            {
+                // zipCodeEntries = str2con(smmBusRelSalesDistrictGroup.KCS_KBVZipCodeRanges, ",");
+                zipCodeEntries = AVAKBVHelperClass::str2conNoInt(smmBusRelSalesDistrictGroup.KCS_KBVZipCodeRanges, ',');
+
+                // steps through all comma-separated ZipCode-Expressions
+                for (i = 1; i <= conLen(zipCodeEntries); i++)
+                {
+                    zipCodeExpr         = conPeek(zipCodeEntries, i);
+
+                    // remove spaces
+                    zipCodeExpr         = AVAKBVHelperClass::replaceAll(zipCodeExpr, ' ', '');
+                    zipCodeExprLength   = strlen(zipCodeExpr);
+
+                    // ********************************************
+                    // check of what type the ZipCode-Expression is
+                    // ********************************************
+
+                    // example "*"
+                    if (zipCodeExpr == '*')
+                    {
+                        found = true;
+                        //                        break;                                                // KCS/STORS/LU_00002753/26.10.2009
+                    }
+
+                    // example: "554*"
+                    // asteriskPosition = strfind(zipCodeExpr, '*', 1, zipCodeExprLength);           // KCS/STORS/LU_00002753_3.2.1/03.11.2009
+                    asteriskPosition = strfind(zipCodeExpr, '*', 2, zipCodeExprLength - 1);             // KCS/STORS/LU_00002753_3.2.1/03.11.2009
+                    if (asteriskPosition)
+                    {
+                        if (substr(zipCode, 1, asteriskPosition - 1) == substr(zipCodeExpr, 1, asteriskPosition - 1))
+                        {
+                            found = true;
+                            // break;                                            // KCS/STORS/LU_00002753/26.10.2009
+                        }
+                    }
+
+                    // example: "67000..67999"
+                    rangeSeparatorPosition = strfind(zipCodeExpr, '..', 1, zipCodeExprLength);
+                    if (rangeSeparatorPosition)
+                    {
+                        rangeFrom = substr(zipCodeExpr, 1, rangeSeparatorPosition - 1);
+                        rangeTo   = substr(zipCodeExpr, rangeSeparatorPosition + 2, strlen(zipCodeExpr) - strlen(rangeFrom) - 2);
+                        if ((str2int(zipCode) <= str2int(rangeTo)) && (str2int(zipCode) >= str2int(rangeFrom)))
+                        {
+                            found = true;
+                            // break;                                            // KCS/STORS/LU_00002753/26.10.2009
+                        }
+                    }
+
+                    // example: "67292"
+                    if (zipCode == zipCodeExpr)
+                    {
+                        found = true;
+                        break;
+                    }
+
+                    // example: "!55545"
+                    exclamationPointPosition = strfind(zipCodeExpr, "@NDX:NXAExclamationMark", 1, zipCodeExprLength);
+                    if (exclamationPointPosition)
+                    {
+                        zipCodeExpr = AVAKBVHelperClass::replaceAll(zipCodeExpr, "@NDX:NXAExclamationMark", '');
+                        if (zipCode == zipCodeExpr)
+                        {
+                            exclusion = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (Exception::Error)
+            {
+                warning(strfmt("@NDX:NXABPErrorEvaluationZIPCodeMapping", smmSalesDistrictId));
+            }
+
+            // break the while-loop when a correspondence entry was found
+            if (found && !exclusion)
+            {
+                break;
+            }
+        }
+
+        if (found && !exclusion)
+        {
+            smmBusRelSalesDistrictGroup = SmmBusRelSalesDistrictGroup::avaFindDataAreaId(smmSalesDistrictId, _dataAreaId);
+        }
+
+        if (!smmBusRelSalesDistrictGroup)
+        {
+            warning(strfmt("@NDX:NXANoMatchZIPCodeCountryCompanySalesDistrict", zipCode, country, _dataAreaId));
+        }
+
+        return smmBusRelSalesDistrictGroup;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>str2conNoInt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>str2conNoInt</c> method.
+    /// </summary>
+    /// <param name="_value">
+    ///    <c>str</c> as type
+    /// </param>
+    /// <param name="_sep">
+    ///    <c>str 10</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>container</c> as return value
+    /// </returns>
+    // Kopiert von Global::str2con() --> autom. Konvertierung in Int deaktiviert
+    static container str2conNoInt(str _value, str 10 _sep = ',')
+    {
+        int length = strlen(_value);
+        int i = 1;
+        int j = strscan(_value, _sep, 1, length);
+        container ret;
+
+        void add2Ret(str _current)
+        {
+            //        if (match('<:d+>', _current))
+            //            ret += str2int64(_current);
+            //        else
+            ret += _current;
+        }
+
+        while (j)
+        {
+            add2Ret(substr(_value, i, j-i));
+            i = j+1;
+            j = strscan(_value, _sep, i, length);
+        }
+        add2Ret(substr(_value, i, length-i+1));
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>kbvInfoRevLimitDataAreaId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>kbvInfoRevLimitDataAreaId</c> method.
+    /// </summary>
+    /// <param name="_dataAreaId">
+    ///    <c>DataAreaId</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>KCS_KBVInfoRevLimit</c> as return value
+    /// </returns>
+    static KCS_KBVInfoRevLimit kbvInfoRevLimitDataAreaId(DataAreaId _dataAreaId = curExt())
+    {
+        KCS_KBVInfoRevLimit retVal;
+
+        KCS_KBVParameters   locKCS_KBVParameters;
+        KCS_KBVCompPrio     locKCS_KBVCompPrio;
+
+        locKCS_KBVCompPrio = KCS_KBVCompPrio::findDataAreaId(_dataAreaId);
+        if(locKCS_KBVCompPrio.RecId && locKCS_KBVCompPrio.KCS_KBVInfoRevLimit)
+        {
+            retVal  = locKCS_KBVCompPrio.KCS_KBVInfoRevLimit;
+        }
+        else
+        {
+            locKCS_KBVParameters = KCS_KBVParameters::find();
+            retVal  = locKCS_KBVParameters.KCS_KBVInfoRevLimit;
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>CalcPotentialSalesVolume</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>CalcPotentialSalesVolume</c> method.
+    /// </summary>
+    /// <param name="_kcs_KBVBuildingProjectId">
+    ///    <c>KCS_KBVBuildingProjectID</c> as type
+    /// </param>
+    /// <param name="_dataAreas">
+    ///    <c>container</c> as type
+    /// </param>
+    /// <param name="_gLB">
+    ///    <c>NoYes</c> as Type
+    /// </param>
+    /// <param name="_masterCurrency">
+    ///    <c>CurrencyCode</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>AmountMST</c> as return value
+    /// </returns>
+    static client server AmountMST CalcPotentialSalesVolume(KCS_KBVBuildingProjectID    _kcs_KBVBuildingProjectId, 
+                                                            container                   _dataAreas, 
+                                                            CurrencyCode                _masterCurrency,
+                                                            NoYes                       _gLB)
+    {
+        // ermittelt den kalkulierten Umsatzerlös für das übergebene BV und gibt den ermittelten Wert zurück
+        SalesQuotationTable         salesQuotationTable;
+
+        Map                         mapProductGroup;
+        MapEnumerator               mapEnumerator;
+        AmountCur                   amountMst;
+        AmountCur                   tmpAmount;
+        AmountCur                   lookupAmount;
+
+        int                         i;
+        DataAreaId                  areaid;
+        
+        AVAKBVSalesVolumeTableType  nDX_KBVSalesVolumeTableType;
+        boolean save2Map;
+
+        mapProductGroup = new Map(Types::String, Types::Real);
+
+        if (!_masterCurrency || !_dataAreas || !_kcs_KBVBuildingProjectId)
+        {
+            throw error (strfmt("@NDX:NXAErrorMustBeCalledWithAllParameters", funcname()));
+        }
+        else
+        {
+            nDX_KBVSalesVolumeTableType = AVAKBVSalesVolumeTableType::ConstructFromKBVBuildingProjectId(    _kcs_KBVBuildingProjectId,
+                                                                                                            //conlen(_dataAreas) > 1?NoYes::Yes:NoYes::No,
+                                                                                                            _gLB,
+                                                                                                            _masterCurrency                                 );
+            nDX_KBVSalesVolumeTableType.initialize();
+
+            for(i = 1; i <= conlen(_dataAreas); i++)
+            {
+                areaid = conpeek(_dataAreas,i);
+                changecompany(areaid)
+                {
+                    salesQuotationTable = null;
+
+                    while select KCS_KBVBuildingProjectID, AVAExchangeRate, KCS_QuotationAmount, CurrencyCode, createdDateTime, KCS_KBVProductGroupID, RecId, DataAreaId
+                    from    salesQuotationTable
+                    where   salesQuotationTable.KCS_KBVBuildingProjectID == _kcs_KBVBuildingProjectId
+                    {
+                        tmpAmount = salesQuotationTable.KCS_QuotationAmount;
+                        if(salesQuotationTable.CurrencyCode != _masterCurrency)
+                        {
+                            //tmpAmount = Currency::curAmount2CurAmount(tmpAmount, salesQuotationTable.CurrencyCode, _masterCurrency, DateTimeUtil::date(salesQuotationTable.createdDateTime), true);
+                            tmpAmount = CurrencyExchangeHelper::curAmount2CurAmount(tmpAmount,
+                                                                                    salesQuotationTable.CurrencyCode,
+                                                                                    _masterCurrency,
+                                                                                    DateTimeUtil::date(salesQuotationTable.createdDateTime),
+                                                                                    true);
+                        }
+
+                        // check if there is allready a amount for the productGroup in the map and checks if its greater than the current
+                        save2Map = true;
+
+                        if (mapProductGroup.exists(salesQuotationTable.KCS_KBVProductGroupID))
+                        {
+                            lookupAmount = mapProductGroup.lookup(salesQuotationTable.KCS_KBVProductGroupID);
+                            if (lookupAmount > tmpAmount)
+                            {
+                                tmpAmount = lookupAmount;
+                                save2Map = false;
+                            }
+                        }
+                        mapProductGroup.insert(salesQuotationTable.KCS_KBVProductGroupID, tmpAmount);
+
+                        if (save2Map)
+                        {
+                            nDX_KBVSalesVolumeTableType.MapProductGroupInsert(  salesQuotationTable.KCS_KBVProductGroupID,
+                                                                                nDX_KBVSalesVolumeTableType.createNDX_KBVSalesVolumeLine(salesQuotationTable,   tmpAmount)   );
+                        }
+                    }
+                }
+            }
+        }
+
+        // sum the calculated max per product group
+        mapEnumerator = mapProductGroup.getEnumerator();
+        while (mapEnumerator.moveNext())
+        {
+            amountMst += mapEnumerator.currentValue();
+        }
+
+        nDX_KBVSalesVolumeTableType.save(amountMst);                                // 1.8 : NDX/PAFFH/NDX_TASK1235004538/18.05.2021
+
+        return amountMst;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SetBPResponsibilities</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>SetBPResponsibilities</c> method.
+    /// </summary>
+    /// <param name="_kcs_KBVBuildingProjectId">
+    ///    <c>KCS_KBVBuildingProjectID</c> as type
+    /// </param>
+    /// <param name="_dataAreaId">
+    ///    <c>DataAreaId</c> as type
+    /// </param>
+    /// <param name="_lJobMode">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <param name="_lCheckOnly">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public static boolean SetBPResponsibilities(    KCS_KBVBuildingProjectID    _kcs_KBVBuildingProjectId,
+                                                    DataAreaId                  _dataAreaId, 
+                                                    boolean                     _lJobMode                   = true, 
+                                                    boolean                     _lCheckOnly                 = false)
+    {
+        KCS_KBVBPCompanySpecific        kCS_KBVBPCompanySpecific;
+        KCS_KBVResponsibilitiesTable    kcs_KBVResponsibilitiesTable;
+        KCS_KBVResponsibilitiesTable    kcs_KBVResponsibilitiesTableTmp;
+        smmResponsibilitiesEmplTable    smmResponsibilitiesEmplTable;
+        smmResponsibilityGroup          smmResponsibilityGroup;
+        smmSalesUnit                    smmSalesUnit;
+
+        boolean                         returnvalue;
+        HcmWorkerRecId                  hcmWorkerRecId;
+
+        returnvalue = true;
+
+        changecompany(_dataAreaId)
+        {
+            kCS_KBVBPCompanySpecific        = null;
+            smmSalesUnit                    = null;
+            kcs_KBVResponsibilitiesTable    = null;
+            smmResponsibilitiesEmplTable    = null;
+
+            kCS_KBVBPCompanySpecific = kCS_KBVBPCompanySpecific::find(_kcs_KBVBuildingProjectId);
+
+            if(!kcs_KBVBPCompanySpecific.smmSalesUnitId)
+            {
+                returnvalue = false;
+                if (!_lJobMode)
+                {
+                    info(strfmt("@NDX:NXAResponsibilityNotCreatedNoSalesUnitInBP",  kcs_KBVBPCompanySpecific.dataAreaId,
+                                                                                    kcs_KBVBPCompanySpecific.KCS_KBVBuildingProjectID)  );
+                }
+            }
+            else
+            {
+                smmSalesUnit = smmSalesUnit::find(kcs_KBVBPCompanySpecific.smmSalesUnitId);
+
+                if(smmSalesUnit)
+                {
+                    // Setzen des Ende-Datums einer Zuständigkeit nur, wenn diese nicht gleich wieder als neue Zuständigkeit gesetzt werden würde
+                    while select forupdate *
+                    from    kcs_KBVResponsibilitiesTable
+                    where   kcs_KBVResponsibilitiesTable.KCS_KBVBuildingProjectID == _kcs_KBVBuildingProjectId
+                        &&  !kcs_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate
+                    {
+                        select firstOnly * 
+                        from    smmResponsibilitiesEmplTable
+                        where   smmResponsibilitiesEmplTable.RefTableId == tablenum(smmSalesUnit)
+                            &&  smmResponsibilitiesEmplTable.RefRecId   == smmSalesUnit.RecId
+                            &&  smmResponsibilitiesEmplTable.Worker     == kcs_KBVResponsibilitiesTable.smmWorker;
+
+                        if(!smmResponsibilitiesEmplTable)
+                        {
+                            kcs_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+
+                            select firstonly kcs_KBVResponsibilitiesTableTmp
+                            where   kcs_KBVResponsibilitiesTableTmp.KCS_KBVBuildingProjectID == kcs_KBVResponsibilitiesTable.KCS_KBVBuildingProjectID
+                                &&  kcs_KBVResponsibilitiesTableTmp.smmResponsibilityId      == kcs_KBVResponsibilitiesTable.smmResponsibilityId
+                                &&  kcs_KBVResponsibilitiesTableTmp.KCS_KBVCompetenceEndDate == kcs_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate ;
+                            if(kcs_KBVResponsibilitiesTableTmp.RecId)
+                            {
+                                ttsbegin;
+                                kcs_KBVResponsibilitiesTableTmp.selectForUpdate(true);
+                                kcs_KBVResponsibilitiesTableTmp.smmWorker = kcs_KBVResponsibilitiesTable.smmWorker;
+                                kcs_KBVResponsibilitiesTableTmp.update();
+                                ttscommit;
+                            }
+                            else
+                            {
+                                ttsbegin;
+                                kcs_KBVResponsibilitiesTable.write();
+                                ttscommit;
+                            }
+
+                            info(strfmt("@NDX:NXABPResponsibilityForCompanyTerminated", kcs_KBVResponsibilitiesTable.KCS_KBVBuildingProjectID,
+                                                                                        kcs_KBVResponsibilitiesTable.smmWorker,
+                                                                                        kcs_KBVResponsibilitiesTable.dataAreaId )   );
+                        }
+                    }
+
+                    // Setzen der neuen Zuständigkeit nur, wenn es keine gleiche Zuständigkeit ohne Ende-Datum momentan gibt
+                    hcmWorkerRecId = 0;
+
+                    while select * 
+                    from    smmResponsibilitiesEmplTable
+                    order by smmResponsibilitiesEmplTable.Worker, smmResponsibilityGroup.KCS_KBVSalesPriority desc
+                    where   smmResponsibilitiesEmplTable.RefTableId == tablenum(smmSalesUnit)
+                        &&  smmResponsibilitiesEmplTable.RefRecId   == smmSalesUnit.RecId
+                        join    smmResponsibilityGroup
+                        where   smmResponsibilityGroup.ResponsibilityId == smmResponsibilitiesEmplTable.ResponsibilityId
+                    {
+                        if(     (hcmWorkerRecId && hcmWorkerRecId != smmResponsibilitiesEmplTable.Worker)
+                            ||  !hcmWorkerRecId )
+                        {
+                            select firstOnly * 
+                            from    kcs_KBVResponsibilitiesTable
+                            where   kcs_KBVResponsibilitiesTable.KCS_KBVBuildingProjectID   == _kcs_KBVBuildingProjectId
+                                &&  kcs_KBVResponsibilitiesTable.smmWorker                  == smmResponsibilitiesEmplTable.Worker
+                                &&  !kcs_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate;
+
+                            if (!kcs_KBVResponsibilitiesTable)
+                            {
+                                kcs_KBVResponsibilitiesTable.KCS_KBVBuildingProjectID = _kcs_KBVBuildingProjectId;
+                                kcs_KBVResponsibilitiesTable.smmWorker                = smmResponsibilitiesEmplTable.Worker;
+                                kcs_KBVResponsibilitiesTable.smmResponsibilityId      = smmResponsibilitiesEmplTable.ResponsibilityId;
+                                kcs_KBVResponsibilitiesTable.insert();
+                                if (!_lJobMode)
+                                {
+                                    info(strfmt("@NDX:NXANewResponsibilityForBP",   kcs_KBVBPCompanySpecific.dataAreaId,
+                                                                                    smmResponsibilitiesEmplTable.Worker,
+                                                                                    kcs_KBVBPCompanySpecific.KCS_KBVBuildingProjectID));
+                                }
+                            }
+                            else
+                            {
+                                //alte Zuständigkeit mit Zuständigkeitsende gefunden?
+                                if(kcs_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate)
+                                {
+                                    if (_lCheckOnly)
+                                    {
+                                        info(strfmt("@NDX:NXAChangedResponsibilityEndFromTo",   kcs_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate,
+                                                                                                datenull(),
+                                                                                                HcmWorker::find(kcs_KBVResponsibilitiesTable.smmWorker).name(),
+                                                                                                kcs_KBVResponsibilitiesTable.smmResponsibilityId    )   );
+                                    }
+
+                                    ttsbegin;
+                                    kcs_KBVResponsibilitiesTable.selectForUpdate(true);
+                                    kcs_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate = datenull();
+                                    kcs_KBVResponsibilitiesTable.write();
+                                    ttscommit;
+                                }
+
+                                if(kcs_KBVResponsibilitiesTable.smmResponsibilityId != smmResponsibilitiesEmplTable.ResponsibilityId)
+                                {
+                                    if (_lCheckOnly)
+                                    {
+                                        info(strfmt("@NDX:NXAChangedResponsibilityFromTo",  kcs_KBVResponsibilitiesTable.smmResponsibilityId,
+                                                                                            smmResponsibilitiesEmplTable.ResponsibilityId   )   );
+                                    }
+                                    
+                                    ttsbegin;
+                                    kcs_KBVResponsibilitiesTable.selectForUpdate(true);
+                                    kcs_KBVResponsibilitiesTable.smmResponsibilityId = smmResponsibilitiesEmplTable.ResponsibilityId;
+                                    kcs_KBVResponsibilitiesTable.write();
+                                    ttscommit;
+                                }
+                            }
+                        }
+                        hcmWorkerRecId = smmResponsibilitiesEmplTable.Worker;
+                    }
+                }
+                else
+                {
+                    returnvalue = false;
+                    if (!_lJobMode)
+                    {
+                        info(strfmt("@NDX:NXAResponsibilityNotCreatedNoSalesUnit",  kcs_KBVBPCompanySpecific.dataAreaId,
+                                                                                    kcs_KBVBPCompanySpecific.smmSalesUnitId,
+                                                                                    kcs_KBVBPCompanySpecific.KCS_KBVBuildingProjectID));
+                    }
+                }
+            }
+        }
+        return returnvalue;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SetBPManualResponsibilities</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>SetBPManualResponsibilities</c> method.
+    /// </summary>
+    /// <param name="_kcs_KBVBPCompanySpecific">
+    ///    <c>KCS_KBVBPCompanySpecific</c> as type
+    /// </param>
+    /// <param name="_lJobMode">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <param name="_lCheckOnly">
+    ///    <c>boolean</c> as type
+    /// </param>
+    public static void SetBPManualResponsibilities( KCS_KBVBPCompanySpecific    _kcs_KBVBPCompanySpecific,
+                                                    boolean                     _lJobMode                   = true,
+                                                    boolean                     _lCheckOnly                 = false )
+    {
+        KCS_KBVResponsibilitiesTable    kcs_KBVResponsibilitiesTable;
+        smmResponsibilitiesEmplTable    smmResponsibilitiesEmplTable;
+        date                            actualSystemDate;
+
+        smmResponsibilityId             smmResponsibilityId='';
+
+        if (_lCheckOnly)
+        {
+            info("@NDX:NXAManualResponsibility");
+        }
+
+        // Zuständigkeit schon vorhanden?
+        select firstonly forupdate * 
+        from    kcs_KBVResponsibilitiesTable 
+        where   kcs_KBVResponsibilitiesTable.KCS_KBVBuildingProjectID   == _kcs_KBVBPCompanySpecific.KCS_KBVBuildingProjectID
+            //&&  kcs_KBVResponsibilitiesTable.smmEmplId                  == _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible;
+            &&  kcs_KBVResponsibilitiesTable.smmWorker                  == _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible;
+
+        //Informationen neu setzen
+        /*
+        smmResponsibilityId = ( select firstOnly RefTableId, RefRecId, EmplId, ResponsibilityId
+                                from    smmResponsibilitiesEmplTable
+                                where   //smmResponsibilitiesEmplTable.RefTableId     == tablenum(smmSalesUnit) &&
+                                        //smmResponsibilitiesEmplTable.RefRecId       == smmSalesUnit.RecId &&
+                                        smmResponsibilitiesEmplTable.EmplId         == _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible).ResponsibilityId;
+        */
+        select firstOnly RefTableId, RefRecId, Worker, ResponsibilityId
+        from    smmResponsibilitiesEmplTable
+        //where   smmResponsibilitiesEmplTable.EmplId == _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible;
+        where   smmResponsibilitiesEmplTable.Worker == _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible;
+        
+        smmResponsibilityId = smmResponsibilitiesEmplTable.ResponsibilityId;
+        
+        if (_lCheckOnly)
+        {
+            if (kcs_KBVResponsibilitiesTable)
+            {
+                //if (    kcs_KBVResponsibilitiesTable.smmEmplId                != _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible
+                if (    kcs_KBVResponsibilitiesTable.smmWorker                != _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible
+                    ||  kcs_KBVResponsibilitiesTable.smmResponsibilityId      != smmResponsibilityId
+                    ||  kcs_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate != DateNull() )
+                {
+                    info(strfmt("@NDX:NXAChangedResponsibilityEndFromToDetails",
+                                //kcs_KBVResponsibilitiesTable.smmEmplId, _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible,
+                                HcmWorker::find(kcs_KBVResponsibilitiesTable.smmWorker).name(),
+                                HcmWorker::find(_kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible).name(),
+                                kcs_KBVResponsibilitiesTable.smmResponsibilityId, 
+                                smmResponsibilityId,
+                                kcs_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate, 
+                                DateNull()  )   );
+                }
+
+            }
+            else
+            {
+                info(strfmt("@NDX:NXANewResponsibilityDetails", _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible,
+                                                                smmResponsibilityId )   );
+            }
+        }
+
+        kcs_KBVResponsibilitiesTable.KCS_KBVBuildingProjectID   = _kcs_KBVBPCompanySpecific.KCS_KBVBuildingProjectID;
+        //kcs_KBVResponsibilitiesTable.smmEmplId                  = _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible;
+        kcs_KBVResponsibilitiesTable.smmWorker                  = _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible;
+        kcs_KBVResponsibilitiesTable.smmResponsibilityId        = smmResponsibilityId;
+        kcs_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate   = DateNull();
+        
+        ttsbegin;
+        kcs_KBVResponsibilitiesTable.write();
+        ttscommit;
+
+        // Zuständigkeitsende setzen
+        while select forupdate  kcs_KBVResponsibilitiesTable
+        where   kcs_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate   == DateNull()
+            &&  kcs_KBVResponsibilitiesTable.KCS_KBVBuildingProjectID   == _kcs_KBVBPCompanySpecific.KCS_KBVBuildingProjectID
+            //&&  kcs_KBVResponsibilitiesTable.smmEmplId                  != _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible
+            &&  kcs_KBVResponsibilitiesTable.smmWorker                  != _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible
+        {
+            actualSystemDate    = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+            if (_lCheckOnly)
+            {
+                if (kcs_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate != actualSystemDate)
+                {
+                    info(   strfmt("@NDX:NXANewResponsibilityEndFromTo",    kcs_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate,
+                                                                            actualSystemDate,
+                                                                            HcmWorker::find(kcs_KBVResponsibilitiesTable.smmWorker).name(),
+                                                                            kcs_KBVResponsibilitiesTable.smmResponsibilityId ));
+                }
+            }
+
+            ttsbegin;
+            kcs_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate = actualSystemDate;
+            kcs_KBVResponsibilitiesTable.write();
+            ttscommit;
+        }
+
+        if (!_lJobMode)
+        {
+            info(strfmt("@NDX:NXABPManualResponsibilityForCompanyUpdated", _kcs_KBVBPCompanySpecific.KCS_KBVBuildingProjectID,
+                                    _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible,
+                                    _kcs_KBVBPCompanySpecific.dataAreaId));
+        }
+
+        if (!smmResponsibilityId)
+        {
+            info(strfmt("@NDX:NXAHintNoResponsibilityVZPAssigned", _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible,_kcs_KBVBPCompanySpecific.KCS_KBVBuildingProjectID));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SetBPCompanySpecificData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>SetBPCompanySpecificData</c> method.
+    /// </summary>
+    /// <param name="_kcs_KBVBuildingProjectId">
+    ///    <c>KCS_KBVBuildingProjectID</c> as type
+    /// </param>
+    /// <param name="_dataAreaId">
+    ///    <c>DataAreaId</c> as type
+    /// </param>
+    /// <param name="_lCheckOnly">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public static boolean SetBPCompanySpecificData( KCS_KBVBuildingProjectID    _kcs_KBVBuildingProjectId, 
+                                                    DataAreaId                  _dataAreaId, 
+                                                    boolean                     _lCheckOnly = false)
+    {
+        KCS_KBVBuildingProjectTable kcs_KBVBuildingProjectTable;
+        KCS_KBVBPCompanySpecific    kCS_KBVBPCompanySpecific;
+        smmBusRelSalesDistrictGroup smmBusRelSalesDistrictGroup;
+        KCS_KBVRelationsToBV        kcs_KBVRelationsToBV;
+        //Address                     address;
+        LogisticsPostalAddress      address;
+        SalesQuotationTable         salesQuotationTable;
+        CommissionSalesGroup        commissionSalesGroup;
+        smmBusRelTable              locsmmBusRelTable;
+        smmSalesUnit                smmSalesUnit;
+        DirPartyTable               dirPartyTable;
+
+        AddressZipCodeId            zipCode;
+        AddressCountryRegionId      country;
+        boolean                     returnvalue;
+        NDX_BVSalesDistrictSource   salesDistrictSource;
+        //smmBusRelAccResponsible     mainContactId;
+        smmBusRelAccResponsibleWorker   mainContactId;
+
+        if (!_kcs_KBVBuildingProjectId || !_dataAreaId)
+        {
+            warning(strfmt("@NDX:NXAErrorMustBeCalledWithAllParameters", funcname()));
+            
+            returnvalue = false;
+        }
+        else
+        {
+            changecompany(_dataAreaId)
+            {
+                kcs_KBVBuildingProjectTable     = null;
+                kCS_KBVBPCompanySpecific        = null;
+                smmBusRelSalesDistrictGroup     = null;
+                kcs_KBVRelationsToBV            = null;
+                address                         = null;
+                salesQuotationTable             = null;
+                commissionSalesGroup            = null;
+                locsmmBusRelTable               = null;
+                smmSalesUnit                    = null;
+
+                if (_lCheckOnly)
+                {
+                    info(strfmt("@NDX:NXACheckCompanySpecificData", _dataAreaId));
+                }
+
+                kcs_KBVBuildingProjectTable = KCS_KBVBuildingProjectTable::find(_kcs_KBVBuildingProjectId);
+                kCS_KBVBPCompanySpecific    = kCS_KBVBPCompanySpecific::find(_kcs_KBVBuildingProjectId, true);
+
+                //noch kein UK-spezifischer Datensatz vorhanden
+                if(!kCS_KBVBPCompanySpecific.RecId)
+                {
+                    kCS_KBVBPCompanySpecific.KCS_KBVBuildingProjectID = _kcs_KBVBuildingProjectId;
+
+                    if (_lCheckOnly)
+                    {
+                        info(strfmt("@NDX:NXANewCompanySpecificRecord", kCS_KBVBPCompanySpecific.KCS_KBVBuildingProjectID));
+                    }
+
+                    kCS_KBVBPCompanySpecific.insert();
+                }
+
+                //Höchste Beziehung ermitteln
+                kcs_KBVRelationsToBV = AVAKBVHelperClass::getHighestRelation(_kcs_KBVBuildingProjectId, true);
+                
+                if (_lCheckOnly)
+                {
+                    info(strfmt("@NDX:NXAHighestRelation", kcs_KBVRelationsToBV.KCS_KBVRelationID ));
+                }
+
+                if(kcs_KBVRelationsToBV.RecId)
+                {
+                    dirPartyTable       = DirPartyTable::findRec(kcs_KBVRelationsToBV.DirPartyId);
+                    locsmmBusRelTable   = smmBusRelTable::findByParty(dirPartyTable.RecId);
+
+                    salesDistrictSource = NDX_BVSalesDistrictSource::Relation;
+                    if(locsmmBusRelTable)
+                    {
+                        //mainContactId = locsmmBusRelTable.MainContact;
+                        mainContactId = locsmmBusRelTable.MainContactWorker;
+                    }
+
+                    //address = DirPartyAddress::findPrimaryAddress(dirPartyTable.PartyId);
+                    address = DirParty::primaryPostalAddress(dirPartyTable.RecId);
+
+                    if (address.RecId)
+                    {
+                        zipCode = address.ZipCode;
+                        country = address.CountryRegionId;
+                    }
+
+                    if(!locsmmBusRelTable && dirPartyTable)
+                    {
+                        locsmmBusRelTable.initValue();
+                        //locsmmBusRelTable.initFromDirParty(DirParty::constructFromPartyId(dirPartyTable.PartyId));
+                        locsmmBusRelTable.initFromDirParty(DirParty::constructFromPartyRecId(dirPartyTable.RecId));
+                        locsmmBusRelTable.BusRelAccount = smmParameters::getNumber(smmNumbSeqUsed::BusRel);
+                        //locsmmBusRelTable.PartyId         = dirPartyTable.PartyId;
+                        locsmmBusRelTable.Party         = dirPartyTable.RecId;
+                        locsmmBusRelTable.NDX_initSalesGroupAndDistrictFromAddr(address.ZipCode, address.CountryRegionId, locsmmBusRelTable.dataAreaId);
+
+                        if (_lCheckOnly)
+                        {
+                            /*
+                            info(strfmt('neuer GB-Eintrag [%1] Name [%2] SalesGroup [%3] Hauptkontakt [%4]',    locsmmBusRelTable.PartyId,
+                                                                                                                locsmmBusRelTable.NameAlias,
+                                                                                                                locsmmBusRelTable.KCS_SalesGroup,
+                                                                                                                locsmmBusRelTable.MainContact )   );
+                            */
+                            info(strfmt("@NDX:NXANewGBEntryDetails",    locsmmBusRelTable.DirPartyTable().PartyNumber,
+                                                                        locsmmBusRelTable.DirPartyTable().NameAlias,
+                                                                        locsmmBusRelTable.KCS_SalesGroup,
+                                                                        locsmmBusRelTable.mainContactName()   )   );
+                        }
+                        locsmmBusRelTable.insert();
+                    }
+
+                    //Verkaufsgruppe Provision?
+                    if(locsmmBusRelTable.KCS_SalesGroup)
+                    {
+                        commissionSalesGroup = CommissionSalesGroup::find(locsmmBusRelTable.KCS_SalesGroup);
+                    }
+                }
+
+                //keine Beziehung vorhanden oder Beziehung hat keine Daten
+                if(!address && !commissionSalesGroup.RecId)
+                {
+                    salesDistrictSource = NDX_BVSalesDistrictSource::Customer;
+
+                    if (_lCheckOnly)
+                    {
+                        info(strfmt("@NDX:NXANoRelationDefined", curext()));
+                    }
+
+                    //Erstangebot vorhanden?
+                    select firstOnly salesQuotationTable
+                    order by createdDateTime
+                    where salesQuotationTable.KCS_KBVBuildingProjectID  == kcs_KBVBPCompanySpecific.KCS_KBVBuildingProjectID &&
+                          salesQuotationTable.QuotationStatus           != SalesQuotationStatus::Lost &&
+                          salesQuotationTable.QuotationStatus           != SalesQuotationStatus::Cancelled;
+
+                    if(salesQuotationTable.CustAccount)
+                    {
+                        //address = DirPartyAddress::findPrimaryAddress(CustTable::find(salesQuotationTable.CustAccount).PartyId);
+                        address = DirParty::primaryPostalAddress(CustTable::find(salesQuotationTable.CustAccount).Party);
+                        //mainContactId = CustTable::find(salesQuotationTable.CustAccount).MainContactId; // 1.14: NDX/DEBUC/NDX_TASK1235004455/10.03.2020
+                        mainContactId = CustTable::find(salesQuotationTable.CustAccount).MainContactWorker;
+                    }
+                    else
+                    {
+                        //address = DirPartyAddress::findPrimaryAddress(smmBusRelTable::find(salesQuotationTable.BusRelAccount).PartyId);
+                        address = DirParty::primaryPostalAddress(smmBusRelTable::find(salesQuotationTable.BusRelAccount).Party);
+                    }
+
+                    if (_lCheckOnly)
+                    {
+                        info(strfmt("@NDX:NXAPrimaryOfferingExistsCustomerBR",  salesQuotationTable.QuotationId,
+                                                                                salesQuotationTable.CustAccount,
+                                                                                salesQuotationTable.BusRelAccount   )   );
+                    }
+
+                    //Erstangebot mit Verkaufsgruppe vorhanden?
+                    if(salesQuotationTable.AVACBSCommissSalesGroup)
+                    {
+                        //commissionSalesGroup = CommissionSalesGroup::find(salesQuotationTable.KCS_CommissSalesGroup);
+                        commissionSalesGroup = CommissionSalesgroup::find(CustTable::find(salesQuotationTable.CustAccount).SalesGroup);
+                        if(!commissionSalesGroup)
+                        {
+                            commissionSalesGroup = CommissionSalesGroup::find(salesQuotationTable.AVACBSCommissSalesGroup);
+                        }
+                        if (_lCheckOnly)
+                        {
+                            info(strfmt("@NDX:NXAPrimaryOfferingWithSalesGroup", commissionSalesGroup.GroupId));
+                        }
+                    }
+                    else
+                    {
+                        //if (kcs_KBVBPCompanySpecific.KCS_KBVCompSpecCountryId && kcs_KBVBPCompanySpecific.KCS_KBVCompSpecZipCode)
+                        if(address.ZipCode && address.CountryRegionId)
+                        {
+                            zipCode = address.ZipCode;
+                            country = address.CountryRegionId;
+                        }
+
+                        if (_lCheckOnly)
+                        {
+                            info(strfmt("@NDX:NXAPrimaryOfferingWithoutSalesGroupZIP", zipCode));
+                        }
+                    }
+
+                    //Hat sich das Erstangebot verändert?
+                    if(     salesQuotationTable
+                        &&  (       address.ZipCode            != kcs_KBVBPCompanySpecific.KCS_KBVCompSpecZipCode
+                                ||  address.CountryRegionId    != kcs_KBVBPCompanySpecific.KCS_KBVCompSpecCountryId )   )
+                    {
+                        if (_lCheckOnly)
+                        {
+                            info(strfmt("@NDX:NXAChangedPrimaryOfferingZIP", kcs_KBVBPCompanySpecific.KCS_KBVCompSpecZipCode,
+                                                                                        address.ZipCode));
+                        }
+                        kcs_KBVBPCompanySpecific.selectForUpdate(true);
+                        kcs_KBVBPCompanySpecific.KCS_KBVCompSpecZipCode     = address.ZipCode;
+                        kcs_KBVBPCompanySpecific.KCS_KBVCompSpecCountryId   = address.CountryRegionId;
+
+                        if(kcs_KBVBPCompanySpecific.validateWrite())
+                        {
+                            ttsbegin;
+                            kcs_KBVBPCompanySpecific.write();
+                            ttscommit;
+                        }
+                    }
+                }
+
+                if (commissionSalesGroup)
+                {
+                    select smmBusRelSalesDistrictGroup 
+                    where smmBusRelSalesDistrictGroup.KCS_KBVCommissSalesGroup == commissionSalesGroup.GroupId;
+                }
+                else
+                {
+                    if(zipCode && country)
+                    {
+                        smmBusRelSalesDistrictGroup = AVAKBVHelperClass::ZipCode2SalesDistrict(zipCode, country, _dataAreaId);
+
+                        salesDistrictSource = NDX_BVSalesDistrictSource::ZipCode;
+                    }
+                }
+
+                if (smmBusRelSalesDistrictGroup)
+                {
+                    smmSalesUnit = smmSalesUnit::AVAfind(smmBusRelSalesDistrictGroup.KCS_KBVsmmSalesUnitId, _dataAreaId);
+
+                    if (_lCheckOnly)
+                    {
+                        info(strfmt("@NDX:NXASalesDitrictSalesUnitDetails", smmBusRelSalesDistrictGroup.SalesDistrictId,
+                                                                            smmSalesUnit.SalesUnitId ));
+                    }
+                    //UK-spezifischen Datensatz aktualisieren
+                    if(smmSalesUnit.RecId && kCS_KBVBPCompanySpecific.RecId && smmBusRelSalesDistrictGroup.RecId)
+                    {
+                        //KCS_KBVHelpClass::SetBPCompanySpecificDataFromRespUpdate(smmSalesUnit, kcs_KBVBPCompanySpecific, smmBusRelSalesDistrictGroup);
+                        AVAKBVHelperClass::SetBPCompanySpecificDataFromRespUpdate(  smmSalesUnit,
+                                                                                    kcs_KBVBPCompanySpecific,
+                                                                                    smmBusRelSalesDistrictGroup,
+                                                                                    false,
+                                                                                    salesDistrictSource );
+
+                        returnvalue = true;
+                    }
+                    else
+                    {
+                        returnvalue = false;
+                    }
+                }
+                else
+                {
+                    if (_lCheckOnly)
+                    {
+                        info("@NDX:NXANoSalesDistrictGroupLocated");
+                    }
+                }
+            }
+        }
+        return returnvalue;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SetBPCompanySpecificDataFromRespUpdate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>SetBPCompanySpecificDataFromRespUpdate</c> method.
+    /// </summary>
+    /// <param name="_smmSalesUnit">
+    ///    <c>smmSalesUnit</c> as type
+    /// </param>
+    /// <param name="_kcs_KBVBPCompanySpecific">
+    ///    <c>KCS_KBVBPCompanySpecific</c> as type
+    /// </param>
+    /// <param name="_smmBusRelSalesDistrictGroup">
+    ///    <c>smmBusRelSalesDistrictGroup</c> as type
+    /// </param>
+    /// <param name="_lCheckOnly">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <param name="_salesDistrictSource">
+    ///    <c>NDX_BVSalesDistrictSource</c> as type
+    /// </param>
+    /// <param name="_mainContacId">
+    ///    <c>smmBusRelAccResponsibleWorker</c> as type
+    /// </param>
+    public static void SetBPCompanySpecificDataFromRespUpdate(  smmSalesUnit                    _smmSalesUnit,
+                                                                KCS_KBVBPCompanySpecific        _kcs_KBVBPCompanySpecific,
+                                                                smmBusRelSalesDistrictGroup     _smmBusRelSalesDistrictGroup,
+                                                                boolean                         _lCheckOnly                     = false,
+                                                                NDX_BVSalesDistrictSource       _salesDistrictSource            = NDX_BVSalesDistrictSource::undefined,
+                                                                //smmBusRelAccResponsible       mainContacId                      = '')
+                                                                smmBusRelAccResponsibleWorker   _mainContacId                   = 0)
+        
+    {
+        smmResponsibilitiesEmplTable    smmResponsibilitiesEmplTable;
+
+        //EmplId                          mainResponsible;
+        HcmWorkerRecId                  mainResponsible;
+
+        if (    !_smmSalesUnit.RecId 
+            ||  !_kcs_KBVBPCompanySpecific.RecId
+            ||  !_smmBusRelSalesDistrictGroup.RecId )
+        {
+            return;
+        }
+
+        ttsbegin;
+        smmResponsibilitiesEmplTable = AVAKBVHelperClass::getHighestSmmResponsibilities(_smmSalesUnit);
+
+        if (smmResponsibilitiesEmplTable.RecId)
+        {
+            //mainResponsible = smmResponsibilitiesEmplTable.EmplId;
+            mainResponsible = smmResponsibilitiesEmplTable.Worker;
+        }
+
+        _kcs_KBVBPCompanySpecific.selectForUpdate(true);
+
+        if (_lCheckOnly)
+        {
+            if (_kcs_KBVBPCompanySpecific.smmSalesUnitId    != _smmSalesUnit.SalesUnitId ||
+            _kcs_KBVBPCompanySpecific.CommissSalesGroup != _smmBusRelSalesDistrictGroup.KCS_KBVCommissSalesGroup    ||
+            _kcs_KBVBPCompanySpecific.KCS_KBVSmmSalesUnitIndoor  != _smmBusRelSalesDistrictGroup.KCS_KBVSmmSalesUnitIndoor)
+            {
+                info(strfmt("@NDX:NXAChangedCompanySpecificDataCommissSalesGroupIndoor",    _kcs_KBVBPCompanySpecific.smmSalesUnitId, 
+                                                                                            _smmSalesUnit.SalesUnitId,
+                                                                                            _kcs_KBVBPCompanySpecific.CommissSalesGroup, 
+                                                                                            _smmBusRelSalesDistrictGroup.KCS_KBVCommissSalesGroup,
+                                                                                            _kcs_KBVBPCompanySpecific.KCS_KBVSmmSalesUnitIndoor,
+                                                                                            _smmBusRelSalesDistrictGroup.KCS_KBVSmmSalesUnitIndoor  )   );
+            }
+
+        }
+
+        _kcs_KBVBPCompanySpecific.smmSalesUnitId             = _smmSalesUnit.SalesUnitId;
+        _kcs_KBVBPCompanySpecific.CommissSalesGroup          = _smmBusRelSalesDistrictGroup.KCS_KBVCommissSalesGroup;
+        _kcs_KBVBPCompanySpecific.KCS_KBVSmmSalesUnitIndoor  = _smmBusRelSalesDistrictGroup.KCS_KBVSmmSalesUnitIndoor;
+
+
+
+        //nur wenn nicht manuell überschreiben
+        if (    !_kcs_KBVBPCompanySpecific.KCS_KBVSetMRManual
+            &&  mainResponsible )
+        {
+            if (_lCheckOnly)
+            {
+                info(strfmt("@NDX:NXAChangedCompanySpecificDataMainResponsible", _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible, mainResponsible ));
+            }
+            _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible = mainResponsible;
+        }
+
+        if(_mainContacId)
+        {
+            _kcs_KBVBPCompanySpecific.KCS_KBVMainResponsible = _mainContacId;
+        }
+        if(_salesDistrictSource != NDX_BVSalesDistrictSource::undefined)
+        {
+            _kcs_KBVBPCompanySpecific.NDX_BVSalesDistrictSource = _salesDistrictSource;
+        }
+
+        _kcs_KBVBPCompanySpecific.write();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHighestRelation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>getHighestRelation</c> method.
+    /// </summary>
+    /// <param name="_kcs_KBVBuildingProjectID">
+    ///    <c>KCS_KBVBuildingProjectID</c> as type
+    /// </param>
+    /// <param name="_lPrio">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>KCS_KBVRelationsToBV</c> as return value
+    /// </returns>
+    public static server KCS_KBVRelationsToBV getHighestRelation(   KCS_KBVBuildingProjectID    _kcs_KBVBuildingProjectID,
+                                                                    boolean                     _lPrio                      = false)
+    {
+        KCS_KBVRelationsToBV    kcs_KBVRelationsToBV;
+        kcs_KBVRelations        kcs_KBVRelations;
+        KCS_KBVSalesPriority    prio = KCS_KBVSalesPriority::Zero;
+
+        if(!_kcs_KBVBuildingProjectID)
+        {
+            warning(strfmt("@NDX:NXANeedsACallParameter", funcname()));
+        }
+        else
+        {
+            if(!_lPrio)
+            {
+                select firstonly kcs_KBVRelationsToBV 
+                where   kcs_KBVRelationsToBV.KCS_KBVBuildingProjectID == _kcs_KBVBuildingProjectID
+                    join kcs_KBVRelations 
+                    order by KCS_KBVSalesPriority desc
+                    where kcs_KBVRelations.KCS_KBVRelationID == kcs_KBVRelationsToBV.KCS_KBVRelationID;
+            }
+            else
+            {
+                select firstOnly kcs_KBVRelationsToBV
+                where   kcs_KBVRelationsToBV.KCS_KBVBuildingProjectID == _kcs_KBVBuildingProjectID
+                    join kcs_KBVRelations 
+                    order by KCS_KBVSalesPriority desc
+                    where   kcs_KBVRelations.KCS_KBVRelationID == kcs_KBVRelationsToBV.KCS_KBVRelationID
+                        &&  kcs_KBVRelations.KCS_KBVSalesPriority != prio;
+            }
+        }
+        return kcs_KBVRelationsToBV;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHighestSmmResponsibilities</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>getHighestSmmResponsibilities</c> method.
+    /// </summary>
+    /// <param name="_smmSalesUnit">
+    ///    <c>smmSalesUnit</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>smmResponsibilitiesEmplTable</c> as return value
+    /// </returns>
+    public static smmResponsibilitiesEmplTable getHighestSmmResponsibilities(smmSalesUnit _smmSalesUnit)
+    {
+        smmResponsibilitiesEmplTable    smmResponsibilitiesEmplTable;
+        smmResponsibilityGroup          smmResponsibilityGroup;
+        HCMWorker                       locHCMWorker;
+
+        select firstOnly smmResponsibilitiesEmplTable
+        where   smmResponsibilitiesEmplTable.RefTableId == tablenum(smmSalesUnit)
+            &&  smmResponsibilitiesEmplTable.RefRecId   == _smmSalesUnit.RecId
+            join firstOnly smmResponsibilityGroup
+            order by KCS_KBVSalesPriority desc
+            where   smmResponsibilityGroup.ResponsibilityId == smmResponsibilitiesEmplTable.ResponsibilityId
+                join locHCMWorker
+                order by NDX_KBVActivities desc
+                where locHCMWorker.RecId == smmResponsibilitiesEmplTable.Worker;
+
+        return smmResponsibilitiesEmplTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getEnumValueLabel_KCS_KBVInfoArea</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>getEnumValueLabel_KCS_KBVInfoArea</c> method.
+    /// </summary>
+    /// <param name="_kcs_KBVInfoArea">
+    ///    <c>KCS_KBVInfoArea</c> as type
+    /// </param>
+    /// <param name="_languageId">
+    ///    <c>LanguageId</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>str</c> as return value
+    /// </returns>
+    public static str getEnumValueLabel_KCS_KBVInfoArea(    KCS_KBVInfoArea _kcs_KBVInfoArea,
+                                                            LanguageId      _languageId         = CompanyInfo::find().LanguageId)
+    {
+        str             retVal;
+        int             valueIndex;
+        SysDictEnum     locSysDictEnum;
+        LanguageId      locLanguageId;
+
+        locSysDictEnum  = new SysDictEnum(enumNum(KCS_KBVInfoArea));
+        
+        locLanguageId = _languageId;
+        if(!locLanguageId)
+        {
+            locLanguageId = CompanyInfo::find().LanguageId;
+        }
+        if(!LanguageTable::exist(locLanguageId))
+        {
+            locLanguageId = CompanyInfo::find().LanguageId;
+        }
+
+        if (locSysDictEnum)
+        {
+            for (valueIndex = 0 ; valueIndex < locSysDictEnum.values(); valueIndex++)
+            {
+                if (enum2int(_kcs_KBVInfoArea) == locSysDictEnum.index2Value(valueIndex))
+                {
+                    retVal = SysLabel::labelId2String2(locSysDictEnum.index2LabelId(valueIndex), locLanguageId);
+                }
+                /*
+                info(strFmt("%1 - %2 - %3 - %4",    int2Str(valueIndex),
+                                                    locSysDictEnum.index2Value(valueIndex) ,
+                                                    locSysDictEnum.index2Symbol(valueIndex),
+                                                    locSysDictEnum.index2Name(valueIndex)));
+                */
+            }
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAWHSSplitShipConfirmSplitQty_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///  M.essl 11.03.2024
+/// Extension of WHSSplitShipConfirmSplitQty
+/// </summary>
+[ExtensionOf(classStr(WHSSplitShipConfirmSplitQty))]
+final class AVAWHSSplitShipConfirmSplitQty_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>updateShipments</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  M.essl 11.03.2024
+    /// </summary>
+    protected void updateShipments()
+    {
+        WhsShipmentTable                            shipmentTable;
+        WHSContainerTable                           containerTable;
+        WHSContainerLine                            containerLine;
+        WHSLoadLine                                 loadLine;
+        WHSOutboundSortPositionTrans                WHSOutboundSortPositionTrans;
+        WHSWorkTable                                workTable;
+        WHSWorkLine                                 workLine;
+        WHSLoadLine                                 whsLoadLineNew;
+        SetEnumerator                               setEnumerator;
+        Set                                         containerLines;
+        AVASplitShipConfirmUpdateContainerDisposal  context;
+
+        next updateShipments();
+        
+        context = AVASplitShipConfirmUpdateContainerDisposal::current();
+
+        if (context
+         && context.newLoadLineRecIds)
+        {
+            while select shipmentTable
+                where shipmentTable.LoadId          == loadTable.LoadId
+            {
+                containerLines = new Set(Types::Int64);
+
+                while select containerLine
+                    where containerLine.ShipmentId == shipmentTable.ShipmentId
+                    join containerTable
+                        where containerTable.ContainerId == containerLine.ContainerId
+                    notexists join RecId from WHSOutboundSortPositionTrans
+                        where WHSOutboundSortPositionTrans.SortIdentifier == containerLine.ContainerId
+                            && WHSOutboundSortPositionTrans.SortTemplateType == WHSOutboundSortTemplateType::Container
+                        join loadLine
+                            where loadLine.RecId        == WHSOutboundSortPositionTrans.LoadLine
+                                && loadLine.LoadId      == shipmentTable.LoadId
+                                && loadLine.ShipmentId  == shipmentTable.ShipmentId
+                                && loadLine.PickedQty   != 0
+                {
+                    containerLines.add(containerLine.RecId);
+                }
+
+                setEnumerator = containerLines.getEnumerator();
+
+                while (setEnumerator.moveNext())
+                {
+                    containerLine = WHSContainerLine::findByRecId(setEnumerator.current(), true);
+
+                    if (context.existsLoadLineRec(containerLine.LoadLine))
+                    {
+                        whsLoadLineNew = WHSLoadLine::findbyRecId(context.lookupLoadLineRec(containerLine.LoadLine));
+                    }
+                    else    
+                    {
+                        throw error(Error::wrongUseOfFunction(funcName()));
+                    }
+
+                    containerTable = containerLine.containerTable(true);
+
+                    if (containerTable)
+                    {
+                        containerTable.ShipmentId = whsLoadLineNew.ShipmentId;
+                        containerTable.doUpdate();
+                    }
+                    
+                    containerLine.ShipmentId    = whsLoadLineNew.ShipmentId;
+                    containerLine.LoadLine      = whsLoadLineNew.RecId;
+                    containerLine.doUpdate();
+
+                    while select forupdate workTable
+                        where workTable.TargetLicensePlateId == containerLine.ContainerId
+                    {
+                        while select forupdate workLine
+                            where workLine.WorkId == workTable.WorkId
+                               && workLine.ShipmentId
+                               && workLine.LoadId
+                               && (workLine.ShipmentId != whsLoadLineNew.ShipmentId ||  workLine.LoadId != whsLoadLineNew.LoadId)
+                        {
+                            workLine.ShipmentId = whsLoadLineNew.ShipmentId;
+                            workLine.LoadId     = whsLoadLineNew.LoadId;
+
+                            if (workLine.LoadLineRefRecId
+                             && context.existsLoadLineRec(workLine.LoadLineRefRecId))
+                            {
+                                workLine.LoadLineRefRecId = context.lookupLoadLineRec(workLine.LoadLineRefRecId);
+                            }
+
+                            workLine.doUpdate();
+                        }
+
+                        if (workTable.ShipmentId != whsLoadLineNew.ShipmentId
+                         && workTable.LoadId     != whsLoadLineNew.LoadId)
+                        {
+                            workTable.ShipmentId    = whsLoadLineNew.ShipmentId;
+                            workTable.LoadId        = whsLoadLineNew.LoadId;
+                            workTable.doUpdate();
+                        }
+                    }
+                }          
+            }
+
+            context.updateShipmentsDone = true;
+
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

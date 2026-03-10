@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAAVAMSQOutboundProcessManager_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(classStr(AVAMSQOutboundProcessManager))]
+internal final class AVAAVAMSQOutboundProcessManager_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>findExportCannels</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void findExportCannels()
+    {
+        CustTable       custTable;
+        AVATOSId            tosId;
+        KCS_TOSTable        tosTable;
+        AVAMSQOutboundProcessToTransfDef    outboundProcessToTransDef;
+        AVAMSQTransformationDefinition      transformationDefinition;
+        AVAMSQCustVendAssignment            custVendAssignment;
+
+      
+
+        next findExportCannels();
+
+        if(exportRecord.TableId == tableNum(CustInvoiceJour))
+        {
+            CustInvoiceJour     locCustInvoiceJour = exportRecord as CustInvoiceJour;
+            if (locCustInvoiceJour.AVAEDITransfer == NoYes::No)
+            {
+                conDel(uploadTransDef,1,conLen(uploadTransDef));
+                return;
+            }
+        }
+           
+
+        select firstonly AccountNum, KCS_TOSId, recId from  custTable
+            where custTable.AccountNum == custVendAC;
+
+        tosId = custTable.KCS_TOSId;
+    
+        while select  outboundProcessToTransDef
+            where outboundProcessToTransDef.OutboundProcesses == outInProcess
+                join transformationDefinition
+                    where transformationDefinition.TransfDefId == outboundProcessToTransDef.TransfDefId
+        {
+            if (!conFind(foundTransDef,transformationDefinition.TransfDefId))
+            {
+                select firstonly  TosId, ParentTosId,recId from
+                    tosTable where tosTable.TosId == tosId;
+
+                while (tosTable.RecId)
+                {
+                    custVendAssignment = AVAMSQCustVendAssignment::find(acType,tosTable.TosId,originId,outboundProcessToTransDef.RecId);
+                    this.initExportChannels(custVendAssignment,transformationDefinition.TransfDefId);
+                                                                        
+                    if (custVendAssignment.RecId && custVendAssignment.mustBeUpload(exportAmount,custVendAC))
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        tosId = tosTable.ParentTosId;
+                        if (tosId)
+                        {
+                            select firstonly tosId, ParentTosId,RecId from tosTable
+                                where tosTable.TosId == tosId;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>uploadExport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVS
+    /// </summary>
+    /// <param name = "_common">_common</param>
+    /// <returns>container</returns>
+    public static container  uploadExport(Common  _common)
+    {
+        AVAMSQExportProcessTransaction      exportProcessTransaction = AVAMSQExportProcessTransaction::find(_common.TableId, _common.RecId);
+        container       ret;
+
+        if (_common.TableId == tableNum(CustInvoiceJour))
+        {
+            CustInvoiceJour     locCustInvoiceJour = _common as CustInvoiceJour;
+
+            if (conLen(exportProcessTransaction.uploadTransDef) == 0)
+            {
+                locCustInvoiceJour.reread();
+                locCustInvoiceJour.AVAEDITransfer = NoYes::No;
+                ttsbegin;
+                locCustInvoiceJour.selectForUpdate(true);
+                locCustInvoiceJour.doUpdate();
+                ttscommit;
+            }
+        }
+            /*if (exportProcessTransaction.RecId)
+            {
+                if (locCustInvoiceJour.AVAEDITransfer == NoYes::No)
+                {
+                    exportProcessTransaction.selectForUpdate(true);
+                // if asset team will not correct , solution is to update reference fields
+                // exportProcessTransaction.RefRecId = 0;
+                // exportProcessTransaction.RefTableId = 0;
+                    ttsbegin;
+                //  exportProcessTransaction.update();     
+                    exportProcessTransaction.delete();
+                    ttscommit;
+                }
+            }*/
+        
+
+      
+
+        if(_common.TableId == tableNum(CustConfirmJour))
+        {
+            CustConfirmJour locCustConfirJour = _common as CustConfirmJour;
+
+            if (conLen(exportProcessTransaction.uploadTransDef) != 0)
+            {
+                locCustConfirJour.reread();
+                locCustConfirJour.AVAEDITransfer = NoYes::Yes;
+                ttsbegin;
+                locCustConfirJour.selectForUpdate(true);
+                locCustConfirJour.doUpdate();
+                ttscommit;
+            }
+        }
+
+        if(_common.TableId == tableNum(CustPackingSlipJour))
+        {
+            CustPackingSlipJour locCustPackingSlipJour = _common as CustPackingSlipJour;
+
+            if (conLen(exportProcessTransaction.uploadTransDef) != 0)
+            {
+                locCustPackingSlipJour.reread();
+                locCustPackingSlipJour.AVAEDITransfer = NoYes::Yes;
+                ttsbegin;
+                locCustPackingSlipJour.selectForUpdate(true);
+                locCustPackingSlipJour.doUpdate();
+                ttscommit;
+            }
+        }
+
+        ret = next uploadExport(_common);
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

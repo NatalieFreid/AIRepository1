@@ -1,0 +1,174 @@
+# ? AVACashSummary Objects Added to D365FO Project
+
+## Summary
+
+All **AVACashSummary** X++ objects have been successfully copied to your D365FO AVAExtension project.
+
+## Files Added to Project
+
+### Location
+**Base Path:** `C:\Users\n.freidenberger\OneDrive - Avanade\Personal\AVAExtension\AVAExtension\`
+
+### Files Copied
+
+| # | File Name | Destination Folder | Object Type |
+|---|-----------|-------------------|-------------|
+| 1 | **AVACashSummaryQuery.xml** | AxQuery\ | Query |
+| 2 | **AVACashSummaryContract.xml** | AxClass\ | Contract Class |
+| 3 | **AVACashSummaryController.xml** | AxClass\ | Controller Class |
+| 4 | **AVACashSummary.xml** | AxReport\ | SSRS Report |
+| 5 | **AVACashSummary.xml** | AxMenuItemOutput\ | Menu Item |
+
+## Full Paths
+
+```
+C:\Users\n.freidenberger\OneDrive - Avanade\Personal\AVAExtension\AVAExtension\
+??? AxQuery\
+?   ??? AVACashSummaryQuery.xml
+??? AxClass\
+?   ??? AVACashSummaryContract.xml
+?   ??? AVACashSummaryController.xml
+??? AxReport\
+?   ??? AVACashSummary.xml
+??? AxMenuItemOutput\
+    ??? AVACashSummary.xml
+```
+
+## Next Steps in Visual Studio
+
+### 1. Refresh Solution Explorer
+```
+In Visual Studio:
+- Right-click on the AVAExtension project
+- Select "Refresh"
+```
+
+The new files should appear in Solution Explorer under their respective folders.
+
+### 2. Build the Project
+```
+In Visual Studio:
+Ctrl+Shift+B (Build Solution)
+```
+
+### 3. Fix Compilation Errors (if any)
+
+Check for these common issues:
+
+**Missing Labels:**
+- Create labels `@AVA:CashSummary` and `@AVA:CashSummaryHelp` in your label file
+- Or replace with system labels in the menu item XML
+
+**Missing X++ Source Files:**
+The XML files define metadata, but you may need to create corresponding X++ source files in:
+```
+C:\Users\n.freidenberger\CustomXppMetadatacuelwv0v.vtc\XppSource\AVAExtension\
+```
+
+Required X++ files:
+- `AxClass_AVACashSummaryQuery.xpp`
+- `AxClass_AVACashSummaryContract.xpp`
+- `AxClass_AVACashSummaryController.xpp`
+
+### 4. Synchronize Database
+```
+In Visual Studio:
+Dynamics 365 ? Synchronize Database ? AVAExtension ? Synchronize
+```
+
+### 5. Deploy Report
+The SSRS report will be deployed automatically when you build the project in a development environment.
+
+## Object Relationships
+
+```
+AVACashSummary (Menu Item)
+    ? calls
+AVACashSummaryController (Controller Class)
+    ? uses
+AVACashSummaryContract (Contract Class) ? parameters
+    ? applies ranges to
+AVACashSummaryQuery (Query)
+    ? provides data to
+AVACashSummary (SSRS Report)
+```
+
+## Label File Updates Required
+
+Add these labels to your label file:
+
+**File:** `AxLabelFile/AVAExtension_en-US.xml`
+
+```xml
+<AxLabel>
+  <Name>CashSummary</Name>
+  <Label>Cash Summary</Label>
+</AxLabel>
+<AxLabel>
+  <Name>CashSummaryHelp</Name>
+  <Label>Display cash summary report for sales invoices</Label>
+</AxLabel>
+```
+
+## Verification Checklist
+
+After adding to the project:
+
+- [ ] Files visible in Visual Studio Solution Explorer
+- [ ] Project builds without errors
+- [ ] Labels created or updated
+- [ ] Database synchronized successfully
+- [ ] Report appears in AOT under Reports node
+- [ ] Menu item appears in AOT under Output Menu Items
+- [ ] Report can be run from menu item
+
+## Troubleshooting
+
+### Files not showing in Solution Explorer
+
+**Solution:**
+1. Close and reopen Visual Studio
+2. Or manually add via: Right-click project ? Add ? Existing Item
+
+### Build errors about missing classes
+
+**Cause:** X++ source files not generated
+
+**Solution:**
+Create corresponding .xpp files in XppSource\AVAExtension\ folder, or let Visual Studio generate them:
+1. Double-click the XML file in Solution Explorer
+2. Visual Studio will create the .xpp file automatically
+
+### Cannot find query/report
+
+**Cause:** Files not in correct folder structure
+
+**Solution:**
+Verify folder structure matches:
+- Queries in AxQuery\
+- Classes in AxClass\
+- Reports in AxReport\
+- Menu items in AxMenuItemOutput\
+
+## Comparison with Original Names
+
+| Original Name | New Name | Status |
+|---------------|----------|--------|
+| AVASalesInvoiceReportQuery | AVACashSummaryQuery | ? Renamed |
+| AVASalesInvoiceReportContract | AVACashSummaryContract | ? Renamed |
+| AVASalesInvoiceReportController | AVACashSummaryController | ? Renamed |
+| AVASalesInvoiceReport (Report) | AVACashSummary | ? Renamed |
+| AVASalesInvoiceReport (MenuItem) | AVACashSummary | ? Renamed |
+
+## Project Integration Status
+
+? **Files copied to project directory**  
+? **Pending: Refresh in Visual Studio**  
+? **Pending: Build project**  
+? **Pending: Create labels**  
+? **Pending: Synchronize database**  
+? **Pending: Test report**
+
+---
+
+**Note:** The files are now in your D365FO project directory. Open Visual Studio and refresh the Solution Explorer to see them in the project tree.

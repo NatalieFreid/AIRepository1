@@ -1,0 +1,827 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAInventTableDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed by AVANADE
+/// </summary>
+[ExtensionOf(tableStr(InventTable))]
+final class AVAInventTableDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaProductNames</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns the description and NDX ProductNames for current item in provided language
+    /// </summary>
+    /// <param name = "_languageId">LanguageId</param>
+    /// <returns>ItemFreeTxt</returns>
+    public ItemFreeTxt avaProductNames(LanguageId _languageId)
+    {
+        #xppTexts
+        ItemFreeTxt avaItemFreeTxt;
+        EcoResProductTranslation avaProductTranslation = EcoResProductTranslation::findByProductLanguage(this.Product, _languageId);
+
+        avaItemFreeTxt = this.itemDescriptionOrName(_languageId);
+        
+        if(avaProductTranslation.NDXProductName1 != '')
+        {
+            avaItemFreeTxt += #newLine + avaProductTranslation.NDXProductName1;
+        }
+        if(avaProductTranslation.NDXProductName2 != '')
+        {
+            avaItemFreeTxt += #newLine + avaProductTranslation.NDXProductName2;
+        }
+
+        return avaItemFreeTxt;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaNDXProductName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns the NDX ProductNames for current item in provided language
+    /// </summary>
+    /// <param name = "_languageId">LanguageId</param>
+    /// <returns>ItemFreeTxt</returns>
+    public ItemFreeTxt avaNDXProductName(LanguageId _languageId)
+    {
+        #xppTexts
+        EcoResProductTranslation avaProductTranslation = EcoResProductTranslation::findByProductLanguage(this.Product, _languageId);
+        ItemFreeTxt avaItemFreeText;
+
+        if(avaProductTranslation)
+        {
+            avaItemFreeText = avaProductTranslation.NDXProductName1 + #newLine + avaProductTranslation.NDXProductName2;
+        }
+
+        return avaItemFreeText;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetColorInventDimCombination</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// gets the InventDimCombination record for a provided ItemId and ColorName
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_colorName">EcoResColorName</param>
+    /// <returns>InventDimCombination</returns>
+    public static InventDimCombination avaGetColorInventDimCombination(ItemId _itemId, EcoResColorName _colorName)
+    {
+        InventDimCombination                avaInventDimCombination;
+        EcoResDistinctProductVariant        avaDistinctVariant;
+        EcoResProductVariantDimensionValue  avaVariantDimensionValue;
+        EcoResProductVariantColor           avaVariantColor;
+
+        select firstonly * from avaInventDimCombination
+            join avaDistinctVariant
+            join avaVariantDimensionValue
+            join avaVariantColor
+            where avaInventDimCombination.DistinctProductVariant    == avaDistinctVariant.RecId
+                && avaDistinctVariant.RecId                         == avaVariantDimensionValue.DistinctProductVariant
+                && avaVariantDimensionValue.RecId                   == avaVariantColor.RecId
+                && avaDistinctVariant.ProductMaster                 == InventTable::find(_itemId).Product
+                && avaVariantColor.Color                            == EcoResColor::findByName(_colorName).RecId;
+
+        return avaInventDimCombination;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAGetHK2perQty</Name>
+				<Source><![CDATA[
+/// <summary>
+/// KCS_GetHK2perQty() from AX2009
+/// </summary>
+/// <param name = "_qty">Qty</param>
+    /// <param name = "_inventDimId">InventDimId</param>
+    /// <param name = "_transDate">TransDate</param>
+    /// <param name = "_HK2Factor">boolean</param>
+    /// <param name = "_mgkFactor">boolean</param>
+    /// <returns>Price</returns>
+    Price AVAGetHK2perQty(  Qty         _qty         = 1,
+                            InventDimId _inventDimId = inventDim::inventDimIdBlank(),
+                            TransDate   _transDate   = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()),
+                            boolean     _HK2Factor   = true,
+                            boolean     _mgkFactor   = true)
+
+
+    {
+        InventDim           inventDim       = inventDim::find(_inventDimId);
+        
+        //KCS_HK2FactorGroup  hK2FactorGroup  = KCS_HK2FactorGroup::findDate(this.KCS_HK2GroupId, DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+        KCS_HK2Vendor       hk2Vendor       = this.KCS_HK2Vendor ? this.KCS_HK2Vendor : this.PrimaryVendorId;
+
+        PriceDiscParameters priceDiscParameters;
+        PriceDisc           priceDisc;
+        PriceDiscTable      avaPriceDiscTable;
+
+        //CurrencyCode        currencyCodeVendor;
+
+        TransDate           transDate       = _transDate;
+        Qty                 qty             = _qty;
+        //Qty                 qty2;
+        PriceGroupId        priceGroupId    = '';
+
+        //ExchRate            exchRate;
+        KCS_PRMPriceSales   priceSales;
+
+        if (InventItemSetupSupplyType::getDefaultOrderType(this.ItemId, this.DataAreaId) ==  ReqPOType::Purch && hk2Vendor == '')
+        {
+            return 0;
+        }
+
+        if (!NDXPrivilegeManagement::hasSecuritykeyAccess(privilegeStr(NDXHK2View)))
+        {
+            return 0;
+        }
+
+        priceDiscParameters = PriceDiscParameters::construct();
+        
+        priceDiscParameters.parmModuleType(ModuleInventPurchSales::Purch);
+        priceDiscParameters.parmItemId(this.ItemId);
+        priceDiscParameters.parmInventDim(inventDim);
+        PriceDiscParameters.parmUnitID(this.purchUnitId());
+        PriceDiscParameters.parmPriceDiscDate(transDate);
+        PriceDiscParameters.parmQty(qty);
+        PriceDiscParameters.parmAccountNum(hk2Vendor);
+        priceDiscParameters.parmCurrencyCode();
+
+        priceDisc = PriceDisc::newFromPriceDiscParameters(priceDiscParameters);
+        priceDisc.findPrice(priceGroupId);
+
+        avaPriceDiscTable = priceDisc.priceTable();
+        //priceSales = avaPriceDiscTable.AVAchargeAmount();
+        //priceSales = qty != 0 ?  avaPriceDiscTable.AVAchargeAmount() * qty :avaPriceDiscTable.AVAchargeAmount();
+        InventTableModule       purchInventTableModule = this.inventTableModulePurch();
+
+        priceSales = avaPriceDiscTable.AVAchargeAmount();
+        priceSales = priceSales * purchInventTableModule.priceUnit;
+        if(avaPriceDiscTable.PriceUnit)
+        {
+            priceSales = priceSales / avaPriceDiscTable.PriceUnit;
+        }
+        else if(purchInventTableModule.priceUnit)
+        {
+            priceSales = priceSales / purchInventTableModule.priceUnit;
+        }
+        priceSales = priceSales * qty;
+       
+
+        if (_HK2Factor)
+        {
+            priceSales = priceSales * this.avaGetHK2Factor(transDate);
+        }
+        if (_mgkFactor)
+        {
+            priceSales = priceSales * this.avaGetMGKFactor();
+        }
+
+       /* Price               price           = this.KCS_GetHK1perQty(qty? qty :1 , inventDimId, transDate, checkPrice, fallback);
+        KCS_HK2FactorGroup  hK2FactorGroup  = KCS_HK2FactorGroup::findDate(this.KCS_HK2GroupId,
+                                                                       transDate) ;
+
+        KCS_HK2Factor       hK2Factor       = hk2FactorGroup ? hK2FactorGroup.HK2Factor : 1;
+
+        return Price * hK2Factor;    
+     //   return this.inventTableModulePurch().NDX_showHK2PriceDisc  ()      */
+
+        
+        return priceSales;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetHK2Factor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns HK2 factor from group for certain date
+    /// </summary>
+    /// <param name = "_transDate">TransDate, default system date</param>
+    /// <returns>KCS_HK2Factor</returns>
+    KCS_HK2Factor avaGetHK2Factor(TransDate _transDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        KCS_HK2FactorGroup  hk2FactorGroup  = KCS_HK2FactorGroup::findDate(this.KCS_HK2GroupId, _transDate);
+        KCS_HK2Factor       hk2Factor       = hk2FactorGroup ? hk2FactorGroup.HK2Factor : 1;
+
+        return hk2Factor;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetMGKFactor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns MGK factor from Group
+    /// </summary>
+    /// <returns>AVAMGKFactor</returns>
+    AVAMGKFactor avaGetMGKFactor()
+    {
+        //AVAMGKFactors avaMGKFactors = AVAMGKFactors::findGroupId(this.inventTableModuleInvent().AVAMGKGroup);
+        AVAMGKFactors avaMGKFactors = AVAMGKFactors::findByRecId(this.inventTableModuleInvent().NDXMGKGroupRefRecId);
+        AVAMGKFactor avaMGKFactor = avaMGKFactors ? avaMGKFactors.MGKFactor : 1;
+
+        return avaMGKFactor;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetCountryISOCode</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// method to find ISO code of associated Origin country
+    /// </summary>
+    /// <returns>LogisticsAddressCountryRegionISOCode</returns>
+    LogisticsAddressCountryRegionISOCode avaGetCountryISOCode()
+    {
+        return LogisticsAddressCountryRegion::find(this.OrigCountryRegionId).ISOcode;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetPriceSurchargeCode</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaGetPriceSurchargeCode</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>AVAPriceSurchargeCode</c> as return value
+    /// </returns>
+    public AVAPriceSurchargeCode avaGetPriceSurchargeCode()
+    {
+        AVAPriceSurchargeCode   retVal;
+
+        if(this.AVAPriceSurchargeCode)
+        {
+            retVal = this.AVAPriceSurchargeCode;
+        }
+        else if(this.KCS_GoodsId)
+        {
+            retVal = KCS_GoodsGroup::find(this.KCS_GoodsId).AVAPriceSurchargeCode;
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetPriceSurchargePercentage</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaGetPriceSurchargePercentage</c> method.
+    /// </summary>
+    /// <param name="_AVAPriceSurchargeCode">
+    ///    <c>AVAPriceSurchargeCode</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>AVAPriceSurchargePercentage</c> as return value
+    /// </returns>
+    public AVAPriceSurchargePercentage avaGetPriceSurchargePercentage(AVAPriceSurchargeCode _AVAPriceSurchargeCode = this.avaGetPriceSurchargeCode())
+    {
+        AVAPriceSurchargePercentage retVal;
+        AVAPriceSurchargeCode       locAVAPriceSurchargeCode;
+
+        locAVAPriceSurchargeCode = _AVAPriceSurchargeCode;
+
+        if(locAVAPriceSurchargeCode)
+        {
+            retVal = AVAPriceSurchargeValues::find(locAVAPriceSurchargeCode).Percentage;
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaProductionSchedulerName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaProductionSchedulerName</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>AVAProductionSchedulerName</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display AVAProductionSchedulerName avaProductionSchedulerName()
+    {
+        AVAProductionSchedulerName  retVal;
+
+        retVal =  HcmWorker::find(this.avaProductionScheduler()).name();
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaProductionScheduler</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaProductionScheduler</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>HcmWorkerRecId</c> as type
+    /// </returns>
+    public AVAProductionScheduler avaProductionScheduler()
+    {
+        AVAProductionScheduler  retVal;
+
+        retVal =  ProdPool::find(this.ProdPoolId).NDX_ProductionScheduler;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaMasterInCharge</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaMasterInCharge</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>HcmWorkerRecId</c> as type
+    /// </returns>
+    public AVAMasterInCharge avaMasterInCharge()
+    {
+        AVAMasterInCharge  retVal;
+
+        retVal =  ProdPool::find(this.ProdPoolId).NDX_MasterInCharge;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAPurchPriceAgreement</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_costingVersion">_costingVersion</param>
+    /// <param name = "_priceDate">_priceDate</param>
+    /// <param name = "_inventDim">_inventDim</param>
+    /// <param name = "_qty">_qty</param>
+    /// <param name = "_unit">_unit</param>
+    /// <param name = "_accountNum">_accountNum</param>
+    /// <returns>conrainer</returns>
+    public container AVAPurchPriceAgreement(CostingVersion      _costingVersion,
+                                            PriceDate           _priceDate,
+                                            InventDim           _inventDim,
+                                            Qty                 _qty,
+                                            UnitOfMeasureSymbol _unit,
+                                            VendAccount         _accountNum = this.primaryVendorId(_inventDim.InventDimId, _inventDim))
+                                           
+    {
+     //   container       result;
+     //   PriceDiscTable          priceDiscTable;
+
+       /* select firstonly priceDiscTable
+            order by FromDate
+            where priceDiscTable.ItemCode == PriceDiscProductCodeType::Table
+               && priceDiscTable.ItemRelation == this.ItemId
+               && priceDiscTable.AccountCode == PriceDiscPartyCodeType::All
+               && priceDiscTable.AccountRelation == ''
+               && priceDiscTable.AVAGraduatedPrice == NoYes::Yes
+               && priceDiscTable.QuantityAmountFrom <= _qty
+               && (priceDiscTable.QuantityAmountTo   >= _qty || priceDiscTable.QuantityAmountTo == 0)
+               && priceDiscTable.UnitId            == _unit
+              // && priceDiscTable.InventDimId         == _inventDim.inventDimId
+               && ((priceDiscTable.FromDate          >= _costingVersion.DefaultDate && (priceDiscTable.FromDate <= _costingVersion.KCS_ToDate || _costingVersion.KCS_ToDate == dateNull()))
+               ||  (priceDiscTable.ToDate            >= _costingVersion.DefaultDate && (priceDiscTable.ToDate   <= _costingVersion.KCS_ToDate || _costingVersion.KCS_ToDate == dateNull())));
+
+               result = [priceDiscTable.price(), 
+                    priceDiscTable.priceUnit(), 
+                    priceDiscTable.markup(), 
+                    priceDiscTable.FromDate, 
+                    priceDiscTable.ToDate, 
+                    0,0];*/
+        VendAccount         accountNum         = _accountNum;
+        CurrencyCode        currencyCode       = VendTable::find(accountNum).Currency;
+        boolean             includeLineDisc    = true;
+
+        InventPurchPriceAgreementCalculationParameters parameters = InventPurchPriceAgreementCalculationParameters::newFromInventTable(this);
+
+        parameters.priceDate = _priceDate;
+        parameters.inventDim = _inventDim;
+        parameters.qty = _qty;
+        parameters.unit = _unit;
+        parameters.accountNum = accountNum;
+        parameters.currencyCode = currencyCode;
+        parameters.includeLineDisc = includeLineDisc;
+
+        InventPurchPriceAgreementCalculation  inventPurchPriceAgreementCalculation = InventPurchPriceAgreementCalculation::newFromParameters(parameters);
+        inventPurchPriceAgreementCalculation.parmAVAGraduatedPrice(true);
+        inventPurchPriceAgreementCalculation.parmCostingVersion(_costingVersion);
+
+        InventPurchPriceAgreementCalculationResult result = inventPurchPriceAgreementCalculation.purchPriceAgreement();
+        
+
+        return [result.costPrice,
+                result.costPriceUnit,
+                result.costMarkup,
+                result.priceDiscFromDate,
+                result.priceDiscToDate,
+                result.costPriceSecCur,
+                result.costMarkupSecCur];
+       // return result;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaProductName2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from ava
+    /// </summary>
+    /// <returns>NDXProductName2</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display  NDXProductName2 avaProductName2()
+    {
+        EcoResProductTranslation        ecoResProductTranslation;
+
+        ecoResProductTranslation = EcoResProductTranslation::NDXfindByProductOrSystemLanguage(
+            this.Product, currentUserLanguage(), fieldNum(EcoResProductTranslation, Name));
+
+        return ecoResProductTranslation.NDXProductName2;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaBOMIdStandard</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaBOMIdStandard</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>BOMId</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display BOMId avaBOMIdStandard()
+    {
+        BOMId           retVal;
+
+        InventDim       inventDimOrderSetupKey;
+
+        if (!this.RecId)
+        {
+            return retVal;
+        }
+
+        inventDimOrderSetupKey.clear();
+
+        inventDimOrderSetupKey.InventSiteId = this.inventInventSiteId();
+        inventDimOrderSetupKey              = InventDim::findOrCreate(inventDimOrderSetupKey);
+
+        retVal = this.bomId(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()),
+                            this.inventStandardQty(inventDimOrderSetupKey.InventDimId),
+                            inventDimOrderSetupKey                                                  
+                            );
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaBOMVersionActual</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaBOMVersionActual</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>BOMVersion</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    BOMVersion avaBOMVersionActual()
+    {
+        BOMVersion      retVal;
+
+        InventDim       inventDimOrderSetupKey;
+
+        if (!this.RecId)
+        {
+            return retVal;
+        }
+
+        inventDimOrderSetupKey.clear();
+
+        inventDimOrderSetupKey.InventSiteId = this.inventInventSiteId();
+        inventDimOrderSetupKey              = InventDim::findOrCreate(inventDimOrderSetupKey);
+
+        retVal = BomVersion::findActive(this.ItemId,
+                                        DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()),
+                                        this.inventStandardQty(inventDimOrderSetupKey.InventDimId),
+                                        inventDimOrderSetupKey
+                                        );
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaBOMVersionActualNoOfItems</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaBOMVersionActualNoOfItems</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>int64</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display int64 avaBOMVersionActualNoOfItems()
+    {
+        int64       retVal;
+
+        BomVersion  locBomVersion;
+        BOM         locBOM;
+
+        locBomVersion = this.avaBOMVersionActual();
+
+        if(locBomVersion)
+        {
+            select count(RecId) 
+            from    locBOM
+            where   locBOM.BOMId    == locBomVersion.BOMId
+                //&&  locBOM.BOMType  == BOMType::Item
+                &&  locBOM.BOMQty   > 0;
+        }
+
+        retVal = locBOM.RecId;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaRouteIdStandard</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaRouteIdStandard</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>RouteId</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display AVARouteId avaRouteIdStandard()
+    {
+        AVARouteId         retVal;
+
+        InventDim       inventDimOrderSetupKey;
+
+        if (!this.RecId)
+        {
+            return retVal;
+        }
+
+        inventDimOrderSetupKey.clear();
+
+        inventDimOrderSetupKey.InventSiteId = this.inventInventSiteId();
+        inventDimOrderSetupKey              = InventDim::findOrCreate(inventDimOrderSetupKey);
+
+        retVal = this.RouteId(  DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()),
+                                this.inventStandardQty(inventDimOrderSetupKey.InventDimId),
+                                inventDimOrderSetupKey                                                  
+                                );
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaRouteVersionActual</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaRouteVersionActual</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>RouteVersion</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+     RouteVersion avaRouteVersionActual()
+    {
+        RouteVersion      retVal;
+
+        InventDim       inventDimOrderSetupKey;
+
+        if (!this.RecId)
+        {
+            return retVal;
+        }
+
+        inventDimOrderSetupKey.clear();
+
+        inventDimOrderSetupKey.InventSiteId = this.inventInventSiteId();
+        inventDimOrderSetupKey              = InventDim::findOrCreate(inventDimOrderSetupKey);
+
+        retVal = RouteVersion::findActive(  this.ItemId,
+                                            DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()),
+                                            this.inventStandardQty(inventDimOrderSetupKey.InventDimId),
+                                            inventDimOrderSetupKey);
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaRouteVersionActualNoOfItems</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaRouteVersionActualNoOfItems</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>int64</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display int64 avaRouteVersionActualNoOfItems()
+    {
+        int64         retVal;
+
+        RouteVersion  locRouteVersion;
+        Route         locRoute;
+
+        locRouteVersion = this.avaRouteVersionActual();
+
+        if(locRouteVersion)
+        {
+            select count(RecId)
+            from    locRoute
+            //where   locRoute.RouteId == locRouteVersion.RouteId;
+            where locRoute.RouteId == locRouteVersion.RouteId
+                && locRoute.OprPriority == RouteOprPriority::Primary;
+        }
+
+        retVal = locRoute.RecId;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaPdsCWUnitid</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaPdsCWUnitid</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>PdsCWUnitId</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display PdsCWUnitId avaPdsCWUnitid()
+    {
+        PdsCWUnitId  retVal;
+
+        retVal = PdsCatchWeight::cwUnitId(this.ItemId);
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInventItemSalesSetupDefault</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaInventItemSalesSetupDefault</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>InventItemSalesSetup</c> as type
+    /// </returns>
+    public InventItemSalesSetup avaInventItemSalesSetupDefault()
+    {
+        InventItemSalesSetup  retVal;
+
+        retVal = InventItemSalesSetup::findDefault(this.ItemId);
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInventItemSetupSupplyTypeDefaultOrderType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaInventItemSalesSetupDefault</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>ReqPOType</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display ReqPOType avaInventItemSetupSupplyTypeDefaultOrderType()
+    {
+        ReqPOType  retVal;
+
+        retVal = InventItemSetupSupplyType::getDefaultOrderType(this.ItemId, this.DataAreaId);
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetHK2Date</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaGetHK2Date</c> method.
+    /// </summary>
+    /// <param name="_inventDimId">
+    ///     <c>InventDimId</c> as type
+    /// </param>
+    /// <param name="_transDate">
+    ///     <c>TransDate</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>TransDate</c> as return value
+    /// </returns>
+    TransDate avaGetHK2Date(InventDimId _inventDimId = inventDim::inventDimIdBlank(),
+                            TransDate   _transDate   = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        TransDate           retVal;
+        
+        InventItemPrice     locInventItemPrice;
+        InventParameters    locInventParameters;
+        CostingVersionId    locCostingVersionId;
+
+        locInventParameters = InventParameters::find();
+
+        // Keine Datumermittlung für Handelsware
+        /*
+        if (    this.KCS_HK2Vendor 
+            &&  (       this.isBOMAllowed()                     // 2009: this.ItemType != ItemType::BOM  
+                                                                // ||  this.StopExplode 
+                    ||  this.stopExplodeBOMPrice()      )   )
+        */
+        if(InventItemSetupSupplyType::getDefaultOrderType(this.ItemId, curExt()) == ReqPOType::Purch)
+        {
+            retVal = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        }
+        else
+        {
+            locCostingVersionId = this.KCS_currentVersionId(_transDate);
+            locInventItemPrice  = InventItemPrice::KCS_findCostingVersion(  this.ItemId,
+                                                                            locCostingVersionId,
+                                                                            _transDate,
+                                                                            this.KCS_defaultCostingPriceType(),
+                                                                            _inventDimId                        );
+            retVal = locInventItemPrice.ActivationDate;
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isItemWHSEnabled</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_011033
+    /// </summary>
+    /// <returns>Boolean</returns>
+    /*public boolean hasActiveAltItemId()
+    {
+        boolean ret = next hasActiveAltItemId();
+
+        if (this.AltItemId && this.UseAltItemId == ItemNumAlternative::Never)
+        {
+            warning(strFmt("@NDX:NXAAltItemExists", this.ItemId, this.AltItemId));
+        }
+
+        return ret;
+
+    }*/
+    [SysClientCacheDataMethodAttribute]
+    public display WHSIsItemWHSEnabled isItemWHSEnabled()
+    {
+        return WHSInventEnabled::exist(this.ItemId) ?
+                NoYes::Yes                          :
+                NoYes::No;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

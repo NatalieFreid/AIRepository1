@@ -1,0 +1,396 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACustQuotationJourProforma</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed by AVANADE
+/// </summary>
+class AVACustQuotationJourProforma extends RunBaseBatch
+{
+    SalesQuotationTable             salesQuotationTable;
+    SalesQuotationLine              salesQuotationLine;
+    SalesQuotationParmTable         salesQuotationParmTable;
+    SalesQuotationParmLine          salesQuotationParmLine;
+    SalesQuotationParmUpdate        salesQuotationParmUpdate;
+    Counter                         numberOfRecords;
+    Counter                         recordsUpdated;
+    DocumentStatus                  documentStatus;
+    str                             parmSalesProj;
+    container                       callerRecordsPackedMap;
+    ParmId                          parmid;
+
+    #define.CurrentVersion(4)
+    #localmacro.CurrentList
+        DocumentStatus,
+        parmSalesProj,
+        SalesQuotationTable
+    #endmacro
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args args)
+    {
+        SalesQuotationTable                 salesQuotationTable;
+        boolean                             postJour = false;
+        AVACustQuotationJourProforma custQuotationJourProforma = AVACustQuotationJourProforma::construct(args);
+        custQuotationJourProforma.parmInBatch(false);
+
+        DocumentStatus documentStatus = args.parmEnum();
+        str parmSalesProj = args.parm();
+        Common record = args.record();
+        FormDataSource salesQuotationTable_ds;
+        if (record && record.TableId == tableNum(SalesQuotationTable))
+        {
+            salesQuotationTable_ds  = FormDataUtil::getFormDataSource(record);
+            salesQuotationTable = record;
+        }
+     
+        KCS_HDMSalesQuotationTableInfoFields    infoFields = KCS_HDMSalesQuotationTableInfoFields::find(salesQuotationTable.QuotationId, true);
+
+        if (infoFields.InfoField2 != '' && infoFields.InfoField2Finished == NoYes::No)
+        {
+            if (Box::yesNo(strFmt("@NDX:NXACommitInfo2", infoFields.InfoField2), DialogButton::Yes) == DialogButton::Yes)
+            {
+                ttsbegin;
+                infoFields.InfoField2Finished = NoYes::Yes;
+                infoFields.InfoField2FinishedDateTime = DateTimeUtil::getSystemDateTime();
+                infoFields.InfoField2FinishedUser = curUserId();
+                infoFields.update();
+                ttscommit;
+                postJour = true;
+            }
+        }
+        else
+        {
+            postJour = true;
+        }
+        
+        if (postJour)
+        {
+            container callerRecordsPackedMap;
+            if (salesQuotationTable_ds)
+            {
+                callerRecordsPackedMap = FormLetter::getFormRecord(salesQuotationTable_ds);
+            }
+
+            AVASalesParameters  salesParameters = AVASalesParameters::find(true);
+            boolean             salesQuotQuickPostParam = salesParameters.SalesQuotQuickPost;
+            if (salesQuotQuickPostParam)
+            {
+                salesParameters.SalesQuotQuickPost = NoYes::No;
+                ttsbegin;
+                salesParameters.doUpdate();
+                ttscommit;
+            }
+
+            SalesQuotationEditLinesForm salesQuotationEditLinesForm = SalesQuotationEditLinesForm::construct(args.parmEnum(), args.parm());
+
+            if(salesQuotQuickPostParam)
+            {
+                salesParameters.SalesQuotQuickPost = salesQuotQuickPostParam;
+                ttsbegin;
+                salesParameters.doUpdate();
+                ttscommit;
+            }
+            boolean promptedOk;
+            boolean doExecuteQuery;
+            QuotationIdBase origQuotationId;
+
+            using (SysErrorMessageHelpScope scope = SysErrorMessageHelpScope::newErrorContext(args))
+            {
+                [promptedOk, doExecuteQuery, origQuotationId]
+                = custQuotationJourProforma.initializeAndRun(salesQuotationEditLinesForm, documentStatus, parmSalesProj, record, callerRecordsPackedMap);
+            
+                if(scope)
+                {
+                    boolean BPCheck;
+                    BPCheck = true;
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeAndRun</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "EditLinesForm">SalesQuotationEditLinesForm</param>
+    /// <param name = "_documentStatus">DocumentStatus</param>
+    /// <param name = "_parmSalesProj">str</param>
+    /// <param name = "_record">Common</param>
+    /// <param name = "_callerRecordsPackedMap">container</param>
+    /// <returns>container</returns>
+    container initializeAndRun(SalesQuotationEditLinesForm EditLinesForm, DocumentStatus _documentStatus, str _parmSalesProj, Common _record, container _callerRecordsPackedMap)
+    {
+        QuotationIdBase     origQuotationId;
+        #OCCRetryCount
+        Counter                 infoLogCounter = infolog.num();
+        SRSPrintDestinationSettings    printJobSettings;
+        SalesQuotationEditLinesForm_Sales_Send  editLinesFormSalesSend;
+
+        if (EditLinesForm.handle() == className2Id(classStr(SalesQuotationEditLinesForm_Sales_Send)))
+        {
+            editLinesFormSalesSend = EditLinesForm;
+        }
+        else 
+        {
+            return conNull();
+        }
+        if (_record)
+        {
+            if (_record.TableId == tableNum(SalesQuotationTable))
+            {
+                EditLinesFormSalesSend.salesQuotationTable(_record);
+                CallerRecordsPackedMap = _callerRecordsPackedMap;
+                origQuotationId = salesQuotationTable.QuotationId;
+            }
+        }
+
+        parmid = NumberSeq::newGetNum(CompanyInfo::numRefParmId()).num();
+        EditLinesFormSalesSend.parmId(parmId);
+        EditLinesFormSalesSend.parmTransDate(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+        EditLinesFormSalesSend.parmSendMode(KCS_SendMode::Proforma);
+        printJobSettings = new SRSPrintDestinationSettings(editLinesFormSalesSend.printerSettingsFormletter());
+        printJobSettings.printMediumType(SRSPrintMediumType::Screen);
+        EditLinesFormSalesSend.updatePrinterSettingsFormLetter(printJobSettings.pack());
+        EditLinesFormSalesSend.printFormLetter(true);
+
+        EditLinesFormSalesSend.prePromptInit();
+        
+        boolean promptedOk;
+        boolean doExecuteQuery;
+
+        //Progress total
+        select count(RecId) from salesQuotationParmTable
+            where salesQuotationParmTable.ParmId == parmId;
+
+        editLinesFormSalesSend.progressInit("@SYS25781", salesQuotationParmTable.RecId, #AviFileDel);
+
+        setPrefix(strFmt("@SYS62814", enum2str(documentStatus::Quotation)));
+
+        promptedOk = true;
+        doExecuteQuery = (EditLinesFormSalesSend.numberOfRecords() > 1);
+
+        QueryRun query = EditLinesFormSalesSend.queryBuildParmTable();
+        while (query.next())
+        {
+            salesQuotationParmTable = query.get(tableNum(SalesQuotationParmTable));
+            
+            salesQuotationTable     = salesQuotationParmTable.salesQuotationTable(true);
+            editLinesFormSalesSend.salesQuotationTable(salesQuotationTable);
+            editLinesFormSalesSend.parmSalesQuotationParmTable(salesQuotationParmTable);
+            //editLinesFormSalesSend.salesQuotationParmUpdate(salesQuotationParmUpdate::find(salesQuotationParmTable.ParmId));
+            salesQuotationParmUpdate = salesQuotationParmUpdate::find(salesQuotationParmTable.ParmId);
+            salesQuotationParmUpdate.Proforma = true;
+            editLinesFormSalesSend.salesQuotationParmUpdate(salesQuotationParmUpdate);
+            editLinesFormSalesSend.parmId(parmid);
+
+            if (salesQuotationTable)
+            {
+                numberOfRecords++;
+                setPrefix(#PreFixField(SalesQuotationTable, quotationId));
+
+                try
+                {
+
+                    if (EditLinesFormSalesSend.createJournal())
+                    {
+                        if (EditLinesFormSalesSend.parmJournalList().len() > 0)
+                        {
+                            editLinesFormSalesSend.parmCustQuotationJour().printJournal(editLinesFormSalesSend, editLinesFormSalesSend.parmJournalList());
+                        }
+                        recordsUpdated++;
+                    }
+                    else
+                    {
+                        editLinesFormSalesSend.updateParmJobStatusContainErrors(infolog.copy(infoLogCounter+1,infolog.num()));
+                       
+                        infoLogCounter = infolog.num();
+                        recordsUpdated++;
+                    }
+
+                    
+                }
+
+                catch (Exception::Deadlock)
+                {
+                    retry;
+                }
+
+                catch (Exception::UpdateConflict)
+                {
+                    if (appl.ttsLevel() == 0)
+                    {
+                        if (xSession::currentRetryCount() >= #RetryNum)
+                        {
+                            throw Exception::UpdateConflictNotRecovered;
+                        }
+                        else
+                        {
+                            retry;
+                        }
+                    }
+                    else
+                    {
+                        throw Exception::UpdateConflict;
+                    }
+                }
+
+                /*catch (Exception::Error)
+                {
+                    editLinesFormSalesSend.updateParmJobStatusContainErrors(infolog.copy(infoLogCounter+1,infolog.num()));
+                    infoLogCounter = infolog.num();
+                }*/
+            }
+        }
+        editLinesFormSalesSend.progressKill();
+
+        return [promptedOk, doExecuteQuery, origQuotationId];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmDocumentStatus</Name>
+				<Source><![CDATA[
+    public DocumentStatus  parmDocumentStatus(DocumentStatus _docStatus = DocumentStatus)
+    {
+        documentStatus = _docStatus;
+        return documentStatus;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSalesProj</Name>
+				<Source><![CDATA[
+    public str parmSalesProj(str _parmSalesProj = parmSalesProj)
+    {
+        parmSalesProj = _parmSalesProj;
+        return parmSalesProj;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSalesQuotationTable</Name>
+				<Source><![CDATA[
+    public SalesQuotationTable parmSalesQuotationTable(SalesQuotationTable _salesQuotationTable = SalesQuotationTable)
+    {
+        salesQuotationTable  = _salesQuotationTable;
+        return salesQuotationTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    public container pack()
+    {
+        return [#CurrentVersion, #CurrentList];    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    public boolean unpack(container packedClass)
+    {
+        Version version = runbase::getVersion(packedClass);
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version, #CurrentList] = packedClass;
+                break;
+            default:
+                return false;
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    static AVAcustQuotationJourProforma construct(Args _args)
+    {
+        AVAcustQuotationJourProforma custQuotationJourProforma = new AVAcustQuotationJourProforma();
+
+        custQuotationJourProforma.parmDocumentStatus(_args.parmEnum());
+        custQuotationJourProforma.parmSalesProj(_args.parm());
+        custQuotationJourProforma.parmSalesQuotationTable(_args.record());
+
+        return custQuotationJourProforma;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <returns>description</returns>
+    public static ClassDescription description()
+    {
+        return "@NDX:NXAInternalQuotation";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    protected boolean canRunInNewSession()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runOperationNow</Name>
+				<Source><![CDATA[
+    protected void runOperationNow()
+    {
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canGoBatchJournal</Name>
+				<Source><![CDATA[
+    protected boolean canGoBatchJournal()
+    {    
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runsImpersonated</Name>
+				<Source><![CDATA[
+    public boolean runsImpersonated()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

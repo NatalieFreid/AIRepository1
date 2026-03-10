@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAWhsWorkExecuteDisplayReturnOrderCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+    ExtensionOf(classStr(WhsWorkExecuteDisplayReturnOrder))
+]
+final class AVAWhsWorkExecuteDisplayReturnOrderCls_Extension
+{
+    #WHSWorkExecuteControlElements
+    #WHSRF
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>buildReturnOrder</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Adds controls to form state for Return Order screen.
+    /// </summary>
+    /// <param name="_con">
+    /// Container containing the form state before the controls are added.
+    /// </param>
+    /// <returns>
+    /// Container containing the form state after the controls are added.
+    /// </returns>
+    public container buildReturnOrder(container _con)
+    {
+        container ret;
+
+        ret = next buildReturnOrder(_con);
+
+        ret = this.avaUpdateBuildReturnOrder(ret);
+
+        return ret;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateBuildReturnOrder</Name>
+				<Source><![CDATA[
+    private container avaUpdateBuildReturnOrder(container _ret)
+    {
+        container   ret;
+        SalesLine   returnLine;
+
+        ret = _ret;
+        if (pass.exists(#ItemId)
+         && AVAWHSWorkExecuteDisplayHelper::existDisplayContainer(ret, #Name, #Disposition)
+         && AVAWHSWorkExecuteDisplayHelper::getdisplayContainerSelected(ret, #Name, #Disposition) == '')
+        {
+            returnLine = this.avaGetReturnOrderLine(false);
+
+            if (returnLine
+             && returnLine.AVADispositionCodeId)
+            {
+                ret = AVAWHSWorkExecuteDisplayHelper::updateDisplayContainer(ret, #Name, #Disposition, #Selected, returnLine.AVADispositionCodeId);
+            }
+        }
+
+
+        return  ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetReturnOrderLine</Name>
+				<Source><![CDATA[
+    /// Copy of this.getReturnOrderLine(...)
+    private SalesLine avaGetReturnOrderLine(
+        boolean _matchProductDimensions = true,
+        boolean _serialId = false)
+    {
+        SalesTable                  salesTable  = SalesTable::findReturnItemNum(pass.lookup(#RMANum));
+        SalesLine                   returnLine;
+        InventDim                   inventDim;
+        InventDim                   inventDimCriteria;
+        InventDimParm               inventDimParm;
+        InventDimParm               inventDimParmAllowBlank;
+        InventTransOrigin           transOrigin;
+        InventTrackingRegisterTrans trackingTrans;
+
+        if (_matchProductDimensions && InventDimGroupSetup::newItemIdProductDimensionsOnly(pass.lookup(#ItemId)).activeFields().elements())
+        {
+            inventDimParm.setAllProductDimensions();
+        }
+        
+        inventDimParm.InventLocationIdFlag = NoYes::Yes;
+        
+        if (pass.exists(#SerialId))
+        {
+            inventDimParm.InventSerialIdFlag = NoYes::Yes;
+            inventDimParmAllowBlank.InventSerialIdFlag = NoYes::Yes;
+        }
+        
+        if (pass.exists(#BatchId))
+        {
+            inventDimParm.InventBatchIdFlag = NoYes::Yes;
+            inventDimParmAllowBlank.InventBatchIdFlag = NoYes::Yes;
+        }
+        
+        pass.initInventDimFromPassParm(inventDimCriteria, inventDimParm);
+
+        InventSite::setReceivingWarehouseCriteria(inventDimCriteria, inventDimParm);
+
+        if (_serialId)
+        {
+            // Select the first SalesLine that's registered and does not have all Serials needed associated to it.
+            while select returnLine
+                where returnLine.SalesId         == salesTable.SalesId
+                    && returnLine.ItemId         == pass.lookup(#ItemId)
+                    && returnLine.ReturnStatus   == ReturnStatusLine::Registered
+                join RecId from transOrigin
+                    where transOrigin.InventTransId == returnLine.InventTransId
+                    #InventDimExistsJoinAllowBlank(returnLine.InventDimId, inventDim, inventDimCriteria, inventDimParm, inventDimParmAllowBlank)
+            {
+                select sum(Qty) from trackingTrans
+                    where trackingTrans.InventTransOrigin == transOrigin.RecId;
+
+                if (abs(returnLine.SalesQty) != trackingTrans.Qty)
+                {
+                    return returnLine;
+                }
+            }
+        }
+        else if (pass.exists(#SerialId) || pass.exists(#BatchId))
+        {
+            returnLine = this.avaGetReturnOrderLineBasedOnMatchingDimensions(salesTable, inventDimCriteria, inventDimParm, inventDimParmAllowBlank);
+        }
+
+        if (!returnLine)
+        {
+            if (!pass.exists(#Qty)
+             || (pass.exists(#Qty) && pass.lookUpNum(#Qty) == 0))
+            {
+                select firstonly returnLine
+                    order by PdsCWExpectedRetQty asc, ExpectedRetQty asc
+                    where returnLine.SalesId         == salesTable.SalesId
+                        && returnLine.ItemId         == pass.lookup(#ItemId)
+                        && returnLine.ReturnStatus   == ReturnStatusLine::Awaiting
+                        #InventDimExistsJoinAllowBlank(returnLine.InventDimId, inventDim, inventDimCriteria, inventDimParm, inventDimParmAllowBlank);
+            }
+            else
+            {
+                returnLine = this.avaGetReturnOrderLineBasedOnMatchingDimensions(salesTable, inventDimCriteria, inventDimParm, inventDimParmAllowBlank);
+            }
+        }
+        return returnLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetReturnOrderLineBasedOnMatchingDimensions</Name>
+				<Source><![CDATA[
+    /// Copy of this.getReturnOrderLineBasedOnMatchingDimensions(...)
+    private SalesLine avaGetReturnOrderLineBasedOnMatchingDimensions(SalesTable       _salesTable,
+                                                                 InventDim        _inventDimCriteria,
+                                                                 InventDimParm    _inventDimParm,
+                                                                 InventDimParm    _inventDimParmAllowBlank)
+    {
+        SalesLine          returnLine;
+
+        if (pass.exists(#Qty)
+         && pass.hasValue(#UOM))
+        {
+            Qty                retQty;
+            InventDim          inventDim;
+            InventTransOrigin  inventTransOriginReturn;
+            InventTrans        inventTransReturn;
+            InventDim          inventDimReturn;
+
+            retQty = pass.lookUpReal(#Qty);
+
+            while select returnLine
+                order by PdsCWExpectedRetQty asc, ExpectedRetQty asc // Still need loop because sales unit can be different.
+                where returnLine.SalesId        == _salesTable.SalesId
+                    && returnLine.ItemId         == pass.lookup(#ItemId)
+                    && returnLine.ReturnStatus   == ReturnStatusLine::Awaiting
+                    #InventDimExistsJoinAllowBlank(returnLine.InventDimId, inventDim, _inventDimCriteria, _inventDimParm, _inventDimParmAllowBlank)
+                exists join inventTransOriginReturn
+                    where inventTransOriginReturn.InventTransId == returnLine.InventTransIdReturn
+                exists join InventDimId from inventTransReturn
+                    where inventTransReturn.inventTransOrigin == inventTransOriginReturn.RecId
+                #InventDimExistsJoinAllowBlank(inventTransReturn.InventDimId, inventDimReturn, _inventDimCriteria, _inventDimParm, _inventDimParmAllowBlank)
+            {
+                
+                if (this.avaSsRetQtyCoveredByReturnLine(returnLine, retQty))
+                {
+                    break;
+                }
+            }
+        }
+    
+        return returnLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSsRetQtyCoveredByReturnLine</Name>
+				<Source><![CDATA[
+    /// Copy of this.SsRetQtyCoveredByReturnLine(...)
+    private boolean avaSsRetQtyCoveredByReturnLine(SalesLine _returnLine, Qty _retQty)
+    {
+        EcoResReleasedProductUnitConverter releasedProductUnitConverter = EcoResReleasedProductUnitConverter::construct();
+        UnitOfMeasureRecId unitOfMeasureRecId = UnitOfMeasure::unitOfMeasureIdBySymbol(pass.lookup(#UOM));
+
+        boolean isCWItem = PdsGlobal::pdsIsCWItem(pass.lookup(#ItemId));
+
+        ProductQuantity expectedReturnOrderQty;
+        UnitOfMeasureSymbol returnLineUnit;
+
+        if (isCWItem)
+        {
+            expectedReturnOrderQty = _returnLine.PdsCWExpectedRetQty;
+            returnLineUnit = _returnLine.pdsCWUnitId();
+        }
+        else
+        {
+            expectedReturnOrderQty = _returnLine.ExpectedRetQty;
+            returnLineUnit = _returnLine.SalesUnit;
+        }
+                
+        return (expectedReturnOrderQty <= -releasedProductUnitConverter.convert(_retQty,
+                                                        unitOfMeasureRecId,
+                                                        UnitOfMeasure::unitOfMeasureIdBySymbol(returnLineUnit),
+                                                        NoYes::No,
+                                                        _returnLine.ItemId,
+                                                        _returnLine.InventDimId,
+                                                        NoYes::No));
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

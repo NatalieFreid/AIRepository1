@@ -1,0 +1,243 @@
+# AVA DocuHistory Cleanup Batch Job for D365FO
+
+## Overview
+This solution provides a batch job for cleaning up old records from the `DocuHistory` table in Dynamics 365 Finance and Operations. The implementation follows the SysOperation framework and allows users to define cleanup criteria through a query dialog.
+
+## Features
+- **Query-based filtering**: Users can modify the query directly in the dialog to define which records to delete
+- **Date range filtering**: Built-in range on CreatedDateTime field for easy date-based cleanup
+- **Batch processing**: Supports running as a batch job for scheduled cleanup
+- **Transaction safety**: Commits records in batches of 100 to avoid long-running transactions
+- **Comprehensive logging**: Provides feedback on the number of records deleted
+- **Security**: Includes dedicated security privilege with Delete access level
+
+## Solution Components
+
+### 1. Classes
+
+#### AVADocuHistoryCleanupContract
+**Purpose**: Data contract class that holds the query for the cleanup operation.
+
+**Key Features**:
+- Stores and retrieves query using packed query string
+- Allows query to be modified by users in the dialog
+- Validates that a query is provided
+
+#### AVADocuHistoryCleanupService
+**Purpose**: Service class containing the business logic for deleting DocuHistory records.
+
+**Key Features**:
+- Executes the query from the contract
+- Deletes matching records
+- Commits in batches of 100 records to maintain transaction safety
+- Provides comprehensive error handling
+- Logs the number of deleted records
+
+#### AVADocuHistoryCleanupController
+**Purpose**: Controller class that manages the execution flow and user interaction.
+
+**Key Features**:
+- Initializes the contract with default query
+- Shows the dialog to the user
+- Supports batch execution
+- Entry point for the batch job
+
+#### AVADocuHistoryCleanupUIBuilder
+**Purpose**: UI builder class for customizing the dialog behavior.
+
+**Key Features**:
+- Provides query lookup functionality
+- Allows users to modify query ranges in the dialog
+- Handles query packing/unpacking for storage
+
+### 2. Query
+
+#### AVADocuHistoryCleanupQuery
+**Purpose**: AOT query that defines the base query for selecting DocuHistory records.
+
+**Data Source**: DocuHistory table
+
+**Fields**:
+- RecId
+- CreatedDateTime
+- RefTableId
+- RefRecId
+
+**Ranges**:
+- CreatedDateTime (Open status - can be modified by user)
+
+### 3. Menu Item
+
+#### AVADocuHistoryCleanup
+**Type**: Action Menu Item
+
+**Object**: AVADocuHistoryCleanupController
+
+**Label**: "DocuHistory cleanup"
+
+**Help Text**: "Delete old DocuHistory records based on date range"
+
+### 4. Security
+
+#### AVADocuHistoryCleanupMaintain
+**Type**: Security Privilege
+
+**Access Level**: Delete
+
+**Permissions**:
+- Menu Item: AVADocuHistoryCleanup (Delete)
+- Table: DocuHistory (Delete)
+
+## Deployment Instructions
+
+### Prerequisites
+- Visual Studio with Dynamics 365 Finance and Operations tools
+- Access to D365FO development environment
+- Appropriate permissions to deploy to the environment
+
+### Steps
+
+1. **Import to Visual Studio**
+   - Open Visual Studio
+   - Open your D365FO project or create a new one
+   - Add the following files to your project:
+     - AxClass\AVADocuHistoryCleanupContract.xml
+     - AxClass\AVADocuHistoryCleanupService.xml
+     - AxClass\AVADocuHistoryCleanupController.xml
+     - AxClass\AVADocuHistoryCleanupUIBuilder.xml
+     - AxQuery\AVADocuHistoryCleanupQuery.xml
+     - AxMenuItems\Action\AVADocuHistoryCleanup.xml
+     - AxSecurityPrivilege\AVADocuHistoryCleanupMaintain.xml
+
+2. **Build the Project**
+   - Right-click on the project in Solution Explorer
+   - Select "Build"
+   - Verify there are no compilation errors
+
+3. **Synchronize Database**
+   - Right-click on the project
+   - Select "Synchronize Database"
+   - Wait for synchronization to complete
+
+4. **Deploy to Environment**
+   - For local development: The build and sync steps are sufficient
+   - For cloud environments: Create a deployable package and deploy via LCS
+
+5. **Assign Security**
+   - Navigate to System administration > Security > Security configuration
+   - Assign the privilege `AVADocuHistoryCleanupMaintain` to appropriate roles
+   - Or create a new duty and assign the privilege to it
+
+## Usage Instructions
+
+### Running the Batch Job
+
+1. **Access the Menu Item**
+   - Navigate to the location where you've added the menu item
+   - Or use the navigation search to find "DocuHistory cleanup"
+
+2. **Configure the Query**
+   - The dialog will open showing the query parameter
+   - Click on the lookup button next to the Query field
+   - The query dialog will open with the DocuHistory data source
+
+3. **Set Date Range**
+   - In the query dialog, locate the "Created date/time" range
+   - Set the criteria to define which records to delete
+   - Example: `..12/31/2023` will delete all records created on or before December 31, 2023
+   - Click OK to confirm the query
+
+4. **Configure Batch (Optional)**
+   - Click on the "Batch" tab
+   - Check "Batch processing" to run as a batch job
+   - Set recurrence if you want scheduled cleanup
+   - Configure batch group if needed
+
+5. **Execute**
+   - Click OK to start the cleanup
+   - The system will delete records matching the query criteria
+   - An info message will display the number of records deleted
+
+### Query Syntax Examples
+
+**Delete records older than a specific date:**
+```
+..12/31/2023 23:59:59
+```
+
+**Delete records in a date range:**
+```
+01/01/2023 00:00:00..12/31/2023 23:59:59
+```
+
+**Delete records older than 1 year:**
+```
+..<calculated date 1 year ago>
+```
+
+## Testing Checklist
+
+- [ ] Verify dialog appears with query parameter
+- [ ] Verify query lookup button works and opens query dialog
+- [ ] Verify query can be modified in dialog (add/modify ranges)
+- [ ] Test synchronous execution (without batch)
+- [ ] Test batch job execution
+- [ ] Verify records are deleted based on query criteria
+- [ ] Verify transaction commits work (check for 100-record batches)
+- [ ] Confirm security privilege works correctly
+- [ ] Test with various date ranges
+- [ ] Verify error handling works properly
+- [ ] Verify completion message shows correct record count
+- [ ] Test with empty result set (no records match query)
+
+## Best Practices
+
+1. **Always test in a development environment first**
+2. **Backup the DocuHistory table before running in production**
+3. **Start with a small date range to verify functionality**
+4. **Schedule as a batch job during off-peak hours**
+5. **Monitor the batch job log for any errors**
+6. **Review deleted record count after execution**
+
+## Performance Considerations
+
+- The batch commit size is set to 100 records to balance transaction safety and performance
+- For very large datasets, consider running during maintenance windows
+- The query-based approach allows for optimized SQL execution
+- Indexes on CreatedDateTime field will improve query performance
+
+## Troubleshooting
+
+### Issue: Dialog doesn't show query parameter
+**Solution**: Verify the UI builder class is properly registered and the contract has the query methods
+
+### Issue: Records are not deleted
+**Solution**: 
+- Check security privileges
+- Verify the query returns records (test the query separately)
+- Check for errors in the infolog
+
+### Issue: Long transaction errors
+**Solution**: The batch commit is set to 100 records. If still experiencing issues, reduce the batch size in the service class
+
+### Issue: Query dialog doesn't open
+**Solution**: Verify the query exists in AOT and is properly referenced in the contract
+
+## Support and Maintenance
+
+- Review the batch job history regularly
+- Monitor DocuHistory table size
+- Adjust cleanup frequency based on data growth
+- Update date ranges based on retention policies
+
+## Version History
+
+**Version 1.0** - Initial release
+- Query-based cleanup functionality
+- SysOperation framework implementation
+- Batch processing support
+- Security privilege included
+
+## License
+
+This solution is provided as-is for use in Dynamics 365 Finance and Operations projects.

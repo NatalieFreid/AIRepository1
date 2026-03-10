@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAProdDateHistoryCreateData</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>AVAProdDateHistoryCreateData</c> class is the service class for <c>AVAProdDateHistory</c>
+/// </summary>
+class AVAProdDateHistoryCreateData
+{                                                                                                                                                                                                           
+    Args clsArgs;
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+        /// <summary>
+    ///     AVA <c>main</c> method.
+    /// </summary>
+    /// <param name="args">
+    ///     <c>Args</c> as type
+    /// </param>
+    static void main(Args args)
+    {
+        AVAProdDateHistoryCreateData    locAVAProdDateHistoryCreateData;
+        
+        locAVAProdDateHistoryCreateData = new AVAProdDateHistoryCreateData();
+        locAVAProdDateHistoryCreateData.parmArgs(args);
+
+        locAVAProdDateHistoryCreateData.fillDateHistory();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmArgs</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>parmArgs</c> method.
+    /// </summary>
+    /// <param name="_args">
+    ///     <c>Args</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>Args</c> as return value
+    /// </returns>
+    public Args parmArgs(Args _args = clsArgs)
+    {
+        clsArgs = _args;
+
+        return clsArgs;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillDateHistory</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>fillDateHistory</c> method.
+    /// </summary>
+    void fillDateHistory()
+    {
+        Query                   locQuery;
+        QueryRun                locQueryRun;
+        QueryBuildRange         locQBR;
+        MenuFunction            locMenuFunction;
+
+        ProdTable               locProdTable;
+        InventTable             locInventTable;
+        KCS_ProdDateHistory     locProdDateHistory;
+
+        Date                    locModificationDate;
+
+        locModificationDate = this.getModificationDate();
+
+        locMenuFunction     = new MenuFunction(menuitemActionStr(AVAProdDateHistoryAction), MenuItemType::Action);
+
+        locQueryRun         = new QueryRun(locMenuFunction.query());
+        locQuery            = locQueryRun.query();
+
+        if(clsArgs.parm())
+        {
+            locQBR          = locQuery.dataSourceTable(tableNum(ProdTable)).addRange(fieldNum (ProdTable, ProdId));
+            locQBR.value(clsArgs.parm());
+        }
+        locQBR              = locQuery.dataSourceTable(tableNum(ProdTable)).addRange(fieldNum (ProdTable, ProdStatus));
+        locQBR.value(strfmt("@NDX:NXAQueryRangeFromTo",             // "%1..%2",
+                            enum2str(ProdStatus::Created),
+                            enum2str(ProdStatus::StartedUp) )   );
+
+        while(locQueryRun.next())
+        {
+            locProdTable    = locQueryRun.get(tablenum(ProdTable));
+            locInventTable  = locProdTable.inventTable();
+
+            if(KCS_ProdDateHistory::existProdId(locProdTable.ProdId))
+            {
+                ttsbegin;
+                locProdDateHistory = KCS_ProdDateHistory::findLast(locProdTable.ProdId);
+
+                if(     locProdDateHistory.ProdStatus       != locProdTable.ProdStatus 
+                    ||  locProdDateHistory.ProdSchedStatus  != locProdTable.SchedStatus
+                    ||  locProdDateHistory.ProdQtySched     != locProdTable.QtySched 
+                    ||  locProdDateHistory.DlvDate          != locProdTable.DlvDate 
+                    ||  locProdDateHistory.SchedToDate      != locProdTable.SchedEnd    )
+                {
+                    if (locProdDateHistory.ModificationDate == locModificationDate)
+                    {
+                        locProdDateHistory = KCS_ProdDateHistory::findLast(locProdTable.ProdId, true);
+                        locProdDateHistory.delete();
+                    }
+                    locProdDateHistory.ProdId               = locProdTable.ProdId;
+                    locProdDateHistory.ModificationDate     = locModificationDate;
+                    locProdDateHistory.ProductionScheduler  = locProdTable.NDX_ProductionScheduler; // locProdDateHistory.ProductionScheduler = locInventTable.avaProductionScheduler();
+                    locProdDateHistory.MasterInCharge       = locProdTable.NDX_MasterInCharge;      // locProdDateHistory.MasterInCharge      = locInventTable.avaMasterInCharge();
+                    locProdDateHistory.ItemId               = locProdTable.ItemId;
+                    locProdDateHistory.ProdStatus           = locProdTable.ProdStatus;
+                    locProdDateHistory.ProdSchedStatus      = locProdTable.SchedStatus;
+                    locProdDateHistory.ProdQtySched         = locProdTable.QtySched;
+                    locProdDateHistory.DlvDate              = locProdTable.DlvDate;
+                    locProdDateHistory.SchedToDate          = locProdTable.SchedEnd;
+                    locProdDateHistory.FirstSched           = (     locProdTable.SchedStatus == ProdSchedStatus::JobScheduled 
+                                                                &&  !KCS_ProdDateHistory::existFirstSched(locProdTable.ProdId)  );
+                    locProdDateHistory.ExecutedDate         = this.getExecutedDate( locProdTable.ProdId,
+                                                                                    locProdDateHistory.FirstSched);
+                    locProdDateHistory.insert();
+                }
+                ttscommit;
+            }
+            else
+            {
+                ttsbegin;
+                locProdDateHistory = KCS_ProdDateHistory::findLast(locProdTable.ProdId, true);
+                locProdDateHistory.ProdId               = locProdTable.ProdId;
+                locProdDateHistory.ModificationDate     = locModificationDate;
+                locProdDateHistory.ProductionScheduler  = locProdTable.NDX_ProductionScheduler;
+                locProdDateHistory.MasterInCharge       = locProdTable.NDX_MasterInCharge;
+                locProdDateHistory.ItemId               = locProdTable.ItemId;
+                locProdDateHistory.ProdStatus           = locProdTable.ProdStatus;
+                locProdDateHistory.ProdSchedStatus      = locProdTable.SchedStatus;
+                locProdDateHistory.ProdQtySched         = locProdTable.QtySched;
+                locProdDateHistory.DlvDate              = locProdTable.DlvDate;
+                locProdDateHistory.SchedToDate          = locProdTable.SchedEnd;
+                locProdDateHistory.FirstSched           = locProdTable.SchedStatus == ProdSchedStatus::JobScheduled;
+                locProdDateHistory.ExecutedDate         = this.getExecutedDate( locProdTable.ProdId, 
+                                                                                locProdDateHistory.FirstSched);
+                locProdDateHistory.insert();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getModificationDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>getModificationDate</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>Date</c> as return value
+    /// </returns>
+    Date getModificationDate()
+    {
+        Date        retVal;
+
+        /* implementation in 2009, deactivated in D365
+        TimeOfDay   locTimeOfDay;
+        Date        locDate;
+
+        locTimeOfDay    = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+        locDate         = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+
+        if (    locTimeOfDay    >= str2time('0:00')
+            &&  locTimeOfDay    <= str2time('14:00'))
+        {
+            retVal = locDate - 1;
+        }
+        else
+        {
+            retVal = locDate;
+        }
+        */
+        retVal = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getExecutedDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>getExecutedDate</c> method.
+    /// </summary>
+    /// <param name="_prodId">
+    ///     <c>ProdId</c> as type
+    /// </param>
+    /// <param name="_avaFirstSchedule">
+    ///     <c>AVAFirstSchedule</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>Date</c> as return value
+    /// </returns>
+    Date getExecutedDate(   ProdId              _prodId,
+                            AVAFirstSchedule    _avaFirstSchedule   )
+    {
+        Date                retVal;
+
+        ProdParmScheduling  locProdParmScheduling;
+        if(_avaFirstSchedule  == NoYes::Yes)
+        {
+            select firstonly locProdParmScheduling
+            order by    locProdParmScheduling.ExecutedDateTime asc
+            where       locProdParmScheduling.ProdId            == _prodId
+                &&      locProdParmScheduling.ExecutedDateTime  != utcDateTimeNull();
+        }
+        else
+        {
+            select firstonly locProdParmScheduling
+            order by    locProdParmScheduling.ExecutedDateTime desc
+            where       locProdParmScheduling.ProdId            == _prodId
+                &&      locProdParmScheduling.ExecutedDateTime  != utcDateTimeNull();
+        }
+
+        retVal = DateTimeUtil::date(locProdParmScheduling.ExecutedDateTime);
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

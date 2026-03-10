@@ -1,0 +1,2031 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXRicoKalkADO</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using System.Collections;
+using System.Net.Http;
+using System.Data;
+
+using Niedax.AdoNS.RicoKalk;
+using Niedax.AzureRelayHelper.RicoKalk;
+using Niedax.AzureServiceBus.Models.RicoKalk;
+using Niedax.AzureServiceBus.Models.RicoKalk.Relay;
+using Niedax.AzureSecurityHelper.KeyVault.RicoKalk;
+using Niedax.General.Sql;
+
+/// <summary>
+/// PaffH 28.12.23
+/// ADO interaction with RicoKalk
+/// </summary>
+public class NDXRicoKalkADO extends NDXADO
+{
+    private RicoKalkMaintainRelayContract maintainRelayContract;
+    private IRicoKalkMaintainRelayResponseContract responseContract;
+    private AzureRelaySenderRicoKalk azureRelaySender;
+    private ADORicoKalk ado;
+    private KeyVaultGetSecretRelayBVRico keyVaultGetSecretRelay;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 28.12.23
+    /// </summary>
+    protected void new()
+    {
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 28.12.23
+    /// </summary>
+    /// <param name = "_ado">ADORicoKalk</param>
+    /// <param name = "_keyVaultGetSecretRelay">KeyVaultGetSecretRelayBVRico</param>
+    /// <param name = "_mocking">boolean</param>
+    /// <returns>NDXRicoKalkADO</returns>
+    public static NDXRicoKalkADO construct(ADORicoKalk _ado, KeyVaultGetSecretRelayBVRico _keyVaultGetSecretRelay, boolean _mocking = false)
+    {
+        NDXRicoKalkADO nDXRicoKalkADO = new NDXRicoKalkADO();
+        nDXRicoKalkADO.ado = _ado;
+        nDXRicoKalkADO.mocking = _mocking;
+        nDXRicoKalkADO.keyVaultGetSecretRelay = _keyVaultGetSecretRelay;
+
+        nDXRicoKalkADO.maintainRelayContract = nDXRicoKalkADO.ado.RicoKalkMaintainRelayContract;
+        RicoKalkMaintainRelayContract maintainRelayContract = nDXRicoKalkADO.maintainRelayContract;
+        maintainRelayContract.Mocking = _mocking;
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+        return nDXRicoKalkADO;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initMaintainRelayContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 28.03.24
+    /// </summary>
+    /// <param name = "maintainRelayContract">RicoKalkMaintainRelayContract</param>
+    public static void initMaintainRelayContract(RicoKalkMaintainRelayContract maintainRelayContract)
+    {
+        NDXHostURL hostURL = NDXEnvironmentInformation::construct().parmHostUrl();
+        maintainRelayContract.HostURL = hostURL;
+        maintainRelayContract.Host = NDXEnvironmentHostURLMapping::find(hostURL).Host;
+        maintainRelayContract.GeneratedDateTime = DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(), DateTimeUtil::getUserPreferredTimeZone());
+        maintainRelayContract.Mocking = (KCS_KBVParameters::find().NDXTestEnvironment == NoYes::Yes);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertKalkBVKopf</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 03.01.24
+    /// insert new record into tblKalkBVKopf in RicoKalk
+    /// </summary>
+    /// <param name = "_bvnr">NDXRicoKalkBVNr</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>inserted bvnr</returns>
+    public NDXRicoKalkBVNr insertKalkBVKopf(NDXRicoKalkBVNr _bvnr, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        NDXRicoKalkBVNr bvnr;
+        maintainRelayContract.GeneratedDateTime = DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(), DateTimeUtil::getUserPreferredTimeZone());
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkBVKopf kalkBVKopf = maintainRelayContract.KalkBVKopf;
+        kalkBVKopf.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkBVKopfConstants::BVNr);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkBVKopf.TableName);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkBVKopfConstants::BVNr, _bvnr);
+        kalkBVKopf.addSqlFieldWithValueInt(NDXRicoKalkTblKalkBVKopfConstants::BVNr, _bvnr);
+        kalkBVKopf.SQLCRUD = SQLCRUD::Insert;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkBVKopf.SQLCRUD), kalkBVKopf.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementInsertOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkBVKopfList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                TblKalkBVKopf tblKalkBVKopf = enumeratorList.Current;
+                bvnr = tblKalkBVKopf.BVNr;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return bvnr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateFromKalkBVKopf</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.01.24
+    /// update KalkBVKopf
+    /// Field values have been filled by the caller!
+    /// </summary>
+    /// <param name = "_bvnr">NDXRicoKalkBVNr</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>    
+    /// <returns>update succeeded</returns>
+    public boolean updateFromKalkBVKopf(NDXRicoKalkBVNr _bvnr, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        boolean updateOK = false;
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract;      // no initialize; kalkBVKopf may be filled 
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkBVKopf kalkBVKopf = maintainRelayContract.KalkBVKopf;
+        kalkBVKopf.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, '*');
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkBVKopf.TableName);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkBVKopfConstants::BVNr, _bvnr);
+        kalkBVKopf.SQLCRUD = SQLCRUD::Update;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkBVKopf.SQLCRUD), kalkBVKopf.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;        
+        this.incrementUpdateOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkBVKopfList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                //TblKalkBVKopf tblKalkBVKopf = enumeratorList.Current;
+                updateOK = true;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return updateOK;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateKalkInterressent</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 22.01.23
+    /// </summary>
+    /// <param name = "_int_Id">NDXRicoIntId</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>update ok?</returns>
+    public boolean updateKalkInterressent(NDXRicoIntId _int_Id, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        boolean updateOK = false;
+        if (!_int_Id)
+        {
+            return updateOK;
+        }
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract;      // no initialize; KalkInterressent may be filled
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkInterressent kalkInterressent = maintainRelayContract.KalkInterressent;
+        kalkInterressent.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, '*');
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkInterressent.TableName);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkInterressentConstants::Int_id, _int_Id);
+        kalkInterressent.SQLCRUD = SQLCRUD::Update;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkInterressent.SQLCRUD), kalkInterressent.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementUpdateOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkInterressentList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                //TblKalkBVKopf tblKalkBVKopf = enumeratorList.Current;
+                updateOK = true;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return updateOK;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateKalkKopf</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 24.01.24
+    /// </summary>
+    /// <param name = "_AbrufId">AbrufId</param>
+    /// <returns>update succeded</returns>
+    public boolean updateKalkKopf(int _AbrufId)
+    {
+        boolean updateOK = false;
+        if (!_AbrufId)
+        {
+            return updateOK;
+        }
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract;      // no initialize; KalkInterressent may be filled
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkKopf kalkKopf = maintainRelayContract.KalkKopf;
+        kalkKopf.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, '*');
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkKopf.TableName);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkKopfConstants::AbrufID, _AbrufId);
+        kalkKopf.SQLCRUD = SQLCRUD::Update;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkKopf.SQLCRUD), kalkKopf.SelectValue);
+        this.incrementUpdateOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkKopfList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                //TblKalkBVKopf tblKalkBVKopf = enumeratorList.Current;
+                updateOK = true;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return updateOK;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectBVNrFromTblKalkBVKopf</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 28.12.23
+    /// find record in kalkBVKopf
+    /// </summary>
+    /// <param name = "_bvnr">NDXRicoKalkBVNr</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>NDXRicoKalkBVNr</returns>
+    public NDXRicoKalkBVNr selectBVNrFromTblKalkBVKopf(NDXRicoKalkBVNr _bvnr, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        NDXRicoKalkBVNr bvnr;
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkBVKopf kalkBVKopf = maintainRelayContract.KalkBVKopf;
+        kalkBVKopf.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkBVKopfConstants::BVNr);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkBVKopf.TableName);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkBVKopfConstants::BVNr, _bvnr);
+        kalkBVKopf.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkBVKopf.SQLCRUD), kalkBVKopf.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkBVKopfList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                TblKalkBVKopf tblKalkBVKopf = enumeratorList.Current;
+                bvnr = tblKalkBVKopf.BVNr;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return bvnr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getRicoVnr</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 23.01.24
+    /// get vNr from KalkInterressent
+    /// </summary>
+    /// <param name = "_intId">NDXRicoIntId</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>NDXRicoVNr</returns>
+    public NDXRicoVNr getRicoVnr(NDXRicoIntId _intId, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        NDXRicoVNr vNr = 0;
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkInterressent kalkInterressent = maintainRelayContract.KalkInterressent;
+        kalkInterressent.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkInterressentConstants::Vnr);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkInterressent.TableName);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkInterressentConstants::Int_id, _intId);
+        kalkInterressent.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkInterressent.SQLCRUD), kalkInterressent.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkInterressentList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                TblKalkInterressent tblKalkInterressent  = enumeratorList.Current;
+                vNr = tblKalkInterressent.VNr;
+            }
+        }
+        return vNr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getRicoPreisListId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 23.01.24
+    /// get pricelistId for IntId
+    /// </summary>
+    /// <param name = "_intId">NDXRicoIntId</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+   /// <returns>NDXRicoPreisListeId</returns>
+    public NDXRicoPreisListeId getRicoPreisListId(NDXRicoIntId _intId, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        IEnumerable enumerableList;
+        IEnumerator enumeratorList;
+        NDXRicoPreisListeId priceListId = 0;
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkInterressent kalkInterressent = maintainRelayContract.KalkInterressent;
+        kalkInterressent.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkInterressentConstants::Preisliste_IDBOUND);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkInterressentConstants::KonditKunde);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkInterressentConstants::Knr);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkInterressent.TableName);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkInterressentConstants::Int_id, _intId);
+        kalkInterressent.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkInterressent.SQLCRUD), kalkInterressent.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            enumerableList = responseContract.TblKalkInterressentList;
+            enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                TblKalkInterressent tblKalkInterressent  = enumeratorList.Current;
+                int priceListFrom = tblKalkInterressent.KonditKunde ? tblKalkInterressent.KonditKunde : tblKalkInterressent.Knr;
+                if (priceListFrom)
+                {
+                    maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+                    NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+                    azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+                    Kunde kunde = maintainRelayContract.Kunde;
+                    kunde.SelectValue = NDXSqlConstants::SQLSelect;
+                    kunde.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKundeConstants::Preisliste);
+                    kunde.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kunde.TableName);
+                    kunde.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKundeConstants::Knr, priceListFrom);
+                    kunde.SQLCRUD = SQLCRUD::Select;
+
+                    maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kunde.SQLCRUD), kunde.SelectValue);
+                    maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+                    maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+                    this.incrementSelectOperation();
+                    this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+                    azureRelaySender.fillRequest(maintainRelayContract);
+                    response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+                    if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+                    {
+                        responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+                        enumerableList = responseContract.TblKundeList;
+                        enumeratorList = enumerableList.GetEnumerator();
+                        while (enumeratorList.MoveNext())
+                        {
+                            TblKunde tblKunde  = enumeratorList.Current;
+                            if (tblKunde.Preisliste)
+                            {
+                                maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+                                NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+                                azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+                                KalkSonstKz kalkSonstKz = maintainRelayContract.KalkSonstKz;
+                                kalkSonstKz.SelectValue = NDXSqlConstants::SQLSelect;
+                                kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkSonstKzConstants::KZ);
+                                kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkSonstKzConstants::KZ_ID);
+                                kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkSonstKz.TableName);
+                                kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkSonstKzConstants::Bereich, NDXRicoKalkTblKalkSonstKzConstants::BereichPreisliste);
+                                kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualStr, NDXRicoKalkTblKalkSonstKzConstants::KZ, tblKunde.Preisliste);
+                                kalkSonstKz.SQLCRUD = SQLCRUD::Select;
+
+                                maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kunde.SQLCRUD), kunde.SelectValue);
+                                maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+                                maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+                                this.incrementSelectOperation();
+                                this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+                                azureRelaySender.fillRequest(maintainRelayContract);
+                                response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+                                if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+                                {
+                                    responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+                                    enumerableList = responseContract.TblKalkSonstKzList;
+                                    enumeratorList = enumerableList.GetEnumerator();
+                                    while (enumeratorList.MoveNext())
+                                    {
+                                        TblKalkSonstKz tblKalkSonstKz  = enumeratorList.Current;
+                                        priceListId = tblKalkSonstKz.KZ_ID;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return priceListId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectFromTblKalkBVKopf</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 28.12.23
+    /// get all relevant fields from tblKalkBVKopf in RicoKalk
+    /// </summary>
+    /// <param name = "_bvnr">NDXRicoKalkBVNr</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>TblKalkBVKopf</returns>
+    public TblKalkBVKopf selectFromTblKalkBVKopf(NDXRicoKalkBVNr _bvnr, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        TblKalkBVKopf tblKalkBVKopf = new TblKalkBVKopf();
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkBVKopf kalkBVKopf = maintainRelayContract.KalkBVKopf;
+        kalkBVKopf.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::BVNr);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::Bez1);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::Bez2);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::LVPOSE);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::LVPOSL);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::MengeLVPosE);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::MengeLVPosL);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::BVNR_Niedax);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::PLZ);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::Ort);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::Strasse);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::DatumAngelegt);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::DatumBaubegin);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::UserAngelegt_IDBound);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::BVArt_IdBound);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::Land_IdBound);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::Planer_IDBOUND);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkBVKopfConstants::PlanerAnspr_IDBOUND);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkBVKopfConstants::NL_IDBOUND);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkBVKopf.TableName);
+        kalkBVKopf.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkBVKopfConstants::BVNr, _bvnr);
+        kalkBVKopf.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkBVKopf.SQLCRUD), kalkBVKopf.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkBVKopfList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkBVKopf = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return tblKalkBVKopf;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectFromTblKalkInteressentenZuord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 22.01.24
+    /// </summary>
+    /// <param name = "_nDXRicoKalkInteressent">NDXRicoKalkInteressent</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>TblKalkInteressentenZuord</returns>
+    public TblKalkInteressentenZuord selectFromTblKalkInteressentenZuord(NDXRicoKalkInteressent _nDXRicoKalkInteressent, boolean _displayOnConsole = true, str _textToDisplayOnConsole = ''
+)
+    {
+        TblKalkInteressentenZuord tblKalkInteressentenZuord = new TblKalkInteressentenZuord();
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkInteressentenZuord kalkInteressentenZuord = maintainRelayContract.KalkInteressentenZuord;
+        kalkInteressentenZuord.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkInteressentenZuord.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkInterressentZuordConstants::AbrufStat);
+        kalkInteressentenZuord.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkInteressentenZuord.TableName);
+        kalkInteressentenZuord.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkInterressentZuordConstants::ID, _nDXRicoKalkInteressent.ZuordnungId);
+        kalkInteressentenZuord.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkInteressentenZuord.SQLCRUD), kalkInteressentenZuord.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkInteressentenZuordList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkInteressentenZuord = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return tblKalkInteressentenZuord;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectTblKalkInterressentFromIntId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 23.01.24
+    /// select TblKalkInterressent from NDXRicoIntId
+    /// </summary>
+    /// <param name = "_intId">NDXRicoIntId</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>TblKalkInterressent</returns>
+    public TblKalkInterressent selectTblKalkInterressentFromIntId(NDXRicoIntId _intId, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        TblKalkInterressent tblKalkInterressent = new TblKalkInterressent();
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkInterressent kalkInterressent = maintainRelayContract.KalkInterressent;
+        kalkInterressent.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, '*');
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkInterressent.TableName);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkInterressentConstants::Int_id, _intId);
+        kalkInterressent.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkInterressent.SQLCRUD), kalkInterressent.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkInterressentList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkInterressent = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return tblKalkInterressent;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectFromTblKalkInterressent</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 15.01.24
+    /// </summary>
+    /// <param name = "_partyNumber">DirPartyNumber</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>TblKalkInteressent</returns>
+    public TblKalkInterressent selectFromTblKalkInterressent(DirPartyNumber _partyNumber, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        TblKalkInterressent tblKalkInterressent = new TblKalkInterressent();
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkInterressent kalkInterressent = maintainRelayContract.KalkInterressent;
+        kalkInterressent.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkInterressentConstants::Name1);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkInterressentConstants::Name2);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkInterressentConstants::Name3);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkInterressentConstants::Strasse);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkInterressentConstants::PLZ);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkInterressentConstants::Ort);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkInterressentConstants::Int_id);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkInterressentConstants::Knr);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkInterressentConstants::Vnr);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkInterressentConstants::Matchcode);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkInterressentConstants::OrgPartyId);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkInterressentConstants::Land_IdBound);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkInterressentConstants::WKZ_BOUND);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkInterressentConstants::MWST_IDBOUND);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkInterressentConstants::zuordnungid_bound);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkInterressent.TableName);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualStr, NDXRicoKalkTblKalkInterressentConstants::OrgPartyId, _partyNumber);
+        kalkInterressent.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkInterressent.SQLCRUD), kalkInterressent.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkInterressentList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkInterressent = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return tblKalkInterressent;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectFromTblKalkAnsprechpartner</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 18.01.24
+    /// </summary>
+    /// <param name = "_nDXRicoKalkInteressent">NDXRicoKalkInteressent</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>TblKalkAnsprechpartner</returns>
+    public TblKalkAnsprechpartner selectFromTblKalkAnsprechpartner(NDXRicoKalkInteressent _nDXRicoKalkInteressent, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        TblKalkAnsprechpartner tblKalkAnsprechpartner = new TblKalkAnsprechpartner();
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkAnsprechpartner kalkAnsprechpartner = maintainRelayContract.KalkAnsprechpartner;
+        kalkAnsprechpartner.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkConstants::Vorname);
+        kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkConstants::Nachname);
+        kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkConstants::Telefon);
+        kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkConstants::Fax);
+        kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkConstants::EMail);
+        kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkConstants::Ansp_ID);
+        kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkConstants::Anrede_BOUND);
+        kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkAnsprechpartner.TableName);
+        kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualStr,
+            NDXRicoKalkConstants::ID_Bound, _nDXRicoKalkInteressent.Int_ID);
+        if (_nDXRicoKalkInteressent.PersPartyId)
+        {
+            kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualStr,
+            NDXRicoKalkConstants::PersPartyId, _nDXRicoKalkInteressent.PersPartyId);
+        }
+        if (_nDXRicoKalkInteressent.ContactPersonId)
+        {
+            kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualStr,
+                NDXRicoKalkConstants::ContactPersonId,_nDXRicoKalkInteressent.ContactPersonId);
+        }
+        kalkAnsprechpartner.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkAnsprechpartner.SQLCRUD), kalkAnsprechpartner.SelectValue);
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkAnsprechpartnerList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkAnsprechpartner = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return tblKalkAnsprechpartner;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectTblKalkKopfForAvailableCheck</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 01.02.24
+    /// </summary>
+    /// <param name = "_NDX_KBV2RicoKalkMap">NDX_KBV2RicoKalkMap</param>
+    /// <param name = "_NDX_KBV2RicoKalkQuotation">NDX_KBV2RicoKalkQuotation</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>TblKalkKopf</returns>
+    public TblKalkKopf selectTblKalkKopfForAvailableCheck(NDX_KBV2RicoKalkMap _NDX_KBV2RicoKalkMap, NDX_KBV2RicoKalkQuotation _NDX_KBV2RicoKalkQuotation, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        TblKalkKopf tblKalkKopf = new Niedax.AzureServiceBus.Models.RicoKalk.TblKalkKopf();
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkKopf kalkKopf = maintainRelayContract.KalkKopf;
+        kalkKopf.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::AbrufID);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Abruf);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::KBVRequestID);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkKopfConstants::Verfolg_Status);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkKopf.TableName);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkKopfConstants::BVNr_IDBOUND, _NDX_KBV2RicoKalkMap.RicoKalkBVNr);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualInt, NDXRicoKalkTblKalkKopfConstants::Abruf, _NDX_KBV2RicoKalkQuotation.Abruf);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualInt, NDXRicoKalkTblKalkKopfConstants::AbrufID, _NDX_KBV2RicoKalkQuotation.AbrufId);
+        kalkKopf.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkKopf.SQLCRUD), kalkKopf.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkKopfList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkKopf = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return tblKalkKopf;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectTblKalkKopfWerte</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 01.02.24
+    /// </summary>
+    /// <param name = "_abrufId">NDXRicoAbrufId</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>TblKalkKopfWerte</returns>
+    public TblKalkKopfWerte selectTblKalkKopfWerte(NDXRicoAbrufId _abrufId, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        TblKalkKopfWerte tblKalkKopfWerte = new Niedax.AzureServiceBus.Models.RicoKalk.TblKalkKopfWerte();
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkKopfWerte kalkKopfWerte = maintainRelayContract.KalkKopfWerte;
+        kalkKopfWerte.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkKopfWerte.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfWerteConstants::Abruf_IDBound);
+        kalkKopfWerte.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfWerteConstants::ID);
+        kalkKopfWerte.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfWerteConstants::VKDuebelS);
+        kalkKopfWerte.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfWerteConstants::VKLohnS);
+        kalkKopfWerte.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfWerteConstants::VKMatS);
+        kalkKopfWerte.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfWerteConstants::VKDuebelSRab);
+        kalkKopfWerte.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfWerteConstants::VKLohnSRab);
+        kalkKopfWerte.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkKopfWerteConstants::VKMatSRab);
+        kalkKopfWerte.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkKopfWerte.TableName);
+        kalkKopfWerte.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkKopfWerteConstants::Abruf_IDBound, _abrufId);
+        kalkKopfWerte.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkKopfWerte.SQLCRUD), kalkKopfWerte.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkKopfWerteList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkKopfWerte = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return tblKalkKopfWerte;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectTblKalkKopfFromBVNrAndAbrufAndRequestid</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.02.24
+    /// </summary>
+    /// <param name = "_BVNr">NDXRicoKalkBVNr</param>
+    /// <param name = "_abruf">NDXRicoAbruf</param>
+    /// <param name = "_requestId">KCS_KBVRequestId</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>TblKalkKopf</returns>
+    public TblKalkKopf selectTblKalkKopfFromBVNrAndAbrufAndRequestid(
+        NDXRicoKalkBVNr _BVNr, 
+        NDXRicoAbruf _abruf, 
+        KCS_KBVRequestId _requestId, 
+        boolean _displayOnConsole = true, 
+        str _textToDisplayOnConsole = '')
+    {    
+        //TblKalkKopf tblKalkKopf = new Niedax.AzureServiceBus.Models.RicoKalk.TblKalkKopf();
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkKopf kalkKopf = maintainRelayContract.KalkKopf;
+        kalkKopf.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Abruf);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Name1);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkKopfConstants::KBVRequestID);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkKopf.TableName);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkKopfConstants::BVNr_IDBOUND, _bvnr);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualInt, NDXRicoKalkTblKalkKopfConstants::Abruf, _abruf);
+        if (_requestId)
+        {
+            kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualStr, NDXRicoKalkTblKalkKopfConstants::KBVRequestID, _requestId);
+        }
+        kalkKopf.SQLCRUD = SQLCRUD::Select;
+
+        return this.getTblKalkKopf(_displayOnConsole, _textToDisplayOnConsole);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTblKalkKopf</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.02.24
+    /// </summary>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>TblKalkKopf</returns>
+    private TblKalkKopf getTblKalkKopf(boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        TblKalkKopf tblKalkKopf = new Niedax.AzureServiceBus.Models.RicoKalk.TblKalkKopf();
+        KalkKopf kalkKopf = maintainRelayContract.KalkKopf;
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkKopf.SQLCRUD), kalkKopf.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkKopfList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkKopf = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return tblKalkKopf;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectFromTblKalkKopf</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 11.01.24
+    /// get all relevant fields from tblKalkKopf in RicoKalk
+    /// </summary>
+    /// <param name = "_bvnr">NDXRicoKalkBVNr</param>
+    /// <param name = "_kCS_KBVRequestId">KCS_KBVRequestId</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>TblKalkKopf</returns>
+    public TblKalkKopf selectFromTblKalkKopf(NDXRicoKalkBVNr _bvnr, KCS_KBVRequestId _kCS_KBVRequestId, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        TblKalkKopf tblKalkKopf = new Niedax.AzureServiceBus.Models.RicoKalk.TblKalkKopf();
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkKopf kalkKopf = maintainRelayContract.KalkKopf;
+        kalkKopf.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::BVNr_IDBOUND);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::KBVRequestID);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Int_IDBOUND);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Knr_IDBOUND);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::IntAnspr_IDBOUND);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Abruf);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::AbrufID);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::UserAngelegt_IDBOUND);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Name1);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Name2);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::PLZ);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Strasse);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Telefon);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Fax);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::EMail);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Datum_Sollabgabe);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Ort);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::BVNr_Int);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Verfolg_Status);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Verfolg_Datum);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Preisliste_IDBound);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::VNr_Idbound);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::MWST_IDBOUND);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::WKZ_BOUND);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Grundrabatt);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkKopfConstants::Verfolg_AenderDatum);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkKopf.TableName);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkKopfConstants::BVNr_IDBOUND, _bvnr);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualStr, NDXRicoKalkTblKalkKopfConstants::KBVRequestID, _kCS_KBVRequestId);
+        kalkKopf.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkKopf.SQLCRUD), kalkKopf.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkKopfList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkKopf = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return tblKalkKopf;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectTblKalkKopf</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 31.01.24
+    /// </summary>
+    /// <param name = "_bvnr">NDXRicoKalkBVNr</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>IEnumerator</returns>
+    public IEnumerator selectTblKalkKopf(NDXRicoKalkBVNr _bvnr, str _whereAdd = '', boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        IEnumerator enumeratorList;
+        //TblKalkKopf tblKalkKopf = new Niedax.AzureServiceBus.Models.RicoKalk.TblKalkKopf();
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkKopf kalkKopf = maintainRelayContract.KalkKopf;
+        kalkKopf.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::AbrufID);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Int_IDBOUND);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Name1);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Abruf);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::KBVRequestID);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Datum_Angelegt);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Datum_Sollabgabe);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::ProduktGruppe_IDBound);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Verfolg_Status);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Kalkulator_IDBound);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkKopfConstants::Verfolg_AenderDatum);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkKopfConstants::VNr_Idbound);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkKopf.TableName);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkKopfConstants::BVNr_IDBOUND, _bvnr);
+        if (_whereAdd)
+        {
+            kalkKopf.SelectValue += _whereAdd;
+        }
+        kalkKopf.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkKopf.SQLCRUD), kalkKopf.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkKopfList;
+            enumeratorList = enumerableList.GetEnumerator();
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return enumeratorList;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectTblProduktgruppe</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 31.01.24
+    /// get all records from RicoKalk tblProduktgruppe
+    /// </summary>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+/// <returns>IEnumerator</returns>
+    public IEnumerator selectTblProduktgruppe(boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        IEnumerator enumeratorList;
+        //TblProduktGruppe tblProduktGruppe = new Niedax.AzureServiceBus.Models.RicoKalk.TblProduktGruppe();
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        ProduktGruppe produktGruppe = maintainRelayContract.ProduktGruppe;
+        produktGruppe.SelectValue = NDXSqlConstants::SQLSelect;
+        produktGruppe.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, '*');
+        produktGruppe.SelectValue += strFmt(NDXSqlConstants::SQLFrom, produktGruppe.TableName);
+        produktGruppe.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(produktGruppe.SQLCRUD), produktGruppe.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblProduktGruppeList;
+            enumeratorList = enumerableList.GetEnumerator();
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return enumeratorList;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertKalkKopf</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 11.01.24
+    /// modified: 21.10.24
+    /// insert new record into tblKalkKopf in RicoKalk
+    /// </summary>
+    /// <param name = "_bvnr">NDXRicoKalkBVNr</param>
+    /// <param name = "_kCS_KBVRequestId">KCS_KBVRequestId</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>TblKalkKopf</returns>
+    public TblKalkKopf insertKalkKopf(NDXRicoKalkBVNr _bvnr, KCS_KBVRequestTable _KCS_KBVRequestTable, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        TblKalkKopf tblKalkKopf;
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkKopf kalkKopf = maintainRelayContract.KalkKopf;
+        kalkKopf.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkKopfConstants::AbrufID);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkKopf.TableName);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkKopfConstants::BVNr_IDBOUND, _bvnr);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualStr, NDXRicoKalkTblKalkKopfConstants::KBVRequestID, _KCS_KBVRequestTable.KCS_KBVRequestID);
+        kalkKopf.addSqlFieldWithValueInt(NDXRicoKalkTblKalkKopfConstants::BVNr_IDBOUND, _bvnr);
+        kalkKopf.addSqlFieldWithValueString(NDXRicoKalkTblKalkKopfConstants::KBVRequestID, _KCS_KBVRequestTable.KCS_KBVRequestID);
+        kalkKopf.addSqlFieldWithValueDateTime(NDXRicoKalkTblKalkKopfConstants::Datum_Angelegt, DateTimeUtil::applyTimeZoneOffset(_KCS_KBVRequestTable.CreatedDateTime, DateTimeUtil::getUserPreferredTimeZone()));
+        kalkKopf.SQLCRUD = SQLCRUD::Insert;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkKopf.SQLCRUD), kalkKopf.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementInsertOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkKopfList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkKopf = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return tblKalkKopf;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertKalkAnsprechpartner</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 19.01.24
+    /// insert tblKalkAnsprechpartner to RicoKalk
+    /// </summary>
+    /// <param name = "_tblKalkAnsprechpartner">TblKalkAnsprechpartner</param>
+    /// <param name = "_readInsertedRecord">boolean</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>TblKalkAnsprechpartner</returns>
+    public TblKalkAnsprechpartner insertKalkAnsprechpartner(TblKalkAnsprechpartner _tblKalkAnsprechpartner, boolean _readInsertedRecord = true, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        TblKalkAnsprechpartner tblKalkAnsprechpartner = new TblKalkAnsprechpartner();
+
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkAnsprechpartner kalkAnsprechpartner = maintainRelayContract.KalkAnsprechpartner;
+        kalkAnsprechpartner.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkConstants::Ansp_ID);
+        kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkAnsprechpartner.TableName);
+        kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkConstants::Ansp_ID, _tblKalkAnsprechpartner.Ansp_ID);
+        kalkAnsprechpartner.addSqlFieldWithValueInt(NDXRicoKalkConstants::Ansp_ID, _tblKalkAnsprechpartner.Ansp_ID);
+        kalkAnsprechpartner.addSqlFieldWithValueInt(NDXRicoKalkConstants::ID_Bound, _tblKalkAnsprechpartner.ID_Bound);
+        kalkAnsprechpartner.addSqlFieldWithValueString(NDXRicoKalkConstants::Nachname, _tblKalkAnsprechpartner.Nachname);
+        kalkAnsprechpartner.addSqlFieldWithValueString(NDXRicoKalkConstants::Vorname, _tblKalkAnsprechpartner.Vorname);
+        kalkAnsprechpartner.addSqlFieldWithValueString(NDXRicoKalkConstants::Telefon, _tblKalkAnsprechpartner.Telefon);
+        kalkAnsprechpartner.addSqlFieldWithValueString(NDXRicoKalkConstants::Fax, _tblKalkAnsprechpartner.Fax);
+        kalkAnsprechpartner.addSqlFieldWithValueString(NDXRicoKalkConstants::EMail, _tblKalkAnsprechpartner.EMail);
+        kalkAnsprechpartner.addSqlFieldWithValueString(NDXRicoKalkConstants::PersPartyId, _tblKalkAnsprechpartner.PersPartyID);
+        kalkAnsprechpartner.addSqlFieldWithValueString(NDXRicoKalkConstants::ContactPersonId, _tblKalkAnsprechpartner.ContactPersonID);
+        kalkAnsprechpartner.addSqlFieldWithValueString(NDXRicoKalkConstants::Anrede_BOUND, _tblKalkAnsprechpartner.Anrede_BOUND);
+        kalkAnsprechpartner.SQLCRUD = SQLCRUD::Insert;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkAnsprechpartner.SQLCRUD), kalkAnsprechpartner.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementInsertOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkAnsprechpartnerList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkAnsprechpartner = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+
+        if (_readInsertedRecord)
+        {
+            azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+            kalkAnsprechpartner = maintainRelayContract.KalkAnsprechpartner;
+            kalkAnsprechpartner.SelectValue = NDXSqlConstants::SQLSelect;
+            kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, '*');
+            kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkAnsprechpartner.TableName);
+            kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkConstants::ID_Bound, _tblKalkAnsprechpartner.ID_Bound);
+            kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualStr, NDXRicoKalkConstants::PersPartyId, _tblKalkAnsprechpartner.PersPartyID);
+            kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualStr, NDXRicoKalkConstants::ContactPersonId, _tblKalkAnsprechpartner.ContactPersonID);
+            kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualStr, NDXRicoKalkConstants::Nachname, _tblKalkAnsprechpartner.Nachname);
+            kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualStr, NDXRicoKalkConstants::Vorname, _tblKalkAnsprechpartner.Vorname);
+            kalkAnsprechpartner.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualStr, NDXRicoKalkConstants::EMail, _tblKalkAnsprechpartner.EMail);
+            kalkAnsprechpartner.SQLCRUD = SQLCRUD::Select;
+
+            maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkAnsprechpartner.SQLCRUD), kalkAnsprechpartner.SelectValue);
+            maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+            maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+            this.incrementSelectOperation();
+            this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+            azureRelaySender.fillRequest(maintainRelayContract);
+            response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+            if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+            {
+                responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+                IEnumerable enumerableList = responseContract.TblKalkAnsprechpartnerList;
+                IEnumerator enumeratorList = enumerableList.GetEnumerator();
+                while (enumeratorList.MoveNext())
+                {
+                    tblKalkAnsprechpartner = enumeratorList.Current;
+                }
+            }
+            else
+            {
+                throw Error(response.ReasonPhrase);
+            }
+        }
+        return tblKalkAnsprechpartner;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkForTblKalkKopfWerteRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 23.01.24
+    /// check if record with AbrufId exists in TblKalkKopfWerte
+    /// otherwise, the record is inserted
+    /// </summary>
+    /// <param name = "_AbrufId">int</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>boolean</returns>
+    public boolean checkForTblKalkKopfWerteRecord(int _AbrufId, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        TblKalkKopfWerte tblKalkKopfWerte;
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        boolean insertTblKalkKopfWerte;
+        boolean foundTblKalkKopfWerte;
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkKopfWerte kalkKopfWerte = maintainRelayContract.KalkKopfWerte;
+        kalkKopfWerte.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkKopfWerte.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkKopfWerteConstants::ID);
+        kalkKopfWerte.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkKopfWerte.TableName);
+        kalkKopfWerte.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkKopfWerteConstants::Abruf_IDBound, _Abrufid);
+        kalkKopfWerte.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkKopfWerte.SQLCRUD), kalkKopfWerte.SelectValue);
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkKopfWerteList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            foundTblKalkKopfWerte = false;
+            insertTblKalkKopfWerte = false;
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkKopfWerte = enumeratorList.Current;
+                foundTblKalkKopfWerte = true;
+                if (!tblKalkKopfWerte.ID)
+                {
+                    insertTblKalkKopfWerte = true;
+                }
+            }
+            if (!foundTblKalkKopfWerte)
+            {
+                insertTblKalkKopfWerte = true;
+            }
+            if (insertTblKalkKopfWerte)
+            {
+                this.insertTblKalkKopfWerteRecord(kalkKopfWerte, _AbrufId);
+                // make sure, tblKalkKopfWerte isn't inserted twice
+                kalkKopfWerte.SQLCRUD = SQLCRUD::Select;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setMandatoryKalkKopfWerte</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.10.24
+    /// set mandatory fields in tblKalkKopfWerte
+    /// </summary>
+    /// <param name = "_kalkKopfWerte"></param>
+    protected void setMandatoryKalkKopfWerte(KalkKopfWerte _kalkKopfWerte)
+    {
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::HKLohnS, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::HKMatS, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::HKDuebelS, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::VKDuebelS, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::EKMatS, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::EKLohns, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::HKS, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::VKLohnS, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::VKMatS, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::EPMAT, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::EPLohn, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::EPDuebel, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::EP, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::GP, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::T0Summe, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::LohnMinS, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::DBLohn, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::DBMat, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::DBGes, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::DBDuebel, 0);
+        _kalkKopfWerte.addSqlFieldWithValueInt(NDXRicoKalkTblKalkKopfWerteConstants::OberflHBK, 0);
+        _kalkKopfWerte.addSqlFieldWithValueInt(NDXRicoKalkTblKalkKopfWerteConstants::OberflVBK, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::GewichtS, 0);
+        _kalkKopfWerte.addSqlFieldWithValueInt(NDXRicoKalkTblKalkKopfWerteConstants::Stabil, 1);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::vkmatlistes, 0);
+        _kalkKopfWerte.addSqlFieldWithValueReal(NDXRicoKalkTblKalkKopfWerteConstants::effrabatt, 0);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertTblKalkKopfWerteRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.10.24
+    /// insert record in tblKalkKopfWerte
+    /// </summary>
+    protected void insertTblKalkKopfWerteRecord(KalkKopfWerte kalkKopfWerte, int _AbrufId)
+    {
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract;
+        maintainRelayContract.GeneratedDateTime = DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(), DateTimeUtil::getUserPreferredTimeZone());
+        this.setMandatoryKalkKopfWerte(kalkKopfWerte);
+        kalkKopfWerte.addSqlFieldWithValueInt(NDXRicoKalkTblKalkKopfWerteConstants::Abruf_IDBound, _Abrufid);
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+        kalkKopfWerte.SQLCRUD = SQLCRUD::Insert;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkKopfWerte.SQLCRUD), kalkKopfWerte.SelectValue);
+        this.incrementInsertOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkKopfWerteList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                TblKalkKopfWerte tblKalkKopfWerte = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            Error(response.ReasonPhrase);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getNextAbruf</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 23.01.24
+    /// get next Abruf (id)
+    /// </summary>
+    /// <param name = "_nDXRicoKalkBVNr">NDXRicoKalkBVNr</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>int</returns>
+    public int getNextAbruf(NDXRicoKalkBVNr _nDXRicoKalkBVNr, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        int abruf = 0;
+
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkKopf kalkKopf = maintainRelayContract.KalkKopf;
+        kalkKopf.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLTop, 1);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkKopfConstants::Abruf);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkKopf.TableName);
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkKopfConstants::BVNr_IDBOUND, _nDXRicoKalkBVNr);
+        kalkKopf.SelectValue += NDXSqlConstants::SQLOrderBy;
+        kalkKopf.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkKopfConstants::Abruf);
+        kalkKopf.SelectValue += NDXSqlConstants::SQLDesc;
+        kalkKopf.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkKopf.SQLCRUD), kalkKopf.SelectValue);
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkKopfList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                TblKalkKopf tblKalkKopf = enumeratorList.Current;
+                abruf = tblKalkKopf.Abruf;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        if (!abruf)
+        {
+            abruf = NDXRicoKalkTblKalkKopfConstants::AbrufInit;
+        }
+        else
+        {
+            if (abruf >= NDXRicoKalkTblKalkKopfConstants::AbrufInit)
+            {
+                abruf = real2int(abruf / NDXRicoKalkTblKalkKopfConstants::AbrufStepSize);
+                ++abruf;
+                abruf = abruf * NDXRicoKalkTblKalkKopfConstants::AbrufStepSize;
+            }
+            else
+            {
+                ++abruf;
+            }
+        }
+        return abruf;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertKalkInterressent</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 17.01.24
+    /// insert tblKalkInteressent in RicoKalk
+    /// </summary>
+    /// <param name = "_tblKalkInterressent">TblKalkInterressent</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>TblKalkInterressent</returns>
+    public TblKalkInterressent insertKalkInterressent(TblKalkInterressent _tblKalkInterressent, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        TblKalkInterressent tblKalkInterressent = new TblKalkInterressent();
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkInterressent kalkInterressent = maintainRelayContract.KalkInterressent;
+        kalkInterressent.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkConstants::Int_id);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkInterressent.TableName);
+        kalkInterressent.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkConstants::Int_id, _tblKalkInterressent.Int_id);
+        kalkInterressent.addSqlFieldWithValueInt(NDXRicoKalkConstants::Int_id, _tblKalkInterressent.Int_id);
+        kalkInterressent.addSqlFieldWithValueInt(NDXRicoKalkConstants::VNr, _tblKalkInterressent.Vnr);
+        kalkInterressent.addSqlFieldWithValueInt(NDXRicoKalkConstants::Knr, _tblKalkInterressent.Knr);
+        kalkInterressent.addSqlFieldWithValueString(NDXRicoKalkConstants::Name1, _tblKalkInterressent.Name1);
+        kalkInterressent.addSqlFieldWithValueString(NDXRicoKalkConstants::Name2, _tblKalkInterressent.Name2);
+        kalkInterressent.addSqlFieldWithValueString(NDXRicoKalkConstants::Name3, _tblKalkInterressent.Name3);
+        kalkInterressent.addSqlFieldWithValueString(NDXRicoKalkConstants::Strasse, _tblKalkInterressent.Strasse);
+        kalkInterressent.addSqlFieldWithValueString(NDXRicoKalkConstants::PLZ, _tblKalkInterressent.PLZ);
+        kalkInterressent.addSqlFieldWithValueString(NDXRicoKalkConstants::Ort, _tblKalkInterressent.Ort);
+        kalkInterressent.addSqlFieldWithValueString(NDXRicoKalkConstants::Matchcode, _tblKalkInterressent.Matchcode);
+        kalkInterressent.addSqlFieldWithValueString(NDXRicoKalkConstants::OrgPartyId, _tblKalkInterressent.OrgPartyId);
+        kalkInterressent.addSqlFieldWithValueInt(NDXRicoKalkConstants::ZuordnungID_Bound, _tblKalkInterressent.ZuordnungID_Bound);
+        kalkInterressent.addSqlFieldWithValueString(NDXRicoKalkConstants::WKZ_BOUND, _tblKalkInterressent.WKZ_BOUND);
+        kalkInterressent.addSqlFieldWithValueInt(NDXRicoKalkConstants::MWST_IDBOUND, _tblKalkInterressent.MWST_IDBOUND);
+        kalkInterressent.SQLCRUD = SQLCRUD::Insert;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkInterressent.SQLCRUD), kalkInterressent.SelectValue);
+        this.incrementInsertOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkInterressentList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkInterressent = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+        return tblKalkInterressent;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setNextBVNum</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 28.12.23
+    /// set next BVNr in RicoKalk
+    /// </summary>
+    /// <returns>new BVNr</returns>
+    public int setNextBVNum()
+    {
+        int newAnfrageNr = 0;
+        KalkNummernKreis kalkNummernKreis;
+        TblKalkNummernKreis tblKalkNummernKreis;
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        kalkNummernKreis = maintainRelayContract.KalkNummernKreis;
+        kalkNummernKreis.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkNummernKreis.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkNummernKreisConstants::NrKreis_ID);
+        kalkNummernKreis.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkNummernKreisConstants::NrIstAnfrage);
+        kalkNummernKreis.SelectValue += strFmt(NDXSqlConstants::SQLFrom, kalkNummernKreis.TableName);
+        kalkNummernKreis.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkNummernKreis.SQLCRUD), kalkNummernKreis.SelectValue);
+        maintainRelayContract.DisplayOnConsole = false;
+        maintainRelayContract.TextToDisplayOnConsole = '';
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkNummernKreisList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkNummernKreis = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+
+        if (tblKalkNummernKreis == null)
+        {
+            throw Error(strFmt("@NDXBase:NDXTableCouldNotBeDetermined", kalkNummernKreis.TableName));
+        }
+
+        newAnfrageNr = tblKalkNummernKreis.NrIstAnfrage + 1;
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        kalkNummernKreis = maintainRelayContract.KalkNummernKreis;
+        kalkNummernKreis.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkNummernKreis.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkNummernKreisConstants::NrKreis_ID);
+        kalkNummernKreis.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkNummernKreisConstants::NrIstAnfrage);
+        kalkNummernKreis.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkNummernKreis.TableName);
+        kalkNummernKreis.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkNummernKreisConstants::NrKreis_ID, tblKalkNummernKreis.NrKreis_ID);
+        kalkNummernKreis.addSqlFieldWithValueInt(NDXRicoKalkTblKalkNummernKreisConstants::NrIstAnfrage, newAnfrageNr);
+        kalkNummernKreis.SQLCRUD = SQLCRUD::Update;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkNummernKreis.SQLCRUD), kalkNummernKreis.SelectValue);
+        maintainRelayContract.DisplayOnConsole = false;
+        maintainRelayContract.TextToDisplayOnConsole = strFmt("@NDXRicoBV:NDXRicoKalkBuildingProjectNewNumber", newAnfrageNr);
+        this.incrementUpdateOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkNummernKreisList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkNummernKreis = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+
+        return newAnfrageNr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setNextInt_Id</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 15.01.24
+    /// </summary>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>int</returns>
+    public int setNextInt_Id(boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        TblKalkNummernKreis tblKalkNummernKreis;
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        KalkNummernKreis kalkNummernKreis = maintainRelayContract.KalkNummernKreis;
+        kalkNummernKreis.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkNummernKreis.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkNummernKreisConstants::NrKreis_ID);
+        kalkNummernKreis.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkNummernKreisConstants::NrIstInterressent);
+        kalkNummernKreis.SelectValue += strFmt(NDXSqlConstants::SQLFrom, kalkNummernKreis.TableName);
+        kalkNummernKreis.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkNummernKreis.SQLCRUD), kalkNummernKreis.SelectValue);
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkNummernKreisList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkNummernKreis = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+
+        if (tblKalkNummernKreis == null)
+        {
+            throw Error(strFmt("@NDXBase:NDXTableCouldNotBeDetermined", kalkNummernKreis.TableName));
+        }
+
+        int newIntNr = tblKalkNummernKreis.NrIstInterressent + 1;
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        kalkNummernKreis = maintainRelayContract.KalkNummernKreis;
+        kalkNummernKreis.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkNummernKreis.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkNummernKreisConstants::NrKreis_ID);
+        kalkNummernKreis.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkNummernKreisConstants::NrIstInterressent);
+        kalkNummernKreis.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkNummernKreis.TableName);
+        kalkNummernKreis.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkNummernKreisConstants::NrKreis_ID, tblKalkNummernKreis.NrKreis_ID);
+        kalkNummernKreis.addSqlFieldWithValueInt(NDXRicoKalkTblKalkNummernKreisConstants::NrIstInterressent, newIntNr);
+        kalkNummernKreis.SQLCRUD = SQLCRUD::Update;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkNummernKreis.SQLCRUD), kalkNummernKreis.SelectValue);
+        this.incrementUpdateOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkNummernKreisList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkNummernKreis = enumeratorList.Current;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+
+        return tblKalkNummernKreis.NrIstInterressent;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkBVKlasse</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.01.24
+    /// get kz_id for bv-class (insert new record if not found)
+    /// </summary>
+    /// <param name = "_kBVclassId">KCS_KBVClassID</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>int</returns>
+    public int checkBVKlasse(KCS_KBVClassID _kBVclassId, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        KalkSonstKz kalkSonstKz;
+        TblKalkSonstKz tblKalkSonstKz;
+        maintainRelayContract = ado.RicoKalkMaintainRelayContract.Initialize();
+        NDXRicoKalkADO::initMaintainRelayContract(maintainRelayContract);
+
+        KCS_KBVClassID kBVclassIdFound;
+        int kz_idFound = 0;
+
+        azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+        kalkSonstKz = maintainRelayContract.KalkSonstKz;
+        kalkSonstKz.SelectValue = NDXSqlConstants::SQLSelect;
+        kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkSonstKzConstants::Bereich);
+        kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkSonstKzConstants::KZ);
+        kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkSonstKzConstants::KZ_ID);
+        kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkSonstKz.TableName);
+        kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkSonstKzConstants::Bereich, NDXRicoKalkTblKalkSonstKzConstants::BereichBVKlasse);
+        kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualStr, NDXRicoKalkTblKalkSonstKzConstants::KZ, _kBVclassId);
+        kalkSonstKz.SQLCRUD = SQLCRUD::Select;
+
+        maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkSonstKz.SQLCRUD), kalkSonstKz.SelectValue);
+        maintainRelayContract.DisplayOnConsole = _displayOnConsole;
+        maintainRelayContract.TextToDisplayOnConsole = _textToDisplayOnConsole;
+        this.incrementSelectOperation();
+        this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+        azureRelaySender.fillRequest(maintainRelayContract);
+        HttpResponseMessage response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+        if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+        {
+            responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+            IEnumerable enumerableList = responseContract.TblKalkSonstKzList;
+            IEnumerator enumeratorList = enumerableList.GetEnumerator();
+            while (enumeratorList.MoveNext())
+            {
+                tblKalkSonstKz = enumeratorList.Current;
+                kBVclassIdFound = tblKalkSonstKz.Kz;
+                kz_idFound = tblKalkSonstKz.KZ_ID;
+            }
+        }
+        else
+        {
+            throw Error(response.ReasonPhrase);
+        }
+
+        //if (tblKalkSonstKz == null)
+        //{
+        //    throw new System.Exception(strFmt("@NDXBase:NDXTableCouldNotBeDetermined", kalkSonstKz.TableName));
+        //}
+
+        // insert new BV-Class
+        if (kBVclassIdFound != _kBVclassId)
+        {
+            azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+            kalkSonstKz = maintainRelayContract.KalkSonstKz;
+            kalkSonstKz.SelectValue = NDXSqlConstants::SQLSelect;
+            kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkSonstKzConstants::Bereich);
+            kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkSonstKzConstants::KZ);
+            kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkSonstKzConstants::KZ_ID);
+            kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkSonstKz.TableName);
+            kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkSonstKzConstants::Bereich, NDXRicoKalkTblKalkSonstKzConstants::BereichBVKlasse);
+            kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualStr, NDXRicoKalkTblKalkSonstKzConstants::KZ, _kBVclassId);
+            kalkSonstKz.addSqlFieldWithValueString(NDXRicoKalkTblKalkSonstKzConstants::KZ, _kBVclassId);
+            kalkSonstKz.addSqlFieldWithValueInt(NDXRicoKalkTblKalkSonstKzConstants::Bereich, NDXRicoKalkTblKalkSonstKzConstants::BereichBVKlasse);
+            kalkSonstKz.addSqlFieldWithValueString(NDXRicoKalkTblKalkSonstKzConstants::CreateUser, curUserId());
+            kalkSonstKz.addSqlFieldWithValueDateTime(NDXRicoKalkTblKalkSonstKzConstants::CreateDate, NDXHelperCommon::SystemDateGet());
+            kalkSonstKz.SQLCRUD = SQLCRUD::Insert;
+
+            maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkSonstKz.SQLCRUD), kalkSonstKz.SelectValue);
+            this.incrementInsertOperation();
+            this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+            azureRelaySender.fillRequest(maintainRelayContract);
+            response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+            if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+            {
+                responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+                IEnumerable enumerableList = responseContract.TblKalkSonstKzList;
+                IEnumerator enumeratorList = enumerableList.GetEnumerator();
+                while (enumeratorList.MoveNext())
+                {
+                    tblKalkSonstKz = enumeratorList.Current;
+                }
+            }
+            else
+            {
+                throw Error(response.ReasonPhrase);
+            }
+
+            // get kz_idFound again
+            azureRelaySender = new AzureRelaySenderRicoKalk(keyVaultGetSecretRelay);
+
+            kalkSonstKz = maintainRelayContract.KalkSonstKz;
+            kalkSonstKz.SelectValue = NDXSqlConstants::SQLSelect;
+            kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkSonstKzConstants::Bereich);
+            kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholderComma, NDXRicoKalkTblKalkSonstKzConstants::KZ);
+            kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLPlaceholder, NDXRicoKalkTblKalkSonstKzConstants::KZ_ID);
+            kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLFromWhere, kalkSonstKz.TableName);
+            kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLFieldEqualInt, NDXRicoKalkTblKalkSonstKzConstants::Bereich, NDXRicoKalkTblKalkSonstKzConstants::BereichBVKlasse);
+            kalkSonstKz.SelectValue += strFmt(NDXSqlConstants::SQLAndFieldEqualStr, NDXRicoKalkTblKalkSonstKzConstants::KZ, _kBVclassId);
+            kalkSonstKz.SQLCRUD = SQLCRUD::Select;
+
+            maintainRelayContract.ServiceActionInfo = strFmt(NDXPlaceholderConstants::FirstInSquareBrackets2, this.SQLCRUD2String(kalkSonstKz.SQLCRUD), kalkSonstKz.SelectValue);
+            this.incrementSelectOperation();
+            this.addOperationHistory(maintainRelayContract.ServiceActionInfo);
+            azureRelaySender.fillRequest(maintainRelayContract);
+            response = azureRelaySender.SendMessage().GetAwaiter().GetResult();
+            if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode::Conflict)
+            {
+                responseContract = azureRelaySender.contractFromResponseMessage(response) as IRicoKalkMaintainRelayResponseContract;
+            
+                IEnumerable enumerableList = responseContract.TblKalkSonstKzList;
+                IEnumerator enumeratorList = enumerableList.GetEnumerator();
+                while (enumeratorList.MoveNext())
+                {
+                    tblKalkSonstKz = enumeratorList.Current;
+                    kz_idFound = tblKalkSonstKz.KZ_ID;
+                }
+            }
+            else
+            {
+                throw Error(response.ReasonPhrase);
+            }
+        }
+        return kz_idFound;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

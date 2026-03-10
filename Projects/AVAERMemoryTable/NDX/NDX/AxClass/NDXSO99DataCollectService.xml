@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXSO99DataCollectService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+internal final class NDXSO99DataCollectService extends SysOperationServiceBase
+{
+    identifierName className;
+    identifierName methodName;
+
+    TableId tableIdExport=0;
+
+    utcdatetime lastExport;
+
+    NDXSO99DataCollectServiceController controller;
+
+    private static Set runningKeys;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmTableIdExport</Name>
+				<Source><![CDATA[
+    public TableId parmTableIdExport(TableId _tableIdExport = tableIdExport)
+    {
+        tableIdExport = _tableIdExport;
+        return tableIdExport;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmController</Name>
+				<Source><![CDATA[
+    public NDXSO99DataCollectServiceController parmController(NDXSO99DataCollectServiceController _controller = controller)
+    {
+        controller = _controller;
+        return controller;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    protected void init(Args _args = null)
+    {
+        SysOperationExecutionMode executionMode = SysOperationExecutionMode::Asynchronous;
+                
+        className = classId2Name(classIdGet(this));
+        methodName = 'SO99CollectData';
+
+        if(_args != null && _args.dataset())
+        {
+            tableIdExport = _args.dataset();
+        }
+        
+        lastExport = DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(), DateTimeUtil::getUserPreferredTimeZone());
+        controller = NDXSO99DataCollectServiceController::construct(className, methodName, executionMode);
+        controller.parmDialogCaption("SO99 Data Collect");
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SO99CollectData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Export Item to PIMCore
+    /// </summary>
+    /// <param name = "_D365PIMCoreExportContract">D365PIMCoreExportContract record</param>
+    public void SO99CollectData(NDXSO99DataCollectContract _contract)
+    {
+        Common common;
+        if (!_contract.tryAcquire())
+        {
+            // gleicher Job mit denselben Parametern läuft bereits
+            throw error('Ein Job mit diesen Parametern läuft bereits.');
+        }
+        
+        DictTable dictTable = new DictTable(_contract.parmTableId());
+        
+        try
+        {
+            common = dictTable.makeRecord();
+            dictTable.callObject('populate', common);
+        }
+        finally
+        {
+            _contract.release();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Constructor
+    /// </summary>
+    /// <returns>D365PIMCoreExportService instance</returns>
+    static public NDXSO99DataCollectService construct(Args _args = null)
+    {
+        NDXSO99DataCollectService service = new NDXSO99DataCollectService();
+        service.init(_args);
+        
+        return service;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>startDataCollectBatch</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Stats the batch job
+    /// </summary>
+    /// <param name = "_args">aguments</param>
+    static public void startDataCollectBatch(Args _args)
+    {
+        NDXSO99DataCollectServiceController serviceController;
+        NDXSO99DataCollectService service;
+
+        SysOperationStartResult result;
+
+        service = NDXSO99DataCollectService::construct(_args);
+        serviceController = service.parmController();
+
+        NDXSO99DataCollectContract contract =  serviceController.getDataContractObject();
+        contract.initialize();
+        contract.parmTableId(service.parmTableIdExport());
+
+        result = serviceController.startOperation();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        NDXSO99DataCollectService::startDataCollectBatch(_args);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

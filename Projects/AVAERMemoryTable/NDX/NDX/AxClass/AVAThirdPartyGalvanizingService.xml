@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAThirdPartyGalvanizingService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN 2024/04/09  AVA_011510_ThirdPartyGalvanizing
+/// </summary>
+public final class AVAThirdPartyGalvanizingService  extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>runService</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  AVA/WEN 2024/04/09  AVA_011510_ThirdPartyGalvanizing
+    /// </summary>
+    /// <param name = "_dataContract">AVAThirdPartyGalvanizingContract</param>
+    public void runService(AVAThirdPartyGalvanizingContract _dataContract)
+    {
+        Set recordSet;
+        SetEnumerator se;
+        salesline SalesLine, saleslineB, salesLineF;
+
+        recordSet = Set::create(_dataContract.parmRecordCon());
+
+        if(recordSet.elements() == 2)
+        {
+            se = recordSet.getEnumerator();
+            se.moveNext();
+            salesline = se.current();
+            if (SalesLine.inventTable().isFormulaOrBOMAllowed())
+            {
+                salesLineF = SalesLine;
+                se.moveNext();
+                saleslineB = se.current();
+            }
+            else
+            {
+                saleslineB = SalesLine;
+                se.moveNext();
+                salesLineF = se.current();
+            }
+            if (this.checkRecords(saleslineB, salesLineF))
+            {
+                if (this.setNewBatchId(saleslineB, salesLineF))
+                {
+                    this.createProd(salesLineF);                
+                }
+            }
+        }
+        else
+        {
+            throw error("@NDX:NXATPGNumOfItems");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkRecords</Name>
+				<Source><![CDATA[
+    private boolean checkRecords(SalesLine _bLine, SalesLine _fLine)
+    {
+        boolean     ret = true;
+        SalesTable  salesTable = _bLine.salesTable();
+        InventTable inventTableB, inventTableF;
+        BOMVersion  bomVersion;
+        BOM         bom;
+
+        if (!_bLine.RecId || !_fLine.RecId || _bLine.RecId == _fLine.RecId)
+        {
+            ret = checkFailed("@NDX:NXATPGBFItems");
+        }
+        if (!salesTable)
+        {
+            salesTable = _fLine.salesTable();
+        }
+        if (!SalesOrigin::find(salesTable.SalesOriginId).AVAThirdPartyGalvBatchId)
+        {
+            ret = checkFailed("@NDX:NXATPGSalesOrigin");
+        }
+
+        inventTableB = _bLine.inventTable();
+        inventTableF = _fLine.inventTable();
+
+        if (!inventTableB.isItemBatchActivated() || !inventTableF.isItemBatchActivated())
+        {
+            ret = checkFailed("@NDX:NXATPGItemBatchActivated");
+        }
+
+        if (!inventTableF.isFormulaOrBOMAllowed())
+        {
+            ret = checkFailed("@NDX:NXATPGFormulaOrBOM");
+        }
+
+        select firstonly bomVersion where bomVersion.ItemId == inventTableF.ItemId
+                                       && bomVersion.Active
+            join bom where bom.BOMId == bomVersion.BOMId
+            && bom.ItemId == inventTableB.ItemId;
+        if (!bom.ItemId)
+        {
+            ret = checkFailed("@NDX:NXATPGBOMItemExists");
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setNewBatchId</Name>
+				<Source><![CDATA[
+    private boolean setNewBatchId(SalesLine _salesLineB, SalesLine _salesLineF)
+    {
+        boolean     ret = true;
+        InventDim   inventDimB, inventDimF;
+        InventBatch inventBatch;
+        InventBatchId   newBatchId;
+        NumberSequenceReference numberSequenceReference;
+
+        inventDimB = _saleslineB.inventDim();
+        inventDimF = _salesLineF.inventDim();
+        if (inventDimB.inventBatchId)
+        {
+            delete_from inventBatch where inventBatch.inventBatchId == inventDimB.inventBatchId && inventBatch.itemId == _saleslineB.ItemId;
+        }
+        if (inventDimF.inventBatchId)
+        {
+            delete_from inventBatch where inventBatch.inventBatchId == inventDimF.inventBatchId && inventBatch.itemId == _salesLineF.ItemId;
+        }
+
+        numberSequenceReference = NumberSeqReference::findReference(extendedTypeNum(AVATPGBatchId));
+        if (numberSequenceReference)
+        {
+            newBatchId = NumberSeq::newGetNum(numberSequenceReference).num();
+        }
+        else
+        {
+            ret = false;
+            warning("@NDX:NXATPGNumSeqMissing");
+        }
+
+        if (newBatchId)
+        {
+            ttsbegin;
+            select firstonly inventBatch where inventBatch.itemId == _saleslineB.ItemId && inventBatch.inventBatchId == newBatchId;
+            if (!inventbatch)
+            {
+                inventBatch.selectForUpdate(true);
+                inventBatch.itemId = _saleslineB.ItemId;
+                inventBatch.inventBatchId = newBatchId;
+                inventBatch.insert();
+            }
+            select firstonly inventBatch where inventBatch.itemId == _saleslinef.ItemId && inventBatch.inventBatchId == newBatchId;
+            if (!inventbatch)
+            {
+                inventBatch.selectForUpdate(true);
+                inventBatch.itemId = _salesLineF.ItemId;
+                inventBatch.inventBatchId = newBatchId;
+                inventBatch.insert();
+            }
+            inventDimB.inventBatchId = newBatchId;
+            inventDimB = InventDim::findOrCreate(inventDimB);
+            inventDimF.inventBatchId = newBatchId;
+            inventDimF = InventDim::findOrCreate(InventDimF);
+            _saleslineB.selectForUpdate(true);
+            _saleslineB.InventDimId = inventDimB.inventDimId;
+            _saleslineB.update();
+            _salesLineF.selectForUpdate(true);
+            _salesLineF.InventDimId = inventDimF.inventDimId;
+            _salesLineF.update();
+            ttscommit;
+        }  
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createProd</Name>
+				<Source><![CDATA[
+    private void createProd(SalesLine _salesLineF)
+    {
+        ProdTable prodTable;
+        ProdBOM   prodBOM;
+        InventDim inventDim;
+
+        prodTable.ProdType = ProdType::Process;
+        prodTable.initValue();
+        prodTable.initFromCaller(_salesLineF);
+
+        ttsbegin;
+        prodTable.insert();
+        select forupdate prodBOM where prodBOM.ProdId == prodTable.ProdId;
+        inventDim = prodBOM.inventDim();
+        inventDim.inventBatchId = prodTable.inventDim().inventBatchId;
+        inventDim = inventDim::findOrCreate(inventDim);
+        prodBOM.InventDimId = inventDim.inventDimId;
+        prodBOM.update();
+        ttscommit;
+        Info(strFmt("@NDX:NXAProdCreated",prodTable.ProdId));
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

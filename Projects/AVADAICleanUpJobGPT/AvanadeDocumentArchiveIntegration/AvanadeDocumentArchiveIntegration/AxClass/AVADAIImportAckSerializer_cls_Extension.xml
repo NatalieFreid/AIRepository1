@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADAIImportAckSerializer_cls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// CoC - Extension of class AVADAIImportAckSerializer
+/// </summary>
+[ExtensionOf(classStr(AVADAIImportAckSerializer))]
+public final class AVADAIImportAckSerializer_cls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>processImportRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Set docu ref form configuration.
+    /// </summary>
+    /// <param name = "_import">AVADAIAcknowledgementImport</param>
+    /// <returns>True if import record process was successfully</returns>
+    public boolean processImportRecord(AVADAIAcknowledgementImport _import)
+    {
+        boolean result;
+        AVADAIAcknowledgementImport import = _import;
+
+        if (isConfigurationKeyEnabled(configurationkeynum(AVADAIAttachment)))
+        {            
+            AVADAIReportExportTable avaDAIReportExportTable = this.findExportMetadataByExecutionId(_import.ServerId, _import.ExportExecutionId);
+
+            if (avaDAIReportExportTable.RecId && avaDAIReportExportTable.ReportType == AVADAIReportType::Attachment)
+            {
+                TableId tableId = tableName2Id(_import.TableName);
+                FieldId fieldId = fieldName2Id(tableId, _import.TableFieldName);
+
+                if (tableId && fieldId && _import.RefNum && _import.Company)
+                {
+                    changecompany (_import.Company)
+                    {
+                        if (AVADAIParameters::find().Enabled == NoYes::Yes)
+                        {
+                            DictTable dictTable = new DictTable(tableId);
+
+                            Common common = dictTable.makeRecord();
+
+                            select firstOnly common
+                                where common.(fieldId) == _import.RefNum;
+
+                            if (common.RecId)
+                            {
+                                result = this.updateDocuRef(common, _import);
+                            }
+                        }
+                    }
+                }
+            
+                // Clear follow up process
+                import.TableName = '';
+                import.TableFieldName = '';
+            }
+        }
+        
+        boolean nextResult = next processImportRecord(import);
+        result = result || nextResult;
+
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateDocuRef</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Update docuref for DMS feedback.
+    /// </summary>
+    /// <param name = "_forRecord">The record.</param>
+    /// <param name = "_import">Import record for initialization.</param>
+    /// <returns>True if update was successfully</returns>
+    private boolean updateDocuRef(Common _forRecord, AVADAIAcknowledgementImport _import)
+    {
+        boolean result;
+
+        DocuRef docuRef = AVADAIDocuActionDMSFileURL::findDocuRefRecordByExecutionId(_forRecord.DataAreaId, _import.ExportExecutionId, _forRecord.TableId, _forRecord.RecId, true);
+
+        if (docuRef)
+        {
+            ttsbegin;
+            this.initDocuRefFromAcknowledgementImport(docuRef, _import);
+            
+            if (docuRef.validateWrite())
+            {
+                docuRef.update();
+                result = true;
+            }
+            ttscommit;
+        }
+
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initDocuRefFromAcknowledgementImport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Copy relevant data from the acknowledgement import record to the new DocuRef.
+    /// </summary>
+    /// <param name = "_docuRef">DocuRef to initialize</param>
+    /// <param name = "_import">Acknowledgement import record</param>
+    protected void initDocuRefFromAcknowledgementImport(DocuRef _docuRef, AVADAIAcknowledgementImport _import)
+    {
+        next initDocuRefFromAcknowledgementImport(_docuRef, _import);
+
+        if (_docuRef.AVADAIExecutionId == '')
+        {
+            _docuRef.AVADAIExecutionId = _import.ExportExecutionId;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

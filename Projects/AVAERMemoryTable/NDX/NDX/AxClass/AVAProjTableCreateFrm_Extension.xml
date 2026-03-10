@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAProjTableCreateFrm_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// NS Zelinka 04.03.24
+/// </summary>
+[ExtensionOf(formStr(ProjTableCreate))]
+final class AVAProjTableCreateFrm_Extension
+{
+    private AVAPTMToolId        toolId;
+    private boolean             isProductionProject;
+    private HierarchyIdBase     hierarchyId;
+    private CompanyId           callerCompany;
+    private CompanyId           propertyCompany;
+    private ProjInvoiceProjId   clsProjInvoiceProjId;
+    
+    private Name                                clsConstCostCenterDimensionName;
+    private Name                                clsConstSubCostCenterDimensionName;
+    private AVADimensionNameProjCostCenter      clsAVADimensionNameCostCenter;
+    private AVADimensionNameProjSubCostCenter   clsAVADimensionNameSubCostCenter;
+    private DimensionAttribute                  clsCostCenterAttribute;
+    private DimensionAttribute                  clsSubCostCenterAttribute;
+    private DimensionValue                      clsCostCenterValue;
+    private DimensionValue                      clsSubCostCenterValue;
+    private DimensionAttributeValue             clsCostCenterAttributeValue;
+    private DimensionAttributeValue             clsSubCostCenterAttributeValue;
+
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>init</c> method.
+    ///     AVA - Schneider 09.08.2024
+    /// </summary>
+    public void init()
+    {
+        next init();
+
+        this.initCostCenterDimensions();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initCostCenterDimensions</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>createSalesLineTmpTableRecord</c> method.
+    ///     AVA - Schneider 09.08.2024
+    /// </summary>
+    private void initCostCenterDimensions()
+    {
+        clsAVADimensionNameCostCenter               = projParameters.AVADimensionNameCostCenter;
+        clsAVADimensionNameSubCostCenter            = projParameters.AVADimensionNameSubCostCenter;
+
+        const Name  constCostCenterDimensionName    = 'Kostenstellen';
+        const Name  constSubCostCenterDimensionName = 'Unterkostenstelle';
+
+        clsConstCostCenterDimensionName             = constCostCenterDimensionName;
+        clsConstSubCostCenterDimensionName          = constSubCostCenterDimensionName;
+
+        /*if(     clsAVADimensionNameCostCenter       == '' 
+            ||  clsAVADimensionNameSubCostCenter    == '')
+        {
+            clsConstCostCenterDimensionName         = clsConstCostCenterDimensionName;
+            clsConstSubCostCenterDimensionName      = clsConstSubCostCenterDimensionName;
+        }  */
+
+        if (!clsAVADimensionNameCostCenter)
+        {
+            clsAVADimensionNameCostCenter = clsConstCostCenterDimensionName;
+        }
+        if (!clsAVADimensionNameSubCostCenter)
+        {
+            clsAVADimensionNameSubCostCenter = clsConstSubCostCenterDimensionName;
+        }
+        
+        if(clsAVADimensionNameCostCenter)
+        {
+            clsCostCenterAttribute                  = DimensionAttribute::findByName(clsAVADimensionNameCostCenter);
+        }
+
+        if(clsAVADimensionNameSubCostCenter)
+        {
+            clsSubCostCenterAttribute               = DimensionAttribute::findByName(clsAVADimensionNameSubCostCenter);
+        }
+
+        // Set CostCenterDimension
+        clsCostCenterAttributeValue                 = DimensionAttributeValue::findByDimensionAttributeAndValue(clsCostCenterAttribute, clsCostCenterValue);
+        // Set SubCostCenterDimension
+        clsSubCostCenterAttributeValue              = DimensionAttributeValue::findByDimensionAttributeAndValue(clsSubCostCenterAttribute, clsSubCostCenterValue);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 04.03.24
+    /// </summary>
+    public void run()
+    {
+        ProjType                            projType;
+        ProjGroupId                         projGroupId;
+        ProjId                              localProjId;
+        Name                                projName;
+        str 1                               prodProject;
+        DimensionAttributeValueSetStorage   storage;
+        RefRecId                            dimensionId;
+        
+        next run();
+
+        var args = this.args();
+
+        if (args                            &&
+            args.parm()             != ''   &&
+            str2con(args.parm())    != conNull())
+        {
+            [   projType,
+                projGroupId,
+                localProjId,
+                projName,
+                clsCostCenterValue,
+                clsSubCostCenterValue,
+                toolId,
+                prodProject,
+                hierarchyId,
+                callerCompany,
+                propertyCompany,
+                clsProjInvoiceProjId        // ProjInvoiceProjId to be set
+                ] = str2con(args.parm());
+
+            this.initCostCenterDimensions();
+
+            isProductionProject = prodProject == '1';
+
+            storage                 = new DimensionAttributeValueSetStorage();
+            // Set CostCenterDimension
+            if (clsCostCenterAttributeValue)
+            {
+                storage.addItem(clsCostCenterAttributeValue);
+            }
+            // Set Werkzeug
+            if (clsSubCostCenterAttributeValue)
+            {
+                storage.addItem(clsSubCostCenterAttributeValue);
+            }
+
+            dimensionId                 = storage.save();
+
+            ProjTable_DS.create();
+            projTable.Type              = projType;
+            this.changeType();
+            projTable.ProjGroupId       = projGroupId;
+            projTable.ProjId            = localProjId;
+            projTable.Name              = projName;
+            projTable.DefaultDimension  = dimensionId;
+
+            if (callerCompany   != curExt() &&
+                projTable.Type  == ProjType::TimeMaterial)
+            {
+                projTable.ProjInvoiceProjId = propertyCompany;  
+            }
+
+            if(clsProjInvoiceProjId)
+            {
+                // overwrite ProjInvoiceProjId if AVAPTMToolTable has special constellation in the company ids
+                projTable.ProjInvoiceProjId = clsProjInvoiceProjId;
+                //this.setProjInvoiceProjId(clsProjInvoiceProjId);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>projTableWrite</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 13.03.24
+    /// </summary>
+    protected void projTableWrite()
+    {
+        ProjPlanVersionDetail   projPlanVersionDetail; 
+
+        next projTableWrite();
+
+        var args = this.args();
+
+        if (args                                    &&
+            args.parm()             != ''           &&
+            str2con(args.parm())    != conNull()    &&
+            toolId                  != ''           &&
+            projTable.RecId         != 0)
+        {
+            if (callerCompany == curExt())
+            {
+                AVAProjectCreation::updateToolTable(toolId,
+                                                    projTable.ProjId,
+                                                    isProductionProject);
+            }
+            else
+            {
+                changecompany(callerCompany)
+                {
+                    AVAProjectCreation::updateToolTable(toolId,
+                                                        projTable.ProjId,
+                                                        isProductionProject);
+                }
+            }
+
+            if (hierarchyId)
+            {
+                projPlanVersionDetail   = ProjPlanVersionDetail::findLatestByProjId(projTable.ProjId, 
+                                                                                    false,
+                                                                                    false,
+                                                                                    projplanVersionType::Draft);
+        
+                if (projPlanVersionDetail.RecId != 0)
+                {
+                    if (ProjPlanVersionsManager::preImportHierarchy(hierarchyId,
+                                                                    projPlanVersionDetail.HierarchyId,
+                                                                    1                                   )   )
+                    {
+                        ProjPlanVersionsManager::importTemplateHierarchy(   hierarchyId,
+                                                                            projPlanVersionDetail.HierarchyId,
+                                                                            1                                   );
+                    }
+
+                    if (AVAProjectCreation::validateDraft(hierarchyId))
+                    {
+                        ProjPlanVersionsManager::publishVersion(projPlanVersionDetail.ProjId,
+                                                                projPlanVersionDetail.VersionId);
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

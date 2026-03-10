@@ -1,0 +1,646 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAMarkUpTransDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of table <t>MarkupTrans</t>
+/// </summary>
+[ExtensionOf(tableStr(MarkupTrans))]
+final class AVAMarkUpTransDbt_Extension
+{
+    #ISOCountryRegionCodes
+
+    
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initFromMarkupTransHistory</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes the history record based on a <c>MarkupTransHistory</c> record.
+    /// </summary>
+    /// <param name="_markupTransHistory">
+    /// The <c>MarkupTransHistory</c> record to use for initialization.
+    /// </param>
+    public void initFromMarkupTransHistory(MarkupTransHistory _markupTransHistory)
+    {
+        next initFromMarkupTransHistory(_markupTransHistory);
+
+        this.AVACalcQty = _markupTransHistory.AVACalcQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initModuleType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Determines markup module type based on a table ID.
+    /// </summary>
+    /// <param name="_callerTableId">
+    /// A table id to determine the module type for.
+    /// </param>
+    /// <returns>
+    /// Markup module type.
+    /// </returns>
+    /// <remarks>
+    /// The <c>ModuleInventCustVend</c> enum was replaced with a more specific enum for markup functionality, use the <c>MarkupModuleType</c> enum.
+    /// </remarks>
+    MarkupModuleType initModuleType(TableId _callerTableId)
+    {
+        MarkupModuleType moduleTypeLoc = next initModuleType(_callerTableId);
+
+        switch (_callerTableId)
+        {
+            case tableNum(AgreementLine):
+            case tableNum(AgreementLineHistory):
+            case tableNum(PurchAgreementHeader):
+            case tableNum(PurchAgreementHeaderHistory):
+                return MarkupModuleType::Vend;
+
+            case tableNum(SalesAgreementHeader):
+            case tableNum(SalesAgreementHeaderHistory):
+                return MarkupModuleType::Cust;
+
+        } 
+
+        return moduleTypeLoc;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromMarkupAutoLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// method initFromMarkupAutoLine
+    /// </summary>
+    /// <param name = "_markupAutoLine">MarkupAutoLine</param>
+    void  initFromMarkupAutoLine(MarkupAutoLine  _markupAutoLine)
+    {
+        next initFromMarkupAutoLine(_markupAutoLine);
+
+        MarkupAutoTable markupAutoTableLoc = MarkupAutoTable::avaFindByRecId(_markupAutoLine.TableRecId);
+        AVAChargeSpecification chargeSpecificationLoc = AVAChargeSpecification::find(markupAutoTableLoc.AccountCode, markupAutoTableLoc.AccountRelation, markupAutoTableLoc.ItemCode, markupAutoTableLoc.ItemRelation, AVAChargeType::MTZ);
+
+        if(chargeSpecificationLoc
+            && this.MarkupCategory == MarkupCategory::AVAMTZ)
+        {
+            this.Value = chargeSpecificationLoc.Charge;
+            this.AVACalcQty = chargeSpecificationLoc.CalcQty;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromCaller</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// extension of method initFromCaller
+    /// </summary>
+    /// <param name = "_callerTableId">TableId</param>
+    /// <param name = "_callerRecord">Common</param>
+    void initFromCaller(TableId _callerTableId, Common _callerRecord)
+    {
+        switch (_callerTableId)
+        {
+            case tableNum(AgreementLine)        : 
+                AgreementLine avaAgreementLine = AgreementLine::find(_callerRecord.RecId);
+                if(avaAgreementLine.agreementModuleType() == ModuleSalesPurch::Purch)
+                {
+                    this.avaInitFromPurchAgreementLine(avaAgreementLine);
+                }
+                else
+                {
+                    this.avaInitFromSalesAgreementLine(avaAgreementLine);
+                }
+                break;
+
+            case tableNum(PurchAgreementHeader) :   
+                this.avaInitFromPurchAgreementHeader(_callerRecord as PurchAgreementHeader);
+                break;
+
+            case tableNum(SalesAgreementHeader) :
+                this.avaInitFromSalesAgreementHeader(_callerRecord as SalesAgreementHeader);
+                break;
+        }
+
+        next initFromCaller(_callerTableId, _callerRecord);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parentRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of parentRecord method
+    /// </summary>
+    /// <returns>Common</returns>
+    public Common parentRecord()
+    {
+        Common avaCommon = next parentRecord();
+
+        switch (this.TransTableId)
+        {
+            case tableNum(AgreementLine)                :
+                return AgreementLine::find(this.TransRecId);
+
+            case tableNum(AgreementLineHistory)         :
+                return AgreementLineHistory::avaFindRecId(this.TransRecId);
+
+            case tableNum(PurchAgreementHeader)         :
+                return PurchAgreementHeader::find(this.TransRecId);
+
+            case tableNum(PurchAgreementHeaderHistory)  :
+                return PurchAgreementHeaderHistory::avaFindRecId(this.TransRecId);
+
+            case tableNum(SalesAgreementHeader)         :
+                return SalesAgreementHeader::find(this.TransRecId);
+
+            case tableNum(SalesAgreementHeaderHistory)  :
+                return SalesAgreementHeaderHistory::avaFindRecId(this.TransRecId);
+        }
+
+        return avaCommon;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckMTZ</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if information is valid for MTZ category
+    /// </summary>
+    /// <returns>boolean</returns>
+    boolean avaCheckMTZ()
+    {
+        boolean ok = true;
+
+        if(this.MarkupCategory == MarkupCategory::AVAMTZ
+            && this.AVACalcQty == 0)
+        {
+            ok = checkFailed("@NDX:NXACalcQtyCheckFailed");
+        }
+
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of modifiedField method
+    /// </summary>
+    /// <param name = "_fieldId"></param>
+    public void modifiedField(FieldId _fieldId)
+    {
+        next modifiedField(_fieldId);
+
+        switch(_fieldId)
+        {
+            case fieldnum(MarkupTrans, MarkupCategory) :
+                if (this.MarkupCategory == MarkupCategory::Pcs
+                    || this.MarkupCategory == MarkupCategory::Percent)
+                {
+                    this.Keep = NoYes::Yes;
+                }
+                else
+                {
+                    this.Keep = NoYes::No;
+                }
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of validateWrite method
+    /// </summary>
+    /// <returns>boolean</returns>
+    boolean validateWrite()
+    {
+        boolean isValid = next validateWrite();
+
+        if (this.MarkupCategory == MarkupCategory::AVAMTZ
+            &&  this.AVACalcQty == 0)
+        {
+            isValid = this.avaCheckMTZ() && isValid;
+        }
+
+        return isValid;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>interCompanyCreateAllowed</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension method of interCompanyCreateAllowed
+    /// </summary>
+    /// <returns>boolean</returns>
+    boolean  interCompanyCreateAllowed()
+    {
+        boolean createLoc = next interCompanyCreateAllowed();
+        PurchAgreementHeader purchAgreementHeaderLoc;
+        AgreementLine agreementLineLoc;
+        
+        switch (this.TransTableId)
+        {
+            case(tableNum(PurchAgreementHeader)):
+                purchAgreementHeaderLoc = this.parentRecord() as PurchAgreementHeader;
+                if (purchAgreementHeaderLoc.intercompanyEndpointActionPolicyCustomer()
+                    &&  purchAgreementHeaderLoc.intercompanyLinkExist())
+                {
+                    createLoc = purchAgreementHeaderLoc.intercompanyEndpointActionPolicyCustomer().EditPrice;
+                }
+                break;
+
+            case(tableNum(AgreementLine)):
+                agreementLineLoc = this.parentRecord() as AgreementLine;
+                if(agreementLineLoc.agreementModuleType() == ModuleSalesPurch::Purch
+                    && agreementLineLoc.agreementHeader().intercompanyLinkExist()
+                    && agreementLineLoc.purchAgreementHeader().intercompanyEndpointActionPolicyCustomer())
+                {
+                    createLoc = agreementLineLoc.purchAgreementHeader().intercompanyEndpointActionPolicyCustomer().EditPrice;
+                }
+                break;
+        }
+        return createLoc;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromPurchLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes the <c>MarkupTrans</c> table with data from the <c>PurchLine</c> table.
+    /// </summary>
+    /// <param name="_purchLine">
+    /// The record to copy data from.
+    /// </param>
+    void  initFromPurchLine(PurchLine _purchLine)
+    {
+        next initFromPurchLine(_purchLine);
+
+        MarkupAutoLine markupAutoLineLoc = MarkupAutoLine::avaFindByRecId(this.MarkupAutoLineRecId);
+        MarkupAutoTable markupAutoTableLoc = MarkupAutoTable::avaFindByRecId(markupAutoLineLoc.TableRecId);
+        AVAChargeSpecification chargeSpecificationLoc = AVAChargeSpecification::find(markupAutoTableLoc.AccountCode, markupAutoTableLoc.AccountRelation, markupAutoTableLoc.ItemCode, markupAutoTableLoc.ItemRelation, AVAChargeType::MTZ);
+
+        if(chargeSpecificationLoc.GRUpdate
+            && !_purchLine.AVAGRUpdate)
+        {
+            this.avaPurchLineGRUpdate(_purchLine);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitFromPurchAgreementLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes the <c>MarkupTrans</c> table with data from the <c>AgreementLine</c> table.
+    /// </summary>
+    /// <param name="_agreementLine">
+    /// The record to copy data from.
+    /// </param>
+    public void avaInitFromPurchAgreementLine(AgreementLine _agreementLine)
+    {
+        this.ModuleType         = MarkupModuleType::Vend;
+        this.TransTableId       = _agreementLine.TableId;
+        this.TransRecId         = _agreementLine.RecId;
+        this.CurrencyCode       = _agreementLine.agreementHeader().Currency;
+
+        if (TaxParameters::checkTaxParameters_IN())
+        {
+            this.TaxGroup       = '';
+            this.TaxItemGroup   = '';
+        }
+        else
+        {
+            this.TaxGroup           = this.TaxGroup ? this.TaxGroup : _agreementLine.purchAgreementHeader().purchAgreementHeaderDefault().invoiceVendTable().TaxGroup;
+            this.OverrideSalesTax   = this.OverrideSalesTax || _agreementLine.purchAgreementHeader().purchAgreementHeaderDefault().invoiceVendTable().OverrideSalesTax;
+
+            if (!this.taxCombinationAllowed())
+            {
+                this.TaxItemGroup   = '';
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitFromSalesAgreementLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// init method for agreement lines of type Sales
+    /// </summary>
+    /// <param name = "_agreementLine">AgreementLine</param>
+    public void avaInitFromSalesAgreementLine(AgreementLine _agreementLine)
+    {
+        this.ModuleType = MarkupModuleType::Cust;
+        this.TransTableId = _agreementLine.TableId;
+        this.TransRecId = _agreementLine.RecId;
+        this.CurrencyCode = _agreementLine.agreementHeader().Currency;
+
+        if (TaxParameters::checkTaxParameters_IN() && !MarkupTable_IN::isAllowTax(MarkupModuleType::Cust, this.MarkupCode))
+        {
+            this.TaxGroup = '';
+            this.TaxItemGroup = '';
+        }
+        else
+        {
+            this.TaxGroup           = this.TaxGroup ? this.TaxGroup : _agreementLine.salesAgreementHeader().salesAgreementHeaderDefault().invoiceCustTable().TaxGroup;
+            this.OverrideSalesTax   = this.OverrideSalesTax || _agreementLine.salesAgreementHeader().salesAgreementHeaderDefault().invoiceCustTable().OverrideSalesTax;
+
+            if (!this.taxCombinationAllowed())
+            {
+                this.TaxItemGroup = '';
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitFromPurchAgreementHeader</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes the <c>MarkupTrans</c> table with data from the <c>PurchAgreementHeader</c> table.
+    /// </summary>
+    /// <param name="_agreementHeader">
+    /// The record to copy data from.
+    /// </param>
+    public void avaInitFromPurchAgreementHeader(PurchAgreementHeader _agreementHeader)
+    {
+        this.ModuleType         = MarkupModuleType::Vend;
+        this.TransTableId       = _agreementHeader.TableId;
+        this.TransRecId         = _agreementHeader.RecId;
+        this.CurrencyCode       = _agreementHeader.Currency;
+
+        if (TaxParameters::checkTaxParameters_IN())
+        {
+            this.TaxGroup       = '';
+            this.TaxItemGroup   = '';
+        }
+        else
+        {
+            this.TaxGroup           = this.TaxGroup ? this.TaxGroup : _agreementHeader.purchAgreementHeaderDefault().invoiceVendTable().TaxGroup;
+            this.OverrideSalesTax   = this.OverrideSalesTax || _agreementHeader.purchAgreementHeaderDefault().invoiceVendTable().OverrideSalesTax;
+
+            if (!this.taxCombinationAllowed())
+            {
+                this.TaxItemGroup   = '';
+            }
+
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitFromSalesAgreementHeader</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes the <c>MarkupTrans</c> table with data from the <c>SalesAgreementHeader</c> table.
+    /// </summary>
+    /// <param name="_agreementHeader">
+    /// The record to copy data from.
+    /// </param>
+    public void avaInitFromSalesAgreementHeader(SalesAgreementHeader _agreementHeader)
+    {
+        this.ModuleType = MarkupModuleType::Cust;
+        this.TransTableId = _agreementHeader.TableId;
+        this.TransRecId = _agreementHeader.RecId;
+        this.CurrencyCode = _agreementHeader.Currency;
+
+        if (TaxParameters::checkTaxParameters_IN() && !MarkupTable_IN::isAllowTax(MarkupModuleType::Cust, this.MarkupCode))
+        {
+            this.TaxGroup       = '';
+            this.TaxItemGroup   = '';
+        }
+        else
+        {
+            this.TaxGroup           = this.TaxGroup ? this.TaxGroup : _agreementHeader.salesAgreementHeaderDefault().invoiceCustTable().TaxGroup;
+            this.OverrideSalesTax   = this.OverrideSalesTax || _agreementHeader.salesAgreementHeaderDefault().invoiceCustTable().OverrideSalesTax;
+
+            if (this.taxCombinationAllowed())
+            {
+                this.TaxItemGroup = MarkupTable::find(MarkupModuleType::Cust, this.MarkupCode).TaxItemGroup;
+            }
+            else
+            {
+                this.TaxItemGroup = '';
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaPurchLineGRUpdate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// enables AVAGRUpdate for a PurchLine
+    /// </summary>
+    /// <param name = "_purchLine">PurchLine</param>
+    public void avaPurchLineGRUpdate(PurchLine _purchLine)
+    {
+        _purchLine.AVAGRUpdate = NoYes::Yes;
+        _purchLine.update();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaFindMarkupTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// find MarkupTrans based on LineNum and TransTableId/TransRecId
+    /// </summary>
+    /// <param name = "_transTableId">TableId</param>
+    /// <param name = "_transRecId">RecId</param>
+    /// <param name = "_lineNum">LineNum</param>
+    /// <param name = "_forUpdate">boolean</param>
+    /// <returns>MarkupTrans</returns>
+    public static MarkupTrans avaFindMarkupTrans(
+        TableId _transTableId,
+        RecId   _transRecId,
+        LineNum _lineNum,
+        boolean _forUpdate = false)
+    {
+        MarkupTrans avaMarkupTrans;
+
+        if(_forUpdate)
+        {
+            avaMarkupTrans.selectForUpdate(_forUpdate);
+        }
+
+        select firstonly avaMarkupTrans
+            where avaMarkupTrans.LineNum == _lineNum
+            && avaMarkupTrans.TransTableId == _transTableId
+            && avaMarkupTrans.TransRecId == _transRecId;
+
+        return avaMarkupTrans;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaItemId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns the item ID associated with the charge record.
+    /// </summary>
+    /// <returns>
+    /// The Item ID associated with the charge.
+    /// </returns>
+    public display ItemId avaItemId()
+    {
+        ItemId  ret;
+
+        switch (this.TransTableId)
+        {
+            case tableNum(AgreementLine):
+            case tableNum(AgreementLineQuantityCommitment):
+            case tableNum(AgreementLineVolumeCommitment):
+                ret = AgreementLine::find(this.TransRecId).ItemId;
+                break;
+
+            case tableNum(AgreementLineHistory):
+            case tableNum(AgreementLineQuantityCommitmentHistory):
+            case tableNum(AgreementLineVolumeCommitmentHistory):
+                ret = AgreementLineHistory::avaFindRecId(this.TransRecId).ItemId;
+                break;
+
+            case tableNum(CustConfirmTrans):
+                ret = CustConfirmTrans::findRecId(this.TransRecId).ItemId;
+                break;
+
+            case tableNum(CustInvoiceTrans):
+                ret = CustInvoiceTrans::findRecId(this.TransRecId).ItemId;
+                break;
+
+            case tableNum(CustQuotationTrans):
+                ret = CustQuotationTrans::findRecId(this.TransRecId).ItemId;
+                break;
+
+            case tableNum(ProjInvoiceItem):
+                ret = ProjInvoiceItem::findRecId(this.TransRecId).ItemId;
+                break;
+
+            case tableNum(PurchLine):
+                ret = PurchLine::findRecId(this.TransRecId).ItemId;
+                break;
+
+            case tableNum(PurchParmLine):
+                ret = PurchParmLine::findRecId(this.TransRecId).ItemId;
+                break;
+
+            case tableNum(PurchReqLine):
+                ret = PurchReqLine::find(this.TransRecId).ItemId;
+                break;
+
+            case tableNum(PurchReqLineHistory):
+                ret = PurchReqLineHistory::find(this.TransRecId).ItemId;
+                break;
+
+            case tableNum(PurchRFQCaseLine):
+                ret = PurchRFQCaseLine::findRecId(this.TransRecId).ItemId;
+                break;
+
+            case tableNum(PurchRFQReplyLine):
+                ret = PurchRFQReplyLine::findRecId(this.TransRecId).ExternalItemId;
+                break;
+
+            case tableNum(SalesLine):
+                ret = SalesLine::findRecId(this.TransRecId).ItemId;
+                break;
+
+            case tableNum(SalesQuotationLine):
+                ret = SalesQuotationLine::findRecId(this.TransRecId).ItemId;
+                break;
+
+            case tableNum(VendInvoiceInfoLine):
+                ret = VendInvoiceInfoLine::findRecId(this.TransRecId).ItemId;
+                break;
+
+            case tableNum(VendInvoiceTrans):
+                ret = VendInvoiceTrans::findRecId(this.TransRecId).ItemId;
+                break;
+
+            case tableNum(VendPackingSlipTrans):
+                ret = VendPackingSlipTrans::findRecId(this.TransRecId).ItemId;
+                break;
+            case tableNum(VendPackingSlipTrans):
+                ret = VendPackingSlipTrans::findRecId(this.TransRecId).ItemId;
+                break;
+
+            case tableNum(WHSLoadLine):
+                ret = WHSLoadLine::findbyRecId(this.TransRecId).ItemId;
+                break;
+
+            default:
+                ret = '';
+                break;
+
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaPriceUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// display method to show priceUnit
+    /// </summary>
+    /// <returns>PriceUnit</returns>
+    display public PriceUnit avaPriceUnit()
+    {
+        PriceUnit avaPriceUnit = 0;
+        InventTable avaInventTable = InventTable::find(this.avaItemId());
+
+        if(avaInventTable
+            && this.ModuleType == MarkupModuleType::Cust)
+        {
+            avaPriceUnit = avaInventTable.inventTableModuleSales().priceUnit();
+        }
+        else if(avaInventTable
+            && this.ModuleType == MarkupModuleType::Vend)
+        {
+            avaPriceUnit = avaInventTable.inventTableModulePurch().priceUnit();
+        }
+        else if(avaInventTable
+            && this.ModuleType == MarkupModuleType::Invent)
+        {
+            avaPriceUnit = avaInventTable.inventTableModuleInvent().priceUnit();
+        }
+
+        return avaPriceUnit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

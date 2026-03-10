@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAProjJournalTransDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of table ProjJournalTrans
+/// </summary>
+[ExtensionOf(tableStr(ProjJournalTrans))]
+public final class AVAProjJournalTransDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaDisplayBookedHours</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns all booked hours for current resource and date
+    /// </summary>
+    /// <returns>Qty</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AVAHoursBooked avaDisplayBookedHours()
+    {
+        ProjEmplTrans       projEmplTrans;
+        DataArea            dataArea;
+        ResourceView        resourceView;
+        container           conCompanies;
+        ResProjectResource  resProjResource;
+        Counter             i = 1;
+
+        select firstonly resProjResource where resProjResource.Resource == this.Resource;
+        while select DataArea
+            exists join resourceView where resourceView.ResourceCompanyId == dataArea.id
+                                && resourceView.ResourceId == resProjResource.ResourceId
+        {
+            conIns(conCompanies,i,dataArea.id);
+            i++;
+        }
+
+        select crosscompany : conCompanies sum(Qty) from projEmplTrans 
+            where projEmplTrans.TransDate == this.ProjTransDate
+            && projEmplTrans.Resource == this.Resource;
+
+        /*select sum(qty) from projEmplTrans
+            where projEmplTrans.TransDate == this.ProjTransDate
+            && projEmplTrans.Resource == this.Resource; */
+
+        return projEmplTrans.Qty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayUnbookedHours</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns all unbooked hours for current resource and date
+    /// </summary>
+    /// <returns>Qty</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AVAHoursUnbooked avaDisplayUnbookedHours()
+    {
+        ProjUnpostedTransView ProjUnpostedTransView;
+        Qty qty;
+
+        DataArea            dataArea;
+        container           conCompanies;
+        ResProjectResource  resProjResource;
+        Counter             i = 1;
+        ResourceView        resourceView;
+
+        select firstonly resProjResource where resProjResource.Resource == this.Resource;
+        while select DataArea
+            exists join resourceView where resourceView.ResourceCompanyId == dataArea.id
+                                && resourceView.ResourceId == resProjResource.ResourceId
+        {
+            conIns(conCompanies,i,dataArea.id);
+            i++;
+        }
+
+        resourceView = resourceView::find(this.Resource);
+
+        //while select ProjUnpostedTransView
+        while select crosscompany : conCompanies ResourceName, qty from ProjUnpostedTransView
+        where ProjUnpostedTransView.transtype == ProjTransType::Hour
+            && ProjUnpostedTransView.transdate == this.ProjTransDate
+        {
+            if (ProjUnpostedTransView.ResourceName == resourceView.Name)
+            {
+                qty += ProjUnpostedTransView.Qty;
+            }
+        }
+        return qty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayTotalHours</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns all entered hours 
+    /// </summary>
+    /// <returns>Qty</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AVAHoursTotal avaDisplayTotalHours()
+    {
+        return this.avaDisplayBookedHours() + this.avaDisplayUnbookedHours();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayActivityPurpose</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/11/13      AVA_012426_HoursJournal
+    /// </summary>
+    /// <returns>smmActivityPurpose</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public display smmActivityPurpose avaDisplayActivityPurpose()
+    {
+        return smmActivities::find(this.ActivityNumber).Purpose;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetCategoryFromResource</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/03/04     AVA_013083_CategoryFromResource
+    /// </summary>
+    public void avaSetCategoryFromResource()
+    {
+        if (this.Resource)
+        {
+            this.CategoryId = ResourceFacade::getDefaultTimeCategoryId(this.Resource);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAProdTableOverviewFrm_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>AVAProdTableOverviewFrm_Extension</c> class is the extension for <c>ProdTableOverview</c>
+/// </summary>
+[ExtensionOf(formStr(ProdTableOverview))]
+final class AVAProdTableOverviewFrm_Extension
+{
+    public QueryBuildRange avaqbRangeRefTableId, avaqbRangeRefRecId;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>init</c> method.
+    /// </summary>
+    public void init()
+    {
+        Args locArgs;
+        
+        FormControl locFormControlBatch;
+        FormControl locFormControlProd;
+
+        locArgs = this.args();
+
+        next init();
+
+        locFormControlBatch = this.AVAQRCodeDisplay_ProdTable_Batch;
+        locFormControlProd  = this.AVAQRCodeDisplay_ProdTable_Prod;
+        
+        if(locArgs)
+        {
+            switch(locArgs.menuItemName())
+            {
+                case menuItemDisplayStr(PmfProcessBatchOverview):
+                    AVATechnicalValues.visible(true);
+                    locFormControlBatch.visible(true);
+                    locFormControlProd.visible(false);
+                    break;
+
+                case menuItemDisplayStr(ProdTableOverview):
+                    AVATechnicalValues.visible(false);
+                    locFormControlBatch.visible(false);
+                    locFormControlProd.visible(true);
+                    break;
+
+                default:
+                    AVATechnicalValues.visible(false);
+                    locFormControlBatch.visible(false);
+                    locFormControlProd.visible(true);
+            }
+        }
+
+        KCS_CCLtmpSpecifyValue_Categories_Txt.registerOverrideMethod(methodStr(FormStringControl, jumpRef), methodStr(AVAProdTableOverviewFrm_Extension, avaCategoriesTxtOverride), this);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCategoriesTxtOverride</Name>
+				<Source><![CDATA[
+    public void avaCategoriesTxtOverride(FormStringControl _callingControl)
+    {
+        switch(KCS_CCLtmpSpecifyValue.LineType)
+        {
+            case AVACCLDisplayLineType::Characteristic :
+                KCS_CCLtmpSpecifyValue_ds.object(fieldNum(KCS_CCLtmpSpecifyValue, CharacteristicId)).jumpRef();
+                break;
+            case AVACCLDisplayLineType::Category       :
+                KCS_CCLtmpSpecifyValue_ds.object(fieldNum(KCS_CCLtmpSpecifyValue, CategoryId)).jumpRef();
+                break;
+            default :
+                break;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaTechnicalValueUpdate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates Ranges and executes Queries
+    /// </summary>
+    public void avaTechnicalValueUpdate()
+    {
+        InventTable inventTableLoc = ProdTable.inventTable();
+
+        avaqbRangeRefTableId.value(queryValue(inventTableLoc.TableId));
+        avaqbRangeRefRecId.value(queryValue(inventTableLoc.RecId));
+
+        KCS_CCLGroupDataEntityLink_ds.executeQuery();
+
+        this.avaUpdateFromCallerRecord_Data();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateFromCallerRecord_Data</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// sets TmpData for KCS_CCLCharacteristicValueRef
+    /// </summary>
+    protected void avaUpdateFromCallerRecord_Data()
+    {
+        ProdParameters prodParametersLoc = ProdParameters::find();
+
+        KCS_CCLCharacteristicValueRef::AddRefValues(KCS_CCLGroupDataEntityLink_ds.cursor());
+        KCS_CCLtmpSpecifyValue.setTmpData(KCS_CCLtmpSpecifyValue::FillFromRefGroup(KCS_CCLGroupDataEntityLink_ds.cursor(), prodParametersLoc.AVACharacteristicsClassForExpression));
+
+        KCS_CCLtmpSpecifyValue_ds.executeQuery();
+        KCS_CCLtmpSpecifyValue_ds.refresh();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitGroupDataEntityLink</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes Ranges for KCS_CCLGroupDataEntityLink
+    /// </summary>
+    public void avaInitGroupDataEntityLink()
+    {
+        ProdParameters prodParametersLoc = ProdParameters::find();
+
+        QueryBuildRange qbRangeGroupIdLoc;
+        QueryBuildDataSource avaqbds_GroupDataEntityLink = KCS_CCLGroupDataEntityLink_q.dataSourceTable(TableNum(KCS_CCLGroupDataEntityLink));
+
+        avaqbRangeRefTableId	= avaqbds_GroupDataEntityLink.addRange(fieldNum(KCS_CCLGroupDataEntityLink, RefTableId));
+        avaqbRangeRefTableId.status(RangeStatus::Hidden);
+        
+        avaqbRangeRefRecId		= avaqbds_GroupDataEntityLink.addRange(fieldNum(KCS_CCLGroupDataEntityLink, RefRecId));
+        avaqbRangeRefRecId.status(RangeStatus::Hidden);
+
+        qbRangeGroupIdLoc       = avaqbds_GroupDataEntityLink.addRange(fieldNum(KCS_CCLGroupDataEntityLink, GroupId));
+        qbRangeGroupIdLoc.value(queryValue(prodParametersLoc.AVACharacteristicsClassForExpression));
+        qbRangeGroupIdLoc.status(RangeStatus::Hidden);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitSpecifyValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Adds a range to filter out empty values
+    /// </summary>
+    public void avaInitSpecifyValue()
+    {
+        QueryBuildRange avaQbr_value;
+        QueryBuildDataSource avaQbds_specifyValue = KCS_CCLtmpSpecifyValue_q.dataSourceTable(tableNum(KCS_CCLtmpSpecifyValue));
+        str avaQueryStr;
+            
+        avaQueryStr = strFmt('((%1.%2 != %3) || (%1.%4 != %5) || (%1.%6 != %7) || (%1.%8 != %9))'
+                        , tableStr(KCS_CCLtmpSpecifyValue)
+                        , fieldStr(KCS_CCLtmpSpecifyValue, ValueDate)
+                        , queryValue(dateNull())
+                        , fieldStr(KCS_CCLtmpSpecifyValue, ValueInteger)
+                        , queryValue(0)
+                        , fieldStr(KCS_CCLtmpSpecifyValue, ValueReal)
+                        , queryValue(0.0)
+                        , fieldStr(KCS_CCLtmpSpecifyValue, ValueString)
+                        , queryValue(''));
+
+        avaQbr_value = avaQbds_specifyValue.addRange(fieldNum(KCS_CCLtmpSpecifyValue, ValueString));
+        avaQbr_value.value(avaQueryStr);
+        avaQbr_value.status(RangeStatus::Hidden);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

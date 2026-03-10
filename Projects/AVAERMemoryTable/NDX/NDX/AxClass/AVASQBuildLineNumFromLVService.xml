@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASQBuildLineNumFromLVService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA_010889_SQBuildLineNumFromLVPos
+/// </summary>
+final class AVASQBuildLineNumFromLVService extends SysOperationServiceBase
+{
+    str         packedQuery;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>startOperation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_010889_SQBuildLineNumFromLVPos
+    /// </summary>
+    /// <param name = "_dataContract">AVASQBuildLineNumFromLVContract</param>
+    public void startOperation(AVASQBuildLineNumFromLVContract _dataContract)
+    {
+        System.Exception ex;
+        #OCCRetryCount
+
+        packedQuery             = _dataContract.parmPackedQuery();
+
+        try
+        {
+            this.processOperation();
+        }
+
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+
+        catch (Exception::Error)
+        {
+            error("@NDX:NXAErrorOccured");
+            retry;
+        }
+
+        catch (Exception::CLRError)
+        {
+            ex = ClrInterop::getLastException();
+
+            if (ex != null)
+            {
+                ex = ex.get_InnerException();
+                if (ex != null)
+                {
+                    error("@NDX:NXAErrorOccured");
+                }
+            }
+
+            retry;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processOperation</Name>
+				<Source><![CDATA[
+    private void processOperation()
+    {
+        Query                           query = new Query(SysOperationHelper::base64Decode(packedQuery));
+        QueryRun                        queryRun;
+        SalesQuotationLine              sql;
+
+        queryrun = new QueryRun(query);
+
+        while (queryRun.next())
+        {
+            sql = queryRun.get(tableNum(SalesQuotationLine));
+
+            ttsbegin;
+            sql.selectForUpdate(true);
+            sql.LineNum = sql.buildLineNumFromLVPos();
+            sql.doUpdate();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

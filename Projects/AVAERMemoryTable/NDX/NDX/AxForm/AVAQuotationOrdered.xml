@@ -1,0 +1,614 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>AVAQuotationOrdered</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class AVAQuotationOrdered extends FormRun
+{
+    QueryBuildRange ax2009quotationId_qbr;
+    QuotationId     quotationId;
+    boolean         last_ItemSum;
+    [FormObservable]
+    SalesLineAmount lineAmount;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSum</Name>
+				<Source><![CDATA[
+    display SalesLineAmount getSum()
+    {
+        return lineAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initSalesLineQtyOrdered</Name>
+				<Source><![CDATA[
+    public NDX_SalesLineQtyOrdered initSalesLineQtyOrdered()
+    {
+        Args                args;
+        SalesQuotationTable salesQuotationTable;
+        SalesQuotationLine  salesQuotationLine;
+        SalesLine           salesLine;
+        ItemId              l_ItemId, l_ItemIdOld;
+        NDX_SalesLineQtyOrdered l_salesLineQtyOrdered;
+        SalesQty            qtyInQuotation;
+        args = this.args();
+
+        if(args.record() && args.record().TableId == tablenum(SalesQuotationTable))
+        {
+            salesQuotationTable = args.record();
+            quotationId         = salesQuotationTable.QuotationId;
+
+            //while select * from salesLine order by Itemid where salesLine.AVAQuotationId == quotationId && !salesLine.RevRecIsBundleComponent
+            while select * from salesLine order by Itemid where salesLine.AVAQuotationId == quotationId && !salesLine.AVAItemSetComponent
+            {
+                qtyInQuotation = 0;
+
+             /*  while select * from SalesQuotationLine where SalesQuotationLine.QuotationId == quotationId
+                && SalesQuotationLine.ItemId == salesLine.ItemId
+                {
+                    qtyInQuotation += SalesQuotationLine.SalesQty;
+                }*/
+
+                select sum(SalesQty) from salesQuotationLine
+                    group by ItemId, QuotationId
+                    where salesQuotationLine.ItemId == salesLine.ItemId
+                       && salesQuotationLine.QuotationId == quotationId;
+
+                qtyInQuotation = salesQuotationLine.salesQty;
+
+                if(salesLine.ItemId == l_ItemId || !l_ItemId)
+                {
+                    SalesLineQtyOrdered.Delta = 0;
+                    ttsbegin;
+                    SalesLineQtyOrdered.ItemId               = salesLine.ItemId;
+                    SalesLineQtyOrdered.SalesUnit            = salesLine.SalesUnit;
+                    SalesLineQtyOrdered.InQuotation          = qtyInQuotation;
+                    SalesLineQtyOrdered.InvoicedInTotal      = salesLine.invoicedInTotal();
+                    SalesLineQtyOrdered.DelieveredInTotal    = salesLine.deliveredInTotal();
+                    SalesLineQtyOrdered.DelieverRemaining    = salesLine.RemainInventPhysical;
+                    //SalesLineQtyOrdered.OnOrder              = salesLine.onOrderInSalesUnit();//salesLine.KCS_EditQty(false, SalesLineQtyOrdered.OnOrder);
+                    //SalesLineQtyOrdered.OnOrder              = salesLine.SalesQty + salesLine.RevRecBundleQty;
+                    SalesLineQtyOrdered.OnOrder              = salesLine.SalesQty + salesLine.AVAItemSetCompQtyPerSerie;
+                    SalesLineQtyOrdered.Delta                = SalesLineQtyOrdered.InQuotation - SalesLineQtyOrdered.OnOrder;
+                    //  SalesLineQtyOrdered.LineAmount           = salesLine.LineAmount + salesLine.RevRecBundleNetAmount;
+                    SalesLineQtyOrdered.LineAmount           = salesLine.LineAmount;
+                    SalesLineQtyOrdered.SalesId              = salesLine.SalesId;
+                    SalesLineQtyOrdered.insert();
+                    ttscommit;
+
+                    l_ItemIdOld = salesLine.ItemId;
+                }
+                else
+                {
+                    //Altes Item Summe
+                    ttsbegin;
+                    l_salesLineQtyOrdered.clear();
+
+                    select sum(InvoicedInTotal), sum(DelieveredInTotal), sum(DelieverRemaining), sum(OnOrder), sum(LineAmount) from salesLineQtyOrdered
+                        group by ItemId, SalesUnit
+                        where salesLineQtyOrdered.ItemId == l_ItemIdOld
+                           /*&& salesLineQtyOrdered.SalesUnit == salesLine.SalesUnit*/;
+
+                    l_salesLineQtyOrdered.ItemId               = SalesLineQtyOrdered.ItemId;
+                    l_salesLineQtyOrdered.SalesUnit            = SalesLineQtyOrdered.SalesUnit;
+
+                    l_salesLineQtyOrdered.InvoicedInTotal      = SalesLineQtyOrdered.invoicedInTotal;
+                    l_salesLineQtyOrdered.DelieveredInTotal    = SalesLineQtyOrdered.DelieveredInTotal;
+                    l_salesLineQtyOrdered.DelieverRemaining    = SalesLineQtyOrdered.DelieverRemaining;
+                    l_salesLineQtyOrdered.OnOrder              = SalesLineQtyOrdered.OnOrder;
+                    l_salesLineQtyOrdered.LineAmount           = SalesLineQtyOrdered.LineAmount;
+
+                    select sum(SalesQty) from salesQuotationLine
+                        group by ItemId
+                        where salesQuotationLine.QuotationId == quotationId
+                           && salesQuotationLine.ItemId      == l_ItemIdOld;
+
+                   
+                    l_salesLineQtyOrdered.InQuotation = SalesQuotationLine.SalesQty;
+
+
+                    l_salesLineQtyOrdered.Delta     = l_salesLineQtyOrdered.InQuotation - l_salesLineQtyOrdered.OnOrder;
+                    l_salesLineQtyOrdered.SalesId = 'Summe';
+                    SalesLineQtyOrdered.data(l_salesLineQtyOrdered);
+                    SalesLineQtyOrdered.insert();
+                    ttscommit;
+
+                    SalesLineQtyOrdered.Delta = 0;
+                    //Neues Item Einzeln
+                    ttsbegin;
+                    SalesLineQtyOrdered.ItemId               = salesLine.ItemId;
+                    SalesLineQtyOrdered.SalesUnit            = salesLine.SalesUnit;
+                    SalesLineQtyOrdered.InQuotation          = qtyInQuotation;
+                    SalesLineQtyOrdered.InvoicedInTotal      = salesLine.invoicedInTotal();
+                    SalesLineQtyOrdered.DelieveredInTotal    = salesLine.deliveredInTotal();
+                    SalesLineQtyOrdered.DelieverRemaining    = salesLine.RemainInventPhysical;
+                    //SalesLineQtyOrdered.OnOrder              = salesLine.onOrderInSalesUnit();//salesLine.KCS_EditQty(false, SalesLineQtyOrdered.OnOrder);
+                    //SalesLineQtyOrdered.OnOrder              = salesLine.SalesQty + salesLine.RevRecBundleQty;
+                    SalesLineQtyOrdered.OnOrder              = salesLine.SalesQty + salesLine.AVAItemSetCompQtyPerSerie;
+                    SalesLineQtyOrdered.Delta                = SalesLineQtyOrdered.InQuotation - SalesLineQtyOrdered.OnOrder;
+                    //SalesLineQtyOrdered.LineAmount           = salesLine.LineAmount + salesLine.RevRecBundleNetAmount;
+                    SalesLineQtyOrdered.LineAmount           = salesLine.LineAmount;
+                    SalesLineQtyOrdered.SalesId              = salesLine.SalesId;
+                    SalesLineQtyOrdered.insert();
+                    ttscommit;
+
+                    l_ItemIdOld = salesLine.ItemId;
+                }
+
+                l_ItemId = salesLine.ItemId;
+            }
+            //Altes Item Summe
+            ttsbegin;
+            l_salesLineQtyOrdered.clear();
+
+            select sum(invoicedInTotal), sum(DelieveredInTotal), sum(DelieverRemaining), sum (OnOrder), sum(LineAmount) from SalesLineQtyOrdered
+                group by ItemId, SalesUnit
+                where salesLineQtyOrdered.ItemId == l_ItemIdOld;
+
+            
+            l_salesLineQtyOrdered.ItemId               = SalesLineQtyOrdered.ItemId;
+            l_salesLineQtyOrdered.SalesUnit            = SalesLineQtyOrdered.SalesUnit;
+
+            l_salesLineQtyOrdered.InvoicedInTotal      = SalesLineQtyOrdered.invoicedInTotal;
+            l_salesLineQtyOrdered.DelieveredInTotal    = SalesLineQtyOrdered.DelieveredInTotal;
+            l_salesLineQtyOrdered.DelieverRemaining    = SalesLineQtyOrdered.DelieverRemaining;
+            l_salesLineQtyOrdered.OnOrder              = SalesLineQtyOrdered.OnOrder;
+            l_salesLineQtyOrdered.LineAmount           = SalesLineQtyOrdered.LineAmount;
+
+            select sum(SalesQty) from salesQuotationLine
+                group by QuotationId, ItemId
+                where salesQuotationLine.QuotationId == quotationId  
+                && salesQuotationLine.ItemId == l_ItemIdOld;
+
+            l_salesLineQtyOrdered.InQuotation = SalesQuotationLine.SalesQty;
+
+            l_salesLineQtyOrdered.Delta     = l_salesLineQtyOrdered.InQuotation - l_salesLineQtyOrdered.OnOrder;
+            l_salesLineQtyOrdered.SalesId = 'Summe';
+            SalesLineQtyOrdered.data(l_salesLineQtyOrdered);
+            SalesLineQtyOrdered.insert();
+            ttscommit;
+
+            select sum(LineAmount) from salesLineQtyOrdered
+                group by SalesId
+                where SalesLineQtyOrdered.SalesId == 'Summe';
+
+            lineAmount = SalesLineQtyOrdered.LineAmount;
+            
+
+            SalesLineQtyOrdered_DS.executeQuery();
+        }
+        return l_salesLineQtyOrdered;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        NDX_SalesLineQtyOrdered     l_salesLineQtyOrdered;
+        super();
+
+        l_salesLineQtyOrdered.data(this.initSalesLineQtyOrdered());
+        ttsbegin;
+        l_salesLineQtyOrdered.clear();
+        l_salesLineQtyOrdered.SalesId = 'Gesamt';
+        l_salesLineQtyOrdered.LineAmount = element.getSum();
+        SalesLineQtyOrdered.data(l_salesLineQtyOrdered);
+        SalesLineQtyOrdered.insert();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTotalAmount</Name>
+				<Source><![CDATA[
+    public void getTotalAmount()
+    {
+        AmountMST totalAmount_loc = orderSum.realValue() + quotationSum.realValue();
+        TotalSum.realValue(totalAmount_loc);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAX2009Amount</Name>
+				<Source><![CDATA[
+    public void getAX2009Amount()
+    {
+        // Copy the query
+        Query query = new Query(AVAAX2009Ordered_ds.queryRun().query());
+
+        QueryBuildDataSource qbds = query.dataSourceTable(tableNum(AVAAX2009Ordered));
+        QueryRun qr;
+        AVAAX2009Ordered summedTrans;
+
+        // Sum LineAmountMst
+        qbds.addSelectionField(fieldNum(AVAAX2009Ordered, AX2009Amount), SelectionField::Sum);
+
+        qr = new QueryRun(query);
+        // Run the query
+        qr.next();
+
+        // Get the data
+        summedTrans = qr.get(tableNum(AVAAX2009Ordered));
+
+        // Set the new sum to the control
+        QuotationSum.realValue(summedTrans.AX2009Amount);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>SalesLineQtyOrdered</Name>
+				<Methods>
+					<Method>
+						<Name>displayOption</Name>
+						<Source><![CDATA[
+        public void displayOption(Common _record, FormRowDisplayOption _options)
+        {
+            NDX_SalesLineQtyOrdered l_salesLineQtyOrdered = _record;
+
+            if (l_salesLineQtyOrdered.SalesId == 'Summe')
+            {
+                _options.backColor(WinApi::RGB2int(255,255,0)); 
+            }
+            if (l_salesLineQtyOrdered.SalesId == 'Gesamt')
+            {
+                _options.backColor(WinApi::RGB2int(178,255,84)); 
+            }
+            super(_record, _options);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>AVAAX2009Ordered</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// init method
+        /// </summary>
+        public void init()
+        {
+            QueryBuildDataSource ax2009ordered_qbds;
+
+            super();
+
+            ax2009ordered_qbds      = AVAAX2009Ordered_q.dataSourceTable(tableNum(AVAAX2009Ordered));
+            ax2009quotationId_qbr   = ax2009ordered_qbds.addRange(fieldNum(AVAAX2009Ordered, AX2009QuotationId));
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// executeQuery method
+        /// </summary>
+        public void executeQuery()
+        {
+            ax2009quotationId_qbr.value(queryValue(quotationId));
+
+            super();
+
+            element.getAX2009Amount();
+            element.getTotalAmount();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="" />
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>SalesLineQtyOrdered</Name>
+			<Table>NDX_SalesLineQtyOrdered</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DelieveredInTotal</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DelieverRemaining</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Delta</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InQuotation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoicedInTotal</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OnOrder</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>AVAAX2009Ordered</Name>
+			<Table>AVAAX2009Ordered</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AX2009Amount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AX2009QuotationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@NDX:NXAQtyOrdered</Caption>
+		<Pattern xmlns="">SimpleList</Pattern>
+		<PatternVersion xmlns="">1.1</PatternVersion>
+		<Style xmlns="">SimpleList</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>FormActionPaneControl1</Name>
+				<Type>ActionPane</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>FormGroupControl1</Name>
+				<Pattern>CustomAndQuickFilters</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl>
+						<Name>QuickFilterControl1</Name>
+						<FormControlExtension>
+							<Name>QuickFilterControl</Name>
+							<ExtensionComponents />
+							<ExtensionProperties>
+								<AxFormControlExtensionProperty>
+									<Name>targetControlName</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>placeholderText</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>defaultColumnName</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+							</ExtensionProperties>
+						</FormControlExtension>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+				<FrameType>None</FrameType>
+				<Style>CustomFilter</Style>
+				<ViewEditMode>Edit</ViewEditMode>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGridControl">
+				<Name>Grid</Name>
+				<AllowEdit>No</AllowEdit>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<Type>Grid</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>SalesLineQtyOrdered_ItemId</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>ItemId</DataField>
+						<DataSource>SalesLineQtyOrdered</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>SalesLineQtyOrdered_SalesUnit</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>SalesUnit</DataField>
+						<DataSource>SalesLineQtyOrdered</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>SalesLineQtyOrdered_InQuotation</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>InQuotation</DataField>
+						<DataSource>SalesLineQtyOrdered</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>SalesLineQtyOrdered_OnOrder</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>OnOrder</DataField>
+						<DataSource>SalesLineQtyOrdered</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>SalesLineQtyOrdered_DelieveredInTotal</Name>
+						<Type>Real</Type>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>DelieveredInTotal</DataField>
+						<DataSource>SalesLineQtyOrdered</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>SalesLineQtyOrdered_DelieverRemaining</Name>
+						<Type>Real</Type>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>DelieverRemaining</DataField>
+						<DataSource>SalesLineQtyOrdered</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>SalesLineQtyOrdered_InvoicedInTotal</Name>
+						<Type>Real</Type>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>InvoicedInTotal</DataField>
+						<DataSource>SalesLineQtyOrdered</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>SalesLineQtyOrdered_Delta</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Delta</DataField>
+						<DataSource>SalesLineQtyOrdered</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>SalesLineQtyOrdered_SalesId</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>SalesId</DataField>
+						<DataSource>SalesLineQtyOrdered</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>SalesLineQtyOrdered_LineAmount</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>LineAmount</DataField>
+						<DataSource>SalesLineQtyOrdered</DataSource>
+					</AxFormControl>
+				</Controls>
+				<DataSource>SalesLineQtyOrdered</DataSource>
+				<Style>Tabular</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>FormGroupControl2</Name>
+				<Pattern>FieldsFieldGroups</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>OrderSum</Name>
+						<AllowEdit>No</AllowEdit>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataMethod>getSum</DataMethod>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>QuotationSum</Name>
+						<AllowEdit>No</AllowEdit>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>AVAAX2009Amount</ExtendedDataType>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>TotalSum</Name>
+						<AllowEdit>No</AllowEdit>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>AVAAX2009TotalAmount</ExtendedDataType>
+					</AxFormControl>
+				</Controls>
+				<ColumnsMode>Fill</ColumnsMode>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

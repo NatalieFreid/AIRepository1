@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPurchRFQSendDPCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// extension of class PurchRFQSendDP
+/// </summary>
+[ExtensionOf(classStr(PurchRFQSendDP))]
+final class AVAPurchRFQSendDPCls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initializeRequestForQuotationLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes a request for quotation line.
+    /// </summary>
+    /// <param name = "_vendRFQTrans">
+    /// A <c>VendRFQTrans</c> record which the request for quotation line should be created for.
+    /// </param>
+    /// <param name = "_vendRFQJour">
+    /// A <c>VendRFQJour</c> record which the request for quotation line should be created for.
+    /// </param>
+    /// <param name = "_ecoResCategory">
+    /// A <c>EcoResCategory</c> record which the request for quotation line should be created for.
+    /// </param>
+    /// <returns>
+    /// The initialized <c>PurchRFQSendTmp</c> request for quotation line record.
+    /// </returns>
+    protected PurchRFQSendTmp initializeRequestForQuotationLine(
+        VendRFQTrans    _vendRFQTrans,
+        VendRFQJour     _vendRFQJour,
+        EcoResCategory  _ecoResCategory)
+    {
+        PurchRFQSendTmp avaPurchRFQSendTmp = next initializeRequestForQuotationLine(_vendRFQTrans, _vendRFQJour, _ecoResCategory);
+
+        avaPurchRFQSendTmp.AVAHeaderNotesTop = this.avaGetDocumentNote(_vendRFQJour, AVATCVNotePosition::Top);
+        avaPurchRFQSendTmp.AVAHeaderNotesBottom = this.avaGetDocumentNote(_vendRFQJour, AVATCVNotePosition::Bottom);
+        avaPurchRFQSendTmp.AVANotesTop = this.avaGetDocumentNote(_vendRFQTrans, AVATCVNotePosition::Top);
+        avaPurchRFQSendTmp.AVANotesBottom = this.avaGetDocumentNote(_vendRFQTrans, AVATCVNotePosition::Bottom);
+
+        avaPurchRFQSendTmp.AVALineNum = _vendRFQTrans.LineNum;
+        avaPurchRFQSendTmp.AVAPriceUnit = _vendRFQTrans.PriceUnit;
+
+        avaPurchRFQSendTmp.AVAExpiryDate    = DateTimeUtil::date(DateTimeUtil::applyTimeZoneOffset(_vendRFQJour.ExpiryDateTime, DateTimeUtil::getCompanyTimeZone()));
+        avaPurchRFQSendTmp.AVAVendName      = LogisticsPostalAddress::findRecId(_vendRFQJour.DeliveryPostalAddress).avaName();
+
+        FormTextType avaFormTextType = this.avaGetFormTextType(_vendRFQJour.RFQUpdateType);
+        if(avaFormTextType != FormTextType::None)
+        {
+            avaFormTextType = FormTextType::AVAPurchRFQ2;
+            FormLetterRemarks formLetterRemarks = FormLetterRemarks::find(_vendRFQJour.LanguageId, avaFormTextType);
+            tmpPurchRFQSend.AVAFormLetterTxt       = formLetterRemarks.Txt;
+        }
+
+        [tmpPurchRFQSend.AVAExternalItemId, tmpPurchRFQSend.AVAExternalItemDescription] = this.avaExtItemInformation(_vendRFQTrans.ItemId, _vendRFQTrans.InventDim(), _vendRFQJour.VendAccount);
+        tmpPurchRFQSend.AVAItemName = InventTable::find(_vendRFQTrans.ItemId).avaNDXProductName(_vendRFQJour.LanguageId);
+        tmpPurchRFQSend.AVAItemDescription = _vendRFQTrans.Name;
+        tmpPurchRFQSend.VendRFQTrans = _vendRFQTrans.RecId;
+
+        return avaPurchRFQSendTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetFormTextType</Name>
+				<Source><![CDATA[
+    public FormTextType avaGetFormTextType(PurchRFQUpdateType _purchRFQUpdateType)
+    {
+        PurchRFQUpdateTypeModel model = PurchRFQUpdateTypeModel::newFromType(_purchRFQUpdateType);
+        FormTextType avaFormTextType;
+
+        if (model)
+        {
+            avaFormTextType = model.formTextType();
+        }
+
+        if(avaFormTextType == FormTextType::PurchRFQ)
+        {
+            return FormTextType::AVAPurchRFQ2;
+        }
+        else if(avaFormTextType == FormTextType::PurchRFQAccept)
+        {
+            return FormTextType::AVAPurchRFQAccept2;
+        }
+        else if(avaFormTextType == FormTextType::PurchRFQReject)
+        {
+            return FormTextType::AVAPurchRFQReject2;
+        }
+
+        return FormTextType::None;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetDocumentNote</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the note that has been attached to the request for quotation case, case line or amendment.
+    /// </summary>
+    /// <param name="_common">
+    /// A <c>Common</c> record that either contains the header information or line information.
+    /// </param>
+    /// <param name = "_notePosition">AVATCVNotePosition</param>
+    /// <returns>
+    /// The note that has been attached to the invoice.
+    /// </returns>
+    /// <exception cref="M:Exception::Error">
+    /// If the <c>common</c> record is not a <c>VendRFQJour</c> record or <c>VendRFQTrans</c> or <c>VendRFQAmendmentJour</c>
+    /// record.
+    /// </exception>
+    public Notes avaGetDocumentNote(Common _common,
+        AVATCVNotePosition _notePosition)
+    {
+        DocuRefSearch   docuRefSearch;
+        Notes           notes;
+        DocuOnFormular  docuOnFormular;
+        VendFormLetterDocument vendFormLetterDocument = VendFormLetterDocument::find();
+
+        switch (_common.TableId)
+        {
+            case tableNum(VendRFQJour):
+                docuOnFormular = DocuOnFormular::Head;
+                break;
+
+            case tableNum(VendRFQTrans):
+                docuOnFormular = DocuOnFormular::Line;
+                break;
+
+            case tableNum(VendRFQAmendmentJour):
+                docuOnFormular = DocuOnFormular::Line;
+                break;
+
+            default:
+                // Exit the method if the record is not VendRFQJour nor VendRFQTrans nor VendRFQAmendmentJour.
+                throw error(Error::wrongUseOfFunction(funcName()));
+        }
+
+        if ((vendFormLetterDocument.DocuOnPurchRFQ == docuOnFormular)
+            || (vendFormLetterDocument.DocuOnPurchRFQ == DocuOnFormular::All))
+        {
+            docuRefSearch = DocuRefSearch::KCS_TCVnewTypeAndRestrictAndNotePosition(_common,
+                                                                                vendFormLetterDocument.DocuTypePurchRFQ,
+                                                                                DocuRestriction::External,
+                                                                                _notePosition);
+            notes = Docu::concatDocuRefNotes(docuRefSearch);
+        }
+
+        return notes;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaExtItemInformation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns external item id and description
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_inventDim">InventDim</param>
+    /// <param name = "_custVendAccount">CustVendAC</param>
+    /// <returns>container</returns>
+    public container avaExtItemInformation(ItemId _itemId, InventDim _inventDim, CustVendAC _custVendAccount)
+    {
+        boolean avaExists;
+        InventTable avaInventTable = InventTable::find(_itemId);
+        CustVendExternalItem avaCustVendExternalItem;
+        ExternalItemFreeTxt avaExternalItemDescription;
+        ExternalItemId avaExternalItemId;
+
+        [avaExists, avaExternalItemId, avaExternalItemDescription, avaCustVendExternalItem] = CustVendExternalItemDescription::findExternalItemDescription(ModuleCustVend::Vend, _itemId, _inventDim, _custVendAccount, VendTable::find(_custVendAccount).VendItemGroupId);
+            
+        if(avaCustVendExternalItem.Description != ''
+            && avaCustVendExternalItem.ExternalItemTxt != '')
+        {
+            avaExternalItemDescription = avaCustVendExternalItem.Description + '\n' + avaCustVendExternalItem.ExternalItemTxt;
+        }
+        else if(avaCustVendExternalItem.ExternalItemTxt != '')
+        {
+            avaExternalItemDescription = avaCustVendExternalItem.ExternalItemTxt;
+        }
+        else if(avaCustVendExternalItem.Description != '')
+        {
+            avaExternalItemDescription = avaCustVendExternalItem.Description;
+        }
+
+        return [avaCustVendExternalItem.ExternalItemId,avaExternalItemDescription];
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

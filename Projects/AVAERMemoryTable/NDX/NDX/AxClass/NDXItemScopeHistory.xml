@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXItemScopeHistory</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// DebuC 16.06.23
+/// </summary>
+class NDXItemScopeHistory
+{
+    ItemId          itemId;
+    InventSiteId    inventSiteId;
+
+    Qty             PhysScope;
+    Qty             PhysOnHand;
+    Qty             AvailScope;
+    Qty             AvailOnHand;
+    yr              curYear;
+    QtyAverage      ConsumpCurMonth;
+    QtyAverage      ConsumpMedian;
+    QtyAverage      ConsumpCurMonthInventSite;
+    Qty             PhysScopeInventSite;
+    Qty             AvailScopeInventSite;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initFromInventTransferLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 04.07.23
+    /// </summary>
+    /// <param name = "inventTransferLine">InventTransferLine</param>
+    void initFromInventTransferLine(InventTransferLine inventTransferLine)
+    {
+        ;
+        itemId          = inventTransferLine.ItemId;
+        inventSiteId    = InventLocation::find(inventTransferLine.inventTransferTable().InventLocationIdTo).InventSiteId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromReqPO</Name>
+				<Source><![CDATA[
+     ///<summary>
+     ///DebuC 16.06.23
+     ///</summary>
+     ///<param name = "reqPO">ReqPO</param>
+    void initFromReqPO(ReqPO reqPO)
+    {
+        ;
+        itemId          = reqPO.ItemId;
+        inventSiteId    = reqPO.inventDim().InventSiteId;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromReqTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    /// <param name = "reqTrans">ReqTrans</param>
+    void initFromReqTrans(ReqTrans reqTrans)
+    {
+        ;
+        itemId          = reqTrans.ItemId;
+        inventSiteId    = reqTrans.inventDim().InventSiteId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmItemId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN 2024/07/03  AVA_011921_RoutBOMForm
+    /// </summary>
+    /// <param name = "_itemId">Itemid</param>
+    /// <returns>ItemId</returns>
+    public ItemId parmItemId(ItemId _itemId = ItemId)
+    {
+        itemId = _itemId;
+        return itemId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmInventSiteId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN 2024/07/03  AVA_011921_RoutBOMForm
+    /// </summary>
+    /// <param name = "_inventSiteId">InventSiteId</param>
+    /// <returns>InventSiteId</returns>
+    public InventSiteId parmInventSiteId(InventSiteId _inventSiteId = InventSiteId)
+    {
+        inventSiteId = _inventSiteId;
+        return inventSiteId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    protected void new()
+    {
+        curYear = year(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCurYear</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    /// <param name = "_curYear">yr</param>
+    /// <returns>yr</returns>
+    public yr parmCurYear(yr _curYear = curYear)
+    {
+        ;
+        curYear = _curYear;
+
+        return curYear;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setCurrentValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    /// <returns>container</returns>
+    container setCurrentValues()
+    {
+        InventDimParm           inventDimParm;
+        InventDim               inventDim;
+        KCS_ItemScopeHistory    scopeHistory;
+        InventOnhand            inventOnHand;
+        container               conRet = connull();        
+        NDX_ItemScopeHistoryInventSite    scopeHistoryInventSite;
+        date                    curdate = endmth(prevmth(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())));
+        date                    minDate = Global::dateMthFwd(curdate,-13);
+        Qty                     ConsumpAverageInventSite;
+        KCS_ItemScopeHistory    lScopeHistory;        
+        ;
+        if (!itemId)
+        {
+            Error("@NDX:NDXItemScopeMissingItemId");
+            return conRet;
+        }
+        if (!inventSiteId)
+        {
+            Error(strfmt("@NDX:NDXItemScopeMissingInventSiteId", itemId));       
+            return conRet;
+        }
+
+        scopeHistory    = KCS_ItemScopeHistory::find(itemId, curYear, mthofyr(DateTimeUtil::date(DateTimeUtil::getSystemDateTime())));
+        ConsumpCurMonth = (-1) * scopeHistory.ConsumpAverage;
+        
+        select sum(ConsumpSum) from scopeHistoryInventSite
+        join lScopeHistory where lScopeHistory.RecId == scopeHistoryInventSite.RefRecId
+                            && lScopeHistory.ItemId == itemId
+                            && lScopeHistory.HistoryDate <= curdate
+                            && lScopeHistory.HistoryDate >= minDate
+                            && scopeHistoryInventSite.InventSiteId == inventSiteId;
+
+        ConsumpAverageInventSite = scopeHistoryInventSite.ConsumpSum / 12.5;
+        ConsumpCurMonthInventSite   = (-1) * ConsumpAverageInventSite;        
+
+        ConsumpMedian   = (-1) * KCS_ItemScopeHistory::ItemMedianPerDate(itemId);
+
+        // Bestand auf Standort-Ebene
+        inventDim.InventSiteId  = inventSiteId;
+        inventDimParm.initFromInventDim(inventDim);
+        inventOnHand    = inventOnHand::newParameters(itemId, inventDim, inventDimParm);
+        PhysOnHand      = inventOnHand.physicalInvent();
+
+        AvailOnHand     = inventOnHand.availECP();
+
+        if (!scopeHistory.ConsumpAverage || ReqGroup::find(inventTable::find(itemId).ReqGroupId).CovRule == ReqCovType::Req)
+        {
+            PhysScope   = 0;
+            AvailScope  = 0;
+        }
+        else
+        {
+            PhysScope   = PhysOnHand / abs(scopeHistory.ConsumpAverage);
+            AvailScope  = AvailOnHand / abs(scopeHistory.ConsumpAverage);
+        }        
+        if (!ConsumpAverageInventSite || ReqGroup::find(inventTable::find(itemId).ReqGroupId).CovRule == ReqCovType::Req)
+        {
+            PhysScope   = 0;
+            AvailScope  = 0;            
+            PhysScopeInventSite   = 0;
+            AvailScopeInventSite  = 0;            
+        }
+        else
+        {
+            PhysScopeInventSite   = PhysOnHand / abs(ConsumpAverageInventSite);
+            AvailScopeInventSite  = AvailOnHand / abs(ConsumpAverageInventSite);
+        }        
+        conRet += ConsumpCurMonth;
+        conRet += ConsumpMedian;
+        conRet += PhysOnHand;
+        conRet += AvailOnHand;
+        conRet += PhysScope;
+        conRet += AvailScope;        
+        conRet += ConsumpCurMonthInventSite;
+        conRet += PhysScopeInventSite;
+        conRet += AvailScopeInventSite;        
+
+        return conRet;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    public static NDXItemScopeHistory construct()
+    {
+        NDXItemScopeHistory itemScopeHistory = new NDXItemScopeHistory();
+
+        return itemScopeHistory;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

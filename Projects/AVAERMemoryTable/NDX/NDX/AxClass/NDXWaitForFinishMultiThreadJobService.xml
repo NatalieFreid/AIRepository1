@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXWaitForFinishMultiThreadJobService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>               
+/// PaffH 08.09.25
+/// </summary>
+class NDXWaitForFinishMultiThreadJobService extends SysOperationServiceBase
+{
+    NDXSignature signatureCurrentYear;
+    NDXSignature signatureLastYear;
+    NDXBatchProcessingTableHeader nDXBatchProcessingTableHeaderSalesCurrentYear;
+    NDXBatchProcessingTableHeader nDXBatchProcessingTableHeaderSalesLastYear;
+    NDXBatchProcessingTableHeader nDXBatchProcessingTableHeader;
+    NDXBatchProcessingTable nDXBatchProcessingTable;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 13.08.25
+    /// last modified: PaffH 10.09.25
+    /// wait for the multithreading processing of the determination of the alliance sales
+    /// </summary>
+    /// <param name = "_contract">NDXUmsatzCSRefreshContract</param>
+    public void process(NDXUmsatzCSRefreshContract _contract)
+    {
+        boolean loopEnd;
+        int maxloops;
+        int loops;
+        int sleepTime;
+        str message;
+
+        NDXBatchProcessingStatusInfoSales nDXBatchProcessingStatusInfoSales = NDXBatchProcessingStatusInfoSales::construct();
+        info(nDXBatchProcessingStatusInfoSales.toString("@NDXBase:NDXStartColon"));
+        // are there still active (running) jobs?
+        boolean active = false;
+
+        loops = 0;
+        loopEnd = false;
+        maxloops = 60 * 60 * 5;  // if the job runs longer than 5 hours, something is wrong
+        sleepTime = 1000;
+        while (!loopEnd)
+        {
+            sleep(sleepTime);
+            ++loops;
+            if (loops > maxloops)
+            {
+                message = "@NDXBase:NDXJobRuntimeExceeded";
+                checkFailed(message);
+                return;
+            }
+            // check for cancelation request every minute
+            if (loops mod 60 == 0)
+            {
+                NDXUmsatzParametersGlobal nDXUmsatzParametersGlobal = NDXUmsatzParametersGlobal::find(true);
+                if (nDXUmsatzParametersGlobal.InterruptBatchTaskWaitingForSalesAlliance == NoYes::Yes)
+                {
+                    ttsbegin;
+                    nDXUmsatzParametersGlobal.InterruptBatchTaskWaitingForSalesAlliance = NoYes::No;
+                    nDXUmsatzParametersGlobal.update();
+                    ttscommit;
+                    loopEnd = true;
+                    continue;
+                }
+            }
+
+
+            active = nDXBatchProcessingStatusInfoSales.hasActiveJobs();
+            if (!active)    // no reason to wait as all tasks are completed
+            {
+                loopEnd = true;
+            }
+        }
+        info(nDXBatchProcessingStatusInfoSales.toString("@NDXBase:NDXEndColon"));
+        return;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 13.08.25
+    /// </summary>
+    /// <param name = "_args">Args</param>
+    public static void main(Args _args)
+    {
+        NDXWaitForFinishMultiThreadJobService nDXWaitForFinishMultiThreadJobService = new NDXWaitForFinishMultiThreadJobService();
+        NDXUmsatzCSRefreshContract contract = new NDXUmsatzCSRefreshContract();
+        nDXWaitForFinishMultiThreadJobService.process(contract);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

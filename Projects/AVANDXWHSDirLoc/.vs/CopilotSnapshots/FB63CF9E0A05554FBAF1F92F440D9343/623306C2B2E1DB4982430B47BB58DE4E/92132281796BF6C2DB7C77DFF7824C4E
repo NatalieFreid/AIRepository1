@@ -1,0 +1,166 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAWHSLocDirActionQueryHelper</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Helper class for cloning and managing WHSLocDirAction queries
+/// </summary>
+internal final class AVAWHSLocDirActionQueryHelper
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>cloneQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Clones a WHSLocDirAction query by serializing and deserializing it
+    /// </summary>
+    /// <param name="_action">The source WHSLocDirAction record</param>
+    /// <returns>Packed query container</returns>
+    public static container cloneQuery(WHSLocDirAction _action)
+    {
+        container packedQuery;
+        Query query;
+        
+        try
+        {
+            // Get the existing query from the action
+            query = _action.getQuery();
+            
+            if (query)
+            {
+                // Pack the query into a container for serialization
+                packedQuery = query.pack();
+            }
+            else
+            {
+                warning("@AVAExtension:NoQueryFound");
+            }
+        }
+        catch (Exception::Error)
+        {
+            error("@AVAExtension:ErrorCloningQuery");
+        }
+        
+        return packedQuery;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>applyClonedQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Applies a cloned query to a WHSLocDirAction record
+    /// </summary>
+    /// <param name="_action">The target WHSLocDirAction record</param>
+    /// <param name="_packedQuery">The packed query container</param>
+    /// <returns>True if successful, false otherwise</returns>
+    public static boolean applyClonedQuery(WHSLocDirAction _action, container _packedQuery)
+    {
+        Query query;
+        boolean ret = false;
+        
+        try
+        {
+            if (_packedQuery != conNull())
+            {
+                // Unpack the query from the container
+                query = new Query(_packedQuery);
+                
+                if (query)
+                {
+                    // Set the query on the action record
+                    _action.setQuery(query);
+                    ret = true;
+                }
+                else
+                {
+                    warning("@AVAExtension:InvalidQueryContainer");
+                }
+            }
+            else
+            {
+                warning("@AVAExtension:EmptyQueryContainer");
+            }
+        }
+        catch (Exception::Error)
+        {
+            error("@AVAExtension:ErrorApplyingQuery");
+        }
+        
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyActionRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates a copy of a WHSLocDirAction record with batch enabled
+    /// </summary>
+    /// <param name="_sourceAction">The source action record</param>
+    /// <returns>The new action record, or null if failed</returns>
+    public static WHSLocDirAction copyActionRecord(WHSLocDirAction _sourceAction)
+    {
+        WHSLocDirAction newAction;
+        container packedQuery;
+        
+        if (!_sourceAction.RecId)
+        {
+            error("@AVAExtension:InvalidSourceRecord");
+            return newAction;
+        }
+        
+        ttsbegin;
+        
+        try
+        {
+            // Step 1: Clone the query BEFORE changing batch flag
+            packedQuery = AVAWHSLocDirActionQueryHelper::cloneQuery(_sourceAction);
+            
+            // Step 2: Create new record by copying all fields
+            newAction.data(_sourceAction);
+            newAction.RecId = 0;
+            newAction.IsCopied = NoYes::No; // New record is NOT marked as copied
+            
+            // Step 3: Set batch enabled to Yes (this will trigger query reset in standard)
+            newAction.IsBatchEnabled = NoYes::Yes;
+            
+            // Step 4: Insert the new record
+            newAction.insert();
+            
+            // Step 5: Re-apply the cloned query to override the reset
+            if (packedQuery != conNull())
+            {
+                AVAWHSLocDirActionQueryHelper::applyClonedQuery(newAction, packedQuery);
+                newAction.update();
+            }
+            
+            // Step 6: Mark the source record as copied
+            _sourceAction.selectForUpdate(true);
+            _sourceAction.IsCopied = NoYes::Yes;
+            _sourceAction.update();
+            
+            ttscommit;
+            
+            info(strFmt("@AVAExtension:ActionCopiedSuccess", _sourceAction.LineNum, newAction.LineNum));
+        }
+        catch (Exception::Error)
+        {
+            ttsabort;
+            error("@AVAExtension:ErrorCopyingAction");
+            newAction = null;
+        }
+        
+        return newAction;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

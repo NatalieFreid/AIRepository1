@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXREACHROHSService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// REACH ROHS Operation Service
+/// </summary>
+public final class NDXREACHROHSService  extends SysOperationServiceBase
+{
+    identifierName className;
+    identifierName methodName;
+   
+    str importKey = 'ImportKey';
+    utcdatetime lastCheck;
+
+    NDXREACHROHSController controller;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmController</Name>
+				<Source><![CDATA[
+    public NDXREACHROHSController parmController(NDXREACHROHSController _controller = controller)
+    {
+        controller = _controller;
+        return controller;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    private void new()
+    {
+        SysOperationExecutionMode executionMode = SysOperationExecutionMode::Asynchronous;
+                
+        className = classId2Name(classIdGet(this));
+        methodName = 'updateREACHROHS';
+        importKey = strFmt('%1%2%3',className, methodName, importKey);
+        lastCheck = DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(), DateTimeUtil::getUserPreferredTimeZone());
+
+        controller = NDXREACHROHSController::construct(className, methodName, executionMode); 
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateREACHROHS</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// processing the files
+    /// </summary>
+    /// <param name = "_ndxREACHROHSContract">contract</param>
+    public void updateREACHROHS(NDXREACHROHSContract _ndxREACHROHSContract)
+    {
+        InventTable inventTable;
+        InventTable inventTableComp;
+        
+        Query q = new Query();
+        QueryRun qr;
+        QueryBuildDataSource qbds;
+        
+        dataAreaId uk = _ndxREACHROHSContract.parmDataAreaId();
+        boolean lCheckOnly = _ndxREACHROHSContract.parmCheckOnly();
+        date listDate = _ndxREACHROHSContract.parmCurrentDate();
+        
+        int nCount;
+        container   conUKExcl;
+        container   conUKNoSync;
+        boolean                 lDoSync;
+        
+        conUKExcl   += 'NSO';
+        conUKNoSync += 'NDX';
+
+        info(strfmt("@NDX:NDXREACHROHSUpdateStart", DateTimeUtil::toStr(DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(), DateTimeUtil::getUserPreferredTimeZone())), lCheckOnly ?  '('+"@NDX:NDXCheck"+')' : '' ));
+        
+        q.allowCrossCompany(true);
+        qbds = q.addDataSource(tablenum(InventTable));
+        qbds.addGroupByField(fieldnum(InventTable, dataAreaId));
+        qbds.addSortField(fieldnum(InventTable, dataAreaId));
+        
+        if (uk)
+        {
+            q.addCompanyRange(uk);
+        }
+        qr = new QueryRun(q);
+        while (qr.next())
+        {
+            inventTableComp = qr.get(tablenum(InventTable));
+
+            if (confind(conUKExcl, inventTableComp.dataAreaId))
+            {
+                continue;
+            }
+            
+            changecompany(inventTableComp.dataAreaId)
+            {
+                inventTable = null;
+                lDoSync     = false;
+
+                select count(RecId) from inventTable
+                        where inventTable.KCS_IsSalesItem == NoYes::Yes
+                            && inventTable.NDX_REACH_Listdate
+                            && inventTable.NDX_REACH_Listdate != listDate;
+                    
+                nCount = inventTable.RecId;
+
+                if(lCheckOnly)
+                {
+                    info(strfmt("@NDX:NDXREACHROHSInfo", inventTable.dataAreaId, nCount));
+                    nCount = 0;
+                    while select firstonly10 inventTable
+                        where inventTable.KCS_IsSalesItem == NoYes::Yes
+                            && inventTable.NDX_REACH_Listdate
+                            && inventTable.NDX_REACH_Listdate != listDate
+                    {
+                        nCount++;
+                        info(strfmt('%3) [%1-%2]', inventTable.dataAreaId, inventTable.ItemId, nCount));
+                    }
+                }
+                else
+                {
+                    info(strfmt("@NDX:NDXREACHROHSInfo1", inventTable.dataAreaId, nCount));
+
+                    update_recordset inventTable
+                        setting NDX_REACH_Listdate = listDate
+                        where inventTable.KCS_IsSalesItem == NoYes::Yes
+                            && inventTable.NDX_REACH_Listdate
+                            && inventTable.NDX_REACH_Listdate != listDate;
+                } 
+            }
+        }
+        info(strfmt("@NDX:NDXREACHROHSUpdateFinished", DateTimeUtil::toStr(DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(), DateTimeUtil::getUserPreferredTimeZone())), lCheckOnly ? '(' + "@NDX:NDXCheck" + ')' : '' ));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>startImportBatch</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Start the batch job
+    /// </summary>
+    static public void startImportBatch()
+    {
+        NDXREACHROHSController controller;
+        NDXREACHROHSService updateService;
+
+        SysOperationStartResult result;
+
+        updateService = new NDXREACHROHSService();
+        controller = updateService.parmController();
+
+        result = controller.startOperation();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Constructor
+    /// </summary>
+    /// <returns>NDXREACHROHSService instance</returns>
+    static public NDXREACHROHSService construct()
+    {
+        return new NDXREACHROHSService();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

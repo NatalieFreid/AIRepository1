@@ -1,0 +1,356 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAChangeBOMRoute</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// class created to contain the logic for changing BOM and route mappings
+/// </summary>
+public class AVAChangeBOMRoute
+{
+    public BOMVersion   bomVersion;
+    public ProdTable    prodTable;
+    public RouteVersion routeVersion;
+
+    public boolean      replaceBom;
+    public boolean      replaceRoute;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>runBOMRouteReplacement</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// static method that runs replacement logic
+    /// </summary>
+    /// <param name = "_prodTable">ProdTable</param>
+    /// <param name = "_bomVersion">BOMVersion</param>
+    /// <param name = "_routeVersion">RouteVersion</param>
+    /// <returns>boolean</returns>
+    public static boolean runBOMRouteReplacement(
+        ProdTable _prodTable,
+        BOMVersion _bomVersion,
+        RouteVersion _routeVersion)
+    {
+        AVAChangeBOMRoute changeBOMRoute = new AVAChangeBOMRoute();
+        boolean ret;
+
+        changeBOMRoute.init(_prodTable, _bomVersion, _routeVersion);
+        ret = changeBOMRoute.replaceBOMRoute();
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// method that initializes all class variables
+    /// </summary>
+    /// <param name = "_prodTable">ProdTable</param>
+    /// <param name = "_bomVersion">BOMVersion</param>
+    /// <param name = "_routeVersion">RouteVersion</param>
+    public void init(
+        ProdTable _prodTable,
+        BOMVersion _bomVersion,
+        RouteVersion _routeVersion)
+    {
+        this.parmBomVersion(_bomVersion);
+        this.parmProdTable(_prodTable);
+        this.parmRouteVersion(_routeVersion);
+
+        this.parmReplaceBom(_prodTable.BOMId != _bomVersion.BOMId);
+        this.parmReplaceRoute(_prodTable.RouteId != _routeVersion.RouteId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>replaceBOMRoute</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Main method for BOMRoute replacement
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean replaceBOMRoute()
+    {
+        if(this.checkInputParameters() == false)
+        {
+            return false;
+        }
+
+        this.startReplacement();
+
+        info("@NDX:NXABOMRouteReplacementSuccessful");
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkInputParameters</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if all input parameters are correct
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean checkInputParameters()
+    {
+        boolean ret = true;
+
+        if (!prodTable.ProdId)
+        {
+            throw error("@SYS83964");
+        }
+        else if (!replaceRoute && !replaceBom)
+        {
+            warning("@NDX:NXABOMRouteNoChanges");
+            ret = false;
+        }
+        else if (replaceRoute
+            && !this.checkRoute())
+        {
+            ret = false;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>startReplacement</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Starts the replacement logic
+    /// </summary>
+    public void startReplacement()
+    {
+        ttsbegin;
+
+        this.deleteBomRoute();
+        this.avaBomRouteCopyJob();
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteBomRoute</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// deletes ProdBom and ProdRoute related to initialized ProdId if replacement parameters are enabled
+    /// </summary>
+    public void deleteBomRoute()
+    {
+        ProdBom     locProdBom;
+        ProdRoute   locProdRoute;
+        
+        if (replaceBom)
+        {
+            delete_from locProdBom
+                where locProdBom.ProdId     == prodTable.ProdId;
+        }
+
+        if (replaceRoute)
+        {
+            delete_from locProdRoute
+                where locProdRoute.ProdId   == prodTable.ProdId;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaBomRouteCopyJob</Name>
+				<Source><![CDATA[
+    public void avaBomRouteCopyJob()
+    {
+        if ((replaceBom && !prodTable.SkipCreateBOMLines)
+            || (replaceRoute && !prodTable.SkipCreateRouteOperations))
+        {
+            BOMRouteCopyJob bomRouteCopyJob = BOMRouteCopyJob::newToProd(prodTable, bomVersion.BOMId, routeVersion.RouteId);
+            bomRouteCopyJob.runOperation();
+        }
+        else
+        {
+            throw error("@NDX:NXABOMRouteReplaceError");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateProdTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// updates prodTable with matching ProdId with provided BOMId und RouteId values, replaces class ProdTable variable afterwards
+    /// </summary>
+    public void updateProdTable()
+    {
+        ProdTable locProdTable;
+
+        locProdTable            = ProdTable::find(prodTable.ProdId, true);
+        locProdTable.BOMId      = bomVersion.BOMId;
+        locProdTable.RouteId    = routeVersion.RouteId;
+        locProdTable.update();
+        
+        this.parmProdTable(locProdTable);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkRoute</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if route is missing operations and if it should be replaced
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean checkRoute()
+    {
+        boolean         ret =true;
+
+        // Alle Arbeitsgaenge im alten Arbeitsplan muessen auch im neuen sein!
+        if (this.isRouteMissing())
+        {
+            ret = this.dialogReplaceRoute();
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isRouteMissing</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns true if at any point a route is missing for the ProdRoute steps
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean isRouteMissing()
+    {
+        ProdRoute   locProdRoute;
+
+        while select locProdRoute
+            order by OprNum
+            where locProdRoute.ProdId == prodTable.ProdId
+        {
+            if (!this.findFirstOpr(locProdRoute.OprNum))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialogReplaceRoute</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates NoYesCancel dialog and returns error, true or false depending on input
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean dialogReplaceRoute()
+    {
+        DialogButton    dialogButton = Box::yesNoCancel(strfmt('%1 %2', "@NDX:NXABOMRouteOprNumDiff", "@NDX:NXABOMRouteReplaceRoute"), DialogButton::Cancel, "@NDX:NXABOMRouteOprNumDiff");
+
+        if (dialogButton == DialogButton::Cancel)
+        {
+            throw error("@NDX:NXABOMRouteOprNumDiff");
+        }
+        else if (dialogButton != dialogButton::Yes)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findFirstOpr</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// calls findFirstOpr method from Route table
+    /// </summary>
+    /// <param name = "_oprNum">OprNum</param>
+    /// <returns>Route</returns>
+    public Route findFirstOpr(OprNum _oprNum)
+    {
+        return Route::findFirstOpr(routeVersion.RouteId, _oprNum);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmProdTable</Name>
+				<Source><![CDATA[
+    // Contains all parm methods
+
+    public ProdTable parmProdTable(ProdTable _prodTable = prodTable)
+    {
+        prodTable = _prodTable;
+        return prodTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmBomVersion</Name>
+				<Source><![CDATA[
+    public BOMVersion parmBomVersion(BOMVersion _bomVersion = bomVersion)
+    {
+        bomVersion = _bomVersion;
+        return bomVersion;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmRouteVersion</Name>
+				<Source><![CDATA[
+    public RouteVersion parmRouteVersion(RouteVersion _routeVersion = routeVersion)
+    {
+        routeVersion = _routeVersion;
+        return routeVersion;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmReplaceBom</Name>
+				<Source><![CDATA[
+    public boolean parmReplaceBom(boolean _replaceBom = replaceBom)
+    {
+        replaceBom = _replaceBom;
+        return replaceBom;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmReplaceRoute</Name>
+				<Source><![CDATA[
+    public boolean parmReplaceRoute(boolean _replaceRoute = replaceRoute)
+    {
+        replaceRoute = _replaceRoute;
+        return replaceRoute;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

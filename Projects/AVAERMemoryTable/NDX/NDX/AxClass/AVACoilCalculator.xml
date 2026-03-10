@@ -1,0 +1,379 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACoilCalculator</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class AVACoilCalculator
+{
+    AVACoilWeight                   coilWeight;
+    AVACoilWeight                   coilWeight_Rounded;
+    boolean                         calculated;
+
+    ItemId                          itemId;
+    AVACoilWidth                    coilWidth;
+    AVACoilInsideDiameter           coilInsideWidth;
+    AVACoilOutsideDiameter          coilOutsideWidth;
+    NDXTRUMPFMaterialCharacteristic materialCharacteristic;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmItemId</Name>
+				<Source><![CDATA[
+    public ItemId parmItemId(ItemId _itemId = itemId)
+    {
+        itemId = _itemId;
+
+        return itemId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCoilWidth</Name>
+				<Source><![CDATA[
+    public InventWidth parmCoilWidth(AVACoilWidth _coilWidth = coilWidth)
+    {
+        coilWidth = _coilWidth;
+
+        return coilWidth;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCoilInsideDiameter</Name>
+				<Source><![CDATA[
+    public AVACoilInsideDiameter parmCoilInsideDiameter(AVACoilInsideDiameter _coilInsideWidth = coilInsideWidth)
+    {
+        coilInsideWidth = _coilInsideWidth;
+
+        return coilInsideWidth;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCoilOutsideDiameter</Name>
+				<Source><![CDATA[
+    public AVACoilOutsideDiameter parmCoilOutsideDiameter(AVACoilOutsideDiameter _coilOutsideWidth = coilOutsideWidth)
+    {
+        coilOutsideWidth = _coilOutsideWidth;
+
+        return coilOutsideWidth;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    protected void init()
+    {
+        InventTable             inventTable;
+        InventTable_NDXTrumpf   inventTable_NDXTrumpf;
+
+        inventTable = InventTable::find(itemId);
+
+        if (inventTable)
+        {
+            inventTable_NDXTrumpf = InventTable_NDXTrumpf::findByInventTable(inventTable.RecId);
+
+            if (inventTable_NDXTrumpf)
+            {
+                materialCharacteristic = NDXTRUMPFMaterialCharacteristic::findByRecId(inventTable_NDXTrumpf.CharacteristicRefRecId);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validCalculate</Name>
+				<Source><![CDATA[
+    protected boolean validCalculate()
+    {
+        boolean valid;
+
+        valid = true;
+
+        if (!materialCharacteristic)
+        {
+            valid = false;
+        }
+
+        return valid;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calculateWeight</Name>
+				<Source><![CDATA[
+    public void calculateWeight()
+    {
+        this.init();
+        if (this.validCalculate())
+        {
+            this.doCalculateWeight();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>doCalculateWeight</Name>
+				<Source><![CDATA[
+    public void doCalculateWeight()
+    {
+        real pi = 3.141592653589793;
+        real tenPowerNegativNine = 0.000000001;
+        real materiaWeigh;
+
+        materiaWeigh = materialCharacteristic.NDX_Density * 1000;
+
+        coilWeight =((pi*power((coilOutsideWidth/2.0),2.0)*coilWidth)-(pi*power((coilInsideWidth/2),2.0)*coilWidth))*materiaWeigh*tenPowerNegativNine;
+
+        this.setRoundedCoilWeight();
+
+        calculated = true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setRoundedCoilWeight</Name>
+				<Source><![CDATA[
+    public void setRoundedCoilWeight()
+    {
+        coilWeight_Rounded = AVACoilCalculator::roundKilograms(coilWeight);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>coilWeight</Name>
+				<Source><![CDATA[
+    public AVACoilWeight coilWeight(boolean rounded = true)
+    {
+        AVACoilWeight   localCoilWeight;
+
+        if (rounded)
+        {
+            localCoilWeight = coilWeight_Rounded;
+        }
+        else
+        {
+            localCoilWeight = coilWeight;
+        }
+
+        return localCoilWeight;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calculated</Name>
+				<Source><![CDATA[
+    public boolean calculated()
+    {
+        return calculated;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    public static AVACoilCalculator construct()
+    {
+        AVACoilCalculator   coilCalculator;
+
+        coilCalculator = new AVACoilCalculator();
+
+        return coilCalculator;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>qtyOnLocation</Name>
+				<Source><![CDATA[
+    public static InventQtyPhysicalOnhand qtyOnLocation(ItemId _itemId, InventDim _inventDimCriteria)
+    {
+        InventSum       inventSum;
+        InventDim       inventDim;
+        InventDimParm   inventDimParm;
+
+        inventDimParm.initFromInventDim(_inventDimCriteria);
+
+        select sum(ReservPhysical), sum(PhysicalInvent) from inventSum
+            where inventSum.itemId == _itemId
+               && inventSum.PhysicalInvent > 0
+                #InventDimExistsJoin(inventSum.InventDimId, inventDim, _inventDimCriteria, inventDimParm);
+
+        return inventSum.PhysicalInvent;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getLocationWeight</Name>
+				<Source><![CDATA[
+    public static Weight getLocationWeight(ItemId _itemId, InventQtyPhysicalOnhand _physicalOnhand)
+    {
+        Weight                  locationWeight;
+        InventUnitId            inventUnitId;
+        UnitOfMeasureRecId      unitOfMeasureFrom;
+        UnitOfMeasureRecId      unitOfMeasureTo;
+
+        if (_physicalOnhand)
+        {
+            inventUnitId        = InventTable::find(_itemId).inventUnitId();
+            unitOfMeasureFrom   = UnitOfMeasure::findBySymbol(inventUnitId).RecId;
+            unitOfMeasureTo     = UnitOfMeasureInternalCode::avaFindByCodeSymbol(UnitOfMeasureCodeSymbol::Kilograms).UnitOfMeasure;
+
+            if (inventUnitId
+             && unitOfMeasureFrom
+             && unitOfMeasureto)
+            {
+                locationWeight = UnitOfMeasureConverter::convert(_physicalOnhand,
+                                                                 unitOfMeasureFrom,
+                                                                 unitOfMeasureTo,
+                                                                 NoYes::No);
+            }
+        }
+
+        return locationWeight;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>roundKilograms</Name>
+				<Source><![CDATA[
+    public static Weight roundKilograms(Weight _weight)
+    {
+        UnitOfMeasure                   unitOfMeasure;
+        UnitOfMeasureInternalCode       unitOfMeasureInternalCode;
+        Weight                          roundedWeight;
+
+        select firstonly unitOfMeasure
+            exists join unitOfMeasureInternalCode
+                where unitOfMeasureInternalCode.UnitOfMeasure   == unitOfMeasure.RecId
+                   && unitOfMeasureInternalCode.CodeSymbol      == UnitOfMeasureCodeSymbol::Kilograms;
+
+        if (unitOfMeasure)
+        {
+            roundedWeight = roundDownDec(_weight, unitOfMeasure.AVACoilDecimalPrecision);
+        }
+        else
+        {
+            throw error("@NDX:NoInternalKg");
+        }
+
+        return roundedWeight;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateItem</Name>
+				<Source><![CDATA[
+    public static container validateItem(ItemId _itemId)
+    {
+        boolean                     valid;
+        str                         errorMessage;
+        InventTable                 inventTable;
+        InventTable_NDXTrumpf       inventTable_NDXTrumpf;
+        InventUnitId                inventUnitId;
+        UnitOfMeasure               unitOfMeasure;
+        UnitOfMeasureInternalCode   unitOfMeasureInternalCode;
+        
+
+        valid                   = true;
+        inventTable             = InventTable::find(_itemId);
+        inventTable_NDXTrumpf   = InventTable_NDXTrumpf::findByInventTable(inventTable.RecId);
+
+        if (!inventTable
+         || !inventTable_NDXTrumpf)
+        {
+            valid           = false;
+            errorMessage    = "@SYS84466";
+        }
+        else if (!inventTable_NDXTrumpf.CharacteristicRefRecId)
+        {
+            valid           = false;
+            errorMessage    = "@NDX:NoCoilItemMaterial";
+        }
+        else
+        {
+            inventUnitId = inventTable.inventUnitId();
+
+            unitOfMeasure = UnitOfMeasure::findBySymbol(inventUnitId);
+
+            if (unitOfMeasure.UnitOfMeasureClass != UnitOfMeasureClass::Mass)
+            {
+                valid           = false;
+                errorMessage    = "@NDX:UnitIsNotMass";
+            }
+            else
+            {
+                unitOfMeasureInternalCode =  UnitOfMeasureInternalCode::findByUnitOfMeasure(unitOfMeasure.RecId);
+
+                if (!unitOfMeasureInternalCode)
+                {
+                    valid           = false;
+                    errorMessage    = "@NDX:NoStandardUnit";
+                }
+                else if (unitOfMeasureInternalCode.CodeSymbol != UnitOfMeasureCodeSymbol::Grams
+                      && unitOfMeasureInternalCode.CodeSymbol != UnitOfMeasureCodeSymbol::Kilograms
+                      && unitOfMeasureInternalCode.CodeSymbol != UnitOfMeasureCodeSymbol::Tonnes)
+                {
+                    valid           = false;
+                    errorMessage    = "@NDX:NoCoilUnit";
+                }
+            }
+        }
+
+
+
+        return [valid, errorMessage];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calculateCoilWeight</Name>
+				<Source><![CDATA[
+    public static AVACoilWeight calculateCoilWeight(ItemId                  _itemId,
+                                                    AVACoilWidth            _width,
+                                                    AVACoilInsideDiameter   _insideWidth,
+                                                    AVACoilOutsideDiameter  _outsideWidth,
+                                                    boolean                 _rounded        = true)
+    {
+        AVACoilCalculator   coilCalculator;
+        AVACoilWeight       coilWeight;
+
+        coilCalculator = AVACoilCalculator::construct();
+
+        coilCalculator.parmItemId(_itemId);
+        coilCalculator.parmCoilWidth(_width);
+        coilCalculator.parmCoilInsideDiameter(_insideWidth);
+        coilCalculator.parmCoilOutsideDiameter(_outsideWidth);
+
+        coilCalculator.calculateWeight();
+        
+        coilWeight = coilCalculator.coilWeight(_rounded);
+
+
+        return coilWeight;
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

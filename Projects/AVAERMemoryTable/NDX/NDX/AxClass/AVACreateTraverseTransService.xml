@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACreateTraverseTransService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN 2014/02/21
+/// </summary>
+class AVACreateTraverseTransService extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_contract">AVACreateTraverseTransContract</param>
+    public void process(AVACreateTraverseTransContract _contract)
+    {      
+        #OCCRetryCount
+
+        try
+        {
+            this.writeData(_contract);
+            this.nextRecord(_contract);
+        }
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>writeData</Name>
+				<Source><![CDATA[
+    private void writeData(AVACreateTraverseTransContract _contract)
+    {
+        AVATraverseTrans    travTrans;
+        AVATravNum          travNum, basketNum;
+        Qty                 qty;
+        ItemId              itemid;
+        ProdId              prodId;
+        boolean             create = false;
+        ProdBOM             prodBOM;
+
+        travNum = _contract.parmTraverseNum();
+        basketNum = _contract.parmBasketNum();
+        qty = _contract.parmQty();
+        itemid = _contract.parmItemId();
+        prodId = _contract.parmProdId();
+
+        if (qty)
+        {
+            select firstonly forupdate travTrans where travtrans.ProdId == prodId
+                                      && travTrans.TravNum == travNum
+                                      && travTrans.ItemId == itemid
+                                      && !travTrans.BasketNum
+                                      && travTrans.TravStatus == AVATravStatus::Empty ;
+            if (travTrans.RecId)
+            {
+                ttsbegin;
+                travTrans.Qty = travTrans.Qty + qty;
+                travTrans.update();
+                ttscommit;
+            }
+            else
+            {
+                create = true;
+            }
+        }
+        else
+        {
+            create = true;
+        }
+        
+        if (create)
+        {
+            select firstonly prodBOM where prodBOM.ProdId == prodId
+                && prodBOM.ItemId == itemid;
+            travTrans.selectForUpdate();
+            travTrans.clear();
+            travTrans.initValue();
+            travTrans.ProdId = prodId;
+            travTrans.TravNum = travNum;
+            travTrans.BasketNum = basketNum;
+            travTrans.ItemId = itemid;
+            travTrans.Qty = qty;
+            travTrans.TravStatus = AVATravStatus::Empty;
+            travTrans.ProdUnit = prodBOM.UnitId;
+            travTrans.InventBatchId = ProdTable::find(prodId).inventDim().inventBatchId;
+            if (travTrans.ItemId && travTrans.ProdUnit != travTrans.PiecesUnit)
+            {
+                travTrans.Pieces = EcoResProductUnitConverter::convertForReleasedProduct(itemid, prodBOM.InventDimId, travTrans.Qty, UnitOfMeasure::unitOfMeasureIdBySymbol(travTrans.ProdUnit), UnitOfMeasure::unitOfMeasureIdBySymbol(travTrans.PiecesUnit));
+            }
+            else
+            {
+                travTrans.Pieces = travTrans.Qty;
+            }
+            travTrans.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>nextRecord</Name>
+				<Source><![CDATA[
+    private void nextRecord(AVACreateTraverseTransContract _contract)
+    {
+        MenuFunction nextRecord = new MenuFunction(menuItemActionStr(AVACreateTraverseTrans), MenuItemType::Action);
+        Args args = new Args();
+        Args.record(ProdTable::find(_contract.parmProdId()));
+        nextRecord.run(args);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

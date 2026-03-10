@@ -1,0 +1,539 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAProjectCreation</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// NS Zelinka 29.02.24
+/// </summary>
+internal final class AVAProjectCreation
+{
+    str 2               suffix;
+    ProjType            projType;
+
+    CompanyId           clsCompanyIdTmp;
+    CompanyId           clsCompanyIdToolTable;
+    CompanyId           clsCompanyIdProperty;
+    CompanyId           clsCompanyIdProducer;
+    CompanyId           clsCompanyIdMaintenance;
+
+    ProjInvoiceProjId   clsProjInvoiceProjId;
+
+    ProjGroupId         projGroupId;
+    KCS_PTMToolTable    kcs_PTMToolTable;
+    str                 callerMenuItem;
+    HierarchyIdBase     hierarchyId;
+    DimensionValue      costCenterValue,
+                        subCostCenterValue;
+
+    boolean             currentCompany,
+                        isProductionProject;
+
+    ProjParameters                      clsProjParameters;
+    AVADimensionNameProjCostCenter      clsAVADimensionNameCostCenter;
+    AVADimensionNameProjSubCostCenter   clsAVADimensionNameSubCostCenter;
+
+    const Name          costCenterDimensionName     = 'Kostenstellen';
+    const Name          subCostCenterDimensionName  = 'Unterkostenstelle';
+    AVAPTMToolId        toolId;
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 29.02.24
+    /// </summary>
+    /// <param name = "_args">Args object</param>
+    public static void main(Args _args)
+    {
+        KCS_PTMToolTable    locToolTable;
+        AVAProjectCreation  projectCreation;
+        str                 callerMenuItem;
+
+        if (_args && _args.record() && _args.record().TableId == tableNum(KCS_PTMToolTable))
+        {
+            locToolTable = _args.record();
+        }
+        else
+        {
+            throw error(Error::wrongUseOfFunction(funcName()));
+        }
+
+        if (_args.menuItemName() && 
+            (   _args.menuItemName() == menuItemActionStr(AVAProjectCreationPP) ||
+                _args.menuItemName() == menuItemActionStr(AVAProjectCreationSP)     ))
+        {
+            callerMenuItem = _args.menuItemName();
+        }
+        else
+        {
+            throw error(Error::wrongUseOfFunction(funcName()));
+        }
+
+        projectCreation = AVAProjectCreation::construct(locToolTable,
+                                                        callerMenuItem);
+        projectCreation.parmToolId(locToolTable.ToolId);
+
+        projectCreation.run();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmToolId</Name>
+				<Source><![CDATA[
+    private AVAPTMToolId parmToolId(AVAPTMToolId _toolId = toolid)
+    {
+        toolId = _toolId;
+        return toolId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 29.02.24
+    /// </summary>
+    /// <param name = "_kcs_PTMToolTable">KCS_PTMToolTable record</param>
+    /// <param name = "_callerMenuItem">caller Menu Item</param>
+    /// <returns>AVAProjectCreation object</returns>
+    public static AVAProjectCreation construct( KCS_PTMToolTable    _kcs_PTMToolTable,
+                                                str                 _callerMenuItem)
+    {
+        AVAProjectCreation  projectCreation = new AVAProjectCreation();
+
+        projectCreation.parmKCS_PTMToolTable(_kcs_PTMToolTable);
+        projectCreation.parmCallerMenuItem(_callerMenuItem);
+
+        return projectCreation;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmKCS_PTMToolTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 29.02.24
+    /// </summary>
+    /// <param name = "_kcs_PTMToolTable">KCS_PTMToolTable record</param>
+    /// <returns>KCS_PTMToolTable record</returns>
+    public KCS_PTMToolTable parmKCS_PTMToolTable(KCS_PTMToolTable _kcs_PTMToolTable = kcs_PTMToolTable)
+    {
+        kcs_PTMToolTable = _kcs_PTMToolTable;
+
+        return kcs_PTMToolTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCallerMenuItem</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 29.02.24
+    /// </summary>
+    /// <param name = "_callerMenuItem">caller Menu Item</param>
+    /// <returns>caller Menu Item</returns>
+    public str parmCallerMenuItem(str _callerMenuItem = callerMenuItem)
+    {
+        callerMenuItem = _callerMenuItem;
+
+        return callerMenuItem;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 04.03.24
+    /// </summary>
+    public void run()
+    {
+        FormDataSource  toolTableDataSource = FormDataUtil::getFormDataSource(kcs_PTMToolTable);
+
+        this.validate();
+        this.init();
+
+        if (currentCompany)
+        {
+            this.openProjTableCreate();
+        }
+        else
+        {
+            changecompany(clsCompanyIdTmp)
+            {
+                this.openProjTableCreate();
+            }
+        }
+
+        //toolTableDataSource.research(true);
+        kcs_ptmtooltable = kcs_ptmToolTable::find(toolId);
+        toolTableDataSource.executeQuery();
+        toolTableDataSource.positionToRecord(kcs_PTMToolTable); 
+        toolTableDataSource.refresh();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>openProjTableCreate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 04.03.24
+    /// </summary>
+    private void openProjTableCreate()
+    {
+        Args        args;
+        FormRun     formRun;
+        container   projCreateCont;
+
+        projCreateCont = [  projType,                           // ProjType
+                            projGroupId,                        // ProjGroupId
+                            kcs_PTMToolTable.ToolId + suffix,   // ProjId
+                            kcs_PTMToolTable.ToolName,          // ProjName
+                            costCenterValue,                    // CostCenter
+                            subCostCenterValue,                 // SubCostCenter
+                            kcs_PTMToolTable.ToolId,            // ToolId
+                            isProductionProject ? '1' : '0',    // IsProductionProject
+                            hierarchyId,                        // HierarchyId
+                            kcs_PTMToolTable.DataAreaId,        // callerCompany
+                            kcs_PTMToolTable.KCS_PropertyUK,    // PropertyCompany
+                            clsProjInvoiceProjId                // ProjInvoiceProjId to be set
+                            ];
+
+        args = new Args(formStr(ProjTableCreate));
+        args.parm(con2Str(projCreateCont));
+            
+        formRun = new FormRun(args);
+        formRun.init();
+        formRun.run();
+        formRun.wait();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 04.03.24
+    /// </summary>
+    private void init()
+    {
+        ProjParameters  locProjParameters;
+        ProjParameters  locProjParametersToolTable;
+        ProjParameters  locProjParametersProperty;
+        ProjParameters  locProjParametersProducer;
+        ProjParameters  locProjParametersMaintenance;
+        
+        clsCompanyIdTmp         = '';
+        clsCompanyIdToolTable   = kcs_PTMToolTable.DataAreaId;
+        clsCompanyIdProperty    = kcs_PTMToolTable.KCS_PropertyUK;
+        clsCompanyIdProducer    = kcs_PTMToolTable.KCS_ProducerUK;
+        clsCompanyIdMaintenance = kcs_PTMToolTable.KCS_MaintenanceUK;
+
+        locProjParameters                       = ProjParameters::find();
+        if(clsCompanyIdToolTable)
+        {
+            changecompany(clsCompanyIdToolTable)
+            {
+                locProjParametersToolTable      = ProjParameters::find();
+            }
+        }
+        if(clsCompanyIdProperty)
+        {
+            changecompany(clsCompanyIdProperty)
+            {
+                locProjParametersProperty       = ProjParameters::find();
+            }
+        }
+        if(clsCompanyIdProducer)
+        {
+            changecompany(clsCompanyIdProducer)
+            {
+                locProjParametersProducer       = ProjParameters::find();
+            }
+        }
+        if(clsCompanyIdMaintenance)
+        {
+            changecompany(clsCompanyIdMaintenance)
+            {
+                locProjParametersMaintenance    = ProjParameters::find();
+            }
+        }
+        
+        this.initCostCenterDimensions();
+
+        if (callerMenuItem == menuItemActionStr(AVAProjectCreationPP))
+        {
+            clsCompanyIdTmp = kcs_PTMToolTable.KCS_ProducerUK;
+            if(     clsCompanyIdProperty
+                &&  clsCompanyIdProducer
+                &&  clsCompanyIdProperty != clsCompanyIdProducer)
+            {
+                clsProjInvoiceProjId = clsCompanyIdProperty;
+            }
+        }
+        else if (callerMenuItem == menuItemActionStr(AVAProjectCreationSP))
+        {
+            clsCompanyIdTmp = kcs_PTMToolTable.KCS_MaintenanceUK;
+            if(     clsCompanyIdProducer
+                &&  clsCompanyIdToolTable
+                &&  clsCompanyIdProducer != clsCompanyIdToolTable)
+            {
+                clsProjInvoiceProjId = clsCompanyIdToolTable;
+            }
+            else if(    clsCompanyIdMaintenance
+                    &&  clsCompanyIdToolTable
+                    &&  clsCompanyIdMaintenance != clsCompanyIdToolTable)
+            {
+                clsProjInvoiceProjId = clsCompanyIdToolTable;
+            }
+
+        }
+
+        currentCompany = clsCompanyIdTmp == curExt();
+
+        switch (callerMenuItem)
+        {
+            case menuItemActionStr(AVAProjectCreationPP) :
+                suffix              = locProjParameters.AVAPPSuffix;
+                projType            = currentCompany ? locProjParameters.AVAPPTypeIntern                    : locProjParameters.AVAPPTypeExtern;
+                projGroupId         = currentCompany ? locProjParameters.AVAPPGroupIntern                   : locProjParameters.AVAPPGroupExtern;
+                if(clsProjInvoiceProjId)
+                {
+                    projType        = locProjParameters.AVAPPTypeExtern;
+                    projGroupId     = locProjParameters.AVAPPGroupExtern;
+                }
+                hierarchyId         = currentCompany ? this.getHierarchyId(locProjParameters.AVAPPTemplate) : this.getHierarchyId(locProjParametersProducer.AVAPPTemplate, kcs_PTMToolTable.KCS_ProducerUK);
+                isProductionProject = true;
+                break;
+
+            case menuItemActionStr(AVAProjectCreationSP) :
+                suffix              = locProjParameters.AVASPSuffix;
+                projType            = currentCompany ? locProjParameters.AVASPTypeIntern                    : locProjParameters.AVASPTypeExtern;
+                projGroupId         = currentCompany ? locProjParameters.AVASPGroupIntern                   : locProjParameters.AVASPGroupExtern;
+                hierarchyId         = currentCompany ? this.getHierarchyId(locProjParameters.AVASPTemplate) : this.getHierarchyId(locProjParametersMaintenance.AVASPTemplate, kcs_PTMToolTable.KCS_MaintenanceUK);
+                isProductionProject = false;
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initCostCenterDimensions</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>createSalesLineTmpTableRecord</c> method.
+    ///     AVA - Schneider 09.08.2024
+    /// </summary>
+    private void initCostCenterDimensions()
+    {
+        clsProjParameters                   = ProjParameters::find();
+
+        clsAVADimensionNameCostCenter       = clsProjParameters.AVADimensionNameCostCenter;
+        clsAVADimensionNameSubCostCenter    = clsProjParameters.AVADimensionNameSubCostCenter;
+
+        if(     clsAVADimensionNameCostCenter       == '' 
+            ||  clsAVADimensionNameSubCostCenter    == '')
+        {
+            clsAVADimensionNameCostCenter       = costCenterDimensionName;
+            clsAVADimensionNameSubCostCenter    = subCostCenterDimensionName;
+        }
+
+        if(clsAVADimensionNameCostCenter)
+        {
+            costCenterValue     = this.getDimensionValue(   kcs_PTMToolTable.DefaultDimension,
+                                                            clsAVADimensionNameCostCenter);
+        }
+
+        if(clsAVADimensionNameSubCostCenter)
+        {
+            subCostCenterValue  = this.getDimensionValue(   kcs_PTMToolTable.DefaultDimension,
+                                                            clsAVADimensionNameSubCostCenter);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDimensionValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 04.03.24
+    /// </summary>
+    /// <param name = "_defaultDimension">LedgerDefaultDimensionValueSet</param>
+    /// <param name = "_dimensionName">dimensionName</param>
+    /// <returns>DimensionValue</returns>
+    private DimensionValue getDimensionValue(   LedgerDefaultDimensionValueSet  _defaultDimension,
+                                                Name                            _dimensionName)
+    {
+        DefaultDimensionView    defaultDimensionView;
+
+        select firstonly DisplayValue
+            from    defaultDimensionView
+            where   defaultDimensionView.DefaultDimension   == _defaultDimension
+                &&  defaultDimensionView.Name               == _dimensionName;
+
+        return defaultDimensionView.DisplayValue;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 04.03.24
+    /// </summary>
+    private void validate()
+    {
+        this.initCostCenterDimensions();
+        
+        if (!kcs_PTMToolTable.KCS_PropertyUK)
+        {
+            throw Error("@NDX:NXAPropertyCompanyForDeviceIsNotDefined");        //Eigentümer für das Betriebsmittel ist nicht definiert
+        }
+
+        if (!costCenterValue)
+        {
+            throw Error("@NDX:NXAFinancialDimensionCostCenterIsNotDefined");    //Finanzdimension Kostenstelle ist nicht definiert
+        }
+
+        if (!subCostCenterValue)
+        {
+            throw Error("@NDX:NXAFinancialDimensionSubCostCenterIsNotDefined");  //Finanzdimension Unterkostenstelle ist nicht definiert
+        }
+
+        if (callerMenuItem == menuItemActionStr(AVAProjectCreationPP) &&
+            !kcs_PTMToolTable.KCS_ProducerUK)
+        {
+            throw Error("@NDX:NXAProducerCompanyForDeviceIsNotDefined");        //Hersteller für das Betriebsmittel ist nicht definiert
+        }
+        else if (callerMenuItem == menuItemActionStr(AVAProjectCreationSP)  &&
+                !kcs_PTMToolTable.KCS_MaintenanceUK)
+        {
+            throw Error("@NDX:NXAMaintenanceCompanyForDeviceIsNotDefined");     //Unterhalt UK für das Betriebsmittel ist nicht definiert
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateDraft</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 13.03.24
+    /// </summary>
+    /// <param name = "_hierarchyId">HierarchyIdBase</param>
+    /// <returns>boolean true or false</returns>
+    public static boolean validateDraft(HierarchyIdBase _hierarchyId)
+    {
+        ProjPlanVersion         projPlanVersion;
+        PSAActivityEstimates    estimate;
+
+        while select projPlanVersion
+            where projPlanVersion.HierarchyId == _hierarchyId
+        {
+            if (!projPlanVersion.validateWrite())
+            {
+                return false;
+            }
+        }
+
+        
+        while select estimate
+            where estimate.ProjPlanHierarchyId == _hierarchyId
+        {
+            if (!estimate.validateWrite())
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHierarchyId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 14.03.24
+    /// </summary>
+    /// <param name = "_hierarchyName">HierarchyName</param>
+    /// <param name = "_companyId">CompanyId - optional</param>
+    /// <returns>HierarchyIdBase</returns>
+    private HierarchyIdBase getHierarchyId( HierarchyName   _hierarchyName,
+                                            CompanyId       _companyId = curExt())
+    {
+        HierarchyIdBase localHierarchyId;
+
+        if (_companyId == curExt())
+        {
+            localHierarchyId = Hierarchy::findByNameType(   _hierarchyName,
+                                                            HierarchyType::Project,
+                                                            NoYes::Yes).HierarchyId;
+        }
+        else    
+        {
+            changecompany(_companyId)
+            {
+                localHierarchyId = Hierarchy::findByNameType(   _hierarchyName,
+                                                                HierarchyType::Project,
+                                                                NoYes::Yes).HierarchyId;
+            }
+        }
+
+        return localHierarchyId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateToolTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 14.03.24
+    /// </summary>
+    /// <param name = "_toolId">AVAPTMToolId</param>
+    /// <param name = "_projId">ProjId</param>
+    /// <param name = "_isProductionProject">boolean - true or false production or service project</param>
+    public static void updateToolTable( AVAPTMToolId    _toolId,
+                                        ProjId          _projId,
+                                        boolean         _isProductionProject)
+    {
+        KCS_PTMToolTable    kcs_PTMToolTable = KCS_PTMToolTable::find(_toolId, true);
+
+        if (kcs_PTMToolTable && _projId)
+        {
+            ttsbegin;
+            if (_isProductionProject)
+            {
+                kcs_PTMToolTable.AVAICProjProd          = _projId;
+            }
+            else
+            {
+                kcs_PTMToolTable.AVAICProjMaintenance   = _projId;
+            }
+
+            kcs_PTMToolTable.update();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

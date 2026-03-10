@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADeleteNotReleasedProduct</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+internal final class AVADeleteNotReleasedProduct
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args   _args)
+    {
+        EcoResProduct           ecoResProduct;
+        EcoResProductMaster     ecoResProductMaster;
+        EcoResProductCategory   ecoResProductCategory;
+        InventTable             inventTable;
+        str                     notReleasedProdStr;
+        EcoResDistinctProduct   EcoResDistinctProduct;
+        Query                   query = new Query(queryStr(EcoResProductListPage));
+        QueryRun                queryRun;
+       // QueryRun                queryRun = new QueryRun(queryStr(EcoResProductListPage));
+        QueryBuildDataSource    qbds,qbdsProductDimension;
+        Range                   range;
+
+
+       
+
+
+        range = queryValue(DictTable::getRelationTypeFromTableName(tableStr(EcoResDistinctProduct)));
+        //disable link to product dimensions since distinct product cannot have product dimensions
+        qbdsProductDimension = query.dataSourceName(queryDataSourceStr(EcoResProductListPage, EcoResProductDimensionGroupProduct));
+        qbdsProductDimension.enabled(false);
+
+        qbds = query.dataSourceName(queryDataSourceStr(EcoResProductListPage, EcoResProduct));
+        QueryBuildRange queryBuildRange = qbds.addRange(fieldNum(EcoResProduct, InstanceRelationType));
+        queryBuildRange.value(range);
+        //queryBuildRange.status(RangeStatus::Hidden);
+
+        EcoResProductTranslation::queryAddDefaultLanguage(query);
+        queryRun = new QueryRun(query);
+
+        while (queryRun.next())
+        {
+            ecoResProduct = queryRun.get(tableNum(ecoResProduct));
+            select firstonly crosscompany  Product from inventTable
+                where inventTable.Product == ecoResProduct.RecId;
+            if (!inventTable.Product)
+            {
+                if (notReleasedProdStr != '')
+                {
+                    notReleasedProdStr += '; ';
+                }
+                notReleasedProdStr += ecoResProduct.DisplayProductNumber;
+            }
+        }
+
+        if (notReleasedProdStr)
+        {
+            Info(notReleasedProdStr);
+        }
+
+        if (notReleasedProdStr != '')
+        {
+            if (Box::yesNo('Wollen sie diese Produkte löschen', DialogButton::No) == DialogButton::Yes)
+            {
+                queryRun.reset();
+                while (queryRun.next())
+                {
+                    ecoResProduct = queryRun.get(tableNum(EcoResProduct));
+                    select firstonly crosscompany  Product from inventTable
+                        where inventTable.Product == ecoResProduct.RecId;
+                    if (!inventTable.Product)
+                    {
+                        ecoResProduct.selectForUpdate(true);
+                        ttsbegin;
+                        ecoResProduct.delete();
+                        ttscommit;
+                    }
+                }
+            }
+        }
+
+
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

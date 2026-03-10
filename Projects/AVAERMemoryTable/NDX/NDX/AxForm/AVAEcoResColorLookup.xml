@@ -1,0 +1,296 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>AVAEcoResColorLookup</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class AVAEcoResColorLookup extends FormRun
+{
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeSelect</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// extension of closeSelect method
+    /// </summary>
+    /// <param name = "_selectString">str</param>
+    public void closeSelect(str _selectString)
+    {
+        Args locArgs = this.args();
+        ItemId avaItemId;
+        InventDim avaInventDim;
+
+        switch(locArgs.dataset())
+        {
+            case tableNum(SalesLine):
+                SalesLine avaSalesLine = locArgs.record() as SalesLine;
+                avaItemId = avaSalesLine.ItemId;
+                avaInventDim = avaSalesLine.inventDim();
+                break;
+
+            case tableNum(SalesQuotationLine):
+                SalesQuotationLine avaSalesQuotationLine = locArgs.record() as SalesQuotationLine;
+                avaItemId = avaSalesQuotationLine.ItemId;
+                avaInventDim = avaSalesQuotationLine.inventDim();
+                break;
+        }
+
+        if(!this.existsVariant(avaItemId, avaInventDim, _selectString))
+        {
+            this.createProductVariant(avaItemId, avaInventDim, _selectString);
+        }
+        
+        super(_selectString);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>existsVariant</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if the selected Variant already exists
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_inventDim">InventDim</param>
+    /// <param name = "_selectString">str</param>
+    /// <returns>boolean</returns>
+    public boolean existsVariant(ItemId _itemId, InventDim _inventDim, str _selectString)
+    {
+        InventDim inventDimLoc;
+
+        inventDimLoc.configId         = _inventDim.configId;
+        inventDimLoc.InventSizeId     = _inventDim.InventSizeId;
+        inventDimLoc.InventColorId    = _selectString;
+        inventDimLoc.InventStyleId    = _inventDim.InventStyleId;
+        inventDimLoc                  = InventDim::findOrCreate(inventDimLoc);
+
+        container dimValueContainer = EcoResProductVariantDimValue::getDimensionValuesContainerByInventDim(inventDimLoc);
+
+        return EcoResProductVariantManager::existDistinctProductVariant(InventTable::find(_itemId).Product().RecId, dimValueContainer);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createProductVariant</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates a product variant - FINTHI: implemented and corrected for color only
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_inventDim">InventDim</param>
+    /// <param name = "_selectString">str</param>
+    public void createProductVariant(ItemId     _itemId,
+                                     InventDim  _inventDim,
+                                     str        _selectString)
+    {
+        InventDim                           inventDimLoc;
+        EcoResColor                         locEcoResColor;
+        EcoResProductMasterColor            ecoResProductMasterColor;
+        EcoResProduct                       ecoResProduct = InventTable::find(_itemId).Product();
+
+        ttsbegin;
+
+        inventDimLoc.configId         = _inventDim.configId;
+        inventDimLoc.InventSizeId     = _inventDim.InventSizeId;
+        inventDimLoc.InventColorId    = _selectString;
+        inventDimLoc.InventStyleId    = _inventDim.InventStyleId;
+        inventDimLoc                  = InventDim::findOrCreate(inventDimLoc);
+
+        if (!InventDimCombination::find(_itemId, inventDimLoc.inventDimId))
+        {
+            EcoResProductMasterManager::addNewProductDimensionValue(
+                    ecoResProduct.RecId,
+                    EcoResProductDimensionAttribute::inventDimFieldId2DimensionAttributeRecId(fieldNum(InventDim, InventColorId)),
+                    inventDimLoc.InventColorId,
+                    '',
+                    '');
+
+            locEcoResColor = ecoResColor::findByName(_selectString);
+           
+            if (!EcoResProductMasterColor::existByProductColor(ecoResProduct.RecId, EcoResProductDimensionAttribute::inventDimFieldId2DimensionAttributeRecId(fieldNum(InventDim, InventColorId)), locEcoResColor.RecId))
+            {   
+                ecoResProductMasterColor.Color = locEcoResColor.RecId;
+                ecoResProductMasterColor.ColorProductMaster = ecoResProduct.RecId;
+                ecoResProductMasterColor.ColorProductDimensionAttribute = EcoResProductDimensionAttribute::inventDimFieldId2DimensionAttributeRecId(fieldNum(InventDim, InventColorId));
+                ecoResProductMasterColor.insert();
+            }
+
+            this.releaseVariant(ecoResProduct, inventDimLoc);    // Release the variant
+        }        
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>releaseVariant</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// releases create variant
+    /// </summary>
+    /// <param name = "_ecoResProduct">EcoResProduct</param>
+    /// <param name = "_inventDim">InventDim</param>
+    public void releaseVariant(EcoResProduct                  _ecoResProduct,
+                               InventDim                      _inventDim)
+    {
+        EcoResDistinctProductVariant        productVariant;
+        EcoResProductReleaseManagerBase     releaseManager;
+        container                           productVariantContainer;
+
+        productVariantContainer = EcoResProductVariantDimValue::getDimensionValuesContainerByInventDim(_inventDim);
+        
+        productVariant = EcoResProductVariantManager::findDistinctProductVariant(_ecoResProduct.RecId, productVariantContainer);
+
+        // Create product variant only if it is not created
+        if (!productVariant)
+        {
+            productVariant.DisplayProductNumber = EcoResProductNumberBuilderVariant::buildFromProductNumberAndDimensions(
+                                                        _ecoResProduct.productNumber(),
+                                                        productVariantContainer);
+
+            // Create Product variant with Product and dimensions provided
+            RefRecId ecoResDistinctProductVariantRecId  = EcoResProductVariantManager::createProductVariant(
+                _ecoResProduct.RecId, _ecoResProduct.SearchName, productVariantContainer, productVariant.DisplayProductNumber);
+
+            // Find newly created Product Variant
+            productVariant = ecoResDistinctProductVariant::find(ecoResDistinctProductVariantRecId);
+        }
+
+        // Now release the Product variant
+        releaseManager = EcoResProductReleaseManagerBase::newFromProduct(productVariant);
+        //releaseManager.parmDefaultProductLifecycleState(_state);
+        releaseManager.release();
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// init method of forms
+    /// </summary>
+    public void init()
+    {
+        super();
+
+        switch(this.args().dataset())
+        {
+            case tableNum(SalesLine):
+            case tableNum(SalesQuotationLine):
+                break;
+
+            default:
+                throw error(Error::wrongUseOfFunction(funcname()));
+        }
+
+        element.selectMode(EcoResColor_Name);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="" />
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>EcoResColor</Name>
+			<Table>EcoResColor</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AVADescription</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DisplayOrder</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HexCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Name</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefinerGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SysRowVersionNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Url</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<HeightMode xmlns="">SizeToContent</HeightMode>
+		<Pattern xmlns="">LookupGridOnly</Pattern>
+		<PatternVersion xmlns="">1.1</PatternVersion>
+		<Style xmlns="">Lookup</Style>
+		<WidthMode xmlns="">SizeToAvailable</WidthMode>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGridControl">
+				<Name>GridEcoResColor</Name>
+				<AllowEdit>No</AllowEdit>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<HeightMode>SizeToContent</HeightMode>
+				<Type>Grid</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>EcoResColor_Name</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<FilterExpression>%1</FilterExpression>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Name</DataField>
+						<DataSource>EcoResColor</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>EcoResColor_AVADescription</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AVADescription</DataField>
+						<DataSource>EcoResColor</DataSource>
+					</AxFormControl>
+				</Controls>
+				<DataSource>EcoResColor</DataSource>
+				<MultiSelect>No</MultiSelect>
+				<Style>Tabular</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

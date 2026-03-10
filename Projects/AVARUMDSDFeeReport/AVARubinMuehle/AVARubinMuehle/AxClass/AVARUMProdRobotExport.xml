@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVARUMProdRobotExport</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Export on Production start for Robot and Intranet
+/// </summary>
+public class AVARUMProdRobotExport
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>doExport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Export on Production start for Robot and Intranet
+    /// </summary>
+    /// <param name = "_prodTable">ProdTable to export for</param>
+    public void doExport(ProdTable _prodTable)
+    {
+        AVARUMProdRobotTable    locAVARUMProdRobotTable;
+        CustTable               locCustTable;
+        EcoResItemConfigurationName configId;
+        InventTable             locInventTable;
+        str                     receiver, sender;
+        CompanyInfo             companyInfo=CompanyInfo::find();
+        LogisticsPostalAddress  address;
+        str                     salesLabel;
+        str                     inventTxt;
+        Counter                 qtyPallets,qtyProPallet,qtyPackUnits;
+        Qty                     qtyFill;
+        SalesBarCode            eanCode;
+        ProdParameters          prodParameters=ProdParameters::find();
+        UnitOfMeasureSymbol     unitIdLP;
+
+        if (!prodParameters.AAVARUMUseRoboterIf)
+        {
+            return;
+        }
+
+        locInventTable=InventTable::find(_prodTable.ItemId);
+        configId=_prodTable.inventDim().configId;        
+
+        if (_prodTable.InventRefType==InventRefType::Sales)
+        {
+            SalesTable locSalesTable=SalesTable::find(_prodTable.InventRefId);
+            SalesLine  locSalesLine=SalesLine::findInventTransId(_prodTable.InventRefTransId);
+            locCustTable=locSalesTable.custTable_custAccount();
+            address=locSalesTable.deliveryAddress();
+            receiver=locSalesTable.DeliveryName+','+strltrim(address.ZipCode)+' '+address.City;
+            salesLabel=locSalesLine.AVARUMSalesCustomerLabel;
+            eanCode=locSalesLine.BarCode;
+        }
+        else
+        {
+            receiver='';
+            saleslabel='';
+            if (prodParameters.AVARUMBarcodeSetupId)
+            {
+                eanCode=InventItemBarcode::findByProductDimensions(_prodTable.ItemId, _prodTable.inventDim(), false, false, prodParameters.AVARUMBarcodeSetupId).itemBarCode;
+            }            
+        }
+        address=companyInfo.invoiceAddress();
+        sender=companyInfo.name()+','+strltrim(address.ZipCode)+' '+address.City;
+
+        InventDimCombination inventDimCombination= InventDimCombination::findByInventDim(_prodTable.ItemId, _prodTable.inventDim());
+        RecId productVarRecid=inventDimCombination.DistinctProductVariant, productRecid=locInventTable.Product;
+        inventTxt= EcoResProductTranslation::findByProductLanguage(productVarRecid, companyInfo.LanguageId).Description;
+        if (!inventTxt)
+        {
+            inventTxt= EcoResProductTranslation::findByProductLanguage(productRecid, companyInfo.LanguageId).Description;
+        }        
+        if (!inventTxt)
+        {
+            inventTxt=_prodTable.itemName();
+        }
+
+        [qtyPallets,qtyFill,qtyProPallet,qtyPackUnits, UnitIdLP]=this.calcQty(_prodTable.QtyStUp, productVarRecid, productRecid, locInventTable.inventUnitId());
+
+        // export robot interface record
+        locAVARUMProdRobotTable.clear();
+        locAVARUMProdRobotTable.initValue();
+        locAVARUMProdRobotTable.Id=newGuid();
+        locAVARUMProdRobotTable.ProdId=_prodTable.ProdId;
+        locAVARUMProdRobotTable.Receiver=receiver;
+        locAVARUMProdRobotTable.Sender=sender;
+        locAVARUMProdRobotTable.ItemTxt=inventTxt;
+        locAVARUMProdRobotTable.ItemId=_prodTable.ItemId;
+        locAVARUMProdRobotTable.InventBatchId=_prodTable.inventDim().inventBatchId;
+        locAVARUMProdRobotTable.StdUpDate=_prodTable.StUpDate;
+        locAVARUMProdRobotTable.BestBeforeDate=InventBatch::find(_prodTable.inventDim().inventBatchId, _prodTable.ItemId).PdsBestBeforeDate;
+        locAVARUMProdRobotTable.LabelId=AVARUMPalletLabels::find(_prodTable.ItemId, ConfigId, locCustTable.AccountNum).LabelId;
+        locAVARUMProdRobotTable.PalettSchemaId=locInventTable.AVARUMPalettSchemaId;
+        locAVARUMProdRobotTable.QtyPackUnits=qtyPackUnits;
+        locAVARUMProdRobotTable.QtyProPallet=qtyProPallet;
+        locAVARUMProdRobotTable.QtyFill=qtyFill;
+        locAVARUMProdRobotTable.EAN=eanCode;
+        locAVARUMProdRobotTable.SalesLabel=salesLabel;
+        locAVARUMProdRobotTable.CustAccount=locCustTable.AccountNum;  
+        locAVARUMProdRobotTable.insert();     
+
+        // LicensePlateId
+        Counter numLp=qtyPallets+prodParameters.AVARUMLicensePlateAdds;
+        if (!UnitIdLP)
+        {
+            WHSUOMSeqGroupLine WHSUOMSeqGroupLine;
+            select firstonly * from WHSUOMSeqGroupLine
+                where WHSUOMSeqGroupLine.UOMSeqGroupId==WHSInventTable::find(_prodTable.ItemId).UOMSeqGroupId
+                  && WHSUOMSeqGroupLine.DefaultProdUnitId;
+            UnitIdLP=WHSUOMSeqGroupLine.UnitId;
+        }
+        if (UnitIdLP)
+        {
+            AVARUMGuidId oldGuid;
+            for (int ii=1;ii<=numLp; ii++)
+            {
+                //Not:
+                //NumberSequenceReference numberSeqReference=WHSParameters::numRefWHSLicensePlateId();
+                //NumberSeq NumberSeq=NumberSeq::newGetNum(numberSeqReference);
+                //WHSLicensePlateId licensePlateId=NumberSeq.num();
+                //NumberSeq.used();
+                AVARUMProdRobotLicensePlate locAVARUMProdRobotLicensePlate;
+                WHSLicensePlateId licensePlateId=WHSLicensePlate::generateLicensePlateId(_prodTable.ItemId, UnitIdLP);
+
+                locAVARUMProdRobotLicensePlate.clear();
+                locAVARUMProdRobotLicensePlate.initValue();
+                locAVARUMProdRobotLicensePlate.Id=newGuid();
+                if (oldGuid && oldGuid==locAVARUMProdRobotLicensePlate.Id)
+                {
+                    sleep(100);
+                    locAVARUMProdRobotLicensePlate.Id=newGuid();
+                }
+                oldGuid=locAVARUMProdRobotLicensePlate.Id;
+                locAVARUMProdRobotLicensePlate.IdParent=locAVARUMProdRobotTable.Id;
+                locAVARUMProdRobotLicensePlate.LicensePlateId=licensePlateId;
+                locAVARUMProdRobotLicensePlate.insert();
+            }
+        }
+        else
+        {
+            warning("@AVARUM:AVARUMProdRobotExportMsg1");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calc quantities for robot interface
+    /// </summary>
+    /// <param name = "_qtyStartUp">QtyStartUp</param>
+    /// <param name = "_prodVarRecid">Recid of product variant</param>
+    /// <param name = "_prodRecid">Recid of product itself</param>
+    /// <param name = "_inventUnitId">Inventory UnitId</param>
+    /// <returns>Calculated quantities</returns>
+    public container calcQty(Qty _qtyStartUp, RecId _prodVarRecid, Recid _prodRecid, InventUnitId _inventUnitId)
+    {
+        //Remarks:
+        // UnitOfMeasureConversion: form/To  has changed, same factor is now in record for To/From! 
+        // Checks for conversion for variant if not found check product itself
+        Counter    qtyPallets,qtyProPallet,qtyPackUnits;
+        Qty        qtyFill;
+        UnitOfMeasureConversion  locUnitOfMeasureConversionProd, locUnitOfMeasureConversionPck, locUnitOfMeasureConversionPal;
+        UnitOfMeasureRecId inventUnitOfM=UnitOfMeasure::findBySymbol(_inventUnitId).RecId;
+        UnitOfMeasureSymbol unitIdLP;
+
+        select firstonly locUnitOfMeasureConversionProd
+            where locUnitOfMeasureConversionProd.Product==_prodVarRecid
+            && locUnitOfMeasureConversionProd.AVARUMProdUnit==NoYes::Yes;
+        if (!locUnitOfMeasureConversionProd)
+        {
+            select firstonly locUnitOfMeasureConversionProd
+            where locUnitOfMeasureConversionProd.Product==_prodRecid
+            && locUnitOfMeasureConversionProd.AVARUMProdUnit==NoYes::Yes;
+        }
+
+        if (locUnitOfMeasureConversionProd)
+        {
+            qtyPackUnits=0;
+            qtyPallets=any2Int(roundUp(_qtyStartUp / (locUnitOfMeasureConversionProd.Factor ?  locUnitOfMeasureConversionProd.Factor : 1), 1));
+            unitIdLP=UnitOfMeasure::find(locUnitOfMeasureConversionProd.FromUnitOfMeasure).Symbol;
+
+            select firstonly locUnitOfMeasureConversionPck
+            where locUnitOfMeasureConversionPck.Product==_prodVarRecid
+                && locUnitOfMeasureConversionPck.ToUnitOfMeasure==inventUnitOfM
+                && locUnitOfMeasureConversionPck.RecId!=locUnitOfMeasureConversionProd.RecId;
+            if (!locUnitOfMeasureConversionPck)
+            {
+                select firstonly locUnitOfMeasureConversionPck
+                where locUnitOfMeasureConversionPck.Product==_prodRecid
+                    && locUnitOfMeasureConversionPck.ToUnitOfMeasure==inventUnitOfM
+                    && locUnitOfMeasureConversionPck.RecId!=locUnitOfMeasureConversionProd.RecId;
+            }
+            if (locUnitOfMeasureConversionPck && locUnitOfMeasureConversionPck.Factor)
+            {
+                qtyFill=locUnitOfMeasureConversionPck.Factor;
+                qtyPackUnits=any2Int((_qtyStartUp / (locUnitOfMeasureConversionPck.Factor ? locUnitOfMeasureConversionPck.Factor : 1)));                
+            }
+
+            select firstonly locUnitOfMeasureConversionPal
+            where locUnitOfMeasureConversionPal.Product==_prodVarRecid
+                && locUnitOfMeasureConversionPal.ToUnitOfMeasure==locUnitOfMeasureConversionPck.FromUnitOfMeasure
+                && locUnitOfMeasureConversionPal.FromUnitOfMeasure==locUnitOfMeasureConversionProd.FromUnitOfMeasure;
+
+            if (!locUnitOfMeasureConversionPal)
+            {
+                select firstonly locUnitOfMeasureConversionPal
+                where locUnitOfMeasureConversionPal.Product==_prodRecid
+                    && locUnitOfMeasureConversionPal.ToUnitOfMeasure==locUnitOfMeasureConversionPck.FromUnitOfMeasure
+                    && locUnitOfMeasureConversionPal.FromUnitOfMeasure==locUnitOfMeasureConversionProd.FromUnitOfMeasure;
+            }
+            if (locUnitOfMeasureConversionPal && locUnitOfMeasureConversionPal.Factor)
+            {
+                qtyProPallet=any2int(locUnitOfMeasureConversionPal.Factor);
+            }
+        }
+
+        return [qtyPallets,qtyFill,qtyProPallet,qtyPackUnits, unitIdLP];
+    }
+
+    /*TST
+    static public void main(Args _args)
+    {
+        ProdTable locProdTable;
+        locProdTable=ProdTable::find('RU5CHARGE000000009');
+
+        if (1)
+        {
+            locProdTable.ItemId='8000920';
+            locProdTable.QtyStUp=1500;
+            InventDim inventDim=locProdTable.inventDim();
+            inventDim.configId='14';
+            locProdTable.InventDimId=inventDim::findOrCreate(inventDim).inventDimId;
+        }
+
+        new AVARUMProdRobotExport().doExport(locProdTable);
+    }
+    */
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

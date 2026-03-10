@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACorrectTraverseService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN 2014/02/21
+/// </summary>
+class AVACorrectTraverseService extends SysOperationServiceBase
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_contract">AVACorrectTraverseContract</param>
+    public void process(AVACorrectTraverseContract _contract)
+    {
+        #OCCRetryCount
+
+        try
+        {
+            this.setClosed(_contract);
+        }
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setClosed</Name>
+				<Source><![CDATA[
+    private void setClosed(AVACorrectTraverseContract _contract)
+    {
+        AVATraverseTrans    travTrans;
+        AVATraverseNum      travNum = _contract.parmTraverseNum();
+
+        select firstonly travTrans where travTrans.TravNum == travNum
+            && travTrans.TravStatus != AVATravStatus::Closed;
+        if (travTrans)
+        {
+            warning("@NDX:NXATravStatusWarning2");
+            return;
+        }
+
+
+        while select forupdate travTrans where travTrans.TravNum == travNum
+                                            && travTrans.TravStatus == AVATravStatus::Closed
+        {
+            ttsbegin;
+            travTrans.TravStatus = AVATravStatus::InProcess;
+            travTrans.update();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

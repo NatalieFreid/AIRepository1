@@ -1,0 +1,1384 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAWHSWorkExecuteDisplayWHSreceivingSO</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Handles the logic behind the RF flow used to AVAWHSreceivingSO
+/// </summary>
+[WHSWorkExecuteMode(WHSWorkExecuteMode::AVAWHSreceivingSO)]
+public class AVAWHSWorkExecuteDisplayWHSreceivingSO extends WhsWorkExecuteDisplayReturnOrder
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>buildReturnOrder</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Adds controls to form state for Return Order screen.
+    /// </summary>
+    /// <param name="_con">
+    /// Container containing the form state before the controls are added.
+    /// </param>
+    /// <returns>
+    /// Container containing the form state after the controls are added.
+    /// </returns>
+    public container buildReturnOrder(container _con)
+    {
+        #AVAWHSRF
+
+        container ret = super(_con);
+        
+        WHSRFMenuItemTable menuItemTable = WHSRFMenuItemTable::find(pass.parmMenuItem());
+
+        ret = this.deleteControlDataFromContainer(ret, #RMANum);
+        ret = this.deleteControlDataFromContainer(ret, "@SYS105841");
+        ret = this.deleteControlDataFromContainer(ret, #RFOK);
+        ret = this.deleteControlDataFromContainer(ret, #Disposition);
+
+        ret += [this.buildControl(#RFLabel, "@SYS19627", menuItemTable.rfTitle, 1, '', #WHSRFUndefinedDataType, '', 0)];
+
+        if (pass.exists(#AVAWHSreceivingSO) && pass.lookup(#AVAWHSreceivingSO) != '')
+        {
+            ret += [this.buildControl(#RFText, #AVAWHSreceivingSO, "@SYS19627", 1, pass.lookup(#AVAWHSreceivingSO), extendedTypeNum(SalesId), '', 0, 0)];
+
+            if (pass.exists(#ItemId))
+            {   
+                InventTable inventTable       = InventTable::find(pass.lookup(#ItemId));
+                SalesTable salesTable         = SalesTable::find(pass.lookup(#AVAWHSreceivingSO));
+
+                InventDim inventDim           = this.getSalesOrderLineInventDim(salesTable, inventTable);
+
+                ret = this.buildProductDimensionsFromInventDim(ret, pass.lookup(#ItemId), inventDim);
+            }
+        }
+        else
+        {
+            ret += [this.buildControl(#RFText, #AVAWHSreceivingSO, "@SYS19627", 1, '', extendedTypeNum(SalesId), '', 0)];
+        }
+        
+        ret += [this.buildControl(#RFButton, #RFOK, "@SYS5473", 1, '', #WHSRFUndefinedDataType, '', 1)];
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processControl</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// processControl
+    /// </summary>
+    /// <param name = "_control">WhsControl</param>
+    /// <param name = "_value">str</param>
+    /// <returns>boolean</returns>
+    public boolean processControl(WhsControl _control, str _value)
+    {
+        switch (true)
+        {
+            case _control is WhsControlItemId:
+                return this.processItemIdFoSalesOrderReceiving(_control);
+        }
+
+        return super(_control, _value);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processItemIdFoSalesOrderReceiving</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// processItemIdFoSalesOrderReceiving
+    /// </summary>
+    /// <param name = "_control">WhsControl</param>
+    /// <returns>boolean</returns>
+    protected boolean processItemIdFoSalesOrderReceiving(WhsControl _control)
+    {
+        var fieldValues = _control.parmContext().fieldValues;
+        var controlData = _control.parmContext().controlData;
+        
+        InventInventItemSearch          localInventItemSearch       = InventInventItemSearch::construct();
+        InventInventItemSearchResult    localInventItemSearchResult = localInventItemSearch.search(_control.parmData());
+        Qty                             itemQty                     = localInventItemSearchResult.parmQty();
+            
+        if (!this.validateItemOnSalesOrder(fieldValues.parmItemId()))
+        {
+            fieldValues.parmItemId('');
+            return _control.fail("@WAX3272");
+        }
+
+        if (itemQty)
+        {
+            controlData.qtyDefaultedFromScan = true;
+            fieldValues.insert(#Qty, itemQty);
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateItemOnSalesOrder</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Validates that item is on a return order.
+    /// </summary>
+    /// <param name="_itemId">
+    /// Item id to be validated.
+    /// </param>
+    /// <returns>
+    /// True if it is validated, false otherwise.
+    /// </returns>
+    boolean validateItemOnSalesOrder(ItemId _itemId)
+    {
+        #AVAWHSRF
+
+        boolean         ret;
+        SalesLine       salesLine;
+        SalesTable      salesTable;
+        SalesId         salesId;
+
+        if (pass.exists(#AVAWHSreceivingSO))
+        {
+            salesId = pass.lookup(#AVAWHSreceivingSO);
+        }
+
+        select firstonly RecId from salesLine
+            join SalesId, ReturnItemNum from salesTable
+            where salesTable.SalesId    == salesLine.SalesId    &&
+                salesTable.SalesId      == salesId              &&
+                salesLine.ItemId        == _itemId;
+
+        if (salesLine.RecId != 0)
+        {
+            ret = true;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSalesOrderLineInventDim</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the <c>InventDim</c> record needed for the <c>buildReturnOrder</c> method.
+    /// </summary>
+    /// <param name = "_salesTable">
+    /// The SalesTable.
+    /// </param>
+    /// <param name = "_item">
+    /// The item being returned.
+    /// </param>
+    /// <returns>The dimensions used for the return order.</returns>
+    protected InventDim getSalesOrderLineInventDim(SalesTable _salesTable, InventTable _item)
+    {
+        InventDim inventDim;
+
+        if (this.countSalesOrderLines(_salesTable.SalesId) == 1)
+        {
+            inventDim  = this.getSalesOrderLine(false).inventDim();
+        }
+
+        return inventDim;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>countSalesOrderLines</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// countSalesOrderLines
+    /// </summary>
+    /// <param name = "_salesId">SalesId</param>
+    /// <returns>int64</returns>
+    private int64 countSalesOrderLines(SalesId _salesId)
+    {
+        SalesLine   salesLine;
+
+        select count(RecId) from salesLine
+            where  salesLine.SalesId        == _salesId
+                && salesLine.ItemId         == pass.lookup(#ItemId)
+                && salesLine.SalesQty <  0;
+
+        return salesLine.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSalesOrderLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// getSalesOrderLine
+    /// </summary>
+    /// <param name = "_matchProductDimensions">boolean</param>
+    /// <param name = "_serialId">boolean</param>
+    /// <returns>SalesLine</returns>
+    private SalesLine getSalesOrderLine(
+        boolean _matchProductDimensions = true,
+        boolean _serialId = false)
+    {        
+        #AVAWHSRF
+
+        SalesTable                  salesTable  = SalesTable::find(pass.lookup(#AVAWHSreceivingSO));
+        SalesLine                   salesLine;
+        InventDim                   inventDim;
+        InventDim                   inventDimCriteria;
+        InventDimParm               inventDimParm;
+        InventDimParm               inventDimParmAllowBlank;
+        InventTransOrigin           transOrigin;
+        InventTrackingRegisterTrans trackingTrans;
+
+        if (_matchProductDimensions && InventDimGroupSetup::newItemIdProductDimensionsOnly(pass.lookup(#ItemId)).activeFields().elements())
+        {
+            inventDimParm.setAllProductDimensions();
+        }
+        
+        inventDimParm.InventLocationIdFlag = NoYes::Yes;
+        
+        if (pass.exists(#SerialId))
+        {
+            inventDimParm.InventSerialIdFlag = NoYes::Yes;
+            inventDimParmAllowBlank.InventSerialIdFlag = NoYes::Yes;
+        }
+        
+        if (pass.exists(#BatchId))
+        {
+            inventDimParm.InventBatchIdFlag = NoYes::Yes;
+            inventDimParmAllowBlank.InventBatchIdFlag = NoYes::Yes;
+        }
+        
+        pass.initInventDimFromPassParm(inventDimCriteria, inventDimParm);
+
+        InventSite::setReceivingWarehouseCriteria(inventDimCriteria, inventDimParm);
+
+        if (_serialId)
+        {
+            // Select the first SalesLine that's registered and does not have all Serials needed associated to it.
+            while select salesLine
+                where salesLine.SalesId         == salesTable.SalesId
+                    && salesLine.ItemId         == pass.lookup(#ItemId)
+                join RecId from transOrigin
+                    where transOrigin.InventTransId == salesLine.InventTransId
+                    #InventDimExistsJoinAllowBlank(salesLine.InventDimId, inventDim, inventDimCriteria, inventDimParm, inventDimParmAllowBlank)
+            {
+                select sum(Qty) from trackingTrans
+                    where trackingTrans.InventTransOrigin == transOrigin.RecId;
+
+                if (abs(salesLine.SalesQty) != trackingTrans.Qty)
+                {
+                    return salesLine;
+                }
+            }
+        }
+        else if (pass.exists(#SerialId) || pass.exists(#BatchId))
+        {
+            salesLine = this.getSalesOrderLineBasedOnMatchingDimensions(salesTable, inventDimCriteria, inventDimParm, inventDimParmAllowBlank);
+        }
+
+        if (!salesLine)
+        {
+            if (!pass.exists(#Qty))
+            {
+                select firstonly salesLine
+                    order by PdsCWExpectedRetQty asc, SalesQty asc
+                    where salesLine.SalesId         == salesTable.SalesId
+                        && salesLine.ItemId         == pass.lookup(#ItemId)
+                        #InventDimExistsJoinAllowBlank(salesLine.InventDimId, inventDim, inventDimCriteria, inventDimParm, inventDimParmAllowBlank);
+            }
+            else
+            {
+                salesLine = this.getSalesOrderLineBasedOnMatchingQuantity(salesTable, inventDimCriteria, inventDimParm, inventDimParmAllowBlank);
+            }
+        }
+        return salesLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSalesOrderLineBasedOnMatchingDimensions</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  Finds the return order line which can cover the return quantity with given dimensions.
+    /// </summary>
+    /// <param name = "_salesTable">
+    ///  The sales header of the return order line.
+    /// </param>
+    /// <param name = "_inventDimCriteria">
+    ///  The inventory dimension criteria.
+    /// </param>
+    /// <param name = "_inventDimParm">
+    ///  The inventory dimension parameter which needs match.
+    /// </param>
+    /// <param name = "_inventDimParmAllowBlank">
+    ///  The inventory dimension parameter which can be blank.
+    /// </param>
+    /// <returns>
+    ///  The suitable return order line.
+    /// </returns>
+    private SalesLine getSalesOrderLineBasedOnMatchingDimensions(SalesTable       _salesTable,
+                                                                 InventDim        _inventDimCriteria,
+                                                                 InventDimParm    _inventDimParm,
+                                                                 InventDimParm    _inventDimParmAllowBlank)
+    {
+        SalesLine          salesLine;
+
+        if (pass.hasValue(#UOM))
+        {
+            Qty retQty = pass.lookupNum(#Qty);
+
+            InventDim          inventDim;
+            InventTransOrigin  inventTransOriginReturn;
+            InventTrans        inventTransReturn;
+            InventDim          inventDimReturn;
+
+            while select salesLine
+                order by PdsCWExpectedRetQty asc, SalesQty asc // Still need loop because sales unit can be different.
+            where salesLine.SalesId        == _salesTable.SalesId
+                    && salesLine.ItemId         == pass.lookup(#ItemId)
+                    #InventDimExistsJoinAllowBlank(salesLine.InventDimId, inventDim, _inventDimCriteria, _inventDimParm, _inventDimParmAllowBlank)
+            exists join inventTransOriginReturn
+                    where inventTransOriginReturn.InventTransId == salesLine.InventTransIdReturn
+                exists join InventDimId from inventTransReturn
+                    where inventTransReturn.inventTransOrigin == inventTransOriginReturn.RecId
+                #InventDimExistsJoinAllowBlank(inventTransReturn.InventDimId, inventDimReturn, _inventDimCriteria, _inventDimParm, _inventDimParmAllowBlank)
+            {
+                
+                if (this.isRetQtyCoveredBySalesLine(salesLine, retQty))
+                {
+                    break;
+                }
+            }
+        }
+    
+        return salesLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSalesOrderLineBasedOnMatchingQuantity</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  Finds the return order line which can cover the return quantity.
+    /// </summary>
+    /// <param name = "_salesTable">
+    ///  The sales header of the return order line.
+    /// </param>
+    /// <param name = "_inventDimCriteria">
+    ///  The inventory dimension criteria.
+    /// </param>
+    /// <param name = "_inventDimParm">
+    ///  The inventory dimension parameter which needs match.
+    /// </param>
+    /// <param name = "_inventDimParmAllowBlank">
+    ///  The inventory dimension parameter which can be blank.
+    /// </param>
+    /// <returns>
+    ///  The suitable return order line.
+    /// </returns>
+    private SalesLine getSalesOrderLineBasedOnMatchingQuantity(SalesTable       _salesTable,
+                                                                InventDim        _inventDimCriteria,
+                                                                InventDimParm    _inventDimParm,
+                                                                InventDimParm    _inventDimParmAllowBlank)
+    {
+        SalesLine          salesLine;
+        InventDim          inventDim;
+
+        if (pass.hasValue(#UOM))
+        {
+            Qty retQty = pass.lookupNum(#Qty);
+
+            while select salesLine
+                order by PdsCWExpectedRetQty asc, SalesQty asc // Still need loop because sales unit can be different.
+                where salesLine.SalesId        == _salesTable.SalesId
+                   && salesLine.ItemId         == pass.lookup(#ItemId)
+                   #InventDimExistsJoinAllowBlank(salesLine.InventDimId, inventDim, _inventDimCriteria, _inventDimParm, _inventDimParmAllowBlank)
+            {
+                if (this.isRetQtyCoveredBysalesLine(salesLine, retQty))
+                {
+                    break;
+                }
+            }
+        }
+    
+        return salesLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isRetQtyCoveredBySalesLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// isRetQtyCoveredBySalesLine
+    /// </summary>
+    /// <param name = "_salesLine">SalesLine</param>
+    /// <param name = "_retQty">Qty</param>
+    /// <returns>boolean</returns>
+    private boolean isRetQtyCoveredBySalesLine(SalesLine _salesLine, Qty _retQty)
+    {
+        EcoResReleasedProductUnitConverter releasedProductUnitConverter = EcoResReleasedProductUnitConverter::construct();
+        UnitOfMeasureRecId unitOfMeasureRecId = UnitOfMeasure::unitOfMeasureIdBySymbol(pass.lookup(#UOM));
+
+        boolean isCWItem = PdsGlobal::pdsIsCWItem(pass.lookup(#ItemId));
+
+        ProductQuantity expectedReturnOrderQty;
+        UnitOfMeasureSymbol salesLineUnit;
+
+        if (isCWItem)
+        {
+            expectedReturnOrderQty = _salesLine.PdsCWExpectedRetQty;
+            salesLineUnit = _salesLine.pdsCWUnitId();
+        }
+        else
+        {
+            expectedReturnOrderQty = _salesLine.SalesQty;
+            salesLineUnit = _salesLine.SalesUnit;
+        }
+                
+        return (expectedReturnOrderQty <= -releasedProductUnitConverter.convert(_retQty,
+                                                        unitOfMeasureRecId,
+                                                        UnitOfMeasure::unitOfMeasureIdBySymbol(salesLineUnit),
+                                                        NoYes::No,
+                                                        _salesLine.ItemId,
+                                                        _salesLine.InventDimId,
+                                                        NoYes::No));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayForm</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Controls the form displayed for return order processing
+    /// </summary>
+    /// <param name="_con">
+    ///    Container that holds information from the RF entries
+    /// </param>
+    /// <param name="_buttonClicked">
+    ///    Button clicked by user action
+    /// </param>
+    /// <returns>
+    ///    Container holding information for next RF screen update
+    /// </returns>
+    public container displayForm(container _con, str _buttonClicked = '')
+    {
+        #AVAWHSRF
+
+        container                   ret = conNull();
+        container                   con = _con;
+        int                         hasError = 0;
+        WHSRFPassthrough            fieldValues = new WHSRFPassthrough(Types::String, Types::String);
+        WHSWorkExecuteDisplay       workExecuteDisplay = WHSWorkExecuteDisplay::construct(mode);
+        container                   tmpFieldValues;
+        boolean                     complete;
+        boolean                     recall;
+        SalesTable                  salesTable;
+        SalesLine                   salesLine;
+        WHSWorkBuildId              workBuildId;
+        WhsWorkExecute              workExecute = WhsWorkExecute::construct();
+        WHSMenuItemName             menuItem;
+        WHSRFPassthrough            tmpMap;
+        container                   tmpPass;
+        int                         tmpStep;
+        InventSerialId              serialId;
+        boolean                     salesSerialProcess;
+        ReturnItemNum               returnItemNum;
+
+        pass = WHSRFPassthrough::create(conPeek(_con, 2));
+
+        hasError = this.hasError(_con);
+
+        salesSerialProcess = InventTable::find(pass.lookupStr(#ItemId)).isSalesProcessSerialActive();
+
+        this.processButtonClicked(_buttonClicked);
+
+        WHSRFMenuItemTable menuItemTable = WHSRFMenuItemTable::find(pass.lookupStr(#MenuItem));
+        boolean continueToNextStep;
+
+        switch (step)
+        {
+            case 0:
+                if (pass.exists(#WorkComplete))
+                {
+                    ret = this.addErrorLabel(ret, "@WAX866", WHSRFColorText::Success);
+                    pass.remove(#WorkComplete);
+
+                    ret = this.addClusterMessages(ret);
+                }
+
+                ret = this.buildReturnOrder(ret);
+                step = 1;
+                break;
+
+            case 1:
+                if (hasError)
+                {
+                    con = this.removeErrorMessages(con);
+                }
+
+                [con, tmpFieldValues] = WHSRFControlData::processDataWithCallback(this, con, pass);
+                fieldValues = WHSRFPassthrough::create(tmpFieldValues);
+                pass = this.combineMaps(pass, fieldValues);
+                hasError = this.hasError(con);
+
+                if (hasError)
+                {
+                    ret = con;
+                    break;
+                }
+
+                //if (WHSReturnOrderGenerateLPAfterPartialRecFlight::instance().isEnabled())
+                if (true)
+                {
+                    this.populateGeneratedLicensePlateIdSO(fieldValues);
+                }
+
+                ret += this.buildReturnOrder(ret);
+                [ret, complete] = this.processFieldValues(ret, fieldValues);
+                step = 2;
+                break;
+
+            case 2:
+                if (hasError)
+                {
+                    con = conDel(con, 3, 1);
+                }
+
+                [con, tmpFieldValues] = WHSRFControlData::processDataWithCallback(this, con, pass);
+                fieldValues = WHSRFPassthrough::create(tmpFieldValues);
+                pass = this.combineMaps(pass, fieldValues);
+
+                // Need to have license plate generation after combining the maps, so item ID is present in the pass.
+                this.populateGeneratedLicensePlateIdSO(fieldValues);
+
+                hasError = this.hasError(con);
+
+                if (hasError)
+                {
+                    ret = con;
+                    break;
+                }
+
+                if (pass.exists(#SerialCounter)
+                    &&  _buttonClicked != #RFSerialUnreadable
+                    &&  pass.lookupStr(#SerialId) == '')
+                {
+                    ret = con;
+                    ret = conIns(ret, 3, this.buildControl(#RFLabel, #RFError, "@WAX3128", 1, '', 0, '', 0, false, '', WHSRFColorText::Error));
+                    break;
+                }
+
+                if (pass.exists(#ItemId)
+                    && pass.lookup(#ItemId) != ''
+                    && !pass.exists(#SerialCounter))
+                {
+                    salesTable  = SalesTable::find(pass.lookup(#AVAWHSreceivingSO));
+
+                    this.checkDispositionAction(salesTable);
+
+                    while select salesLine
+                        where salesLine.SalesId         == salesTable.SalesId
+                            && salesLine.ItemId         == pass.lookup(#ItemId)
+                            && salesLine.SalesQty <  0
+                    {
+                        if (InventSite::allowReceiptAtOtherWarehouse(salesLine.inventDim().InventLocationId, pass.lookup(#InventLocationId)))
+                        {
+                            break;
+                        }
+                    }
+
+                    if (salesLine.RecId == 0)
+                    {
+                        throw error("@WAX1239");
+                    }
+                }
+
+                ret += this.buildReturnOrder(ret);
+
+                [ret, complete] = this.processFieldValues(ret, fieldValues);
+
+                if (complete /*&& this.isWorkCreationDataEntryComplete()*/ && pass.hasValue(#UOM))
+                {
+                    salesLine = this.getSalesOrderLine(true, pass.exists(#SerialCounter));
+                        
+                    if (salesLine.RecId == 0)
+                    {
+                        throw error("@Retail:SalesOrderDoesNotExists");
+                    }
+                    //this.checkStatusAndDispositionCodeSO(salesLine);
+
+                    if (!pass.exists(#ReceiptId))
+                    {
+                        pass.insert(#ReceiptId, NumberSeq::newGetNum(WHSParameters::numRefWHSReceiptId()).num());
+                    }
+
+                    if (this.captureTrackingDimensions(pass.lookup(#ItemId))
+                    &&  !WHSReceiptDetails::existByReceiptIdLicensePlate(pass.lookup(#ReceiptId), pass.lookup(#LicensePlateId)))
+                    {
+                        ret = conNull();
+                        ret = this.buildReturnOrderTrackingDimensions(ret, pass.lookup(#ItemId), pass.lookupNum(#Qty));
+                        step = 3;
+                        pass.insert(#DimRunningQty, WHSCatchWeightHelper::convertInventQuantity(pass.lookup(#ItemId),
+                                                                                           pass.lookup(#UOM),
+                                                                                           pass.lookupNum(#Qty),
+                                                                                           this.createReceiptDetailDimensionSO(this.getSalesOrderLine().inventDim().InventStatusId).InventDimId));
+                        break;
+                    }
+                    else if (salesSerialProcess && !pass.exists(#AssignSerial))
+                    {
+                        step = 3;
+                        break;
+                    }
+
+                    ret = conNull();
+
+                    if (pass.exists(#SerialId))
+                    {
+                        serialId = pass.lookup(#SerialId);
+                    }
+
+                    // Batch and serial should not be used when processing work
+                    //this.resetTrackingDimensionsPassValues();
+
+                    if (!pass.exists(#SerialCounter))
+                    {
+                        ttsbegin;                        
+                        WHSLicensePlate::createLicensePlate(pass.lookup(#LicensePlateId));
+
+                        //Create Journal 
+                        WMSParameters WMSParameters = WMSParameters::find();
+
+                        //create new journal table record
+                        WMSJournalTable wmsJournalTable;
+                        wmsJournalTable.initValue();
+                        wmsJournalTable.initFromWMSJournalName(WMSJournalName::find(WMSParameters.receptionJournalNameId));
+                        wmsJournalTable.journalType = wmsJournalType::Reception;
+                        wmsJournalTable.inventTransType = inventTransType::Sales;
+                        wmsJournalTable.modifiedField(fieldNum(wmsJournalTable, inventTransType));
+                        wmsJournalTable.inventTransRefId = salesLine.SalesId;
+                        wmsJournalTable.modifiedField(fieldNum(wmsJournalTable, inventTransRefId));
+                        wmsJournalTable.InventDimId = InventDim::findOrCreateBlank().inventDimId;
+                        wmsJournalTable.insert();
+                        //create new journal line
+                        WMSJournalTrans wmsJournalTrans;
+                        wmsJournalTrans.initValue();
+                        wmsJournalTrans.initFromWMSJournalTable(wmsJournalTable);
+                        wmsJournalTrans.inventTransRefId = salesLine.SalesId;
+                        wmsJournalTrans.modifiedField(fieldNum(wmsJournalTrans, inventTransRefId));
+
+                        InventDim receiptDetailsInventDim = this.createReceiptDetailDimensionSO(salesLine.inventDim().InventStatusId);
+                        receiptDetailsInventDim.wMSLocationId = menuItemTable.AVAWMSLocationReceivingSO;
+                        receiptDetailsInventDim = inventdim::findOrCreate(receiptDetailsInventDim);
+                        wmsJournalTrans.itemId = salesLine.ItemId;
+                        wmsJournalTrans.inventDimId = receiptDetailsInventDim.inventdimid;
+                        wmsJournalTrans.qty = WHSCatchWeightHelper::convertInventQuantity(salesLine.ItemId,
+                                                                                                   pass.lookup(#UOM),
+                                                                                                   pass.lookupNum(#Qty),
+                                                                                                   receiptDetailsInventDim.inventdimid);
+
+                        wmsJournalTrans.insert();
+
+                        WMSJournalCheckPost journalCheckPost = WMSJournalCheckPostReception::newTypeJournalTable(JournalCheckPostType::Post,wmsJournalTable);
+                        journalCheckPost.parmAutoBlock(true);  // den Wert 'vom System geblockt' auf 'TRUE', sonst Fehlermeldung
+                        journalCheckPost.runOperation();
+
+                        //print Etikett
+                        InventTable inventTable = InventTable::find(pass.lookup(ProcessGuideDataTypeNames::ItemId));
+                        WHSDocumentRouting      documentRouting = WHSDocumentRouting::construct();
+                        WhsLicensePlateLabel    label;
+ 
+                        label.setLabelId();
+                        label.UserId            = userId;
+                        label.ItemId            = inventTable.ItemId;
+                        label.WorkTransType     = WHSWorkTransType::Invent;
+                        label.ItemName          = InventTable::find(label.ItemId).defaultProductName();
+                        label.Weight            = InventTable::find(label.ItemId).grossWeight() * label.InventQty;
+                        label.PrintedDate       = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+                        label.OrderNum          = wmsJournalTrans.inventTransRefId;
+                        label.Qty               = wmsJournalTrans.qty;
+                        label.UnitID            = pass.lookup(#UOM);
+                        label.InventBatchId     = receiptDetailsInventDim.inventBatchId;
+                        label.InventLocationId  = receiptDetailsInventDim.inventLocationId;
+                        label.InventSiteId      = receiptDetailsInventDim.InventSiteId;
+                        label.LicensePlateId    = receiptDetailsInventDim.LicensePlateId;
+                        label.WMSLocationIdFrom = receiptDetailsInventDim.wMSLocationId;
+
+                        if(label.validateWrite())
+                        {
+                            ttsbegin;
+                            label.insert();
+                            ttscommit;
+                        }
+ 
+                        documentRouting.printDocument(label.WorkTransType, label);
+ 
+                        //creatework
+                        WHSWorkCreate           workCreate;
+                        WHSTmpMovementWork      tmpMovementWork;
+
+                        tmpMovementWork.InventDimId = receiptDetailsInventDim.inventdimid;
+                        tmpMovementWork.ItemId      = pass.lookupStr(#ItemId);
+                        tmpMovementWork.Qty         = pass.lookupNum(#Qty);
+                        tmpMovementWork.UnitID      = pass.lookupStr(#UOM);
+
+                        workCreate = WHSWorkCreate::construct(tmpMovementWork);
+
+                        workCreate.parmCreatedBy(userId);
+                        workCreate.parmStartLocationId(menuItemTable.AVAWMSLocationReceivingSO);
+                        workCreate.parmTargetLicensePlateId(pass.lookupStr(#LicensePlateId));
+                        
+                        workBuildId = workCreate.createWork();
+
+                        // If salesSerialProcess, AX will not continue executing the code, but go into a recursive call,
+                        // variable workCreateReturnOrder and workBuildId be disposed.
+                        // save it to pass. Ax can access it in  later if condition
+                        //pass.insert(#CanCreateWork, workCreateReturnOrder.canCreateWork() ? 1 : 0);
+                        //pass.insert(#WorkBuildId, workBuildId);
+
+                        ttscommit;
+
+                        if (salesSerialProcess)
+                        {
+                            pass.insert(#SerialId, '');
+                            pass.insert(#SerialCounter, 1);
+                            pass.insert(#SerialQty, pass.lookupNum(#Qty));
+
+                            ret = conNull();
+                            ret = this.buildReturnOrderSalesSerial(ret, pass.lookup(#ItemId));
+                            step = 2;
+
+                            break;
+                        }
+                    }
+                    else if (salesSerialProcess)
+                    {
+                        InventTrackingRegisterTrans::createFromSerial(serialId, this.getSalesOrderLine(true, true).InventTransId, _buttonClicked == #RFSerialUnreadable, true);
+
+                        if (pass.lookupNum(#SerialCounter) < pass.lookupNum(#SerialQty))
+                        {
+                            pass.insert(#SerialCounter, pass.lookupNum(#SerialCounter) + 1);
+
+                            ret = conNull();
+                            ret = this.buildReturnOrderSalesSerial(ret, pass.lookup(#ItemId));
+                            step = 2;
+
+                            break;
+                        }
+                    }
+
+                    ttsBegin;
+
+                    returnItemNum = pass.lookup(#AVAWHSreceivingSO);
+                    pass = this.resetPassWithClusterMessages(pass, con, false);
+                    pass.insert(#WorkComplete, 1);
+                    pass.insert(#AVAWHSreceivingSO, returnItemNum);
+
+                    [continueToNextStep, ret] = this.assigningPutawayCluster(ret, workBuildId, 0, menuItemTable);
+
+                    if (!continueToNextStep)
+                    {
+                        con = conPoke(con, 2, pass.pack());
+                        step = 0;
+                        workExecuteDisplay.setGlobals(mode, step, userId, pass, null);
+                        ret = workExecuteDisplay.displayForm(con, _buttonClicked);
+                        pass = new WHSRFPassthrough(Types::String, Types::String);
+                        pass = WHSRFPassthrough::create(conPeek(ret, 2));
+                    }
+                    
+                    ttscommit;
+                }
+                break;
+
+            case 3:
+                if (hasError)
+                {
+                    con = conDel(con, 3, 1);
+                }
+
+                [con, tmpFieldValues] = WHSRFControlData::processDataWithCallback(this, con, pass);
+                fieldValues = WHSRFPassthrough::create(tmpFieldValues);
+                pass = this.combineMaps(pass, fieldValues);
+                hasError = this.hasError(con);
+
+                if (hasError)
+                {
+                    ret = con;
+                    ret = this.buildTrackingDimReceiptUOM(conDel(ret, conLen(ret) - 2, 3), '', false, true, pass.lookupStr(#DimUOM));
+                    ret += [this.buildControl(#RFButton, #RFCancel, "@SYS50163", 1, '', #WHSRFUndefinedDataType, '', 0)];
+                    break;
+                }
+
+                con = this.buildReturnOrderTrackingDimensions(ret, pass.lookup(#ItemId), pass.lookupNum(#DimRunningQty));
+
+                if (!fieldValues.empty())
+                {
+                    if (fieldValues.exists(#SerialId)
+                        && this.allowBlankSerialNumberSO(fieldValues.lookupStr(#SerialId)))
+                    {
+                        fieldValues.remove(#SerialId);
+                    }
+
+                    [ret, complete] = this.processFieldValues(con, fieldValues);
+                    
+                    salesLine = this.getSalesOrderLine();
+
+                    InventHandlingQty dimHandlingQty;
+
+                    if (complete)
+                    {
+                        //catch weight does not support sales serial
+                        if (salesSerialProcess)
+                        {
+                            pass.insert(#AssignSerial, 1);
+
+                            InventDimId dimId = this.createReceiptDetailDimensionSO(salesLine.inventDim().InventStatusId).inventDimId;
+                            
+                            InventQty   dimQty = InventTableModule::unitConvert(pass.lookup(#ItemId),
+                                                                                ModuleInventPurchSales::Invent,
+                                                                                pass.lookup(#UOM),
+                                                                                pass.lookupNum(#Qty),
+                                                                                dimId);
+
+                            /*WHSReceiptDetails::createOrUpdateReceiptDetailsHandlingQty(
+                                pass.lookup(#ReceiptId),
+                                dimId,
+                                dimQty,
+                                0,
+                                salesLine.ItemId);*/
+                            
+                            WHSReceiptDetails::createOrUpdateReceiptDetails( pass.lookup(#ReceiptId), dimId, dimQty);
+
+                            if (this.captureTrackingDimensions(pass.lookup(#ItemId)))
+                            {
+                                pass.insert(#DimRunningQty, pass.lookupNum(#DimRunningQty) - dimQty);
+                            }
+                        }
+                        else
+                        {
+                            this.checkDimensions(salesLine);
+                            
+                            dimHandlingQty = WHSCatchWeightHelper::convertInventQuantity(pass.lookup(#ItemId),
+                                                                                  pass.lookup(#DimUOM),
+                                                                                  pass.lookupNum(#DimQty),
+                                                                                  this.createReceiptDetailDimensionSO(salesLine.inventDim().InventStatusId).InventDimId);
+                            
+                            InventDim receiptDetailsInventDim = this.createReceiptDetailDimensionSO(salesLine.inventDim().InventStatusId);
+                            // Insert or update receiving detail record
+
+                            WHSReceiptDetails::createOrUpdateReceiptDetails( pass.lookup(#ReceiptId), receiptDetailsInventDim.InventDimId, dimHandlingQty);
+
+                            pass.insert('ReceiptDetailRecId',
+                                        WHSReceiptDetails::find(pass.lookup(#ReceiptId), receiptDetailsInventDim.inventDimId).RecId);
+
+                            pass.insert(#DimRunningQty, pass.lookupNum(#DimRunningQty) - dimHandlingQty);
+                        }
+
+                        if (pass.lookupNum(#DimRunningQty) == 0)
+                        {
+                            step = 2;
+
+                            ret = this.updateModeStepPass(ret, mode, step, pass);
+                            ret = this.displayForm(ret);
+                        }
+                        else
+                        {
+                            this.removeTrackingDimensionsFromPass(pass.lookup(#ItemId));
+                            pass.remove(#DimQty);
+                            pass.insert(#DimUOM, WHSCatchWeightHelper::inventHandlingUnitId(pass.lookup(#ItemId)));
+
+                            ret = conNull();
+                            ret = this.buildReturnOrderTrackingDimensions(ret, pass.lookup(#ItemId), pass.lookupNum(#DimRunningQty));
+                        }
+                    }
+
+                    if (pass.exists(#DisplayBatch))
+                    {
+                        pass.remove(#DisplayBatch);
+                    }
+                }
+                break;
+                
+            case #SortReceive:
+                ret = this.stepSortReceive(con, _buttonClicked);
+                break;
+
+            default:
+                if (pass.exists(#WorkId))
+                {
+                    if (pass.exists(#LineNum))
+                    {
+                        workLine = WHSWorkLine::find(pass.lookup(#WorkId), pass.parmLineNum());
+                    }
+                    else
+                    {
+                        workLine = workExecute.getFirstOpenLine(pass.lookup(#WorkId), userId);
+                    }
+
+                    if (step != #Restart && workLine && !WHSRFMenuItemLine::validateMenuItemWorkClass(pass.lookupStr(#MenuItem), workLine.WorkClassId))
+                    {
+                        throw error("@WAX1459");
+                    }
+
+                    workTable = workLine.whsWorkTable();
+                }
+
+                menuItem = pass.lookup(#MenuItem);
+                con = conPoke(con, 2, pass.pack());
+                tmpMap = pass;
+                tmpStep = step;
+                //[ret, step, recall, tmpPass] = this.processWorkLine(workLine, con, mode, step, userId, suggestedPickPutLocationId, _buttonClicked, false);
+                pass = new WHSRFPassthrough(Types::String, Types::String);
+                pass = WHSRFPassthrough::create(tmpPass);
+                pass = this.combineMaps(tmpMap, pass);
+
+                if (step == #Restart)
+                {
+                    returnItemNum = pass.lookup(#AVAWHSreceivingSO);
+                    pass = WHSRFPassthrough::newReset(pass);
+                    pass.insert(#WorkComplete, 1);
+                    pass.insert(#AVAWHSreceivingSO, returnItemNum);
+                    con = conNull();
+                    con = this.buildReturnOrder(con);
+                    step = 0;
+                }
+                else if (step == #StepOne)
+                {
+                    if (!pass.exists(#RebuildForm))
+                    {
+                        step = #StepMax;
+                        pass.insert(#DetermineStep, 1);
+                    }
+                    else
+                    {
+                        ret = conNull();
+                        ret = this.buildReturnOrder(ret);
+                        pass.remove(#RebuildForm);
+                        step = 1;
+                    }
+                }
+
+                if (recall)
+                {
+                    con = this.updateModeStepPass(con, mode, step, pass);
+                    con = conPoke(con, 1, [mode, step]);
+                    workExecuteDisplay.setGlobals(mode, step, userId, pass, null);
+                    ret = workExecuteDisplay.displayForm(con, _buttonClicked);
+                    pass = new WHSRFPassthrough(Types::String, Types::String);
+                    pass = WHSRFPassthrough::create(conPeek(ret, 2));
+                    if (pass.exists(#WorkId) && pass.exists(#LineNum))
+                    {
+                        workLine = WHSWorkLine::find(pass.lookup(#WorkId), pass.parmLineNum());
+                        workTable = workLine.whsWorkTable();
+                    }
+                }
+                break;
+        }
+
+        ret = this.updateModeStepPass(ret, mode, step, pass);
+
+        if (step > 2)
+        {
+            ret = this.addButtons(ret);
+        }
+        ret = this.addCancelButton(ret, 1, true);
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createReceiptDetailDimensionSO</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// createReceiptDetailDimensionSO
+    /// </summary>
+    /// <param name = "_inventStatusId">WHSInventStatusId</param>
+    /// <returns>InventDim</returns>
+    private InventDim createReceiptDetailDimensionSO(WHSInventStatusId _inventStatusId)
+    {
+        InventDim receiptInventDim;
+
+        receiptInventDim = pass.createInventDimFromPass();
+        receiptInventDim.wmsLocationId = InventLocation::find(receiptInventDim.InventLocationId).wmsLocationIdDefaultReceipt;
+        receiptInventDim.InventStatusId = _inventStatusId;
+        receiptInventDim = InventDim::findOrCreate(receiptInventDim);
+
+        return receiptInventDim;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateGeneratedLicensePlateIdSO</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// populateGeneratedLicensePlateIdSO
+    /// </summary>
+    /// <param name = "_fieldValues">WHSRFPassthrough</param>
+    private void populateGeneratedLicensePlateIdSO(WHSRFPassthrough _fieldValues)
+    {
+        if (pass.exists(#ItemId)
+            && !pass.parmLicensePlateId()
+            && WHSRFMenuItemTable::find(pass.lookup(#MenuItem)).GenerateLP)
+        {
+            WHSLicensePlateId licensePlateId = WHSLicensePlate::generateLicensePlateId(pass.lookup(#ItemId), pass.lookupStr(#SelectedValueUOM));
+
+            pass.insert(#LicensePlateId, licensePlateId);
+            _fieldValues.insert(#LicensePlateId, licensePlateId);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkDispositionAction</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Checks if sales line associated with return order are set to credit only and if so, throw error
+    /// </summary>
+    /// <param name="_salesTable">
+    ///    The sales table record found in displayForm
+    /// </param>
+    /// <exception cref="Exception::Error">
+    ///    If the sales line found has a disposition action of Credit Only, throw error
+    /// </exception>
+    public void checkDispositionAction(SalesTable    _salesTable)
+    {
+        SalesLine                   creditOnlySalesLine;
+        ReturnDispositionCode       returnDispositionCode;
+
+        while select creditOnlySalesLine
+            where creditOnlySalesLine.SalesId                 == _salesTable.SalesId
+                && creditOnlySalesLine.ItemId                 == pass.lookup(#ItemId)
+            outer join RecId, DispositionAction, DispositionCodeId from returnDispositionCode
+                where returnDispositionCode.DispositionCodeId == creditOnlySalesLine.ReturnDispositionCodeId
+        {
+            if (returnDispositionCode.RecId == 0
+                || returnDispositionCode.DispositionAction != DispositionAction::CreditOnly)
+            {
+                break;
+            }
+        }
+
+        if (!creditOnlySalesLine)
+        {
+            throw error("@WAX4783");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkStatusAndDispositionCodeSO</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// checkStatusAndDispositionCodeSO
+    /// </summary>
+    /// <param name = "_salesLine">SalesLine</param>
+    private void checkStatusAndDispositionCodeSO(SalesLine _salesLine)
+    {
+        WHSDispositionCode  dispositionCode = pass.lookupStr(#Disposition);
+        WHSDispositionTable disposition;
+
+        disposition.InventStatusId = _salesLine.inventDim().InventStatusId;
+        disposition.ReturnDispositionCodeId = WHSDispositionTable::find(dispositionCode).ReturnDispositionCodeId;
+
+        if (!disposition.isInventoryStatusValid())
+        {
+            throw error(strFmt("@SYP4881859", disposition.InventStatusId, dispositionCode));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>allowBlankSerialNumberSO</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// allowBlankSerialNumberSO
+    /// </summary>
+    /// <param name = "_serialId">InventSerialId</param>
+    /// <returns>boolean</returns>
+    private boolean allowBlankSerialNumberSO(InventSerialId _serialId)
+    {
+        return !_serialId
+        && this.isSerialNumberOptional(pass.lookupStr(#ItemId));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isSerialNumberOptional</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if serial number is optional for the item.
+    /// </summary>
+    /// <param name = "_itemId">Item ID to check.</param>
+    /// <returns>true if serial is optional; otherwise, false.</returns>
+    public boolean isSerialNumberOptional(ItemId _itemId)
+    {
+        InventTable  inventTable = InventTable::find(_itemId);
+        EcoResTrackingDimensionGroupFldSetup trackingDimGroupFieldSetup = EcoResTrackingDimensionGroupFldSetup::findByDimensionGroupFieldId(inventTable.trackingDimensionGroup(), fieldNum(InventDim, InventSerialId));
+             
+        return inventTable.isItemSerialNumberActivated()
+        && trackingDimGroupFieldSetup.IsAllowBlankIssueEnabled
+        && trackingDimGroupFieldSetup.IsAllowBlankReceiptEnabled;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>countAllSalesOrderLines</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// countAllSalesOrderLines
+    /// </summary>
+    /// <param name = "_salesId">SalesId</param>
+    /// <returns>int64</returns>
+    private int64 countAllSalesOrderLines(SalesId _salesId)
+    {
+        SalesLine   salesLine;
+
+        select count(RecId) from salesLine
+            where  salesLine.SalesId        == _salesId
+                && salesLine.ItemId         == pass.lookup(#ItemId)
+                && salesLine.SalesQty <  0;
+
+        return salesLine.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildReturnOrderTrackingDimensions</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Adds controls to form state for tracking dimensions of Return Order screen.
+    /// </summary>
+    /// <param name="_con">
+    /// The form state before the controls are added.
+    /// </param>
+    /// <param name="_itemId">
+    /// The item id.
+    /// </param>
+    /// <param name="_defaultQty">
+    /// The default quantity of the item.
+    /// </param>
+    /// <returns>
+    /// The form state after the controls are added.
+    /// </returns>
+    protected container buildReturnOrderTrackingDimensions(
+        container   _con,
+        ItemId      _itemId,
+        Qty         _defaultQty)
+    {
+        #AVAWHSRF
+
+        container           ret = _con;
+        WHSInventTable      whsInventTable;
+        ListEnumerator      le;
+        str                 qtyString;
+        boolean             enable;
+
+        whsInventTable = WHSInventTable::find(_itemId);
+        qtyString = WHSWorkExecuteDisplay::num2StrDisplay(_defaultQty);
+
+        InventDim inventDimReturn;
+        if (this.countAllSalesOrderLines(SalesTable::find(pass.lookup(#AVAWHSreceivingSO)).SalesId) == 1)
+        {
+            inventDimReturn = this.getSalesOrderLineInventDim(SalesTable::find(pass.lookup(#AVAWHSreceivingSO)), InventTable::find(_itemId));
+        }
+
+        InventDim inventDimLocal;
+        inventDimLocal.inventBatchId = pass.exists(#BatchId) ? pass.lookupStr(#BatchId)  : inventDimReturn.inventBatchId;
+        inventDimLocal.inventSerialId = pass.exists(#SerialId) ? pass.lookupStr(#SerialId) : inventDimReturn.inventSerialId;
+        inventDimLocal.InventGtdId_RU = pass.exists(#GtdId_RU) ? pass.lookupStr(#GtdId_RU) : inventDimReturn.InventGtdId_RU;
+        inventDimLocal.InventProfileId_RU = pass.exists(#ProfileId_RU) ? pass.lookupStr(#ProfileId_RU) : inventDimReturn.InventProfileId_RU;
+        inventDimLocal.InventOwnerId_RU = pass.exists(#OwnerId_RU) ? pass.lookupStr(#OwnerId_RU) : inventDimReturn.InventOwnerId_RU;
+
+        ret += [this.buildControl(#RFLabel, "@WAX5546", "@WAX5546", 1, '', #WHSRFUndefinedDataType, '', 0)];
+
+        ret += [this.buildControl(#RFText, #ItemId, "@SYS14428", 1, pass.lookup(#ItemId), extendedTypeNum(InventInventItemSearchItem), '', 0, false)];
+
+        if (whsInventTable.rfDescription1)
+        {
+            ret += [this.buildControl(#RFLabel, #RFDescription1, strFmt('\t        %1', whsInventTable.rfDescription1), 1, '', #WHSRFUndefinedDataType, '', 0, false, '', WHSRFColorText::Default, extendedTypeNum(WHSRFDescription1))];
+        }
+        else
+        {
+            ret += [this.buildControl(#RFLabel, #RFDescription1, strFmt('\t        %1', InventTable::find(whsInventTable.ItemId).productNameWhsWorkExecute()), 1, '', #WHSRFUndefinedDataType, '', 0, false, '', WHSRFColorText::Default, extendedTypeNum(EcoResProductName))];
+        }
+
+        if (whsInventTable.rfDescription2)
+        {
+            ret += [this.buildControl(#RFLabel, #RFDescription2, strFmt('\t        %1', whsInventTable.rfDescription2), 1, '', #WHSRFUndefinedDataType, '', 0, false, '', WHSRFColorText::Default, extendedTypeNum(WHSRFDescription2))];
+        }
+
+        ret += [this.buildControl(#RFText, #LicensePlateId, "@WAX1198", 1, pass.lookup(#LicensePlateId), extendedTypeNum(WHSLicensePlateId), '', 0, false)];
+
+        le = InventDimGroupSetup::newDimensionGroups(0, 0, InventTable::find(_itemId).trackingDimensionGroup()).activeFields().getEnumerator();
+
+        while (le.moveNext())
+        {
+            if (!this.mustShowInventoryDimension(le.current()))
+            {
+                continue;
+            }
+
+            switch (le.current())
+            {
+                case fieldNum(InventDim, InventBatchId):
+                    enable = inventDimLocal.inventBatchId ? !InventBatch::exist(pass.lookup(#ItemId), inventDimLocal.inventBatchId) : true;
+                    ret += [this.buildControl(#RFText, #BatchId, "@SYS53635", 1, inventDimLocal.inventBatchId, extendedTypeNum(InventBatchId), '', 0, enable)];
+                    break;
+
+                case fieldNum(InventDim, InventSerialId):
+                    ret = this.buildReturnOrderSerialNumberControlSO(ret, _itemId, inventDimLocal.inventSerialId);
+                    break;
+
+                default:
+                    ret += [this.buildControlForTableField(tableNum(InventDim),
+                                                            le.current(),
+                                                            fieldId2name(tableNum(InventDim), le.current()),
+                                                            1,
+                                                            inventDimLocal.(le.current()),
+                                                            true)];
+                    break;
+            }
+        }
+
+        ret += [this.buildControl(#RFText, #DimQty, "@SYS105177", 1, qtyString, extendedTypeNum(Qty), '', 0)];
+        
+
+        str selectedUOM = pass.lookupStr(#DimUOM);
+
+        ret = this.buildTrackingDimReceiptUOM(ret, '', false, true, selectedUOM);
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getReturnOrderLineInventDim</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the <c>InventDim</c> record needed for the <c>getReturnOrderLineInventDim</c> method.
+    /// </summary>
+    /// <param name = "_salesOrder">
+    /// The SalesTable
+    /// </param>
+    /// <param name = "_item">
+    /// The item being returned.
+    /// </param>
+    /// <returns>The dimensions used for the return order.</returns>
+    [Replaceable]
+    protected InventDim getReturnOrderLineInventDim(SalesTable _salesOrder, InventTable _item)
+    {
+        InventDim inventDim;
+
+        if (this.countSalesOrderLines(_salesOrder.SalesId) == 1)
+        {
+            inventDim  = this.getSalesOrderLine(false).inventDim();
+        }
+
+        return inventDim;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildReturnOrderSerialNumberControlSO</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Builds control for serial number.
+    /// </summary>
+    /// <param name="_con">
+    /// Container containing the form state before the control is added.
+    /// </param>
+    /// <param name="_itemId">
+    /// The item number.
+    /// </param>
+    /// <param name="_inventSerialId">
+    /// The serial number.
+    /// </param>
+    /// <returns>
+    /// The form state after the control is added.
+    /// </returns>
+    private container buildReturnOrderSerialNumberControlSO(container _con, ItemId _itemId, InventSerialId _inventSerialId)
+    {
+        container ret = _con;
+
+        if (WHSInventTable::captureSerial(_itemId) == WHSRFWhenToCapture::Receiving)
+        {
+            ret += [this.buildControl(#RFText, #SerialId, "@WAX1614", 1, '', extendedTypeNum(InventSerialId), '', 0)];
+        }
+        else
+        {
+            //Serial number is shown only if value exists because we can capture serial only for receiving
+            if (_inventSerialId
+                || this.SalesLineHasOptionalSerialIdSO())
+            {
+                ret += [this.buildControl(#RFText, #SerialId, "@WAX1614", 1, _inventSerialId, extendedTypeNum(InventSerialId), '', 0, _inventSerialId ? !InventSerial::exist(pass.lookup(#ItemId), _inventSerialId) : true)];
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesLineHasOptionalSerialIdSO</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Checks that return order line allows blank serial id but it is specified.
+    /// </summary>
+    /// <returns>
+    ///     true if return order line allows blank serial id but it is specified; otherwise, false.
+    /// </returns>
+    private boolean SalesLineHasOptionalSerialIdSO()
+    {
+        #AVAWHSRF
+
+        SalesTable  salesTable = SalesTable::find(pass.lookup(#AVAWHSreceivingSO));
+        SalesLine   salesLine;
+
+        InventTable  inventTable = InventTable::find(pass.lookup(#ItemId));
+        EcoResTrackingDimensionGroupFldSetup trackingDimGroupFieldSetup = EcoResTrackingDimensionGroupFldSetup::findByDimensionGroupFieldId(inventTable.trackingDimensionGroup(), fieldNum(InventDim, InventSerialId));
+
+        if (inventTable.isItemSerialNumberActivated()
+            && trackingDimGroupFieldSetup.IsAllowBlankIssueEnabled
+            && trackingDimGroupFieldSetup.IsAllowBlankReceiptEnabled)
+        {
+            InventDim   inventDim;
+
+            select firstonly RecId from salesLine
+                where  salesLine.SalesId        == salesTable.SalesId
+                    && salesLine.ItemId         == pass.lookup(#ItemId)
+                    && salesLine.SalesQty <  0
+                exists join inventDim
+                    where inventDim.InventDimId == salesLine.InventDimId
+                       && inventDim.inventSerialId != '';
+        }
+
+        return salesLine.RecId != 0;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

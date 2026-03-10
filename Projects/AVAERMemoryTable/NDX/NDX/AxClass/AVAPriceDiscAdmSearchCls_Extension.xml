@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPriceDiscAdmSearchCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed by AVANADE
+/// </summary>
+[ExtensionOf(classStr(PriceDiscAdmSearch))]
+final class AVAPriceDiscAdmSearchCls_Extension
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>reNumberLines</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    protected void reNumberLines()
+    {
+        PriceDiscAdmTrans   pdAdmTrans;
+        PriceDiscJournalNum         journalNum;
+        AVANewAndClose              newAndClose;
+        priceDiscTable              priceDiscTable; 
+
+
+        next reNumberLines();
+
+        journalNum = this.parmJournalNum();
+        newandClose = this.parmTmpPriceDiscAdmSearchInvent().AVANewAndClose;
+
+        while select forupdate pdAdmTrans where pdAdmTrans.JournalNum == journalNum
+        {
+            ttsbegin;
+            pdAdmTrans.KCS_NewAndClose = newAndClose;
+            //pdAdmTrans.SearchAgain = NoYes::No;
+            priceDiscTable = PriceDiscTable::findRecId(pdAdmTrans.PriceDiscTableRef, true);
+            pdAdmTrans.KCS_AmountOld    = priceDiscTable.Amount;
+            pdAdmTrans.AVAOldToDate     = priceDiscTable.ToDate;
+            pdAdmTrans.AVAOldFromDate   = priceDiscTable.FromDate;
+            pdAdmTrans.AVAOldCurrency   = priceDiscTable.Currency;
+            pdAdmTrans.update();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initParmDefault</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA <c>initParmDefault</c>
+    /// </summary>
+    public void initParmDefault()
+    {
+        //QueryBuildRange qbr;
+        //QueryBuildDataSource    qbds;
+        AVATmpPriceDiscAdmSearchInventSel   selStrTable;
+
+        next initParmDefault();
+
+        select firstonly selStrTable where selStrTable.UserId == curUserId();
+        if (selStrTable.SelectionStr)
+        {
+            qInvent = new Query(SysOperationHelper::base64Decode(selStrTable.SelectionStr));
+            inventQueryRun  = new QueryRun(qInvent);
+            delete_from selStrTable where selStrTable.userId == curUserId();
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processInvent</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA <c>processInvent</c>
+    /// </summary>
+    void  processInvent()
+    {
+        if (discAdmSearchInvent.ItemCode == PriceDiscProductCodeType::Table)
+        {
+            discAdmSearchInvent.ItemRelation = '';
+        }
+
+        next processinvent();
+
+        InventTable  inventTable;
+        //InventTableModule inventTableModule;
+
+        QueryBuildDataSource    qbdsInvent, qbdsPriceDisc;
+        QueryBuildRange         qbrCust, qbrCustType;
+
+        if (discAdmSearchCustomer.AccountCode == pricediscpartycodetype::Table || discAdmSearchCustomer.AccountCode == PriceDiscPartyCodeType::GroupId)
+        {
+            qbdsInvent = SysQuery::findOrCreateDataSource(qInvent, tableNum(InventTable));
+            qbdspriceDisc = qbdsInvent.addDataSource(tableNum(PriceDiscTable));
+            qbdsPriceDisc.relations(true);
+            qbrCust = SysQuery::findOrCreateRange(qbdsPriceDisc, fieldNum(PriceDiscTable, AccountRelation));
+            qbrCust.value(discAdmSearchCustomer.AccountRelation);
+            qbrCustType = SysQuery::findOrCreateRange(qbdsPriceDisc, fieldNum(PriceDiscTable, AccountCode));
+            qbrCustType.value(SysQuery::value(discAdmSearchCustomer.accountCode));
+        }
+        inventQueryRun  = new QueryRun(qInvent);
+
+        switch (discAdmSearchInvent.ItemCode)
+        {
+            case PriceDiscProductCodeType::Table:
+
+                //for each item matching the query range
+                while (inventQueryRun.next())
+                {
+                    inventTable = inventQueryRun.get(tableNum(InventTable));
+
+                    this.searchInventPriceDiscItem(inventTable);
+
+                    if (discAdmSearchInvent.IncludeAdditionalRelations)
+                    {
+                        this.searchInventGroups(inventTable);
+                    }
+                }
+
+                if (discAdmSearchInvent.IncludeAdditionalRelations)
+                {
+                    this.searchInventPriceDiscAll();
+                }
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

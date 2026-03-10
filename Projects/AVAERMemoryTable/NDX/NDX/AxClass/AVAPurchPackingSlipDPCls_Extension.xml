@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPurchPackingSlipDPCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of class PurchPackingSLipDP
+/// </summary>
+[ExtensionOf(classStr(PurchPackingSlipDP))]
+final class AVAPurchPackingSlipDPCls_Extension
+{
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaGetInventTransTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the full data from the <c>AVAPurchPackingSlipInventTransTmp</c> temporary table.
+    /// </summary>
+    /// <returns>
+    /// The <c>AVAPurchPackingSlipInventTransTmp</c> temporary table.
+    /// </returns>
+    [SRSReportDataSetAttribute(tableStr(AVAPurchPackingSlipInventTransTmp))]
+    public AVAPurchPackingSlipInventTransTmp avaGetInventTransTmp()
+    {
+        AVAPurchPackingSlipInventTransTmp avaInventTransTmp;
+
+        this.setTransactionConnection(avaInventTransTmp);
+
+        select avaInventTransTmp;
+
+        return avaInventTransTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createProductReceiptLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates a product receipt line.
+    /// </summary>
+    /// <param name = "_purchPackingSlipHeaderTmp">
+    /// A <c>PurchPackingSlipHeaderTmp</c> record which is the product receipt header.
+    /// </param>
+    /// <param name = "_receiptLineSelection">
+    /// A <c>PurchPackingSlipDPReceiptLineQuerySelection</c> object which the product receipt line should be created for.
+    /// </param>
+    /// <returns>
+    /// The created <c>PurchPackingSlipTmp</c> product receipt line record.
+    /// </returns>
+    protected PurchPackingSlipTmp createProductReceiptLine(
+        PurchPackingSlipHeaderTmp                   _purchPackingSlipHeaderTmp,
+        PurchPackingSlipDPReceiptLineQuerySelection _receiptLineSelection)
+    {
+        AVAPurchPackingSlipInventTransTmp   avaInventTransTmp;
+        InventTrans                         avaInventTrans;
+        InventTransOrigin                   avaInventTransOrigin;
+        PurchPackingSlipTmp                 avaPurchPackingSlipTmp = next createProductReceiptLine(_purchPackingSlipHeaderTmp, _receiptLineSelection);
+        TransDate                           avaDatePhysical;
+
+        avaDatePhysical = this.avaLatestInventTransDatePhysical(_receiptLineSelection.parmVendPackingSlipTrans());
+
+        while select avaInventTrans
+            join avaInventTransOrigin
+            where avaInventTrans.InventTransOrigin  == avaInventTransOrigin.RecId
+            && avaInventTransOrigin.InventTransId   == _receiptLineSelection.parmVendPackingSlipTrans().InventTransId
+            && avaInventTrans.DatePhysical          == avaDatePhysical
+            && avaInventTrans.StatusIssue           == StatusIssue::Deducted
+        {
+            avaInventTransTmp = this.avaInitializeInventTransTmp(avaPurchPackingSlipTmp, avaInventTrans);
+
+            this.avaInsertInventTransTmp(avaInventTransTmp);
+
+        }
+       
+        return avaPurchPackingSlipTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaLatestInventTransDatePhysical</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns the latest DatePhysical of a related InventTrans record
+    /// </summary>
+    /// <param name = "_vendPackingSlipTrans">VendPackingSlipTrans</param>
+    /// <returns>DatePhysical</returns>
+    public DatePhysical avaLatestInventTransDatePhysical(VendPackingSlipTrans _vendPackingSlipTrans)
+    {
+        InventTrans                         avaInventTrans;
+        InventTransOrigin                   avaInventTransOrigin;
+
+        select firstonly DatePhysical from avaInventTrans
+            order by avaInventTrans.DatePhysical desc
+            join avaInventTransOrigin
+            where avaInventTrans.InventTransOrigin  == avaInventTransOrigin.RecId
+            && avaInventTransOrigin.InventTransId   == _vendPackingSlipTrans.InventTransId
+            && avaInventTrans.DatePhysical          <= this.parmVendPackingSlipJour().DeliveryDate
+            && avaInventTrans.StatusIssue           == StatusIssue::Deducted;
+
+        return avaInventTrans.DatePhysical;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitializeInventTransTmp</Name>
+				<Source><![CDATA[
+    public AVAPurchPackingSlipInventTransTmp avaInitializeInventTransTmp(
+        PurchPackingSlipTmp     _purchPackingSlipTmp,
+        InventTrans             _inventTrans)
+    {
+        AVAPurchPackingSlipInventTransTmp   avaInventTransTmp;
+        InventDim                           avaInventDim = _inventTrans.inventDim();
+
+        this.setTransactionConnection(avaInventTransTmp);
+
+        avaInventTransTmp.JournalRecId              = _purchPackingSlipTmp.JournalRecId;
+        avaInventTransTmp.VendPackingSlipTrans      = _purchPackingSlipTmp.VendPackingSlipTrans;
+
+        avaInventTransTmp.InventStatusId            = avaInventDim.InventStatusId;
+        avaInventTransTmp.ItemId                    = _purchPackingSlipTmp.ItemId;
+        avaInventTransTmp.LicensePlateId            = avaInventDim.LicensePlateId;
+        avaInventTransTmp.Qty                       = abs(_inventTrans.Qty);
+        avaInventTransTmp.UnitId                    = InventTable::find(_purchPackingSlipTmp.ItemId).inventTableModulePurch().UnitId;
+        avaInventTransTmp.wmsLocationId             = avaInventDim.wmsLocationId;
+
+        return avaInventTransTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInsertInventTransTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Inserts the inventTrans/Dim line record.
+    /// </summary>
+    /// <param name = "_avaInventTransTmp">
+    /// A <c>AVAPurchPackingSlipInventTransTmp</c> inventTrans/Dim line record to insert.
+    /// </param>
+    protected void avaInsertInventTransTmp(AVAPurchPackingSlipInventTransTmp _avaInventTransTmp)
+    {
+        _avaInventTransTmp.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeProductReceiptHeader</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// extension of initializeProductReceiptHeader
+    /// </summary>
+    /// <returns>PurchPackingSlipHeaderTmp</returns>
+    protected PurchPackingSlipHeaderTmp initializeProductReceiptHeader()
+    {
+        PurchPackingSlipHeaderTmp avaPurchPackingSlipHeaderTmp = next initializeProductReceiptHeader();
+        VendPackingSlipTrans avaVendPackingSlipTrans = this.avaGetFirstNegPos();
+
+        avaPurchPackingSlipHeaderTmp.AVAFormLetterRemarksTxt    = FormLetterRemarks::find(this.parmVendPackingSlipJour().LanguageId, FormTextType::AVAPurchPackingSlip).Txt;
+        avaPurchPackingSlipHeaderTmp.AVADlvMode                 = DlvMode::txt(this.parmVendPackingSlipJour().DlvMode, this.parmVendPackingSlipJour().LanguageId);
+        avaPurchPackingSlipHeaderTmp.AVADlvTerms                = DlvTerm::txt(this.parmVendPackingSlipJour().DlvTerm, this.parmVendPackingSlipJour().LanguageId);
+        avaPurchPackingSlipHeaderTmp.AVAOrderAccount            = this.parmVendPackingSlipJour().OrderAccount;
+        avaPurchPackingSlipHeaderTmp.AVAExtAccountNum           = this.parmVendPackingSlipJour().vendTable_OrderAccount().YourAccountNum;
+
+        if(avaVendPackingSlipTrans)
+        {
+            avaPurchPackingSlipHeaderTmp.DeliveryAddress    = avaVendPackingSlipTrans.avaDeliveryAddress();
+            avaPurchPackingSlipHeaderTmp.DeliveryName       = avaVendPackingSlipTrans.AVADeliveryName;
+        }
+
+        return avaPurchPackingSlipHeaderTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetFirstNegPos</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns first negative VendPackingSlipTrans record for associated VendPackingSlipJour
+    /// </summary>
+    /// <returns>VendPackingSlipTrans</returns>
+    public VendPackingSlipTrans avaGetFirstNegPos()
+    {
+        VendPackingSlipJour avaVendPackingSlipJour = this.parmVendPackingSlipJour();
+        VendPackingSlipTrans avaVendPackingSlipTrans;
+
+        select firstonly avaVendPackingSlipTrans
+            order by avaVendPackingSlipTrans.LineNum asc
+            where avaVendPackingSlipTrans.VendPackingSlipJour == avaVendPackingSlipJour.RecId
+                && avaVendPackingSlipTrans.Qty < 0;
+
+        return avaVendPackingSLipTrans;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeProductReceiptLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes a product receipt line.
+    /// </summary>
+    /// <param name = "_purchPackingSlipHeaderTmp">
+    /// A <c>PurchPackingSlipHeaderTmp</c> record which is the product receipt header.
+    /// </param>
+    /// <param name = "_receiptLineSelection">
+    /// A <c>PurchPackingSlipDPReceiptLineQuerySelection</c> object which the product receipt line should be initialized from.
+    /// </param>
+    /// <returns>
+    /// The initialized <c>PurchPackingSlipTmp</c> product receipt line record.
+    /// </returns>
+    protected PurchPackingSlipTmp initializeProductReceiptLine(
+        PurchPackingSlipHeaderTmp                   _purchPackingSlipHeaderTmp,
+        PurchPackingSlipDPReceiptLineQuerySelection _receiptLineSelection)
+    {
+        #xppTexts
+        PurchPackingSlipTmp purchPackingSlipTmp = next initializeProductReceiptLine(_purchPackingSlipHeaderTmp, _receiptLineSelection);
+
+        purchPackingSlipTmp.AVAIntrastatCommodity   = EcoResCategory::find(_receiptLineSelection.parmVendPackingSlipTrans().IntrastatCommodity).Code;
+        purchPackingSlipTmp.AVAOrigCountryName      = _receiptLineSelection.parmVendPackingSlipTrans().OrigCountryRegionId;
+
+        purchPackingSlipTmp.AVALineNum              = _receiptLineSelection.parmVendPackingSlipTrans().LineNum;
+        purchPackingSlipTmp.AVALineNetWeight        = _receiptLineSelection.parmVendPackingSlipTrans().Weight * _receiptLineSelection.parmVendPackingSlipTrans().Qty;
+        purchPackingSlipTmp.AVANotes                = Docu::concatDocuRefNotes(DocuRefSearch::newTypeIdAndRestriction(_receiptLineSelection.parmVendPackingSlipTrans(),
+                                                                                    VendFormletterDocument::find().DocuTypePurchOrder,
+                                                                                    DocuRestriction::External));
+
+        purchPackingSlipTmp.Name                    = InventTable::find(_receiptLineSelection.parmVendPackingSlipTrans().ItemId).avaNDXProductName(this.parmVendPackingSlipJour().LanguageId) + #newLine + _receiptLineSelection.parmVendPackingSlipTrans().Name;
+
+        return purchPackingSlipTmp;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

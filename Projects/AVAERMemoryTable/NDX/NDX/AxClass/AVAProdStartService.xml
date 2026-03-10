@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAProdStartService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN 2024/02/26
+/// </summary>
+internal final class AVAProdStartService extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_contract">AVAProdStartContract</param>
+    public void process(AVAProdStartContract _contract)
+    {
+        AVATraverseNum      travNum = _contract.parmTraverseNum();
+        #OCCRetryCount
+
+        try
+        {
+            this.startTraverse(travNum);
+            this.updateTraverse(travNum);
+        }
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>startTraverse</Name>
+				<Source><![CDATA[
+    private void startTraverse(AVATraverseNum _travNum)
+    {
+        ProdTable           prodTable;
+        ProdMultiStartUp    prodMultiStartUp;
+
+        AVATraverseTrans    traverseTrans;
+
+        while select traverseTrans group by ProdId
+            where traverseTrans.TravNum == _travNum
+                && !traverseTrans.ProcessNum 
+        {
+            prodTable = ProdTable::find(traverseTrans.ProdId);
+
+            prodMultiStartUp = ProdMultiStartUp::construct(new Args());
+            RunBaseMultiParm::initParm(prodMultiStartUp);
+            prodMultiStartUp.insert(prodTable, prodMultiStartUp.defaultParmBuffer());
+
+            prodMultiStartUp.runOnServer();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateTraverse</Name>
+				<Source><![CDATA[
+    private void updateTraverse(AVATraverseNum _travNum)
+    {
+        AVATraverseTrans    traverseTrans;
+        Counter             maxProcNum;
+
+        select maxof(ProcessNum) from traverseTrans where traverseTrans.TravNum == _travNum;
+        maxProcNum = traverseTrans.ProcessNum;
+
+        while select forupdate traverseTrans where traverseTrans.TravNum == _travNum
+                && !traverseTrans.ProcessNum
+        {
+            ttsbegin;
+            traverseTrans.TravStatus = AVATravStatus::InProcess;
+            traverseTrans.ProcessNum = maxProcNum + 1;
+            traverseTrans.update();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

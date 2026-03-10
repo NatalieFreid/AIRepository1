@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAHandoverDocDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+    SRSReportParameterAttribute(classStr(AVAHandoverDocContract)),
+    SRSReportQueryAttribute(queryStr(AVAHandoverDocQuery))
+]
+public class AVAHandoverDocDP extends SRSReportDataProviderPreProcessTempDb
+{
+    AVAHandoverDocTmp   tmpTable;
+    AVAHandoverDocTable handoverDocTable;
+    AVAHandoverDocLine  handoverDocLine;
+
+    Set                     handoverDocTables;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getTmpTable</Name>
+				<Source><![CDATA[
+    [
+        SRSReportDataSetAttribute(tableStr(AVAHandoverDocTmp))
+    ]
+    public AVAHandoverDocTmp getTmpTable()
+    {
+        select tmpTable;
+        return tmpTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        handoverDocTables  = new Set(Types::Int64);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateHandoverDocTable</Name>
+				<Source><![CDATA[
+    public void updateHandoverDocTable()
+    {
+        SetEnumerator         setEnumerator;
+        AVAHandoverDocTable   localHandoverDocTable;
+        Object                  _contract;
+
+        _contract = this.parmDataContract();
+
+        ttsBegin;
+
+        setEnumerator = handoverDocTables.getEnumerator();
+
+        while (setEnumerator.moveNext())
+        {
+            localHandoverDocTable = AVAHandoverDocTable::findByRecId(setEnumerator.current(), true);
+
+            localHandoverDocTable.Printed = NoYes::Yes;
+            localHandoverDocTable.update();
+        }
+
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    [SysEntryPointAttribute]
+    public void processReport()
+    {
+        Query                               query;
+        QueryRun                            queryRun;
+
+        this.init();
+
+        query                               = this.parmQuery();
+        queryRun                            = new QueryRun(query);
+
+        while (queryRun.next())
+        {
+            handoverDocTable    =   queryRun.get(tableNum(AVAHandoverDocTable));
+
+            this.insertIntoTmpTable_Header();
+
+            while select handoverDocLine
+                where handoverDocLine.HandoverDocId == handoverDocTable.RecId
+            {
+                this.insertIntoTmpTable_Line();
+
+            }
+
+            handoverDocTables.add(handoverDocTable.RecId);
+        }
+
+        this.updateHandoverDocTable();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertIntoTmpTable_Header</Name>
+				<Source><![CDATA[
+    public void insertIntoTmpTable_Header()
+    {
+        tmpTable.ReportElements     = AVAHandoverDocDataType::Basic;
+
+        tmpTable.CustName           = handoverDocTable.displayCustName();
+        tmpTable.DlvModeId          = handoverDocTable.displayDlvModeId();
+        tmpTable.InventLocationId   = handoverDocTable.InventLocationId;
+        tmpTable.LoadId             = handoverDocTable.LoadId;
+        tmpTable.HeaderNotes        = handoverDocTable.displaySalesTableInfoField3();
+        tmpTable.OrderNum           = handoverDocTable.OrderNum;
+        tmpTable.ShipmentId         = handoverDocTable.ShipmentId;
+        tmpTable.WMSLocationId      = handoverDocTable.WMSLocationId;
+
+        this.avaCreateShipmentQRCode();
+        
+        tmpTable.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertIntoTmpTable_Line</Name>
+				<Source><![CDATA[
+    public void insertIntoTmpTable_Line()
+    {
+        tmpTable.ReportElements         = handoverDocLine.DataType == AVAHandoverDocDataType::Picked ? AVAHandoverDocDataType::Picked : AVAHandoverDocDataType::Open;
+
+        tmpTable.CustName               = handoverDocTable.displayCustName();
+        tmpTable.DlvModeId              = handoverDocTable.displayDlvModeId();
+        tmpTable.InventLocationId       = handoverDocTable.InventLocationId;
+        tmpTable.LoadId                 = handoverDocTable.LoadId;
+        tmpTable.HeaderNotes            = handoverDocTable.displaySalesTableInfoField3();
+        tmpTable.OrderNum               = handoverDocTable.OrderNum;
+        tmpTable.ShipmentId             = handoverDocTable.ShipmentId;
+        tmpTable.WMSLocationId          = handoverDocTable.WMSLocationId;
+
+        tmpTable.InventQty              = handoverDocLine.InventQty;
+        tmpTable.InventTransId          = handoverDocLine.InventTransId;
+        tmpTable.ItemId                 = handoverDocLine.ItemId;
+        tmpTable.InventUnitId           = handoverDocLine.inventTable().inventUnitId();
+        tmpTable.Weight                 = handoverDocLine.displayWeight();
+        tmpTable.WeightUnitId           = handoverDocLine.displayWeightUnitSymbol();
+        tmpTable.LineNum                = handoverDocLine.LineNum;
+        tmpTable.PickedQty              = handoverDocLine.PickedQty;
+        tmpTable.TargetLicensePlateId   = handoverDocLine.TargetLicensePlateId;
+        tmpTable.WorkId                 = handoverDocLine.WorkId;
+
+        tmpTable.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCreateShipmentQRCode</Name>
+				<Source><![CDATA[
+    public void avaCreateShipmentQRCode()
+    {
+        EFDocQRCode_BR qrCode;
+
+        qrCode  = new EFDocQRCode_BR();
+
+        tmpTable.ShipmentQRCode         = qrCode.generateQRCode(tmpTable.ShipmentId);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

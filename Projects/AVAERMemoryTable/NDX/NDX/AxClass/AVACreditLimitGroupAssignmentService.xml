@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACreditLimitGroupAssignmentService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extends SysOperationServiceBase
+/// </summary>
+class AVACreditLimitGroupAssignmentService extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// process method
+    /// </summary>
+    /// <param name = "_contract">AVACreditLimitGroupAssignmentContract</param>
+    public void process(AVACreditLimitGroupAssignmentContract _contract)
+    {
+        CustAccount                     custAccount = _contract.parmCustAccount();
+        DataAreaId                      company = _contract.parmDataAreaId();
+        CustTable                       custTable, riscCustTable;
+        CredManCreditLimitId            creditLimitCustGroupId = _contract.parmCreditLimitGroup();
+        CredManCreditLimitCustGroup     creditLimitCustGroup;
+        CredManCreditLimitCustGroupLine creditLimitCustGroupLine;
+        boolean                         createNewAssignment = false;
+
+        if (CredManCustGuaranteeInsurance::avaCustCompanyGuaranteeExists(company, custAccount))
+        {
+            throw Error("@NDX:NXACRLInsuranceError");
+        }
+        
+        select firstonly creditLimitCustGroupLine where creditLimitCustGroupLine.CustAccount == custAccount
+                                                     && creditLimitCustGroupLine.Company == company;
+        if (creditLimitCustGroupLine)
+        {
+            select firstonly creditLimitCustGroup where creditLimitCustGroup.RecId == creditLimitCustGroupLine.CreditLimitCustGroup;
+            if (Box::okCancel(strFmt("@NDX:NXACRLAlreadyMemberError", creditLimitCustGroup.CreditLimitId), DialogButton::Cancel) == DialogButton::Ok)
+            {
+                ttsbegin;
+                creditLimitCustGroupLine.selectForUpdate(true);
+                creditLimitCustGroupLine.delete();
+                ttscommit;
+                createNewAssignment = true;
+            }
+        }
+        else
+        {
+            createNewAssignment = true;
+        }
+
+        if (createNewAssignment)
+        {
+            select firstonly creditLimitCustGroup where creditLimitCustGroup.CreditLimitId == creditLimitCustGroupId;
+            ttsbegin;
+            creditLimitCustGroupLine.clear();
+            creditLimitCustGroupLine.CustAccount = custAccount;
+            creditLimitCustGroupLine.CreditLimitCustGroup = creditLimitCustGroup.RecId;
+            creditLimitCustGroupLine.Company    = curExt();
+            creditLimitCustGroupLine.insert();
+            creditLimitCustGroupLine.avaCreateGroupValuesCalculation();
+
+            riscCustTable   = custTable::find(creditLimitCustGroup.AVARiscDebtor);
+            custTable       = CustTable::find(custAccount, true);
+            custTable.AVACRLCreditBlocked           = riscCustTable.AVACRLCreditBlocked;
+            custTable.MandatoryCreditLimit          = riscCustTable.MandatoryCreditLimit;
+            custTable.CreditMax                     = riscCustTable.CreditMax;
+            custTable.CredManCreditLimitExpiryDate  = riscCustTable.CredManCreditLimitExpiryDate;
+            custTable.update();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

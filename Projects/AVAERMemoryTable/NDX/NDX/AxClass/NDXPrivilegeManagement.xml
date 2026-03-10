@@ -1,0 +1,780 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXPrivilegeManagement</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using System.Collections;
+using Microsoft.Dynamics.AX.Security.Management;
+using Microsoft.Dynamics.AX.Security.Management.Domain;
+using Microsoft.Dynamics.AX.Security.Management.Querying;
+using Niedax.AX.Security;
+using Niedax.AX.Security.Role;
+
+/// <summary>
+/// PaffH 11.08.20
+/// manage privilege information.
+/// </summary>
+public class NDXPrivilegeManagement
+{
+    private SecurityRepository securityRepository;
+    boolean mock;
+    NDXUpdatedUTCDateTime   updatedUTCDateTime;
+    NDXLoggerSecurityInformationClass logger;
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 11.08.20
+    /// </summary>
+    /// <returns>NDXPrivilegeManagement</returns>
+    static NDXPrivilegeManagement construct()
+    {
+        return new NDXPrivilegeManagement();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmLogger</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 10.12.21
+    /// </summary>
+    /// <param name = "_logger">NDXLoggerSecurityInformationClass</param>
+    /// <returns>NDXLoggerSecurityInformationClass</returns>
+    public NDXLoggerSecurityInformationClass parmLogger(NDXLoggerSecurityInformationClass _logger = logger)
+    {
+        logger = _logger;
+        return logger;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 11.08.20
+    /// </summary>
+    protected void new()
+    {
+        updatedUTCDateTime = DateTimeUtil::utcNow();
+        mock = false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmUpdatedUTCDateTime</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 10.12.21
+    /// </summary>
+    /// <param name = "_updatedUTCDateTime">NDXUpdatedUTCDateTime</param>
+    /// <returns>NDXUpdatedUTCDateTime</returns>
+    public NDXUpdatedUTCDateTime parmUpdatedUTCDateTime(NDXUpdatedUTCDateTime _updatedUTCDateTime = updatedUTCDateTime)
+    {
+        updatedUTCDateTime = _updatedUTCDateTime;
+        return updatedUTCDateTime;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 06.01.21
+    /// </summary>
+    /// <param name = "args">Args</param>
+    public static void main(Args args)
+    {
+        NDXPrivilegeManagement nDXPrivilegeManagement = NDXPrivilegeManagement::construct();
+        //nDXPrivilegeManagement.getRoleInfo();
+        NDXLoggerSecurityInformationClass logger = NDXLoggerSecurityInformationClass::construct(strFmt("@NDXLogger:NDXGetDataComplete", nDXPrivilegeManagement.parmUpdatedUTCDateTime()));
+        nDXPrivilegeManagement.parmLogger(logger);
+        nDXPrivilegeManagement.getPrivilegeInfo();
+        logger.End();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getRoles</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 06.01.21
+    /// get list of security roles
+    /// </summary>
+    /// <returns>System.String[]</returns>
+    public System.String[] getRoles()
+    {
+        SecurityRole securityRole;
+        System.String[] arrRoles = new System.String[(select count(RecId) from securityRole).RecId]();
+        int i = 0;
+        while select securityRole
+        {
+            ++i;
+            arrRoles.SetValue(securityRole.Name, i-1);
+        }
+        return arrRoles;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getRoleInfo</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 06.01.21
+    /// </summary>
+    public void getRoleInfo()
+    {
+        NDXCSharpSecurityRoleHelperClass roleHelper = new NDXCSharpSecurityRoleHelperClass(this.parmSecurityRepository(), this.getRoles());
+        roleHelper.getSecurityObjectsForRoles();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPrivilegeInfo</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 11.08.20
+    /// get privilege based info
+    /// </summary>
+    public void getPrivilegeInfo() 
+    {
+        NDXArgsLoggerSecuritiyInformation argsLogger = new NDXArgsLoggerSecuritiyInformation();
+        argsLogger.parmLogActivity("@NDXLogger:NDXRoleAnalyseStart");
+        logger.LogLineCreate(argsLogger);
+        NDXPrivilegeHelper privilegeHelper = new NDXPrivilegeHelper(this.parmSecurityRepository(), mock);
+        privilegeHelper.AnalyseRoles();
+        argsLogger.parmLogActivity("@NDXLogger:NDXRoleAnalyseEnd");
+        logger.LogLineCreate(argsLogger);
+
+        argsLogger.parmLogActivity("@NDXLogger:NDXSaveDataToTablesStart");
+        logger.LogLineCreate(argsLogger);
+        this.saveFromNDXPrivilegeHelper(privilegeHelper);
+        argsLogger.parmLogActivity("@NDXLogger:NDXSaveDataToTablesEnd");
+        logger.LogLineCreate(argsLogger);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>saveFromNDXPrivilegeHelper</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 18.01.21
+    /// save data from NDXPrivilegeHelper to table structure
+    /// </summary>
+    /// <param name = "_NDXPrivilegeHelper">NDXPrivilegeHelper</param>
+    private void saveFromNDXPrivilegeHelper(NDXPrivilegeHelper _NDXPrivilegeHelper)
+    {
+        NDXArgsLoggerSecuritiyInformation argsLogger = new NDXArgsLoggerSecuritiyInformation();
+        System.ArgumentException ex;
+        try
+        {
+            NDXRole nDXRole;
+            NDXRoles nDXRoles;
+            NDXPrivilege nDXprivilege;
+            NDXRoleTable nDXRoleTableMaster;
+            NDXDutyTable nDXDutyTable;
+            NDXPrivilegeTable nDXPrivilegeTable;
+            NDXRole2DutyTable nDXRole2DutyTable;
+            NDXDuty2PrivilegeTable nDXDuty2PrivilegeTable;
+            NDXRole2PrivilegeTable nDXRole2PrivilegeTable;
+
+            Counter counter = 0;
+            Duty lDuty;
+            IEnumerator enumNDXPrivileges;
+
+            enumNDXPrivileges = _NDXPrivilegeHelper.NDXPrivilegeList.GetEnumerator();
+            while (enumNDXPrivileges.MoveNext())
+            {
+                nDXPrivilege = enumNDXPrivileges.Current;
+            }
+
+            try
+            {
+                // iterate over all roles (incl. subroles)
+                argsLogger.parmLogActivity("@NDXLogger:NDXIterateAllRolesWithSubroles");
+                logger.LogLineCreate(argsLogger);
+                IEnumerator enumNDXRoles = _NDXPrivilegeHelper.NDXRolesList.GetEnumerator();
+                while (enumNDXRoles.MoveNext())
+                {
+                    ++counter;
+                    nDXRoles = enumNDXRoles.Current;
+                    argsLogger.parmCounter(counter);
+                    logger.LogLineChange(argsLogger);
+
+                    // Roles
+                    IEnumerable nDXRolesListAll = nDXRoles.NDXRolesListAll;
+                    IEnumerator enumRolesAll = nDXRolesListAll.GetEnumerator();
+                    while (enumRolesAll.MoveNext())
+                    {
+
+                        nDXRole = enumRolesAll.Current;
+                        NDXRoleTable::saveFromNDXRole(nDXRole, updatedUTCDateTime);
+                    }
+                    nDXRoleTableMaster = NDXRoleTable::find(nDXRoles.RoleBase.Identifier);
+
+                    // Privileges based on roles
+                    enumNDXPrivileges = nDXRoles.NDXPrivileges.NDXPrivilegeListAsList().GetEnumerator();
+                    while (enumNDXPrivileges.MoveNext())
+                    {
+                        nDXPrivilege = enumNDXPrivileges.Current;
+                        nDXPrivilegeTable = NDXPrivilegeTable::saveFromNDXPrivilege(nDXPrivilege, updatedUTCDateTime, NoYes::Yes);
+
+                        nDXRole2PrivilegeTable = NDXRole2PrivilegeTable::findOrCreate(nDXRoleTableMaster.RecId, nDXPrivilegeTable.RecId, false);
+                        nDXRole2PrivilegeTable.UpdatedUTCDateTime = updatedUTCDateTime;
+                        if (nDXRole2PrivilegeTable.validateWrite())
+                        {
+                            ttsbegin;
+                            nDXRole2PrivilegeTable.write();
+                            ttscommit;
+                        }
+
+                        // related objects with license
+                        this.saveRelatedObjectsFromPrivilege(nDXPrivilege);
+                    }
+
+                    // Duties based on roles
+                    IEnumerator enumNDXDuties = nDXRoles.NDXDuty.DutiesAsList().GetEnumerator();
+                    while (enumNDXDuties.MoveNext())
+                    {
+                        lDuty = enumNDXDuties.Current;
+                        nDXDutyTable = NDXDutyTable::saveFromDuty(lDuty, updatedUTCDateTime, NoYes::Yes);
+
+                        nDXRole2DutyTable = nDXRole2DutyTable::findOrCreate(nDXDutyTable.RecId, nDXRoleTableMaster.RecId, false);
+                        nDXRole2DutyTable.UpdatedUTCDateTime = updatedUTCDateTime;
+                        if (nDXRole2DutyTable.validateWrite())
+                        {
+                            ttsbegin;
+                            nDXRole2DutyTable.write();
+                            ttscommit;
+                        }
+
+                        // Privileges in Duty
+                        IEnumerable privilegesInDuty = lDuty.Privileges;
+                        IEnumerator enumPrivilegesInDuty = privilegesInDuty.GetEnumerator();
+                        while (enumPrivilegesInDuty.MoveNext())
+                        {
+                            Privilege privilege = enumPrivilegesInDuty.Current;
+
+                            nDXPrivilegeTable = NDXPrivilegeTable::find(privilege.Identifier, false);
+                            if (!nDXPrivilegeTable)
+                            {
+                                throw Error(strFmt("@NDX:NDXTableDoesNotExist", tableId2Name(nDXPrivilegeTable.TableId)));
+                            }
+
+                            nDXDuty2PrivilegeTable = NDXDuty2PrivilegeTable::findOrCreate(nDXDutyTable.RecId, nDXPrivilegeTable.RecId, false);
+                            nDXDuty2PrivilegeTable.UpdatedUTCDateTime = updatedUTCDateTime;
+                            if (nDXDuty2PrivilegeTable.validateWrite())
+                            {
+                                ttsbegin;
+                                nDXDuty2PrivilegeTable.write();
+                                ttscommit;
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                throw error(error::wrongUseOfFunction(funcName()));
+            }
+
+            // save additional license based information 
+            this.fillFromNDXRoleTable();
+            this.fillFromNDXPrivilegeTable();
+            NDXUserInfo::checkUserLicenseTypeAll();
+
+            // save privileges without role base
+            argsLogger.parmLogActivity("@NDXLogger:NDXSavePrivilegesWithoutRoleBase", 0);
+            logger.LogLineCreate(argsLogger);
+            counter = 0;
+            IEnumerable listNDXPrivilegesNotResolved = _NDXPrivilegeHelper.NDXPrivilegesNotResolvedAsList();
+            IEnumerator enumNDXPrivilegesNotResolved = listNDXPrivilegesNotResolved.GetEnumerator();
+            while (enumNDXPrivilegesNotResolved.MoveNext())
+            {
+                ++counter;
+                argsLogger.parmCounter(counter);
+                logger.LogLineChange(argsLogger);
+
+                nDXprivilege = enumNDXPrivilegesNotResolved.Current;
+                nDXPrivilegeTable = NDXPrivilegeTable::saveFromNDXPrivilege(nDXprivilege, updatedUTCDateTime, NoYes::No);
+
+                // related objects with license
+                this.saveRelatedObjectsFromPrivilege(nDXPrivilege);
+
+            }
+
+            // save duties without role base
+            argsLogger.parmLogActivity("@NDXLogger:NDXSaveDutiesWithoutRoleBase", 0);
+            logger.LogLineCreate(argsLogger);
+            counter = 0;
+            IEnumerable listDutiesNotResolved = _NDXPrivilegeHelper.DutiesNotResolvedAsList();
+            IEnumerator enumDutiesNotResolved = listDutiesNotResolved.GetEnumerator();
+            while (enumDutiesNotResolved.MoveNext())
+            {
+                ++counter;
+                argsLogger.parmCounter(counter);
+                logger.LogLineChange(argsLogger);
+
+                lDuty = enumDutiesNotResolved.Current;
+                nDXDutyTable = NDXDutyTable::saveFromDuty(lDuty, updatedUTCDateTime, NoYes::No);
+            }
+
+            // delete not updated records
+            this.deleteNotUpdated(updatedUTCDateTime, logger);
+        }
+        catch (ex)
+        {
+            Error(ex.Message);
+        }
+        catch
+        {
+            Error("@NDX:NDXErrorInModuleSaveFromNDXPrivilegeHelper");
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteNotUpdated</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 13.12.21
+    /// delete not updated records
+    /// </summary>
+    /// <param name = "_updatedUTCDateTime">NDXUpdatedUTCDateTime</param>
+    /// <param name = "_logger">NDXLoggerSecurityInformationClass</param>
+    protected void deleteNotUpdated(NDXUpdatedUTCDateTime _updatedUTCDateTime, NDXLoggerSecurityInformationClass _logger)
+    {
+        NDXArgsLoggerSecuritiyInformation argsLogger = new NDXArgsLoggerSecuritiyInformation();
+        argsLogger.parmLogActivity("@NDXLogger:NDXDeleteNotUpdatedRecordsStart", 0);
+        _logger.LogLineCreate(argsLogger);
+
+        NDXRole2PrivilegeTable::deleteNotUpdated(_updatedUTCDateTime, _logger);
+        NDXSecurityRelatedObjectTable::deleteNotUpdated(_updatedUTCDateTime, _logger);
+        NDXPrivilege2SecurityRelatedObjectTable::deleteNotUpdated(_updatedUTCDateTime, _logger);
+        NDXRole2DutyTable::deleteNotUpdated(_updatedUTCDateTime, _logger);
+        NDXDuty2PrivilegeTable::deleteNotUpdated(_updatedUTCDateTime, _logger);
+        NDXPrivilegeTable::deleteNotUpdated(_updatedUTCDateTime, _logger);
+        NDXDutyTable::deleteNotUpdated(_updatedUTCDateTime, _logger);
+        NDXRoleTable::deleteNotUpdated(_updatedUTCDateTime, _logger);
+
+        argslogger.parmLogActivity("@NDXLogger:NDXDeleteNotUpdatedRecordsEnd");
+        _logger.LogLineCreate(argsLogger);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>saveRelatedObjectsFromPrivilege</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 23.01.21
+    /// save related objects based on a privilege
+    /// </summary>
+    /// <param name = "nDXPrivilege">NDXPrivilege</param>
+    private void saveRelatedObjectsFromPrivilege(NDXPrivilege nDXPrivilege)
+    {
+        NDXSecurityRelatedObjectTable nDXSecurityRelatedObjectTable;
+        NDXPrivilege2SecurityRelatedObjectTable nDXPrivilege2SecurityRelatedObjectTable;
+        NDXPrivilegeTable nDXPrivilegeTable = NDXPrivilegeTable::find(nDXPrivilege.Privilege.Identifier);
+        SecurityRelatedObjectRecord securityRelatedObjectRecord;
+        IEnumerator enumRelatedObjectsWithLicense;
+
+        // related objects with license
+        enumRelatedObjectsWithLicense = nDXPrivilege.RelatedObjectsWithLicense.GetEnumerator();
+        while (enumRelatedObjectsWithLicense.MoveNext())
+        {
+            securityRelatedObjectRecord = enumRelatedObjectsWithLicense.Current;
+
+            nDXSecurityRelatedObjectTable = NDXSecurityRelatedObjectTable::saveFromSecurityRelatedObjectRecord(securityRelatedObjectRecord, nDXPrivilegeTable, updatedUTCDateTime);
+            nDXPrivilege2SecurityRelatedObjectTable = NDXPrivilege2SecurityRelatedObjectTable::findOrCreate(nDXPrivilegeTable.RecId, nDXSecurityRelatedObjectTable.RecId, false);
+            nDXPrivilege2SecurityRelatedObjectTable.UpdatedUTCDateTime = updatedUTCDateTime;
+            if (nDXPrivilege2SecurityRelatedObjectTable.validateWrite())
+            {
+                ttsbegin;
+                nDXPrivilege2SecurityRelatedObjectTable.write();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>save2DBGrantInfos</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 06.01.21
+    /// </summary>
+    /// <param name = "grantInfos">IEnumerable</param>
+    private void save2DBGrantInfos(IEnumerable grantInfos)
+    {
+        NDXGrantInfoTable   nDXGrantInfoTable;
+        NDXGrantInfo grantInfo;
+        RecordInsertList recordInsertList = new RecordInsertList(tableNum(NDXGrantInfoTable));
+        delete_from nDXGrantInfoTable;
+        IEnumerator enumGrantInfos = grantInfos.GetEnumerator();
+        while (enumGrantInfos.MoveNext())
+        {
+            grantInfo = enumGrantInfos.Current;
+            nDXGrantInfoTable.clear();
+            nDXGrantInfoTable.PrivilegeIdentifier = grantInfo.PrivilegeIdentifier;
+            nDXGrantInfoTable.Name = grantInfo.Name;
+            recordInsertList.add(nDXGrantInfoTable);
+        }
+        recordInsertList.insertDatabase();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>saveFromNDXPrivilegeList</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 11.01.21
+    /// save from NDXPrivilegeList
+    /// </summary>
+    /// <param name = "_NDXPrivilegeList">IEnumerable</param>
+    private void saveFromNDXPrivilegeList(IEnumerable _NDXPrivilegeList)
+    {
+        NDXPrivilegeTable nDXPrivilegeTable;
+        NDXSecurityRelatedObjectTable nDXSecurityRelatedObjectTable;
+        SecurityRelatedObjectRecord securityRelatedObjectRecordWithLicense;
+        Privilege privilege;
+        IEnumerator enumPrivilegeList = _NDXPrivilegeList.GetEnumerator();
+        IEnumerator enumRelatedObjectsWithLicense;
+        NDXPrivilege nDXPrivilege;
+        while (enumPrivilegeList.MoveNext())
+        {
+            nDXPrivilege = enumPrivilegeList.Current;
+            privilege = nDXPrivilege.Privilege;
+            nDXPrivilegeTable = NDXPrivilegeTable::findOrCreate(privilege.Identifier, false);
+            nDXPrivilegeTable.Name = privilege.Name;
+            nDXPrivilegeTable.PrivilegeIdentifier = privilege.Identifier;
+            nDXPrivilegeTable.Description = privilege.Description;
+            nDXPrivilegeTable.LicenseTypeFinancial = nDXPrivilege.LicenseTypeFinancial;
+            nDXPrivilegeTable.UpdatedUTCDateTime = updatedUTCDateTime;
+            ttsbegin;
+            if (nDXPrivilegeTable.validateWrite())
+            {
+                nDXPrivilegeTable.write();
+            }
+            ttscommit;
+
+            enumRelatedObjectsWithLicense = nDXPrivilege.RelatedObjectsWithLicense.GetEnumerator();
+            while (enumRelatedObjectsWithLicense.MoveNext())
+            {
+                securityRelatedObjectRecordWithLicense = enumRelatedObjectsWithLicense.Current;
+                nDXSecurityRelatedObjectTable = NDXSecurityRelatedObjectTable::findOrCreateFromNDXPrivilegeTable(nDXPrivilegeTable
+                    , securityRelatedObjectRecordWithLicense.SecurableType 
+                    , securityRelatedObjectRecordWithLicense.Resource
+                    , false);
+                nDXSecurityRelatedObjectTable.PrivilegeIdentifier = securityRelatedObjectRecordWithLicense.PrivilegeIdentifier;
+                nDXSecurityRelatedObjectTable.ComputedLicenseType = securityRelatedObjectRecordWithLicense.ComputedLicense.LicenseType;
+                nDXSecurityRelatedObjectTable.SecurableType = securityRelatedObjectRecordWithLicense.SecurableType;
+                nDXSecurityRelatedObjectTable.SecurityResource = securityRelatedObjectRecordWithLicense.Resource;
+                nDXSecurityRelatedObjectTable.UpdatedUTCDateTime = updatedUTCDateTime;
+                ttsbegin;
+                if (nDXSecurityRelatedObjectTable.validateWrite())
+                {
+                    nDXSecurityRelatedObjectTable.write();
+                }
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSecurityRepository</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 11.08.20
+    /// getter / setter SecurityRepository
+    /// </summary>
+    /// <param name = "_SecurityRepository">SecurityRepository</param>
+    /// <returns>current SecurityRepository</returns>
+    public SecurityRepository parmSecurityRepository(SecurityRepository _SecurityRepository = securityRepository)
+    {
+        if (_SecurityRepository)
+        {
+            securityRepository = _SecurityRepository;
+        }
+        if (!securityRepository)
+        {
+            securityRepository = SysSecurity::GetSecurityRepository();
+        }
+        return securityRepository;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>TMP_ShowText</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 11.08.20
+    /// </summary>
+    /// <param name = "text">str</param>
+    public static void TMP_ShowText(str text)
+    {
+        const str sqlStatement = "@NDX:NDXSQLStatement";
+        Dialog dlg = new Dialog(sqlStatement);
+        dlg.windowType(FormWindowType::Standard);
+        DialogField dfText = dlg.addField(extendedTypeStr(Notes), sqlStatement);
+        dfText.value(text);
+        dfText.multiLine(true);
+        dfText.widthMode(FormWidth::ColumnWidth);
+        dfText.heightMode(FormHeight::ColumnHeight);
+
+        dlg.run();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillFromNDXRoleTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 21.01.21
+    /// count NDXSecurityRelatedObjectTable records with LicenseType: Enterprice, Activity, Universal
+    /// based on NDXRoleTable records
+    /// </summary>
+    private void fillFromNDXRoleTable()
+    {
+        NDXArgsLoggerSecuritiyInformation argsLogger = new NDXArgsLoggerSecuritiyInformation();
+        NDXSecurityFilterTable nDXSecurityFilterTable;
+        NDXRoleTable nDXRoleTable;
+        NDXSecurityRelatedObjectTable nDXSecurityRelatedObjectTable;
+        Query qRoles = new Query();
+        Query q;
+        QueryRun qrRoles, qr;
+        QueryBuildDataSource qbdsRoles;
+        QueryBuildDataSource qbds1, qbds2, qbds3, qbds4;
+        QueryBuildRange qbrLicenseType, qbrRole;
+        Counter counter = 0;
+
+
+        q = new Query();
+        qbds1 = q.addDataSource(tableNum(NDXSecurityRelatedObjectTable));
+        qbds1.orderMode(OrderMode::GroupBy);
+        qbds1.addSelectionField(fieldNum(NDXSecurityRelatedObjectTable, RecId), SelectionField::Count);
+        qbrLicenseType = qbds1.addRange(fieldNum(NDXSecurityRelatedObjectTable, ComputedLicenseType));
+        qbds2 = qbds1.addDataSource(tableNum(NDXPrivilege2SecurityRelatedObjectTable));
+        qbds2.fetchMode(QueryFetchMode::One2One);
+        qbds2.relations(true);
+        qbds3 = qbds2.addDataSource(tableNum(NDXPrivilegeTable));
+        qbds3.fetchMode(QueryFetchMode::One2One);
+        qbds3.relations(true);
+        qbds4 = qbds3.addDataSource(tableNum(NDXRole2PrivilegeTable));
+        qbds4.relations(true);
+        qbds4.fetchMode(QueryFetchMode::One2One);
+        qbrRole = qbds4.addRange(fieldNum(NDXRole2PrivilegeTable, RefRecIdNDXRoleTable));
+        
+
+        qbdsRoles = qRoles.addDataSource(tableNum(NDXRoleTable));
+        qrRoles = new QueryRun(qRoles);
+        argsLogger.parmLogActivity("@NDXLogger:NDXfillFromNDXRoleTable");
+        logger.LogLineCreate(argsLogger);
+        while (qrRoles.next())
+        {
+            ++counter;
+            argsLogger.parmCounter(counter);
+            logger.LogLineChange(argsLogger);
+            nDXRoleTable = qrRoles.get(tableNum(NDXRoleTable));
+            nDXSecurityFilterTable = nDXSecurityFilterTable::findOrCreate(nDXRoleTable.TableId, nDXRoleTable.RecId, false);
+
+            qbrRole.value(queryValue(nDXRoleTable.RecId));
+
+            qbrLicenseType.value(queryValue(UserLicenseType::Enterprise));
+            qr = new QueryRun(q);
+            qr.next();
+            nDXSecurityRelatedObjectTable = qr.get(tableNum(NDXSecurityRelatedObjectTable));
+            nDXSecurityFilterTable.CountLicenseEnterprise = int642int(nDXSecurityRelatedObjectTable.RecId);
+
+            qbrLicenseType.value(queryValue(UserLicenseType::Activity));
+            qr = new QueryRun(q);
+            qr.next();
+            nDXSecurityRelatedObjectTable = qr.get(tableNum(NDXSecurityRelatedObjectTable));
+            nDXSecurityFilterTable.CountLicenseActivity = int642int(nDXSecurityRelatedObjectTable.RecId);
+
+            qbrLicenseType.value(queryValue(UserLicenseType::Universal));
+            qr = new QueryRun(q);
+            qr.next();
+            nDXSecurityRelatedObjectTable = qr.get(tableNum(NDXSecurityRelatedObjectTable));
+            nDXSecurityFilterTable.CountLicenseUniversal = int642int(nDXSecurityRelatedObjectTable.RecId);
+
+            nDXSecurityFilterTable.UpdatedUTCDateTime = updatedUTCDateTime;
+            if (nDXSecurityFilterTable.validateWrite())
+            {
+                ttsbegin;
+                nDXSecurityFilterTable.write();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillFromNDXPrivilegeTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 21.01.21
+    /// count NDXSecurityRelatedObjectTable records with LicenseType: Enterprice, Activity, Universal
+    /// based on NDXPrivilegeTable records
+    /// </summary>
+    private void fillFromNDXPrivilegeTable()
+    {
+        NDXArgsLoggerSecuritiyInformation argsLogger = new NDXArgsLoggerSecuritiyInformation();
+        Counter counter = 0;
+        NDXSecurityFilterTable nDXSecurityFilterTable;
+        NDXPrivilegeTable nDXPrivilegeTable;
+        NDXSecurityRelatedObjectTable nDXSecurityRelatedObjectTable;
+        Query qPrivileges = new Query();
+        Query q;
+        QueryRun qrPrivileges, qr;
+        QueryBuildDataSource qbdsPrivileges;
+        QueryBuildDataSource qbds1, qbds2;
+        QueryBuildRange qbrLicenseType, qbrPrivilege;
+
+
+        q = new Query();
+        qbds1 = q.addDataSource(tableNum(NDXSecurityRelatedObjectTable));
+        qbds1.orderMode(OrderMode::GroupBy);
+        qbds1.addSelectionField(fieldNum(NDXSecurityRelatedObjectTable, RecId), SelectionField::Count);
+        qbrLicenseType = qbds1.addRange(fieldNum(NDXSecurityRelatedObjectTable, ComputedLicenseType));
+        qbds2 = qbds1.addDataSource(tableNum(NDXPrivilege2SecurityRelatedObjectTable));
+        qbds2.fetchMode(QueryFetchMode::One2One);
+        qbds2.relations(true);
+        qbrPrivilege = qbds2.addRange(fieldNum(NDXPrivilege2SecurityRelatedObjectTable, RefRecIdNDXPrivilegeTable));
+
+        qbdsPrivileges = qPrivileges.addDataSource(tableNum(NDXPrivilegeTable));
+        qrPrivileges = new QueryRun(qPrivileges);
+
+        argsLogger.parmLogActivity("@NDXLogger:NDXfillFromNDXPrivilegeTable");
+        logger.LogLineCreate(argsLogger);
+        
+        while (qrPrivileges.next())
+        {
+            ++counter;
+            argsLogger.parmCounter(counter);
+            logger.LogLineChange(argsLogger);
+
+            nDXPrivilegeTable = qrPrivileges.get(tableNum(NDXPrivilegeTable));
+            nDXSecurityFilterTable = nDXSecurityFilterTable::findOrCreate(nDXPrivilegeTable.TableId, nDXPrivilegeTable.RecId, false);
+
+            qbrPrivilege.value(queryValue(nDXPrivilegeTable.RecId));
+
+            qbrLicenseType.value(queryValue(UserLicenseType::Enterprise));
+            qr = new QueryRun(q);
+            qr.next();
+            nDXSecurityRelatedObjectTable = qr.get(tableNum(NDXSecurityRelatedObjectTable));
+            nDXSecurityFilterTable.CountLicenseEnterprise = int642int(nDXSecurityRelatedObjectTable.RecId);
+
+            qbrLicenseType.value(queryValue(UserLicenseType::Activity));
+            qr = new QueryRun(q);
+            qr.next();
+            nDXSecurityRelatedObjectTable = qr.get(tableNum(NDXSecurityRelatedObjectTable));
+            nDXSecurityFilterTable.CountLicenseActivity = int642int(nDXSecurityRelatedObjectTable.RecId);
+
+            qbrLicenseType.value(queryValue(UserLicenseType::Universal));
+            qr = new QueryRun(q);
+            qr.next();
+            nDXSecurityRelatedObjectTable = qr.get(tableNum(NDXSecurityRelatedObjectTable));
+            nDXSecurityFilterTable.CountLicenseUniversal = int642int(nDXSecurityRelatedObjectTable.RecId);
+
+            nDXSecurityFilterTable.UpdatedUTCDateTime = updatedUTCDateTime;
+            if (nDXSecurityFilterTable.validateWrite())
+            {
+                ttsbegin;
+                nDXSecurityFilterTable.write();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>hasSecuritykeyAccess</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 21.01.21
+    /// Checks if User has a privilege
+    /// </summary>
+    /// <param name = "_securityPrivilegeItentifier">Privilege identifier</param>
+    /// <returns>true or false</returns>
+    public static boolean hasSecuritykeyAccess(SecurityPrivilegeIdentifier _securityPrivilegeItentifier)
+    {
+        System.Collections.IEnumerable rolesFoundList;
+        System.Collections.IEnumerator rolesFoundListEnumerator;
+
+        SecurityUserRole lSecurityUserRole;
+        SecurityRole lSecurityRole;
+
+        boolean userHasPrivilege = false;
+
+        //Is User a System Administrator
+        select firstonly lSecurityUserRole
+            where lSecurityUserRole.User == curUserId()
+                join lSecurityRole
+                    where lSecurityRole.RecId == lSecurityUserRole.SecurityRole
+                        && lSecurityRole.AotName == '-SYSADMIN-';
+        
+        if(lSecurityUserRole)
+        {
+            userHasPrivilege = true;
+        }
+        else
+        {
+            NDXPrivilegeManagement lNDXPrivilegeManagement = new NDXPrivilegeManagement();
+            NDXPrivilegeHelper privilegeHelper = new NDXPrivilegeHelper(lNDXPrivilegeManagement.parmSecurityRepository());
+
+            rolesFoundList = privilegeHelper.getRolesForPrivilege(_securityPrivilegeItentifier);
+
+            if(rolesFoundList != null)
+            {
+                Microsoft.Dynamics.AX.Security.Management.Domain.Role role;
+                rolesFoundListEnumerator = rolesFoundList.GetEnumerator();
+
+                while(rolesFoundListEnumerator.MoveNext())
+                {
+                    role = rolesFoundListEnumerator.Current;
+                    select firstonly lSecurityUserRole
+                        where lSecurityUserRole.User == curUserId()
+                        join lSecurityRole
+                            where lSecurityRole.RecId == lSecurityUserRole.SecurityRole
+                                && lSecurityRole.AotName == role.Identifier;
+                
+                    if(lSecurityUserRole)
+                    {
+                        userHasPrivilege = true;
+                        break;
+                    }
+                }
+            }
+        }
+        return userHasPrivilege;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXUserInfo</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class NDXUserInfo extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>checkFromUserInfo</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 01.02.21
+    /// check if all UserId's from table UserInfo are present in NDXUserInfo
+    /// </summary>
+    public static void checkFromUserInfo()
+    {
+        UserInfo userInfo;
+        NDXUserInfo nDXUserInfo, nDXUserInfoGrp;
+        SysUserLicenseCount sysUserLicenseCount;
+        SysUserLicenseList sysUserLicenseList;
+
+        RecordInsertList recordInsertList = new RecordInsertList(tableNum(NDXUserInfo));
+        while select crosscompany id from userInfo
+//            group by userInfo.id, nDXUserInfoGrp.UserId
+            group by userInfo.id
+            notexists join nDXUserInfoGrp
+                where userInfo.id == nDXUserInfoGrp.UserId
+                    //&& userInfo.TableRefId == tableNum(UserInfo)
+        {
+            nDXUserInfo.clear();
+            nDXUserInfo.UserId = userInfo.id;
+            nDXUserInfo.TableRefId = tableNum(UserInfo);
+            recordInsertList.add(nDXUserInfo);
+        }
+        recordInsertList.insertDatabase();
+
+        while select UserName from sysUserLicenseList
+            join sysUserLicenseCount
+                where sysUserLicenseList.SysUserLicenseCount == sysUserLicenseCount.RecId
+            notexists join nDXUserInfo
+                where nDXUserInfo.UserId == sysUserLicenseList.UserName
+                    //&& nDXUserInfo.TableRefId == tableNum(SysUserLicenseList)
+        {
+            nDXUserInfo.clear();
+            nDXUserInfo.UserId = sysUserLicenseList.UserName;
+            nDXUserInfo.TableRefId = tableNum(SysUserLicenseList);
+            recordInsertList.add(nDXUserInfo);
+        }
+        recordInsertList.insertDatabase();
+
+        while select forupdate UserId from nDXUserInfo
+            where nDXUserInfo.TableRefId == tableNum(UserInfo)
+            notexists join userInfo
+                where userInfo.id == nDXUserInfo.UserId
+                    && nDXUserInfo.TableRefId == tableNum(UserInfo)
+        {
+            if (nDXUserInfo.validateDelete())
+            {
+                ttsbegin;
+                nDXUserInfo.delete();
+                ttscommit;
+            }
+        }
+        while select forupdate UserId from nDXUserInfo
+            where nDXUserInfo.TableRefId == tableNum(SysUserLicenseList)
+            notexists join sysUserLicenseList
+                where sysUserLicenseList.UserName == nDXUserInfo.UserId
+                    && nDXUserInfo.TableRefId == tableNum(SysUserLicenseList)
+            join sysUserLicenseCount
+                where sysUserLicenseCount.recid == sysUserLicenseList.SysUserLicenseCount
+        {
+            if (nDXUserInfo.validateDelete())
+            {
+                ttsbegin;
+                nDXUserInfo.delete();
+                ttscommit;
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkUserLicenseTypeAll</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 01.02.21
+    /// check the number of license relevant elements for all users
+    /// </summary>
+    public static void checkUserLicenseTypeAll()
+    {
+        NDXUserInfo nDXUserInfo;
+     
+        NDXUserInfo::checkFromUserInfo();
+
+        while select nDXUserInfo
+        {
+            nDXUserInfo.checkUserLicenseType();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkUserLicenseType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 01.02.21
+    /// check the number of license relevant elements for a user
+    /// </summary>
+    public void checkUserLicenseType()
+    {
+        NDXSecurityFilterTable nDXSecurityFilterTable;
+        Query q = new Query();
+        QueryRun qr;
+        QueryBuildDataSource qbds1, qbds2, qbds3, qbds4;
+
+        qbds1 = q.addDataSource(tableNum(SecurityUserRole));
+        qbds1.addRange(fieldNum(SecurityUserRole, User)).value(queryValue(this.UserId));
+        qbds1.orderMode(OrderMode::GroupBy);
+        qbds1.relations(true);
+        qbds2 = qbds1.addDataSource(tableNum(SecurityRole));
+        qbds2.relations(true);
+        qbds3 = qbds2.addDataSource(tableNum(NDXRoleTable));
+        qbds3.relations(true);
+        qbds4 = qbds3.addDataSource(tableNum(NDXSecurityFilterTable));
+        qbds4.addSelectionField(fieldNum(NDXSecurityFilterTable, CountLicenseActivity), SelectionField::Sum);
+        qbds4.addSelectionField(fieldNum(NDXSecurityFilterTable, CountLicenseEnterprise), SelectionField::Sum);
+        qbds4.addSelectionField(fieldNum(NDXSecurityFilterTable, CountLicenseUniversal), SelectionField::Sum);
+        qbds4.relations(true);
+
+        qr=new QueryRun(q);
+        qr.next();
+        nDXSecurityFilterTable = qr.get(tableNum(NDXSecurityFilterTable));
+        if (this.CountLicenseActivity != nDXSecurityFilterTable.CountLicenseActivity ||
+            this.CountLicenseEnterprise != nDXSecurityFilterTable.CountLicenseEnterprise ||
+            this.CountLicenseUniversal != nDXSecurityFilterTable.CountLicenseUniversal)
+        {
+            ttsbegin;
+            this.selectForUpdate(true);
+            this.CountLicenseActivity = nDXSecurityFilterTable.CountLicenseActivity;
+            this.CountLicenseEnterprise = nDXSecurityFilterTable.CountLicenseEnterprise;
+            this.CountLicenseUniversal = nDXSecurityFilterTable.CountLicenseUniversal;
+            this.update();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NDXDevDocNDXUserInfo</DeveloperDocumentation>
+	<FormRef>NDXPrivilegeManagementDisplayMenuItem</FormRef>
+	<Label>@NDX:NDXTableNDXUserInfo</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TableGroup>Main</TableGroup>
+	<TitleField1>UserId</TitleField1>
+	<CacheLookup>Found</CacheLookup>
+	<ReplacementKey>UserIdIdx</ReplacementKey>
+	<SaveDataPerCompany>No</SaveDataPerCompany>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>UserId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CountLicenseActivity</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CountLicenseEnterprise</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CountLicenseUniversal</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>TableRefId</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>UserId</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>UserId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CountLicenseActivity</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CountLicenseEnterprise</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CountLicenseUniversal</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>UserId</Name>
+			<ExtendedDataType>UserId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>CountLicenseActivity</Name>
+			<ExtendedDataType>NDXCountLicenseActivity</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>CountLicenseEnterprise</Name>
+			<ExtendedDataType>NDXCountLicenseEnterprise</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>CountLicenseUniversal</Name>
+			<ExtendedDataType>NDXCountLicenseUniversal</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>TableRefId</Name>
+			<ExtendedDataType>RefTableId</ExtendedDataType>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>UserIdIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>UserId</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>UserInfo</Name>
+			<Cardinality>ExactlyOne</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>UserInfo</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>UserId</Name>
+					<Field>UserId</Field>
+					<RelatedField>id</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>UserInfo_2</Name>
+			<Cardinality>ExactlyOne</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>UserInfo</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Aggregation</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>UserId</Name>
+					<Field>UserId</Field>
+					<RelatedField>id</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

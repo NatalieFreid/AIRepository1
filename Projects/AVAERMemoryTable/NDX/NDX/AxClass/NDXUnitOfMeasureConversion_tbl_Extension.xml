@@ -1,0 +1,430 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXUnitOfMeasureConversion_tbl_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 23.08.22
+/// </summary>
+[ExtensionOf(tableStr(UnitOfMeasureConversion))]
+public final class NDXUnitOfMeasureConversion_tbl_Extension
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initFromUnitConvert</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initialize from UnitOfMeasureConversion record
+    /// </summary>
+    /// <param name = "unitConvert">UnitOfMeasureConversion record</param>
+    void initFromUnitConvert(UnitOfMeasureConversion unitConvert)
+    {
+        this.NDXWeight  = unitConvert.NDXWeight;
+        this.NDXHeight = unitConvert.NDXHeight;
+        this.NDXWidth = unitConvert.NDXWidth;
+        this.NDXLength = unitConvert.NDXLength;
+        this.NDXUnitMaxQty = unitConvert.NDXUnitMaxQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 23.08.22
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean validateWrite()
+    {
+        int infologLine = Global::infologLine();
+        boolean ret = next validateWrite();
+        if (!ret)
+        {
+            // false because of same from- and to-unit?
+            if (this.FromUnitOfMeasure  == this.ToUnitOfMeasure)
+            {
+                // allowed and necessary for NDX
+                // don't show messages from next-call
+                int infologlineNow = Global::infologLine();
+                if (infologlineNow != infologLine)
+                {
+                    infolog.clear(infologLine);
+                }
+                ret = true;
+            }
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    void update()
+    {
+        UnitOfMeasureConversion unitOfMeasureConversion = this.orig();
+        next update();
+        UnitOfMeasureConversion::NDX_changeUnitLevelOrder(this, unitOfMeasureConversion.NDXUnitLevel);
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDX_changeUnitLevelOrder</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sort Packing levels
+    /// </summary>
+    /// <param name = "_unitOfMeasureConversion">UnitOfMeasureConversion record</param>
+    /// <param name = "_unitLevelFrom">_unitLevelFrom</param>
+    static public void NDX_changeUnitLevelOrder(UnitOfMeasureConversion _unitOfMeasureConversion, NDXUnitLevel _unitLevelFrom)
+    {
+        NDXUnitLevel   unitLevelTo     = _unitOfMeasureConversion.NDXUnitLevel;
+        UnitOfMeasureConversion     l_UnitConvert;
+        ;
+
+        // bei neuen DS keine Aktion
+        if (!_unitOfMeasureConversion.RecId)
+        {
+            return;
+        }
+
+        ttsbegin;
+        if (_unitLevelFrom > unitLevelTo)
+        {
+            while select forUpdate l_UnitConvert
+                where l_UnitConvert.Product == _unitOfMeasureConversion.Product
+                    && l_UnitConvert.NDXUnitLevel >= unitLevelTo
+                    && l_UnitConvert.NDXUnitLevel <= (_unitLevelFrom - 1)
+            {
+                l_UnitConvert.NDXUnitLevel = l_UnitConvert.NDXUnitLevel + 1;
+                l_UnitConvert.doUpdate();
+            }
+        }
+        else
+        {
+            while select forUpdate l_UnitConvert
+                where l_UnitConvert.Product == _unitOfMeasureConversion.Product
+                    && l_UnitConvert.NDXUnitLevel >= (_unitLevelFrom + 1)
+                    && l_UnitConvert.NDXUnitLevel <= unitLevelTo
+            {
+                l_UnitConvert.NDXUnitLevel = l_UnitConvert.NDXUnitLevel - 1;
+                l_UnitConvert.doupdate();
+            }
+        }
+
+        select firstonly forUpdate l_UnitConvert
+            where l_UnitConvert.RecId == _unitOfMeasureConversion.RecId;
+        
+        if (l_UnitConvert)
+        {
+            l_UnitConvert.NDXUnitLevel = unitLevelTo;
+            l_UnitConvert.doupdate();
+        }
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDX_getDeliveryUnitLevel</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets delivery unit level
+    /// </summary>
+    /// <param name = "_product">product</param>
+    /// <param name = "_unitLevel">level</param>
+    /// <returns>UnitOfMeasureConversion record</returns>
+    static public UnitOfMeasureConversion NDX_getDeliveryUnitLevel(EcoResProduct _product, NDXUnitLevel _unitLevel = 1)
+    {
+        UnitOfMeasureConversion unitOfMeasureConversion;
+        
+        select firstOnly unitOfMeasureConversion
+            where unitOfMeasureConversion.Product == _product.RecId
+            &&  unitOfMeasureConversion.NDXUnitLevel == _unitLevel;
+
+        return unitOfMeasureConversion;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findByUnitOfMeasureConversion</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// find or creates UnitOfMeasureConversion record
+    /// </summary>
+    /// <param name = "_unitOfMeasureConversion">UnitOfMeasureConversion</param>
+    /// <param name = "_forupdate">true or false</param>
+    /// <returns>UnitOfMeasureConversion record</returns>
+    static public UnitOfMeasureConversion findByUnitOfMeasureConversion(UnitOfMeasureConversion _unitOfMeasureConversion, boolean _forupdate = false)
+    {
+        UnitOfMeasureConversion unitOfMeasureConversion;
+        unitOfMeasureConversion.selectForUpdate(_forupdate);
+
+        if(_unitOfMeasureConversion != null)
+        {
+            select firstonly unitOfMeasureConversion
+                where unitOfMeasureConversion.Product == _unitOfMeasureConversion.Product;
+        }
+
+        return unitOfMeasureConversion;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findByFromToSymbolAndProduct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds record by From unit and To unit and Product RecId
+    /// </summary>
+    /// <param name = "_from">from unit RecId</param>
+    /// <param name = "_to">to unit RecId</param>
+    /// <param name = "_product">Product RecId</param>
+    /// <param name = "_forupdate">true or false</param>
+    /// <returns>UnitOfMeasureConversion record</returns>
+    static public UnitOfMeasureConversion findByFromToSymbolAndProduct(RecId _from, RecId _to, RecId _product,  boolean _forupdate = false)
+    {
+        UnitOfMeasureConversion unitOfMeasureConversion;
+        
+        unitOfMeasureConversion.selectForUpdate(_forupdate);
+
+        if(_from > 0 && _to > 0 && _product > 0)
+        {
+            select firstonly unitOfMeasureConversion
+                where unitOfMeasureConversion.FromUnitOfMeasure == _from
+                    && unitOfMeasureConversion.ToUnitOfMeasure == _to
+                    && unitOfMeasureConversion.Product == _product;
+                    
+        }
+
+        return unitOfMeasureConversion;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findByNiedaxRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds record by Niedax rcord object
+    /// </summary>
+    /// <param name = "_record">Niedax object</param>
+    /// <param name = "_forupdate">true or false</param>
+    /// <returns>UnitOfMeasureConversion record</returns>
+    static public UnitOfMeasureConversion findByNiedaxRecord(Niedax.Units.UnitConvertRecord _record, boolean _forupdate = false)
+    {
+        UnitOfMeasureConversion unitOfMeasureConversion;
+        unitOfMeasureConversion.selectForUpdate(_forupdate);
+
+        UnitOfMeasureSymbol fromSymbol = _record.FromUnit;
+        UnitOfMeasureSymbol toSymbol = _record.ToUnit;
+
+        InventTable lInventTable;
+        ItemId itemId = _record.ItemId;
+
+        select crosscompany lInventTable where lInventTable.ItemId == itemId;
+
+        UnitOfMeasure unitOfMeasureFrom = UnitOfMeasure::findBySymbol(fromSymbol);
+        UnitOfMeasure unitOfMeasureTo = UnitOfMeasure::findBySymbol(toSymbol);
+
+        if(unitOfMeasureFrom && unitOfMeasureTo && lInventTable)
+        {
+            select firstonly unitOfMeasureConversion
+                where unitOfMeasureConversion.FromUnitOfMeasure == unitOfMeasureFrom.RecId
+                    && unitOfMeasureConversion.ToUnitOfMeasure == unitOfMeasureTo.RecId
+                    && unitOfMeasureConversion.Product == lInventTable.Product;
+        }
+
+        return unitOfMeasureConversion;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findOrCreateByObject</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds or creates UnitOfMeasureConversion record by Niedax object
+    /// </summary>
+    /// <param name = "_record">Niedax.Units.UnitConvertRecord object</param>
+    /// <returns>UnitOfMeasureConversion record</returns>
+    static public UnitOfMeasureConversion findOrCreateByObject(Niedax.Units.UnitConvertRecord _record, boolean _checkForItemProductRelection = true)
+    {
+        UnitOfMeasureConversion lUnitOfMeasureConversion;
+
+        UnitOfMeasureSymbol fromSymbol;
+        UnitOfMeasureSymbol toSymbol;
+        InventTable lInventTable;
+        ItemId itemId;
+
+        EcoResProduct ecoResProduct;
+
+        if(_record != null)
+        {
+            fromSymbol = _record.FromUnit;
+            toSymbol = _record.ToUnit;
+            itemId = _record.ItemId;
+
+            select crosscompany lInventTable where lInventTable.Itemid == itemId;
+            
+            if(!lInventTable)
+            {
+                throw error(strFmt('Item %1 does not exist', itemId));
+            }
+            
+            //From Unit and To Unit are switched. 
+            UnitOfMeasure unitOfMeasureFrom = UnitOfMeasure::findBySymbol(toSymbol);
+            UnitOfMeasure unitOfMeasureTo = UnitOfMeasure::findBySymbol(fromSymbol);
+            
+            lUnitOfMeasureConversion = UnitOfMeasureConversion::findByFromToSymbolAndProduct(unitOfMeasureFrom.RecId, unitOfMeasureTo.RecId, lInventTable.Product, true);
+
+            if(_checkForItemProductrelection && lUnitOfMeasureConversion)
+            {
+                ecoResProduct = ecoResProduct::find(lInventTable.Product);
+                //if model number is not equal to product number then the item is not main item (mor than on item points to one product intercompany)
+                if(ecoResProduct && lInventTable.NDXModelNumber != ecoResProduct.DisplayProductNumber)
+                {
+                    return null;
+                }
+            }
+
+            if(!lUnitOfMeasureConversion && lInventTable && unitOfMeasureFrom && unitOfMeasureTo)
+            {
+                lUnitOfMeasureConversion.initValue();
+                lUnitOfMeasureConversion.FromUnitOfMeasure = unitOfMeasureFrom.RecId;
+                lUnitOfMeasureConversion.ToUnitOfMeasure = unitOfMeasureTo.RecId;
+                lUnitOfMeasureConversion.Product = lInventTable.Product;
+
+                lUnitOfMeasureConversion.insert();
+            }
+            
+            lUnitOfMeasureConversion.NDXUnitLevel  = -1;
+            
+            ttsbegin;
+            lUnitOfMeasureConversion.doUpdate();
+            ttscommit;
+
+            lUnitOfMeasureConversion.NDXUnitLevel = _record.NDX_UnitLevel;
+            lUnitOfMeasureConversion.Factor = _record.Factor;
+            
+            lUnitOfMeasureConversion.NDXFixedValues = _record.NDX_FixedValues;
+            lUnitOfMeasureConversion.NDXHeight = _record.NDX_UnitHeigth;
+            lUnitOfMeasureConversion.NDXLength = _record.NDX_UnitLength;
+            lUnitOfMeasureConversion.NDXWidth = _record.NDX_UnitWidth;
+
+            lUnitOfMeasureConversion.NDXisDeliveryUnitLowest = _record.NDX_isDeliveryUnitLowest;
+            lUnitOfMeasureConversion.NDXisDeliveryUnitPreferred = _record.NDX_isDeliveryUnitPreferred;
+            lUnitOfMeasureConversion.NDXUnitConvertPrevLevel = _record.NDX_UnitConvertPrevLevel;
+
+            lUnitOfMeasureConversion.NDXWeight = _record.NDX_UnitConvertWeight;
+            lUnitOfMeasureConversion.NDXUnitMaxQty = _record.NDX_UnitMaxQty;
+            lUnitOfMeasureConversion.NDXUnitMinQty = _record.NDX_UnitMinQty;
+
+            lUnitOfMeasureConversion.NDXLengthUnitOfMeasure = UnitOfMeasure::findBySymbol('mm').RecId;
+            lUnitOfMeasureConversion.NDXVolumeUnitOfMeasure = UnitOfMeasure::findBySymbol('m3').RecId;
+            lUnitOfMeasureConversion.NDXMassUnitOfMeasure = UnitOfMeasure::findBySymbol('kg').RecId;
+
+            ttsbegin;
+            lUnitOfMeasureConversion.doUpdate();
+            ttscommit;
+        }
+        
+        return lUnitOfMeasureConversion;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ndxDispVolume</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Displays volume
+    /// </summary>
+    /// <returns>Volume</returns>
+    public display NDXVolume ndxDispVolume()
+    {
+        UnitOfMeasure lUnitOfMeasureFrom;
+        NDXVolume volume = this.NDXLength * this.NDXWidth * this.NDXHeight;
+       
+        //return valume in m3
+        
+        lUnitOfMeasureFrom = UnitOfMeasure::findBySymbol(UnitOfMeasure::find(this.NDXLengthUnitOfMeasure).Symbol + '3');
+        volume = EcoResProductUnitConverter::convertForReleasedProduct('','', volume, lUnitOfMeasureFrom.RecId, this.NDXVolumeUnitOfMeasure, false, false);
+        
+        return volume;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDX_getDeliveryUnitLowest</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// get lowest delivery unit
+    /// </summary>
+    /// <param name = "_inventTable">invent table record</param>
+    /// <returns>UnitOfMeasureConversion record</returns>
+    static UnitOfMeasureConversion NDX_getDeliveryUnitLowest(InventTable _inventTable)
+    {
+        UnitOfMeasureConversion unitOfMeasureConversion;
+        
+        select firstOnly unitOfMeasureConversion
+            where   unitOfMeasureConversion.Product == _inventTable.Product
+                &&  unitOfMeasureConversion.NDXisDeliveryUnitLowest == NoYes::Yes;
+
+        return unitOfMeasureConversion;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDX_getDeliveryUnitPreferred</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// get prefered delivery unit
+    /// </summary>
+    /// <param name = "_inventTable">invent table record</param>
+    /// <returns>UnitOfMeasureConversion record</returns>
+    static UnitOfMeasureConversion NDX_getDeliveryUnitPreferred(InventTable _inventTable)
+    {
+        UnitOfMeasureConversion unitOfMeasureConversion;
+        
+        select firstOnly unitOfMeasureConversion
+            where   unitOfMeasureConversion.Product == _inventTable.Product
+                &&  unitOfMeasureConversion.NDXisDeliveryUnitPreferred == NoYes::Yes;
+
+        return unitOfMeasureConversion;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dispRacDiscAble</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Displays if Unit is RacDiscAble
+    /// </summary>
+    /// <param name = "_inventTable">invent table record</param>
+    /// <returns>UnitOfMeasureConversion record</returns>
+    display AVARackDiscAble dispRacDiscAble()
+    {
+        UnitOfMeasure unitOfMeasure;
+        
+        select firstOnly unitOfMeasure
+            where   unitOfMeasure.RecId == this.FromUnitOfMeasure;
+        return unitOfMeasure.AVARackDiscAble;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

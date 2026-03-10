@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACreateCycleCountService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class AVACreateCycleCountService
+{
+    AVACycleCountGroupByType    cycleCountGroupByType;
+    WHSParameters               parameters;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    private void init()
+    {
+        parameters = WHSParameters::find();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromContract</Name>
+				<Source><![CDATA[
+    private void initFromContract(AVACreateCycleCountContract _contract)
+    {
+        cycleCountGroupByType =  _contract.parmCycleCountGroupBy();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>create</Name>
+				<Source><![CDATA[
+    public void create(AVACreateCycleCountContract _contract)
+    {
+        Query       query;
+        QueryRun    queryRun;
+        InventSum   inventSum;
+        InventDim   inventDim;
+
+        this.init();
+        this.initFromContract(_contract);
+
+        query       = _contract.getQuery();
+        queryRun    = new QueryRun(query);
+
+        while (queryRun.next())
+        {
+            inventSum = queryRun.get(tableNum(InventSum));
+            inventDim = queryRun.get(tableNum(InventDim));
+
+            if (this.validateCreate(inventSum, inventDim))
+            {
+                this.doCreate(inventSum, inventDim);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateCreate</Name>
+				<Source><![CDATA[
+    protected boolean validateCreate(InventSum _inventSum, InventDim  _inventDim)
+    {
+        boolean     valid;
+        WMSLocation wmsLocation;
+        WHSLocType  locationType;
+
+        wmsLocation     = WMSLocation::find(_inventDim.wmsLocationId, _inventDim.InventLocationId);
+        locationType    = wmsLocation.whsLocationType();
+
+        if (wmsLocation.RecId           > 0 
+         && locationType                != parameters.ShipFinalLocType
+         && locationType                != parameters.UserLocType
+         && locationType                != parameters.StageLocType
+         && _inventSum.PhysicalInvent    > 0)
+        {
+            valid = true;
+        }
+        else    
+        {
+            valid = checkFailed("@NDX:NotValidCountingTypeLocation");
+        }
+
+        // If this location is not Cycle Countable, skip it.
+        if (!WHSLocationProfile::find(wmsLocation.LocProfileId).CycleCountable)
+        {
+            valid = checkFailed("@NDX:NotValidCountingLocation");
+        }
+
+        if (WHSWorkLine::avaAnyCycleCountWorkExistsAtLocation(wmsLocation))
+        {
+            valid = checkFailed("@NDX:WorkAlreadyExists");
+        }
+
+        return valid;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>doCreate</Name>
+				<Source><![CDATA[
+    protected void doCreate(InventSum _inventSum, InventDim  _inventDim)
+    {
+        WhsCycleCountCreatePlan cycleCountCreatePlan;
+        Set		                itemsAndDimensionsForWorkCreationSet;
+        WMSLocation             wmsLocation;
+
+        wmsLocation                             = WMSLocation::find(_inventDim.wMSLocationId, _inventDim.InventLocationId);
+        cycleCountCreatePlan                    = WhsCycleCountCreatePlan::construct();
+        itemsAndDimensionsForWorkCreationSet    = new Set(Types::Container);
+
+        this.manageItemAndDims(_inventSum, _inventDim, itemsAndDimensionsForWorkCreationSet);
+
+        if (cycleCountGroupByType == AVACycleCountGroupByType::Location)
+        {
+            cycleCountCreatePlan.avaParmisWorkTemplateBreakingWorkLines(false);
+        }
+        else 
+        {
+            cycleCountCreatePlan.avaParmisWorkTemplateBreakingWorkLines(true);
+        }
+        
+        cycleCountCreatePlan.avaCreateWork(wmsLocation, itemsAndDimensionsForWorkCreationSet);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>manageItemAndDims</Name>
+				<Source><![CDATA[
+    private void manageItemAndDims(InventSum _inventSum, InventDim  _inventDim, Set _itemsAndDimensionsForWorkCreationSet)
+    {
+        ItemId      itemIdForWorkCreation;
+        InventDimId inventDimIdForWorkCreation;
+
+        if (cycleCountGroupByType != AVACycleCountGroupByType::Location)
+        {
+            [itemIdForWorkCreation, inventDimIdForWorkCreation] = this.findItemAndDimensionForWorkCreation(_inventSum, _inventDim);
+
+            if (itemIdForWorkCreation != '')
+            {
+                _itemsAndDimensionsForWorkCreationSet.add([itemIdForWorkCreation, inventDimIdForWorkCreation]);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findItemAndDimensionForWorkCreation</Name>
+				<Source><![CDATA[
+    private container findItemAndDimensionForWorkCreation(InventSum _inventSum, InventDim _productDim)
+    {
+        if (_productDim.anyProductDimensionSpecified())
+        {
+            if (!_productDim.RecId)
+            {
+                _productDim = this.findProductDimensionsInventDim(_inventSum.InventDimId);
+            }
+
+            return [_inventSum.ItemId, _productDim.InventDimId];
+            
+        }
+        else
+        {
+            return [_inventSum.ItemId, ''];
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findProductDimensionsInventDim</Name>
+				<Source><![CDATA[
+    private InventDim findProductDimensionsInventDim(InventDimId _inventDimId)
+    {
+        InventDim inventDim = InventDim::find(_inventDimId);
+
+        return InventDim::findDim(InventProductDimension::createInventDimFromTable(inventDim));
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

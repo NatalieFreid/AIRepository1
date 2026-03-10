@@ -1,0 +1,399 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxDataEntityView xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAFASAssetTransEntity</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Data Entity for AssetTrans
+/// </summary>
+public class AVAFASAssetTransEntity extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Validates the records
+    /// </summary>
+    /// <returns></returns>
+    public boolean validateWrite()
+    {
+        boolean isValid = AVAFASAssetTransEntity::validateAssetTrans(this);
+
+        if (isValid)
+        {
+            isValid = super();
+        }
+
+        return isValid;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateAssetTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Necessary validations and related error messages
+    /// </summary>
+    /// <param name = "_assetTransEntity">Current Entity</param>
+    /// <returns>Result of validations</returns>
+    public static boolean validateAssetTrans(AVAFASAssetTransEntity _assetTransEntity)
+    {
+        boolean     isValid = true;
+        AssetTable  assetTable = AssetTable::find(_assetTransEntity.AssetId);
+        AssetBook   assetBook = AssetBook::find(_assetTransEntity.AssetId, _assetTransEntity.BookId);
+
+        if(!assetTable)
+        {
+            isValid = checkFailed("@NDX:NXAErrorMessageAssetTransEntityAssetValidation");
+        }
+        
+        if(assetTable && !assetBook)
+        {
+            isValid = checkFailed("@NDX:NXAErrorMessageAssetTransEntityBookValidation");
+        }
+
+        return isValid;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyCustomStagingToTarget</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates or updates all records at the same time
+    /// </summary>
+    /// <param name = "_dmfDefinitionGroupExecution">Current DMFDefinitionGroupExecution</param>
+    /// <returns>Container of created and updated records</returns>
+    public static container copyCustomStagingToTarget(DMFDefinitionGroupExecution _dmfDefinitionGroupExecution)
+    {
+        // clear out any validation errors from previous runs.
+        DMFStagingValidationLog log;
+        log.skipDataMethods(true);
+
+        delete_from log
+            where log.DefinitionGroupName == _dmfDefinitionGroupExecution.DefinitionGroup
+               && log.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId;
+
+        AVAFASAssetTransStaging staging;
+
+        // Set all Validated records back to NotStarted so they will be attempted again.
+        update_recordset staging setting TransferStatus = DMFTransferStatus::NotStarted
+            where staging.TransferStatus == DMFTransferStatus::Validated
+                && staging.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                && staging.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId;
+
+        // Get the number of records updated.
+        int64 updatedRecords = AVAFASAssetTransEntity::updateExistingAssetTrans(_dmfDefinitionGroupExecution);
+
+        // Get the number of records inserted.
+        int64 newRecords = AVAFASAssetTransEntity::createAssetTrans(_dmfDefinitionGroupExecution);
+        return [newRecords, updatedRecords];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateExistingAssetTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates all records at the same time
+    /// </summary>
+    /// <param name = "_dmfDefinitionGroupExecution">Current DMFDefinitionGroupExecution</param>
+    /// <returns>Number of updated records</returns>
+    protected static int64 updateExistingAssetTrans(DMFDefinitionGroupExecution _dmfDefinitionGroupExecution)
+    {
+        AssetTrans assetTrans;
+        assetTrans.skipDataMethods(true);
+        AVAFASAssetTransStaging staging;
+
+        update_recordset assetTrans setting
+                AmountCur = staging.AmountCur,
+                AmountMST = staging.AmountMST,
+                Txt = staging.Txt,
+                AssetGroup = staging.AssetGroup,
+                AssetId = staging.AssetId,
+                BookId = staging.BookId,
+                CurrencyCode = staging.CurrencyCode,
+                DefaultDimension = staging.DefaultDimension,
+                DisposalTransaction = staging.DisposalTransaction,
+                PostingProfile = staging.PostingProfile,
+                Reclassification = staging.Reclassification,
+                TransDate = staging.TransDate,
+                TransType = staging.TransType,
+                Voucher = staging.Voucher
+            join staging
+                where staging.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                    && staging.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+                    && staging.AssetGroup == assetTrans.AssetGroup
+                    && staging.AssetId == assetTrans.AssetId
+                    && staging.BookId == assetTrans.BookId
+                    && staging.TransDate == assetTrans.TransDate
+                    && staging.TransType == assetTrans.TransType
+                    && staging.Voucher == assetTrans.Voucher
+                    && staging.Txt == assetTrans.Txt;
+            
+        return assetTrans.RowCount();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createAssetTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates all records at the same time
+    /// </summary>
+    /// <param name = "_dmfDefinitionGroupExecution">Current DMFDefinitionGroupExecution</param>
+    /// <returns>Number of created records</returns>
+    protected static int64 createAssetTrans(DMFDefinitionGroupExecution _dmfDefinitionGroupExecution)
+    {
+        AssetTrans assetTrans;
+        assetTrans.skipDataMethods(true);
+        AVAFASAssetTransStaging staging;
+        SelectableDataArea currentCompany = curExt();
+
+        insert_recordset assetTrans 
+            (
+            AmountCur, AmountMST, Txt, AssetGroup, AssetId,
+            BookId, CurrencyCode,
+            DefaultDimension,
+            DisposalTransaction,
+            PostingProfile, Reclassification,
+            TransDate, TransType, Voucher
+            )
+        select
+            AmountCur, AmountMST, Txt, AssetGroup, AssetId,
+            BookId, CurrencyCode,
+            DefaultDimension,
+            DisposalTransaction,
+            PostingProfile, Reclassification,
+            TransDate, TransType, Voucher
+        from staging
+            where staging.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                && staging.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+                && staging.TransferStatus == DMFTransferStatus::NotStarted;
+
+        return assetTrans.RowCount();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postTargetProcess</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Provide the possibility to update the processed records
+    /// </summary>
+    /// <param name = "_dmfDefinitionGroupExecution"></param>
+    public static void postTargetProcess(DMFDefinitionGroupExecution _dmfDefinitionGroupExecution)
+    {
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postTargetProcessSetBased</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Provide the possibility to update the processed records
+    /// </summary>
+    /// <param name = "_dmfDefinitionGroupExecution"></param>
+    public static void postTargetProcessSetBased(DMFDefinitionGroupExecution _dmfDefinitionGroupExecution)
+    {
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<ConfigurationKey>Asset</ConfigurationKey>
+	<Label>@NDX:NXAAssetTransEntity</Label>
+	<Tags>Transaction</Tags>
+	<DataManagementEnabled>Yes</DataManagementEnabled>
+	<DataManagementStagingTable>AVAFASAssetTransStaging</DataManagementStagingTable>
+	<EntityCategory>Transaction</EntityCategory>
+	<IsPublic>Yes</IsPublic>
+	<PrimaryCompanyContext>DataAreaId</PrimaryCompanyContext>
+	<PrimaryKey>EntityKey</PrimaryKey>
+	<PublicCollectionName>AssetTrans</PublicCollectionName>
+	<PublicEntityName>AssetTrans</PublicEntityName>
+	<SupportsSetBasedSqlOperations>Yes</SupportsSetBasedSqlOperations>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>AmountCur</Name>
+			<DataField>AmountCur</DataField>
+			<DataSource>AssetTrans</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>AmountMST</Name>
+			<DataField>AmountMST</DataField>
+			<DataSource>AssetTrans</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>AssetGroup</Name>
+			<DataField>AssetGroup</DataField>
+			<DataSource>AssetTrans</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>AssetId</Name>
+			<DataField>AssetId</DataField>
+			<DataSource>AssetTrans</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>BookId</Name>
+			<DataField>BookId</DataField>
+			<DataSource>AssetTrans</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>CurrencyCode</Name>
+			<DataField>CurrencyCode</DataField>
+			<DataSource>AssetTrans</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>DefaultDimension</Name>
+			<AccessModifier>Private</AccessModifier>
+			<DataField>DefaultDimension</DataField>
+			<DataSource>AssetTrans</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>DisposalTransaction</Name>
+			<DataField>DisposalTransaction</DataField>
+			<DataSource>AssetTrans</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PostingProfile</Name>
+			<DataField>PostingProfile</DataField>
+			<DataSource>AssetTrans</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>Reclassification</Name>
+			<DataField>Reclassification</DataField>
+			<DataSource>AssetTrans</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>TransDate</Name>
+			<DataField>TransDate</DataField>
+			<DataSource>AssetTrans</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>TransType</Name>
+			<DataField>TransType</DataField>
+			<DataSource>AssetTrans</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>Txt</Name>
+			<DataField>Txt</DataField>
+			<DataSource>AssetTrans</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>Voucher</Name>
+			<DataField>Voucher</DataField>
+			<DataSource>AssetTrans</DataSource>
+		</AxDataEntityViewField>
+	</Fields>
+	<Keys>
+		<AxDataEntityViewKey>
+			<Name>EntityKey</Name>
+			<Fields>
+				<AxDataEntityViewKeyField>
+					<DataField>AssetGroup</DataField>
+				</AxDataEntityViewKeyField>
+				<AxDataEntityViewKeyField>
+					<DataField>AssetId</DataField>
+				</AxDataEntityViewKeyField>
+				<AxDataEntityViewKeyField>
+					<DataField>BookId</DataField>
+				</AxDataEntityViewKeyField>
+				<AxDataEntityViewKeyField>
+					<DataField>TransDate</DataField>
+				</AxDataEntityViewKeyField>
+				<AxDataEntityViewKeyField>
+					<DataField>TransType</DataField>
+				</AxDataEntityViewKeyField>
+				<AxDataEntityViewKeyField>
+					<DataField>Voucher</DataField>
+				</AxDataEntityViewKeyField>
+				<AxDataEntityViewKeyField>
+					<DataField>Txt</DataField>
+				</AxDataEntityViewKeyField>
+			</Fields>
+		</AxDataEntityViewKey>
+	</Keys>
+	<Mappings />
+	<Ranges />
+	<Relations />
+	<StateMachines />
+	<ViewMetadata>
+		<Name>Metadata</Name>
+		<SourceCode>
+			<Methods>
+				<Method>
+					<Name>classDeclaration</Name>
+					<Source><![CDATA[
+[Query]
+public class Metadata extends QueryRun
+{
+}
+]]></Source>
+				</Method>
+			</Methods>
+		</SourceCode>
+		<DataSources>
+			<AxQuerySimpleRootDataSource>
+				<Name>AssetTrans</Name>
+				<DynamicFields>Yes</DynamicFields>
+				<Table>AssetTrans</Table>
+				<DataSources />
+				<DerivedDataSources />
+				<Fields />
+				<Ranges />
+				<GroupBy />
+				<Having />
+				<OrderBy />
+			</AxQuerySimpleRootDataSource>
+		</DataSources>
+	</ViewMetadata>
+</AxDataEntityView>

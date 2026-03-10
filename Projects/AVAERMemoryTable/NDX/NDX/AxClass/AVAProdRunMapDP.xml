@@ -1,0 +1,395 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAProdRunMapDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA_009012_RouteOprCard_Report
+/// </summary>
+[SRSReportParameterAttribute(classstr(AVAProdRunMapContract))]
+
+class AVAProdRunMapDP extends SRSReportDataProviderBase
+{
+    AVAProdRunMapHeaderTmp      headerTmp;
+    AVAProdRunMapBOMLinesTmp    bomLinesTmp;
+    AVAProdRunMapRouteLinesTmp  routeLinesTmp;
+    //Parameter je nach Aufruf von contract zu setzen.
+    Boolean                 firstProdRoute;
+    Boolean                 firstAGDetail;
+    OprNum                  singleOprNum;
+    OprNumTo                oprNumTo;
+    OprNumFrom              oprNumFrom;
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHeaderTmp</Name>
+				<Source><![CDATA[
+    [SrsReportDataSetAttribute(tableStr(AVAProdRunMapHeaderTmp))]
+    public AVAProdRunMapHeaderTmp getHeaderTmp()
+    {
+        select headerTmp;
+        return headerTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getBOMLinesTmp</Name>
+				<Source><![CDATA[
+    [SrsReportDataSetAttribute(tableStr(AVAProdRunMapBOMLinesTmp))]
+    public AVAProdRunMapBOMLinesTmp getBOMLinesTmp()
+    {
+        select bomLinesTmp;
+        return bomLinesTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getRouteLinesTmp</Name>
+				<Source><![CDATA[
+    [SrsReportDataSetAttribute(tableStr(AVAProdRunMapRouteLinesTmp))]
+    public AVAProdRunMapRouteLinesTmp getRouteLinesTmp()
+    {
+        select routeLinesTmp;
+        return routeLinesTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        AVAProdRunMapContract   contract;
+        ProdId                  prodId;
+        ProdTable               prodTable;
+
+        contract = this.parmDataContract() as AVAProdRunMapContract;
+        ProdId  = contract.parmProdId();
+        prodTable = prodTable::find(prodId);
+
+
+        firstProdRoute  = true;
+        oprNumFrom      = 10;
+        oprNumTo        = 100;
+        this.populateHeader(ProdTable);
+
+        this.populateRouteLines(prodTable);
+
+        this.populateBOMLines(prodTable);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateHeader</Name>
+				<Source><![CDATA[
+    private void populateHeader(ProdTable    _prodTable)
+    {
+        KCS_CCLCharacteristicGroupList          cclGroupList;
+        KCS_CCLCharacteristicValueRef           cclValueRef;
+        KCS_CCLCharacteristicTable              cclCharTable;
+        UnitOfMeasureConversion                 UnitConversion;
+        boolean                                 firstUnit = true;
+        InventTable                             inventTable = _prodTable.inventTable();
+        ProdParameters                          prodParameters = ProdParameters::find();
+        ProdRouteJob                            prodRouteJob;
+        ProdRoute                               prodRoute;
+        int                                     i = 1;
+        
+        if (_prodTable.AVAProdRunMapQty == 1)
+        {
+            headerTmp.Title = "@NDX:NXAProdRunMap";
+        }
+        else
+        {
+            headerTmp.Title = "@NDX:NXAProdRunMap" + ' - ' + "@NDX:NXACopy";
+        }
+        // if copy Title "Kopie"
+        headerTmp.ProdId            = _prodTable.ProdId;
+        headerTmp.ProdIdQRCode      = this.generateQRCode(_prodTable.ProdId);
+        headerTmp.DataArea          = _prodTable.DataAreaId;
+        if(InventTable::find(_ProdTable.ItemId).NDXProductName2())
+        {
+            headerTmp.ItemDescription = _ProdTable.Name + '\n' + InventTable::find(_ProdTable.ItemId).NDXProductName2();
+        }
+        else
+        {
+            headerTmp.ItemDescription = _ProdTable.Name;
+        }
+        headerTmp.ItemId            = _prodTable.ItemId;
+        headerTmp.Color             = _ProdTable.InventDim().InventColorId;
+        headerTmp.InventLocationId  = _prodTable.inventDim().InventLocationId;
+        headerTmp.InventRefId       = _prodTable.InventRefId;
+        headerTmp.ProdQty           = _prodTable.QtySched;
+        headerTmp.InventUnitId      = inventTable.inventTableModuleInvent().UnitId;
+        headerTmp.PAInfo            = SalesLine::findInventTransId(_ProdTable.InventRefTransId).NDX_PAInfo;
+        headerTmp.PieceWeight       = inventTable.NetWeight;
+        headerTmp.AVANumOfLinesProdRunMap   = _prodTable.AVANumOfLinesProdRunMap;
+        headerTmp.AVAReduceLines    = enum2int(JmgProdParametersDim::find(_prodTable.InventDimId).AVAReduceProdRunMapReport);
+        
+        while select UnitConversion where UnitConversion.Product == inventTable.Product
+        {
+            if (!firstUnit)
+            {
+                headerTmp.Units += '\n';
+            }
+            firstUnit = false;
+            headerTmp.Units += UnitConversion.displayQuickFormula();
+        }
+
+        select firstonly prodRoute where prodRoute.ProdId == _prodTable.ProdId
+                                      && prodRoute.OprPriority  == RouteOprPriority::Primary
+            join prodRouteJob where prodRouteJob.ProdId      == prodRoute.ProdId           &&
+                                             prodRouteJob.OprNum      == prodRoute.OprNum           &&
+                                             prodRouteJob.JobType     == RouteJobType::Process      &&
+                                             prodRouteJob.OprPriority == RouteOprPriority::Primary;
+        if(prodRouteJob)
+        {
+            headerTmp.QRCodeProc = this.generateQRCode(prodRouteJob.JobId);
+            headerTmp.ProdJobIdProc = prodRouteJob.JobId;
+        }
+        select firstonly prodRoute where prodRoute.ProdId == _prodTable.ProdId
+                                      && prodRoute.OprPriority  == RouteOprPriority::Primary
+            join prodRouteJob where prodRouteJob.ProdId      == prodRoute.ProdId           &&
+                                             prodRouteJob.OprNum      == prodRoute.OprNum           &&
+                                             prodRouteJob.JobType     == RouteJobType::Setup      &&
+                                             prodRouteJob.OprPriority == RouteOprPriority::Primary;
+        if(prodRouteJob)
+        {
+            headerTmp.QRCodeSetUp = this.generateQRCode(prodRouteJob.JobId);
+            headerTmp.ProdJobIdSetUp = prodRouteJob.JobId;
+        }
+
+        while select cclGroupList order by LineNum
+            where cclGroupList.GroupId == prodParameters.AVACharacteristicsClassForExpression
+            join cclValueRef where cclValueRef.GroupId == cclGroupList.GroupId
+                                        && cclValueRef.CharacteristicId == cclGroupList.CharacteristicId
+                                        && cclValueRef.SourceTableId == tableNum(InventTable)
+                                        && cclValueRef.SourceRecId == _prodTable.inventTable().RecId
+        {
+            cclCharTable    = KCS_CCLCharacteristicTable::find(cclValueRef.CharacteristicId);
+             
+            switch (cclCharTable.FieldType)
+            {
+                case (AVACCLFieldType::Str) :
+                    headerTmp.setFieldValue(strfmt('CCL%1', i), cclValueRef.ValueString);
+                    break;
+                case (AVACCLFieldType::DATE) :
+                    headerTmp.setFieldValue(strFmt('CCL%1', i), date2Str(cclValueRef.ValueDate, 123, DateDay::Digits2, DateSeparator::Dot, DateMonth::Digits2, DateSeparator::Dot, DateYear::Digits4));
+                    break;
+                case (AVACCLFieldType::Int) :
+                    headerTmp.setFieldValue(strFmt('CCL%1', i), int2Str(cclValueRef.ValueInteger));
+                    break;
+                case (AVACCLFieldType::REAL) :
+                    headerTmp.setFieldValue(strFmt('CCL%1', i), num2Str(cclValueRef.ValueReal, 0, 2, DecimalSeparator::Comma, ThousandSeparator::Dot));
+                    break;
+            }
+            headerTmp.setFieldValue(strFmt('LabelCCL%1', i), cclCharTable.Description);
+            headerTmp.setFieldValue(strFmt('UnitCCL%1', i), cclCharTable.UnitID);
+            i++;
+        }
+      
+        headerTmp.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateRouteLines</Name>
+				<Source><![CDATA[
+    private void populateRouteLines(ProdTable  _prodTable)
+    {
+        ProdRoute                       prodRoute, prodSec;
+
+        if(firstProdRoute)
+        {
+            select firstOnly prodRoute where prodRoute.ProdId == _prodTable.ProdId;
+            this.insertRoute(prodRoute);
+            while select prodSec where prodSec.ProdId == prodRoute.ProdId &&
+                               prodSec.OprNum == prodRoute.OprNum &&
+                               prodSec.OprPriority != RouteOprPriority::Primary
+            {
+                this.insertRoute(prodSec);
+            }
+        }
+        else if(firstAGDetail)
+        {
+            select firstOnly prodRoute where prodRoute.ProdId == _prodTable.ProdId &&
+                                              prodRoute.OprNum == singleOprNum;
+            this.insertRoute(prodRoute);
+            while select prodSec where prodSec.ProdId == prodRoute.ProdId &&
+                               prodSec.OprNum == prodRoute.OprNum &&
+                               prodSec.OprPriority != RouteOprPriority::Primary
+            {
+                this.insertRoute(prodSec);
+            }
+        }
+        else
+        {
+            while select    prodRoute
+                where       prodRoute.ProdId        == _prodTable.ProdId             &&
+                            prodRoute.OprPriority   == RouteOprPriority::Primary    &&
+                            prodRoute.OprNum        >= OprNumFrom                   &&
+                           (prodRoute.OprNum        <= OprNumTo || !OprNumTo)
+            {
+                this.insertRoute(prodRoute);
+                while select prodSec where prodSec.ProdId == prodRoute.ProdId &&
+                               prodSec.OprNum == prodRoute.OprNum &&
+                               prodSec.OprPriority != RouteOprPriority::Primary
+                {
+                    this.insertRoute(prodSec);
+                }
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertRoute</Name>
+				<Source><![CDATA[
+    private void insertRoute(ProdRoute  _prodRoute)
+    {
+        RecId                           recId;
+        WrkCtrId                        wrkCtrGrpId;
+        WrkCtrActivityRequirementType   relationShipType;
+        WrkCtrActivityRequirement       wrkCtrActivityRequirement;
+        RouteOpr                        routeOpr;
+        WrkCtrTable                     wrkCtrTable;
+        KCS_PTMProdRouteTool            tool;
+        KCS_PTMToolTable                toolTable;
+
+        routeLinesTmp.OprNum        = _prodRoute.OprNum;
+        routeLinesTmp.OprId         = _prodRoute.OprId;
+        routelinestmp.OprName       = RouteOprTable::find(_prodRoute.OprId).Name;
+        recId = _prodRoute.activityRequirementSet().RecId;
+
+        select firstonly WrkCtrActivityRequirement
+            where WrkCtrActivityRequirement.ActivityRequirementSet == recid;
+        if (wrkCtrActivityRequirement)
+        {
+            wrkCtrGrpId =  WrkCtrActivityRequirement.requirementEdit();
+        }
+        relationShipType = WrkCtrActivityRequirement.RelationshipType;
+       
+        routeLinesTmp.WrkCtrId      = wrkCtrGrpId;
+        routeLinesTmp.FromDate      = _prodRoute.FromDate;
+        routeLinesTmp.CalcSetUp     = _prodRoute.SetupTime;
+        routeLinesTmp.CalcProc     = _prodRoute.ProcessTime;
+        //routeLinesTmp.KCS_PTMCavityReal = _prodRoute.KCS_PTMCavityReal;
+        routeLinesTmp.KCS_PTMCavityReal = _prodRoute.AVACavity;
+
+        select firstonly routeOpr where routeOpr.RecId == _prodRoute.RouteOprRefRecId;
+        routeLinesTmp.OprName       = _prodRoute.operationName();
+
+        if(_prodRoute.ProcessPerQty == 0)
+        {
+            routeLinesTmp.KCS_PTMCycleTime = 0;
+        }
+        else
+        {
+            routeLinesTmp.KCS_PTMCycleTime = _prodRoute.ProcessTime / _prodRoute.ProcessPerQty;
+        }
+        wrkCtrTable = wrkCtrTable::find(wrkCtrGrpId);
+
+        /*if(wrkCtrTable.WrkCtrType == WrkCtrType::Tool)
+        {
+            routeLinesTmp.WrkLoc = WrkCtrTable::resourceGroup(wrkCtrGrpId, DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), DateTimeUtil::date(DateTimeUtil::maxValue())).OutputInventLocationId;
+        }
+        if(wrkCtrTable.WrkCtrType == WrkCtrType::Tool)
+        {
+            routelinesTmp.WrkLP = wrkCtrTable.outputWMSLocationId(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+        }*/
+        routeLinesTmp.WrkCtrName = wrkCtrTable.Name;
+
+        routelinestmp.insert();
+        while select tool where tool.ProdId == _prodRoute.ProdId
+                             && tool.OprNum == _prodroute.OprNum
+                             && tool.OprPriority == _prodRoute.OprPriority
+            join toolTable where toolTable.ToolId == tool.ToolId
+                              && toolTable.ToolGroupId == 'Werkzeug'
+        {
+            routeLinesTmp.clear();
+            routeLinesTmp.WrkCtrId      = tool.ToolId;
+            routeLinesTmp.WrkCtrName    = toolTable.ToolName;
+            routeLinesTmp.WrkLoc        = toolTable.Location1;
+            routeLinesTmp.WrkLP         = toolTable.Location2;
+            routeLinesTmp.insert();
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateBOMLines</Name>
+				<Source><![CDATA[
+    private void populateBOMLines(ProdTable  _prodTable)
+    {
+        ProdBOM         prodBOM;
+
+        while select    prodBOM
+        where       prodBOM.ProdId == _ProdTable.ProdId  &&
+                    prodBOM.OprNum >= OprNumFrom        &&
+                   (prodBOM.OprNum <= OprNumTo || !OprNumTo)
+        {
+            if (UnitOfMeasure::findBySymbol(prodBOM.UnitId).UnitOfMeasureClass != UnitOfMeasureClass::Monetary)
+            {
+                this.insertBOM(prodBOM);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertBOM</Name>
+				<Source><![CDATA[
+    private void insertBOM(ProdBOM  _prodBOM)
+    {
+        bomLinesTmp.OprNum      = _prodbom.OprNum;
+        bomLinesTmp.ItemId      = _prodBOM.ItemId;
+        bomLinesTmp.ItemName    = InventTable::find(_prodBOM.ItemId).itemName();
+        bomLinesTmp.InventLocationId    = _prodBOM.inventDim().InventLocationId;
+        bomLinesTmp.WMSLocationId       = _prodBOM.inventDim().wMSLocationId;
+        bomLinesTmp.QtyBOMCalc          = _prodBOM.QtyBOMCalc;
+        bomLinesTmp.UnitId              = _prodBOM.UnitId;
+        bomLinesTmp.ItemId2DCodeBitmap  = this.generateQRCode(bomLinesTmp.ItemId);
+        bomLinesTmp.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>generateQRCode</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_StrToEncode">str</param>
+    /// <returns>image</returns>
+    public container generateQRCode(str _StrToEncode)
+    {
+        container retVal;
+        
+        EFDocQRCode_BR          generateQR;
+
+        generateQR = new EFDocQRCode_BR();
+
+        retVal = generateQR.generateQRCode(_StrToEncode);
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

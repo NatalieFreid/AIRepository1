@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVALedgerAllocationRuleFrm_EventHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA_010939_LedgerAllocationRuleExtension
+/// </summary>
+internal final class AVALedgerAllocationRuleFrm_EventHandler
+{    
+    
+    
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>LoadDimensions_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_010939_LedgerAllocationRuleExtension
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [   SuppressBPWarning('BPParameterNotUsed', 'Parameter e required in signature'),
+        FormControlEventHandler(formControlStr(LedgerAllocationRule, LoadDimensions), FormControlEventType::Clicked)]
+    public static void LoadDimensions_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        AVALedgerAllocRuleDestinationDimensions destDim;
+        DimensionAttributeValueSetItem          dimensionAttributeValueSetItem, otherDimFromSet;
+        DimensionAttribute      dimAttribute;
+        DimensionAttributeValue dimAttrValue;
+        LedgerAllocationRule    ledgerAllocationRule;
+        Query                   query;
+        QueryRun                qr;
+        QueryBuildDataSource    qbdsDimSetItem, qbdsDimAttributeValue, qbdsDimAttribute;
+        DimensionAttributeValueSetStorage   setStorage = new DimensionAttributeValueSetStorage();
+        RefRecId    result;
+       
+        ledgerAllocationRule    = sender.formRun().dataSource(formDataSourceStr(ledgerAllocationRule, LedgerAllocationRule)).cursor();
+
+        if (ledgerAllocationRule.AVADestinationFromDimensionValue && ledgerAllocationRule.AVADestinationToDimensionValue)
+        {
+            //wenn es noch keine Kombination mit der gewählten Dimension im System gibt, wird diese angelegt
+            select firstonly dimAttribute where dimAttribute.Name == ledgerAllocationRule.AVADestinationDimAttributeName;
+            while select dimAttrValue where dimAttrValue.DimensionAttribute == dimAttribute.RecId
+                                        && dimAttrValue.DisplayValue >= ledgerAllocationRule.AVADestinationFromDimensionValue
+                                        && dimAttrValue.DisplayValue <= ledgerAllocationRule.AVADestinationToDimensionValue
+            {
+                select firstonly dimensionAttributeValueSetItem where dimensionAttributeValueSetItem.DimensionAttributeValue == dimAttrValue.RecId;
+                if (!dimensionAttributeValueSetItem)
+                {
+                    setStorage.addItem(dimAttrValue);
+                    result = setStorage.save();
+                }
+                else
+                {
+                    while select dimensionAttributeValueSetItem where dimensionAttributeValueSetItem.DimensionAttributeValue == dimAttrValue.RecId
+                    {
+                        select firstonly otherDimFromSet where otherDimFromSet.DimensionAttributeValueSet == dimensionAttributeValueSetItem.DimensionAttributeValueSet
+                        && otherDimFromSet.RecId != dimensionAttributeValueSetItem.RecId;
+
+                        if (otherDimFromSet)
+                        {
+                            setStorage.addItem(dimAttrValue);
+                            result = setStorage.save();
+                        }
+                    }
+                }
+            }
+            query = new Query();
+            qbdsDimSetItem = query.addDataSource(tableNum(DimensionAttributeValueSetItem));
+            qbdsDimAttributeValue = qbdsDimSetItem.addDataSource(tableNum(DimensionAttributeValue));
+            qbdsDimAttributeValue.relations(false);
+            qbdsDimAttributeValue.addLink(fieldNum(DimensionAttributeValueSetItem, DimensionAttributeValue), fieldNum(DimensionAttributeValue, RecId));
+            qbdsDimAttributeValue.joinMode(JoinMode::InnerJoin);
+            qbdsDimAttribute = qbdsDimAttributeValue.addDataSource(tableNum(DimensionAttribute));
+            qbdsDimAttribute.relations(false);
+            qbdsDimAttribute.addLink(fieldNum(DimensionAttributeValue, DimensionAttribute), fieldNum(DimensionAttribute, RecId));
+            qbdsDimAttribute.joinMode(JoinMode::InnerJoin);
+            SysQuery::findOrCreateRange(qbdsDimAttribute, fieldNum(DimensionAttribute, Name)).value(ledgerAllocationRule.AVADestinationDimAttributeName);
+            SysQuery::findOrCreateRange(qbdsDimSetItem, fieldNum(DimensionAttributeValueSetItem, DisplayValue)).value(SysQuery::range(ledgerAllocationRule.AVADestinationFromDimensionValue, ledgerAllocationRule.AVADestinationToDimensionValue));
+
+            qr = new QueryRun(query);
+
+            while (qr.next())
+            {
+                dimensionAttributeValueSetItem = qr.get(tableNum(dimensionAttributeValueSetItem));
+                select firstonly destDim where destdim.RuleId == ledgerAllocationRule.RuleId &&  destDim.DimensionAttributeValueSet == dimensionAttributeValueSetItem.DimensionAttributeValueSet;
+                select firstonly otherDimFromSet where otherDimFromSet.DimensionAttributeValueSet == dimensionAttributeValueSetItem.DimensionAttributeValueSet
+                && otherDimFromSet.RecId != dimensionAttributeValueSetItem.RecId;
+                if (!destDim && !otherDimFromSet)
+                {
+                    ttsbegin;
+                    destDim.RuleId = ledgerAllocationRule.RuleId;
+                    destDim.AVADestinationDimAttributeName = ledgerAllocationRule.AVADestinationDimAttributeName;
+                    destDim.AVADestinationDimensionValue = dimensionAttributeValueSetItem.DisplayValue;
+                    destDim.DimensionAttributeValueSet = dimensionAttributeValueSetItem.DimensionAttributeValueSet;
+                    destDim.insert();
+                    ttscommit;
+                }
+            }
+            sender.formRun().dataSource(formDataSourceStr(ledgerAllocationRule, AVALedgerAllocRuleDestinationDimensions)).research();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>DeleteMarked_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  AVA_010939_LedgerAllocationRuleExtension
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [   SuppressBPWarning('BPParameterNotUsed', 'Parameter e required in signature'),
+        FormControlEventHandler(formControlStr(LedgerAllocationRule, DeleteMarked), FormControlEventType::Clicked)]
+    public static void DeleteMarked_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        MultiSelectionHelper          selectionHelper = MultiSelectionHelper::construct();
+        AVALedgerAllocRuleDestinationDimensions destDim;  
+
+        selectionHelper.parmDataSource(sender.formRun().dataSource(formDataSourceStr(ledgerAllocationRule, AVALedgerAllocRuleDestinationDimensions)));
+
+        destDim  = selectionHelper.getFirst(); 
+
+        if (destDim.RecId)
+        {
+            ttsbegin;
+            while (destDim)
+            {
+                destDim.delete();
+                destDim = selectionHelper.getNext();
+
+            }
+            ttscommit;
+
+        }   
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVALedgerAllocRuleDestinationDimensions_OnInitialized</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN 2024/04/23   AVA_011747_LedgerAllocationDestinationsLoadDimensions
+    /// </summary>
+    /// <param name="sender">FormDataSource</param>
+    /// <param name="e">FormDataSourceEventArgs</param>
+    [   SuppressBPWarning('BPParameterNotUsed', 'Parameter e required in signature'),
+        FormDataSourceEventHandler(formDataSourceStr(LedgerAllocationRule, AVALedgerAllocRuleDestinationDimensions), FormDataSourceEventType::Initialized)]
+    public static void AVALedgerAllocRuleDestinationDimensions_OnInitialized(FormDataSource sender, FormDataSourceEventArgs e)
+    {
+        sender.queryBuildDataSource().addSortField(fieldNum(AVALedgerAllocRuleDestinationDimensions, AVADestinationDimensionValue));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAFPLTabOperationsTax_OnPageActivated</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  AVA/WEN 2024/04/11   AVA_011738_PresetAllocation
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [SuppressBPWarning('BPParameterNotUsed', 'Parameter e required in signature'),
+        FormControlEventHandler(formControlStr(LedgerAllocationRule, AVAFPLTabOperationsTax), FormControlEventType::PageActivated)]
+    public static void AVAFPLTabOperationsTax_OnPageActivated(FormControl sender, FormControlEventArgs e)
+    {
+        LedgerAllocationRule    rule = sender.formRun().dataSource(formDataSourceStr(LedgerAllocationRule, LedgerAllocationRule)).cursor();
+        AVAFPLLedgerAllocationRuleOperationsTax::avaInitFromParm(rule.RuleId);
+        sender.formRun().dataSource(formDataSourceStr(LedgerAllocationRule, AVAFPLLedgerAllocationRuleOperationsTax)).research();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AllocationMethod_OnModified</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN 2024/06/11 AVA_011783_sameObjectsInAVAFPLandNDXModel
+    /// </summary>
+    /// <param name="sender">FormDataObject</param>
+    /// <param name="e">FormDataFieldEventArgs</param>
+    [   SuppressBPWarning('BPParameterNotUsed', 'Parameter e required in signature'),
+        FormDataFieldEventHandler(formDataFieldStr(LedgerAllocationRule, LedgerAllocationRule, AllocationMethod), FormDataFieldEventType::Modified)]
+    public static void AllocationMethod_OnModified(FormDataObject sender, FormDataFieldEventArgs e)
+    {
+        sender.datasource().object(fieldNum(LedgerAllocationRule, AVAFPLDestinationMainAccount)).mandatory(false);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>LedgerAllocationRule_OnValidatingWrite</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN 2024/10/02 AVA_011738_setNotMandatory
+    /// </summary>
+    /// <param name="sender">FormDataSource</param>
+    /// <param name="e">FormDataSourceEventArgs</param>
+    [   SuppressBPWarning('BPParameterNotUsed', 'Parameter e required in signature'),
+        FormDataSourceEventHandler(formDataSourceStr(LedgerAllocationRule, LedgerAllocationRule), FormDataSourceEventType::ValidatingWrite)]
+    public static void LedgerAllocationRule_OnValidatingWrite(FormDataSource sender, FormDataSourceEventArgs e)
+    {
+        sender.object(fieldNum(LedgerAllocationRule, AVAFPLDestinationMainAccount)).mandatory(false);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

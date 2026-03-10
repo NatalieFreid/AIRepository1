@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAWeightReportDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN/2024/12/12     AVA_012741_LoadWeightReport
+/// </summary>
+[
+    SRSReportQueryAttribute(queryStr(AVACarrierWeightReportQuery)),
+    SRSReportParameterAttribute(classStr(AVAWeightReportContract))
+    ]
+    class AVAWeightReportDP extends SRSReportDataProviderBase
+
+{
+    AVACarrierWeightReportTmp reportTmp;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getTmp</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute(tableStr(AVACarrierWeightReportTmp))]
+    public AVACarrierWeightReportTmp getTmp()
+    {
+        select reportTmp;
+        return reportTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        AVAWeightReportContract contract =
+            this.parmDataContract() as AVAWeightReportContract;
+        TMSCarrier              tmsCarrier;
+        WHSLoadTable            loadTable;
+        WHSContainerTable       containerTable;
+        WHSLoadLine             loadLine;
+        QueryRun                queryRun;
+        Weight                  weight;
+        FromDate                fromDate = contract.parmFromDate();
+        ToDate                  toDate = contract.parmToDate();
+        InventLocationId        inventLocationId = contract.parmInventLocationId();
+        utcdatetime             dateTimeFrom, dateTimeTo;
+
+        if (fromDate)
+        {
+            dateTimeFrom = DateTimeUtil::newDateTime(fromDate,0,DateTimeUtil::getCompanyTimeZone());
+        }
+        else
+        {
+            dateTimeFrom = DateTimeUtil::minValue();
+        }
+
+        if (toDate)
+        {
+            dateTimeTo = DateTimeUtil::newDateTime(toDate,86399,DateTimeUtil::getCompanyTimeZone());
+        }
+        else
+        {
+            dateTimeTo = DateTimeUtil::maxValue();
+        }
+
+        queryRun = new QueryRun(this.parmQuery());
+
+        while (queryRun.next())
+        {
+            tmsCarrier = queryRun.get(tableNum(tmsCarrier));
+            weight = 0;
+            while select loadTable where loadTable.CarrierCode == tmsCarrier.CarrierCode
+                && loadTable.LoadStatus == WHSLoadStatus::Shipped
+                && loadTable.InventLocationId == inventLocationId
+                && loadTable.LoadShipConfirmUTCDateTime >= dateTimeFrom
+                && loadTable.LoadShipConfirmUTCDateTime <= dateTimeTo
+            {
+                select sum(Weight) from containerTable
+                exists join loadLine where loadLine.ShipmentId == containerTable.ShipmentId
+                && loadLine.LoadId == loadTable.LoadId;
+                weight += containerTable.Weight;
+            }
+            reportTmp.clear();
+
+            reportTmp.CarrierCode = tmsCarrier.CarrierCode;
+            reportTmp.VendorCode = tmsCarrier.VendorCode;
+            reportTmp.Weight = weight;
+            reportTmp.VendName = VendTable::find(reportTmp.VendorCode).name();
+
+            reportTmp.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

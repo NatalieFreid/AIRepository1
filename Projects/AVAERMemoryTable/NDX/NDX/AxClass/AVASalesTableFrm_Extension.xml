@@ -1,0 +1,566 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesTableFrm_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// specialDiscSalesOrder
+/// </summary>
+[ExtensionOf(formStr(SalesTable))]
+final class AVASalesTableFrm_Extension
+{
+    public  boolean frmAVAItemSetShowComponents;
+
+    
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void init()
+    {
+        next init();
+
+        FormStringControl avaInventColorId_Grid = this.design().controlName(formControlStr(SalesTable, InventoryDimensionsGrid_InventColorId));
+        avaInventColorId_Grid.registerOverrideMethod(methodStr(FormDataObject, lookup), methodStr(AVASalesTableFrm_Extension, avaColorLookup));
+        FormStringControl avaInventColorId_Details = this.design().controlName(formControlStr(SalesTable, InventoryDimensions_InventColorId));
+        avaInventColorId_Details.registerOverrideMethod(methodStr(FormDataObject, lookup), methodStr(AVASalesTableFrm_Extension, avaColorLookup));
+
+        FormReferenceGroupControl fcSalesLine_SalesCategory = this.design().controlName(formControlStr(SalesTable, SalesLine_SalesCategory));
+        fcSalesLine_SalesCategory.visible(false);
+
+        FormRealControl fcSalesLine_PdsCWInventDeliverNow = this.design().controlName(formControlStr(SalesTable, SalesLine_PdsCWInventDeliverNow));
+        fcSalesLine_PdsCWInventDeliverNow.visible(false);
+
+        this.design().controlName(formControlStr(SalesTable, AVASCMCheckIfMarkup_SalesLine)).skip(NoYes::Yes);
+        this.design().controlName(formControlStr(SalesTable, SalesLine_SalesUnit)).skip(NoYes::Yes);
+        this.design().controlName(formControlStr(SalesTable, SalesLine_ShippingDateRequested)).allowEdit(NoYes::No);
+
+        SalesLine_ds.object(fieldNum(SalesLine, ItemId)).registerOverrideMethod(methodStr(FormDataObject, lookup), formMethodStr(SalesTable, avaOverrideItemIdLookup), this);
+        //SalesLine_ds.object(fieldNum(SalesLine, PdsCWInventDeliverNow)).visible(false);
+        //SalesLine_ds.object(fieldNum(SalesLine, SalesCategory)).visible(false);
+        SalesLine_ds.object(fieldNum(SalesLine, ShippingDateRequested)).allowEdit(NoYes::No);
+
+        if (!xUserInfo::checkUserOrAdminRole('AVAOrderReplenishment'))       // maybe roleStr(AVAOrderReplenishment) better?
+        {
+            SalesLine_ds.object(fieldNum(SalesLine, ShippingDateConfirmed)).allowEdit(NoYes::No);
+            SalesLine_ds.object(fieldNum(SalesLine, ReceiptDateConfirmed)).allowEdit(NoYes::No);
+            SalesTable_ds.object(fieldNum(SalesTable, ShippingDateConfirmed)).allowEdit(NoYes::No);
+            SalesTable_ds.object(fieldNum(SalesTable, ReceiptDateConfirmed)).allowEdit(NoYes::No);
+            this.design().controlName(formControlStr(SalesTable, SalesLine_ShippingDateConfirmed)).allowEdit(NoYes::No);
+            this.design().controlName(formControlStr(SalesTable, SalesLine_ReceiptDateConfirmed)).allowEdit(NoYes::No);
+            this.design().controlName(formControlStr(SalesTable, Delivery_ShippingDateConfirmed)).allowEdit(NoYes::No);
+            this.design().controlName(formControlStr(SalesTable, Delivery_ReceiptDateConfirmed)).allowEdit(NoYes::No);
+            this.design().controlName(formControlStr(SalesTable, Delivery_ShippingDateConfirmedHeader)).allowEdit(NoYes::No);
+            this.design().controlName(formControlStr(SalesTable, Delivery_ReceiptDateConfirmedHeader)).allowEdit(NoYes::No);
+        }
+
+        if (!xUserInfo::checkUserOrAdminRole('AVAICReductionMaintain'))
+        {
+            SalesTable_ds.object(fieldNum(SalesTable, KCS_IC_Reduction)).allowEdit(NoYes::No);
+        }
+
+
+        this.avaShowHideItemSetComponents(false, true);
+        this.avaInterCompanyFields();
+
+        this.avaSetBottonsAfterInit();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSalesLineTexteEditable</Name>
+				<Source><![CDATA[
+    public void avaSalesLineTexteEditable()
+    {
+        if(salesLine.AVAOverwriteText
+            || salesTable.NDX_ItemNameVersionReport == NDX_ItemNameVersionReport::LongText)
+        {
+            salesLine_DS.object(fieldNum(SalesLine, Name)).allowEdit(true);
+        }
+        else
+        {
+            salesLine_DS.object(fieldNum(SalesLine, Name)).allowEdit(false);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>quickCreate_DirPartyEntity_InitValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Adjusted due to Req 10751
+    /// </summary>
+    /// <returns>false</returns>
+   /* protected boolean isMCRInventSearchEnabled()
+    {
+        boolean ret = next isMCRInventSearchEnabled();
+
+        return false;
+    }            */
+
+    /// <summary>
+    /// Allows to define defaults on the main data source in the quick create form.
+    /// </summary>
+    /// <param name = "_dirPartyEntityDS">Main data source in the quick create form, will be mapped to ContactPerson table.</param>
+    public void quickCreate_DirPartyEntity_InitValue(FormDataSource _dirPartyEntityDS)
+    {
+        CustTable custTable_loc = salesTable.custTable_CustAccount();
+        ContactPerson locContactPerson = _dirPartyEntityDS.cursor();
+
+        locContactPerson.initFromArgsRecord(custTable_loc);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaEnableDelegationButtons</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Enables delegation buttons according to input
+    /// Dialog = input; Cancel != input
+    /// </summary>
+    /// <param name = "_enabled">NoYes</param>
+    public void avaEnableDelegationButtons(NoYes _enabled)
+    {
+        AVAInventSiteDelegateDialog.enabled(_enabled);
+        AVAInventSiteDelegateCancel.enabled(!_enabled);
+        AVASalesOrderDelegationReportActionPreview.enabled(!_enabled);
+        AVASalesOrderDelegationReportAction.enabled(!_enabled);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisableDelegationButtons</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Disables delegation buttons
+    /// </summary>
+    public void avaDisableDelegationButtons()
+    {
+        AVAInventSiteDelegateDialog.enabled(NoYes::No);
+        AVAInventSiteDelegateCancel.enabled(NoYes::No);
+        AVASalesOrderDelegationReportActionPreview.enabled(NoYes::No);
+        AVASalesOrderDelegationReportAction.enabled(NoYes::No);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>enableTMSFields</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void enableTMSFields()
+    {
+        next enableTMSFields();
+        
+        LineViewTMSHeader.visible(false);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>salesTableCreated</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    protected void salesTableCreated()
+    {
+        next salesTableCreated();
+        AVASpecialDiscSalesOrder specialDiscSalesOrder = AVASpecialDiscSalesOrder::find(SalesTable.SalesId);
+        AVASpecialDiscSalesOrder_ds.positionToRecord(specialDiscSalesOrder);
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaContactLookup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_callerControl">_callerControl</param>
+    public void avaContactLookup(FormStringControl _callerControl)
+    {
+        ContactPerson::lookupCustContactPerson(salesTable_ContactPersonId,
+                                                   salesTable.CustAccount,
+                                                   _callerControl,
+                                                   salesTable.ContactPersonId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaJumpRef</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_callerControl">_callerControl</param>
+    public void avaJumpRef(FormStringControl _callerControl)
+    {
+        SalesTable_ContactPersonId.jumpRef();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaQuotationLookup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed fróm AVA
+    /// </summary>
+    /// <param name = "_callerControl">_callerControl</param>
+    public void avaQuotationLookup(FormStringControl _callerControl)
+    {
+        SalesLine::AVAQuotationIdLookup(_callerControl);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaQuotationJumpRef</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// desigend from AVA
+    /// </summary>
+    /// <param name = "_callerObject">_callerObject</param>
+    public void avaQuotationJumpRef(FormDataObject _callerObject)
+    {
+        SalesQuotationTable avaQuotationTable;
+        Args            args = new Args();
+        MenuFunction    menuFunction;
+        ;
+    
+        if (_callerObject.getValue() != '')
+        {
+            menuFunction = new MenuFunction(menuitemDisplayStr(SalesQuotationTable), MenuItemType::Display);
+            avaQuotationTable = SalesQuotationTable::find(_callerObject.getValue());
+            if (avaQuotationTable.RecId != 0)
+            {
+                args.record(avaQuotationTable);
+                args.caller(this);
+                menuFunction.run(args);
+            }
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaColorLookup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_formStringControl">_formStringControl</param>
+    public void avaColorLookup(FormStringControl _formStringControl)
+    {
+        Args locArgs = new Args(identifierStr(AVAEcoResColorLookup));
+        FormRun avaLookupFormRun;
+
+        locArgs.record(SalesLine);
+        locArgs.caller(this);
+
+        avaLookupFormRun = classFactory::formRunClassOnClient(locArgs);
+        avaLookupFormRun.init();
+
+        _formStringControl.performFormLookup(avaLookupFormRun);
+        avaLookupFormRun.wait();
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaRefreshSalesLineDS</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaRefreshSalesLineDS</c> method.
+    /// </summary>
+    public void avaRefreshSalesLineDS()
+    {
+        FormDataSource  locSalesLineDS;
+
+        locSalesLineDS = SalesLine_DS;
+
+        locSalesLineDS.research(true);
+        locSalesLineDS.refresh();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaOverrideItemIdLookup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// method to override the lookup method of SalesQuotationLine dataSource field ItemId
+    /// </summary>
+    /// <param name = "_formControl">FormStringControl</param>
+    public void avaOverrideItemIdLookup(FormStringControl _formControl)
+    {
+        FormDataObject avaSalesLine_ItemId = SalesLine_ds.object(fieldNum(SalesLine, ItemId));
+
+        if ((!mcrCallCenterEnabled || salesLine.mcrSalesLine().SourceId == '')
+            && EcoResProductParameters::find().pcLookupMethod != PCLookupMethod::Configurable
+            && !EcoResProductSearchLookup::isProductSearchLookupEnabled())
+        {
+            this.avaItemIdLookup(_formControl);
+        }
+        else
+        {
+            avaSalesLine_ItemId.lookup(_formControl, _formControl.text());
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaItemIdLookup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates lookup using the form InventItemIdLookupSimpleView
+    /// </summary>
+    /// <param name = "_formControl">FormStringControl</param>
+    public void avaItemIdLookup(FormStringControl _formControl)
+    {
+        Query                   avaQuery = new Query();
+        InventLookupItemId      inventLookupItemId;
+        
+        QueryBuildDataSource    itemIdLookup_qbds   = avaQuery.addDataSource(tableNum(InventItemIdLookupSimpleView));
+
+        itemIdLookup_qbds.addSortField(fieldNum(InventItemIdLookupSimpleView, ItemId));
+        itemIdLookup_qbds.firstFast(true);
+
+        if(MCRFullTextParameters::isProductSearchLookupSalesItemEnabled())
+        {
+            itemIdLookup_qbds.addRange(fieldNum(InventItemIdLookupSimpleView, KCS_IsSalesItem)).value(queryValue(NoYes::Yes));
+        }
+
+        inventLookupItemId = InventLookupItemId::newLookupCtrlQuery(_formControl, avaQuery);
+        inventLookupItemId.run();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaShowHideItemSetComponents</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaShowHideItemSetComponents</c> method.
+    /// </summary>
+    /// <param name="_research">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <param name="_init">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaShowHideItemSetComponents(boolean _research = false, boolean _init = false)
+    {
+        boolean         retVal;
+
+        FormDataSource  avaSalesLineDS;
+        
+        avaSalesLineDS  = this.SalesLine_DS;
+        retVal          = true;
+        
+        if(_init)
+        {
+            frmAVAItemSetShowComponents = false;
+        }
+        else
+        {
+            frmAVAItemSetShowComponents = !frmAVAItemSetShowComponents;
+        }
+
+        if (frmAVAItemSetShowComponents)
+        {
+            SysQuery::findOrCreateRange(avaSalesLineDS.queryBuildDataSource(), fieldNum(SalesLine, AVAItemSetComponent)).value(SysQueryRangeUtil::valueUnlimited());
+        }
+        else
+        {
+            SysQuery::findOrCreateRange(avaSalesLineDS.queryBuildDataSource(), fieldNum(SalesLine, AVAItemSetComponent)).value(SysQuery::value(NoYes::No));
+        }
+
+        if(_research)
+        {
+            avaSalesLineDS.research(true);
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInterCompanyFields</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaInterCompanyFields</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaInterCompanyFields()
+    {
+        boolean         retVal;
+        
+        FormDataSource  locSalesTableDS;
+        SalesTable      locSalesTable;
+        boolean         isIC, isICDirectDlv;        
+        retVal = true;
+
+        locSalesTableDS = this.SalesTable_DS;
+        locSalesTable   = locSalesTableDS.cursor();
+
+        isic = locSalesTable.isInterCompanyOrder();
+        isICDirectDlv = locSalesTable.InterCompanyDirectDelivery;
+
+        /*if(locSalesTable.isInterCompanyOrder())
+        {
+            this.design().controlName(formControlStr(SalesTable, AVAShippingCharges_KCS_FreightCostStatus)).allowEdit(NoYes::No);
+            this.design().controlName(formControlStr(SalesTable, AVAShippingCharges_KCS_POC_CarriageFree)).allowEdit(NoYes::No);
+            this.design().controlName(formControlStr(SalesTable, AVAShippingCharges_KCS_FreightCalculation)).allowEdit(NoYes::No);
+            this.design().controlName(formControlStr(SalesTable, AVAShippingCharges_KCS_FreightChargeFree)).allowEdit(NoYes::No);
+        }*/
+        locSalesTableDS.object(fieldNum(SalesTable, KCS_FreightCostStatus)).allowEdit(!isIC);
+        locSalesTableDS.object(fieldNum(SalesTable, KCS_POC_CarriageFree)).allowEdit(!isic);
+        locSalesTableDS.object(fieldNum(SalesTable, KCS_FreightCalculation)).allowEdit(!isIC);
+        locSalesTableDS.object(fieldNum(SalesTable, KCS_FreightChargeFree)).allowEdit(!isIC);
+
+        locSalesTableDS.object(fieldNum(SalesTable, AVADlvResponsible)).allowEdit(!isICDirectDlv);
+        locSalesTableDS.object(fieldNum(SalesTable, InventSiteId)).allowEdit(!isICDirectDlv);
+
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetBottonsAfterInit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaSetBottonsAfterInit</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaSetBottonsAfterInit()
+    {
+        boolean         retVal;
+        
+        FormDataSource  locSalesTableDS;
+        SalesTable      locSalesTable;
+        
+        retVal = true;
+
+        locSalesTableDS = this.SalesTable_DS;
+        locSalesTable   = locSalesTableDS.cursor();
+
+        if(locSalesTable.SalesType == SalesType::Journal)
+        {
+            this.design().controlName(formControlStr(SalesTable, CancelOrderButton)).enabled(true);
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetAVADlvResponsible</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaSetAVADlvResponsible</c> method.
+    /// </summary>
+    /// <param name="_update">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>HcmWorkerRecId</c> as return value
+    /// </returns>
+    public HcmWorkerRecId avaSetAVADlvResponsible(boolean _update = false)
+    {
+        FormDataSource  locFormDataSource;
+        SalesTable      locSalesTable;
+        SalesTable      locSalesTableOrig;
+        
+        Dialog          dialog;
+        DialogGroup     dialogGroup;
+        DialogField     dialogHCMWorkerRecId;
+        HcmWorkerRecId  locHCMWorkerRecId;
+        HcmWorkerRecId  locHCMWorkerRecIdDialog;
+
+        locFormDataSource   = SalesTable_ds;
+        locSalesTable       = locFormDataSource.cursor();
+        locSalesTableOrig   = locSalesTable.orig();
+
+        if(     locSalesTable.orig().SalesType  == SalesType::Journal
+            &&  locSalesTable.SalesType         == SalesType::Sales
+            &&  locSalesTable.AVADlvResponsible == 0                    )
+        {
+            locHCMWorkerRecId = HcmWorker::userId2Worker(curUserId());
+        
+            dialog = new Dialog(strfmt("@SYS82282", "@NDX:NXADlvResponsible"));
+
+            dialogGroup             = dialog.addGroup();
+            dialogGroup.caption("@NDX:NXASetResponsibility");
+            dialogHCMWorkerRecId    = dialog.addFieldValue(extendedTypeStr(HcmWorkerRecId), locHCMWorkerRecId);
+
+            dialog.run();
+
+            if(dialog.closedOk())
+            {
+                // get values from the dialog fields
+                locHCMWorkerRecIdDialog = dialogHCMWorkerRecId.value();
+            }
+            else
+            {
+                // set value for cancel
+                locHCMWorkerRecIdDialog = 0;
+            }
+
+            locHCMWorkerRecId = locHCMWorkerRecIdDialog;
+            
+            locSalesTable.AVADlvResponsible = locHCMWorkerRecId;
+
+            if(locSalesTable.AVADlvResponsible == 0)
+            {
+                locSalesTable.SalesType = SalesType::Journal;
+            }
+
+            if(_update)
+            {
+                ttsbegin;
+                locSalesTable.selectForUpdate(true);
+                locSalesTable.update();
+                ttscommit;
+            }
+        }
+        locFormDataSource.refresh();
+
+        return locSalesTable.AVADlvResponsible;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

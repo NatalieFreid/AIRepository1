@@ -1,0 +1,368 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAItemCycleCountOverviewService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// N.Freidenberger 27.05.2025
+/// </summary>
+internal final class AVAItemCycleCountOverviewService     extends SysOperationServiceBase
+{
+    InventLocationId        inventLocationId;
+    boolean                 isOnNotCountLocation;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 27.05.2025
+    /// </summary>
+    /// <param name = "_dataContract">_dataContract</param>
+    public void process(AVAItemCycleCountOverviewContract     _dataContract)
+    {
+        inventLocationId = _dataContract.parmInventLocationId();
+        InventTable                         inventTable;
+        InventItemGroupItem                 inventItemGroupItem;
+        InventItemGroup                     inventItemGroup;
+        EcoResProduct                       ecoResProduct;
+        KCS_KAOItemStateTable               itemStateTable;
+        InventItemLocation                  inventItemLocation;
+        InventItemLocationCountingStatus    inventItemLocationCountingStatus;
+        AVAItemCycleCountOverviewLine       itemCycleCountOverviewLine;
+        InventDim                           inventItemLocationInventDim;
+        InventDimParm                       inventDimParm;
+        InventSiteId                        inventSiteId = InventLocation::find(inventLocationId).InventSiteId;
+        
+
+        inventDimParm = this.initInventDimParm();
+
+        while select inventTable
+        //    where inventTable.ItemId == '1-RLVC 60.100 E3'
+            join ecoResProduct
+                where ecoResProduct.RecId       == inventTable.Product
+                   && ecoResProduct.ProductType == EcoResProductType::Item
+           join itemStateTable
+                where itemStateTable.ItemState           == inventTable.KCS_KAOItemState
+                   && itemStateTable.AVACountCycleActive == NoYes::Yes
+            join inventItemGroupItem
+                where inventItemGroupItem.ItemId == inventTable.ItemId
+                   && inventItemGroupItem.ItemGroupDataAreaId == curExt()
+                   && inventItemGroupItem.ItemDataAreaId == curExt()
+                   join inventItemGroup
+                        where inventItemGroup.ItemGroupId         == inventItemGroupItem.ItemGroupId
+                           && inventItemGroup.AVACountCycleActive == NoYes::Yes      
+           join inventItemLocation
+                where inventItemLocation.ItemId                 == inventTable.ItemId
+                        join inventItemLocationInventDim
+                            where inventItemLocationInventDim.inventDimId == inventItemLocation.inventDimId
+                               && inventItemLocationInventDim.InventLocationId == inventLocationId
+            && year(inventItemLocation.AVAInvCountLast)  < year(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+                   && inventItemLocation.AVAInvCountNeeded      == NoYes::Yes
+                        outer join inventItemLocationCountingStatus
+                            where inventItemLocationCountingStatus.ItemId          == inventItemLocation.ItemId                 
+                               && inventItemLocationCountingStatus.InventDimId     == inventItemLocation.inventDimId
+                            //   && inventItemLocationCountingStatus.CountingStarted == NoYes::No            
+        {
+            if (!inventItemLocationCountingStatus.RecId || inventItemLocationCountingStatus.CountingStarted == NoYes::No)
+            {
+                itemCycleCountOverviewLine = AVAItemCycleCountOverviewLine::find(inventItemLocation.ItemId,inventLocationId,true);
+           
+                itemCycleCountOverviewLine.ItemId               = inventItemLocation.ItemId;
+                itemCycleCountOverviewLine.InventLocationId     = inventLocationId;
+                itemCycleCountOverviewLine.ItemGroupId          = inventTable.itemGroupId();
+
+                InventDim      onHandInventDim;
+                onHandInventDim.InventLocationId  = inventLocationId;
+                onHandInventDim.InventSiteId      = inventSiteId;
+
+                InventOnhand   inventOnHand = InventOnhand::newItemDim(inventItemLocation.ItemId,onHandInventDim,inventDimParm);
+
+                itemCycleCountOverviewLine.PhysicalInvent       = inventOnHand.physicalInvent();
+                itemCycleCountOverviewLine.InventUnit           = inventTable.inventUnitId();
+                itemCycleCountOverviewLine.NumOfwmsLocation     = this.calcNumOfwmsLocation(inventItemLocation.ItemId,inventItemLocationInventDim);
+                itemCycleCountOverviewLine.NumOfColor           = this.calcNumOfColor(inventItemLocation.ItemId,inventItemLocationInventDim);
+                itemCycleCountOverviewLine.ReservedQty          = inventOnHand.reservPhysical();
+                itemCycleCountOverviewLine.InProd               = this.isProduction(inventItemLocation,inventItemLocationInventDim.InventLocationId);
+                itemCycleCountOverviewLine.WHSWorkQty           = this.calcWHSWorkQty(inventItemLocation.ItemId,inventItemLocationInventDim);
+                itemCycleCountOverviewLine.NotCountable         = itemCycleCountOverviewLine.InProd || isOnNotCountLocation  || itemCycleCountOverviewLine.WHSWorkQty > 0;
+                itemCycleCountOverviewLine.RefQty               = this.calcRefQty(inventItemLocation,inventItemLocationInventDim);
+                itemCycleCountOverviewLine.RefPercent           = itemCycleCountOverviewLine.RefQty != 0 ? (itemCycleCountOverviewLine.PhysicalInvent / itemCycleCountOverviewLine.RefQty) * 100 : 0;
+                if (!itemCycleCountOverviewLine.RecId)
+                {
+                    itemCycleCountOverviewLine.insert();
+                }
+                else
+                {
+                    ttsbegin;
+                    itemCycleCountOverviewLine.update();
+                    ttscommit;
+                }
+
+            }
+        }
+        
+
+        this.endProcess();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isProduction</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 02.06.2025
+    /// </summary>
+    /// <param name = "_inventItemLocation">_inventItemLocation</param>
+    /// <param name = "_inventLocationId">_inventLocationId</param>
+    /// <returns>isProduction</returns>
+    protected boolean isProduction(inventItemLocation       _inventItemLocation, InventLocationId       _inventLocationId)
+    {
+        ProdTable           prodTable;
+        InventDim           prodTableInventDim;
+
+        select firstonly RecId from prodTable
+            where prodTable.ItemId == _inventItemLocation.ItemId
+            && prodTable.ProdStatus == ProdStatus::StartedUp
+                join prodTableInventDim
+                    where prodTableInventDim.inventDimId == prodTable.InventDimId 
+                       && prodTableInventDim.InventLocationId == _inventLocationId;
+
+        return prodTable.RecId ? true : false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcRefQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 02.06.2025
+    /// </summary>
+    /// <param name = "_inventItemLocation">_inventItemLocation</param>
+    /// <param name = "_inventDim">_inventDim</param>
+    /// <returns>Qty</returns>
+    protected Qty calcRefQty(inventItemLocation _inventItemLocation, InventDim  _inventDim)
+    {
+        Qty                 refQty;
+        ReqItemTable        reqItemtable;
+        InventDim           reqItemTableInventDim;
+
+        select firstonly reqItemtable
+            where reqItemtable.ItemId == _inventItemLocation.ItemId
+                   join reqItemTableInventDim
+                    where reqItemTableInventDim.inventDimId == reqItemtable.CovInventDimId
+                       && reqItemTableInventDim.InventLocationId == _inventDim.InventLocationId;
+
+        refQty = reqItemtable.MaxInventOnhand;
+
+        if (refQty == 0)
+        {
+            refQty = _inventItemLocation.AVAInvCountMaxOnHand;
+        }
+
+
+        return refQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcNumOfwmsLocation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 28.05.2025
+    /// </summary>
+    /// <param name = "_itemId">_itemId</param>
+    /// <param name = "_inventDim">_inventDimId</param>
+    /// <returns>int</returns>
+    protected int  calcNumOfwmsLocation(ItemId     _itemId, InventDim    _inventDim)
+    {
+        Query       inventOnHandQuery = new Query(queryStr(InventOnHand));
+        QueryRun    queryRun;
+        int         numOfLP = 0;
+        InventSum   inventSum;
+        InventDim   inventDim;
+
+        QueryBuildDataSource        wmsLocationDS;
+        QueryBuildDataSource        whsLocationProfileDS;
+
+        WMSLocation                 wmsLocation;
+        WHSLocationProfile          whsLocationProfile;
+        isOnNotCountLocation = false;
+
+        inventOnHandQuery.dataSourceTable(tableNum(InventDim)).addGroupByField(fieldNum(InventDim,InventLocationId));
+        inventOnHandQuery.dataSourceTable(tableNum(InventSum)).addGroupByField(fieldNum(InventSum,ItemId));
+        inventOnHandQuery.dataSourceTable(tableNum(InventDim)).addGroupByField(fieldNum(InventDim,wMSLocationId));
+        inventOnHandQuery.dataSourceTable(tableNum(InventSum)).addSelectionField(fieldNum(InventSum,PhysicalInvent),SelectionField::Sum);
+        inventOnHandQuery.dataSourceTable(tableNum(InventSum)).addRange(fieldNum(InventSum,PhysicalInvent)).value('> 0');
+        inventOnHandQuery.dataSourceTable(tableNum(InventDim)).addRange(fieldNum(InventDim,wMSLocationId)).value(SysQuery::valueNotEmptyString());
+        inventOnHandQuery.dataSourceTable(tableNum(InventDim)).addRange(fieldNum(InventDim,InventLocationId)).value(_inventDim.InventLocationId);
+        inventOnHandQuery.dataSourceTable(tableNum(InventSum)).addRange(fieldNum(InventSum,ItemId)).value(_itemId);
+
+
+        wmsLocationDS = inventOnHandQuery.dataSourceTable(tableNum(InventDim)).addDataSource(tableNum(WMSLocation));
+        wmsLocationDS.joinMode(JoinMode::InnerJoin);
+        wmsLocationDS.addLink(fieldNum(InventDim,wmsLocationId),fieldNum(wMSLocation,wmsLocationId));
+
+        whsLocationProfileDS = wmsLocationDS.addDataSource(tableNum(WHSLocationProfile));
+        whsLocationProfileDS.joinMode(JoinMode::OuterJoin);
+        whsLocationProfileDS.addLink(fieldNum(WMSLocation,LocProfileId),fieldNum(WHSLocationProfile,LocProfileId));
+        whsLocationProfileDS.addSelectionField(fieldNum(whsLocationProfile,CycleCountable),SelectionField::Min);
+
+
+        queryRun = new QueryRun(inventOnhandQuery);
+        while (queryRun.next())
+        {
+            inventSum           = queryRun.get(tableNum(InventSum));
+            inventDim           = queryRun.get(tableNum(InventDim));
+            wmsLocation         = queryRun.get(tableNum(WMSLocation));
+            whsLocationProfile  = queryRun.get(tableNum(whsLocationProfile));
+
+            if (whsLocationProfile.RecId && !whsLocationProfile.CycleCountable)
+            {
+                isOnNotCountLocation = true;
+            }
+
+
+            numOfLP++;
+        }
+        return numOfLP;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcWHSWorkQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 02.06.2025
+    /// </summary>
+    /// <param name = "_itemId">_itemId</param>
+    /// <param name = "_inventDim">_inventDim</param>
+    /// <returns>calcWHSWorkQty</returns>
+    protected Qty calcWHSWorkQty(ItemId     _itemId, InventDim    _inventDim)
+    {
+        Qty  whsWorkQty;
+        if(InventLocation::find(_inventDim.InventLocationId).WHSEnabled)
+        {
+            WHSWorkTable            whsWorkTable;
+            WHSWorkLine             whsWorkLine;
+
+            select sum(qtyWork) from whsWorkLine
+                where whsWorkLine.WorkType   == WHSWorkType::Pick
+                   && whsWorkLine.WorkStatus == WHSWorkStatus::Open
+                   && whsWorkLine.ItemId     == _itemId
+                    join whsWorkTable
+                        where whsWorkTable.WorkId == whsWorkLine.WorkId
+                           && whsWorkTable.InventLocationId == _inventDim.InventLocationId
+                           && whsWorkTable.WorkTransType    != WHSWorkTransType::CycleCount
+                           && whsWorkTable.WorkTransType    != WHSWorkTransType::CycleCountAccepted;
+
+            whsWorkQty = whsWorkLine.QtyWork;
+        }
+
+        return whsWorkQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcNumOfColor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 28.05.2025
+    /// </summary>
+    /// <param name = "_itemId">_itemId</param>
+    /// <param name = "_inventDim">_inventDim</param>
+    /// <returns>int</returns>
+    protected int  calcNumOfColor(ItemId     _itemId, InventDim    _inventDim)
+    {
+        Query       inventOnHandQuery = new Query(queryStr(InventOnHand));
+        QueryRun    queryRun;
+        int         numOfColor = 0;
+
+        inventOnHandQuery.dataSourceTable(tableNum(InventDim)).addGroupByField(fieldNum(InventDim,InventLocationId));
+        inventOnHandQuery.dataSourceTable(tableNum(InventSum)).addGroupByField(fieldNum(InventSum,ItemId));
+        inventOnHandQuery.dataSourceTable(tableNum(InventDim)).addGroupByField(fieldNum(InventDim,InventColorId));
+        inventOnHandQuery.dataSourceTable(tableNum(InventSum)).addSelectionField(fieldNum(InventSum,PhysicalInvent),SelectionField::Sum);
+        inventOnHandQuery.dataSourceTable(tableNum(InventSum)).addRange(fieldNum(InventSum,PhysicalInvent)).value('> 0');
+        inventOnHandQuery.dataSourceTable(tableNum(InventDim)).addRange(fieldNum(InventDim,InventColorId)).value(SysQuery::valueNotEmptyString());
+        inventOnHandQuery.dataSourceTable(tableNum(InventDim)).addRange(fieldNum(InventDim,InventLocationId)).value(_inventDim.InventLocationId);
+        inventOnHandQuery.dataSourceTable(tableNum(InventSum)).addRange(fieldNum(InventSum,ItemId)).value(_itemId);
+
+        queryRun = new QueryRun(inventOnhandQuery);
+        while (queryRun.next())
+        {
+            numOfColor++;
+        }
+        return numOfColor;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initInventDimParm</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 02.06.2025
+    /// </summary>
+    /// <returns>InventDimParm</returns>
+    protected InventDimParm   initInventDimParm()
+    {
+        InventDimParm           inventDimParm;
+
+        inventDimParm.InventSiteIdFlag     = NoYes::Yes;
+        inventDimParm.InventLocationIdFlag = NoYes::Yes;
+        return inventDimParm;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>endProcess</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 02.05.2025
+    /// </summary>
+    public void endProcess()
+    {
+        AVAItemCycleCountOverviewTable              itemCycleCountOverviewTable = AVAItemCycleCountOverviewTable::find(inventLocationId,true);
+        itemCycleCountOverviewTable.ToDateTime = DateTimeUtil::getSystemDateTime();
+        ttsbegin;
+        itemCycleCountOverviewTable.update();
+        ttscommit;
+   
+    }
+
+    /*Query  buildQuery()
+    {
+        Query       query = new Query();
+
+        QueryBuildDataSource    inventTableDS = query.addDataSource(tableNum(InventTable));
+
+        QueryBuildDataSource    ecoResProductDS = query.addDataSource(tableNum(EcoResProduct));
+        ecoResProductDS.relations(NoYes::Yes);
+        ecoResProductDS.joinMode(JoinMode::InnerJoin);
+        ecoResProductDS.addRange(fieldNum(EcoResProduct,ProductType)).value(SysQuery::value(EcoResProductType::Item));
+
+        QueryBuildDataSource    itemStateTableDS = inventTableDS.addDataSource(tableNum(KCS_KAOItemStateTable));
+        itemStateTableDS.addLink(fieldNum(InventTable,KCS_KAOItemState),fieldNum(KCS_KAOItemStateTable,ItemState));
+        itemStateTableDS.joinMode(JoinMode::InnerJoin);
+        itemStateTableDS.addRange(fieldNum(KCS_KAOItemStateTable,AVACountCycleActive)).value(SysQuery::value(NoYes::Yes));
+
+        QueryBuildDataSource    InventItemGroupItemDS = addDataSource(tableNum(InventItemGroupItem));
+        itemGroupTableDS.addLink(fieldNum(InventTable,ItemId),fieldNum())
+
+        return query;
+
+    }      */
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

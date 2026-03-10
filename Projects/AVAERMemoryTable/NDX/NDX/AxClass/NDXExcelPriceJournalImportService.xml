@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXExcelPriceJournalImportService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// DebuC 03.12.24
+/// </summary>
+public class NDXExcelPriceJournalImportService
+{
+    NDXSignature                signature;
+    NDXExcelTable               excelTable;
+    PriceDiscAdmTable           priceDiscAdmTable;
+    NDXExcelPriceImportHeader   priceImportHeader;
+    NDXExcelTableImportPrice    excelImport;
+    NDXExcelPriceImport         excelPriceImport;
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Debuc 03.12.24
+    /// </summary>
+    /// <param name = "_contract">NDXExcelPriceJournalImportContract</param>
+    public void process(NDXExcelPriceJournalImportContract _contract)
+    {
+        InventTable                 inventTable;
+        InventTableModule           inventTableModule;
+        UnitOfMeasureSymbol         unitId;
+        PriceDiscAdmTrans           priceDiscAdmTrans;
+
+        InventDimId                 inventDimId = InventDim::findOrCreateBlank().inventDimId;
+        PriceType                   relation;
+        PriceDiscProductCode        itemCode;
+        PriceDiscPartyCode          accountCode;
+        CustVendRel                 accountRelation;
+        FromDate                    fromDate;
+
+        int     ExcelImported, 
+                NewInJournal, 
+                DifferentPrices,
+                NotImportable;
+
+        signature           = _contract.parmSignature();
+        excelTable          = NDXExcelTable::find(_contract.parmExcelFileId());
+        priceDiscAdmTable   = PriceDiscAdmTable::find(_contract.parmPriceDiscJournalNum());
+        
+        relation        = _contract.parmRelation();
+        itemCode        = _contract.parmItemCode();
+        accountCode     = _contract.parmAccountCode();
+        accountRelation = _contract.parmAccountRelation();
+        fromDate        = _contract.parmFromDate();
+
+        ttsbegin;
+        priceImportHeader.Signature             = signature;
+        priceImportHeader.NDXExcelTable         = excelTable.RecId;
+        priceImportHeader.PriceDiscAdmTable     = priceDiscAdmTable.RecId;
+        priceImportHeader.Relation              = relation;
+        priceImportHeader.ItemCode              = itemCode;
+        priceImportHeader.AccountCode           = accountCode;
+        priceImportHeader.AccountRelation       = accountRelation;
+        priceImportHeader.FromDate              = fromDate;
+
+        if(priceImportHeader.validateWrite())
+        {
+            priceImportHeader.insert();
+        }
+        ttscommit;
+
+        excelImport = NDXExcelTableImport::construct(excelTable);
+        excelImport.getData(priceImportHeader);
+        
+        
+        while select forupdate excelPriceImport where excelPriceImport.NDXExcelPriceImportHeader == priceImportHeader.RecId
+        {
+            str cHinweis = "";
+            ItemRelation itemRelation        = excelPriceImport.ItemRelation;
+
+            inventTable       = InventTable::find(excelPriceImport.ItemRelation);
+            inventTableModule = InventTableModule::find(inventTable.ItemId, ModuleInventPurchSales::Sales);
+            unitId            = inventTableModule.UnitId;
+            ttsbegin;
+
+            select          priceDiscAdmTrans
+                where       priceDiscAdmTrans.JournalNum        == priceDiscAdmTable.JournalNum
+                    &&      priceDiscAdmTrans.ItemCode          == itemCode
+                    &&      priceDiscAdmTrans.AccountCode       == accountCode
+                    &&      priceDiscAdmTrans.AccountRelation   == accountRelation
+                    &&      priceDiscAdmTrans.ItemRelation      == itemRelation
+                    &&      priceDiscAdmTrans.InventDimId       == inventDimId
+                    &&      priceDiscAdmTrans.relation          == relation;
+
+
+            if (priceDiscAdmTrans)
+            {
+                excelPriceImport.InJournal            = NoYes::Yes;
+                excelPriceImport.AmountInJournal      = priceDiscAdmTrans.Amount;
+                excelPriceImport.PriceDiscTableRef    = priceDiscAdmTrans.PriceDiscTableRef;
+            }
+            excelPriceImport.PriceDiff            = decround(excelPriceImport.AmountInJournal,2) != decround(excelPriceImport.Amount,2) ? NoYes::Yes : NoYes::No;
+           
+            excelPriceImport.isImportable = excelPriceImport.ItemRelation ? NoYes::Yes : NoYes::No;
+            if (inventTable)
+            {
+                excelPriceImport.PriceUnitInInventTable   = inventTableModule.PriceUnit;
+                if (excelPriceImport.PriceUnit != excelPriceImport.PriceUnitInInventTable)
+                {
+                    cHinweis += strfmt("PriceUnit [%1] InventTable [%2]", excelPriceImport.PriceUnit, excelPriceImport.PriceUnitInInventTable);    // PriceUnit [%1] InventTable [%2];
+                }
+            }
+            else
+            {
+                excelPriceImport.isImportable = NoYes::No;
+                cHinweis += strfmt("Artikel nicht lokalisiert [%1]", excelPriceImport.ItemIdSeek);        // Artikel nicht lokalisiert [%1];
+            }
+            if (cHinweis)
+            {
+                excelPriceImport.Bemerkung = cHinweis;
+            }
+
+            excelPriceImport.update();
+            ttscommit;
+            ExcelImported   += 1;
+            NewInJournal    += excelPriceImport.InJournal == NoYes::No  ? 1          : 0;
+            DifferentPrices += excelPriceImport.PriceDiff               ? NoYes::Yes : NoYes::No;
+            NotImportable   += excelPriceImport.ItemRelation            ? NoYes::No  : NoYes::Yes;                       
+        }
+
+        ttsbegin;
+        priceImportHeader.selectForUpdate();
+        priceImportHeader.IntImportedData   = ExcelImported;
+        priceImportHeader.IntNewInJournal   = NewInJournal;
+        priceImportHeader.IntPriceDiff      = DifferentPrices;
+        priceImportHeader.IntNotImported    = NotImportable;
+        priceImportHeader.update();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

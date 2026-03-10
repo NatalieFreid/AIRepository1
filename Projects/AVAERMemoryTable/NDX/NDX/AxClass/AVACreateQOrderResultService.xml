@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACreateQOrderResultService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN/2025/05/21      AVA_013218_ProdSetupRelease
+/// </summary>
+internal final class AVACreateQOrderResultService  extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/05/21      AVA_013218_ProdSetupRelease
+    /// </summary>
+    /// <param name = "_contract">AVACreateQOrderResultContract</param>
+    public void process(AVACreateQOrderResultContract _contract)
+    {
+        InventQualityOrderId qOrderId = _contract.parmQOrderId();
+        InventQualityOrderTable qOrderTable;
+        InventQualityOrderLine  qOrderLine;
+        int results = 0;
+
+        if (qOrderId)
+        {
+            select firstonly qOrderLine where qOrderLine.QualityOrderId == qOrderId
+                && (!qOrderLine.AVAInventQualityOrderLineResultReal && !qOrderLine.AVAInventTestVariableOutcomeId);
+            if (qOrderLine)
+            {
+                throw error("@NDX:NXAInvQResultForAllLines");
+            }
+
+            while select qOrderLine where qOrderLine.QualityOrderId == qOrderId
+            {
+                this.createResult(qOrderLine);
+                if (!results)
+                {
+                    results = qOrderLine.avaDisplayResultQty();
+                }
+            }
+            if (results > 1)
+            {
+                ttsbegin;
+                qOrderTable = InventQualityOrderTable::find(qOrderId, true);
+                qOrderTable.Qty = qOrderTable.Qty + 1;
+                qOrderTable.update();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createResult</Name>
+				<Source><![CDATA[
+    private void createResult(InventQualityOrderLine _qOrderLine)
+    {
+        InventQualityOrderLineResults   qOrderLineResult;
+
+        ttsbegin;
+        qOrderLineResult.clear();
+        qOrderLineResult.initFromInventQualityOrderLine(_qOrderLine);
+        qOrderLineResult.TestResultQuantity = 1;
+        qOrderLineResult.TestResultValueOutcome = _qOrderLine.AVAInventTestVariableOutcomeId;
+        qOrderLineResult.TestResultValueReal = _qOrderLine.AVAInventQualityOrderLineResultReal;
+        qOrderLineResult.setTestResult(_qOrderLine, false);
+        qOrderLineResult.insert();
+        _qOrderLine.selectForUpdate(true);
+        _qOrderLine.AVAInventQualityOrderLineResultReal = 0;
+        _qOrderLine.AVAInventTestVariableOutcomeId = '';
+        _qOrderLine.update();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

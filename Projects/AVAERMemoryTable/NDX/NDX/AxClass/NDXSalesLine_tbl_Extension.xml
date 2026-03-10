@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXSalesLine_tbl_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Sales line table extension
+/// </summary>
+[ExtensionOf(tableStr(SalesLine))]
+internal final class NDXSalesLine_tbl_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>validateField</Name>
+				<Source><![CDATA[
+    public boolean  validateField(FieldId  _fieldId)
+    {
+        boolean         ok = true;
+        container       conErrorMessage;
+
+        boolean recordsCreated;
+        EcoResProductRecId productRecId;
+
+
+        if (ok && (_fieldId == fieldnum(SalesLine, ItemId)))
+        {
+            [productRecId, recordsCreated] = MCRInventSearch::searchProduct(this, this.itemId);
+
+            // DataSource ItemId.modified() is called on the MCRSalesQuickQuoteForm, if a product is returned then
+            //  it means the line was not updated there, so set ItemId and update product dimensions based on returned product.
+            if (productRecId)
+            {
+                InventDistinctProduct distinctProduct = InventDistinctProduct::findByProduct(productRecId);
+                ItemId newItemId = distinctProduct ? distinctProduct.ItemId : InventTable::findByProduct(productRecId).ItemId;
+                this.ItemId = newItemId;
+            }
+        }
+
+        ok = next validateField(_fieldId);
+
+        if (ok)
+        {
+            [ok, conErrorMessage] = NDX_ItemValidity::checkValiditySale(this.ItemId, this.SalesId, this.AVAQuotationId);
+            
+            if (!ok)
+            {
+                Warning(NDX_ItemValidity::conErrorMessage2ValidityMessage(conErrorMessage));
+            }
+        }
+
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

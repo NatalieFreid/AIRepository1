@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAProdUpdRelease_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(classStr(ProdUpdRelease))]
+internal final class AVAProdUpdRelease_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>printout</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    void printout()
+    {
+        next printOut();
+        if (prodParmRelease.AVAPrintProdRunMap)
+        {
+            AVAProdRunMapController::constructFromProdUpdRelease(prodParmRelease);
+        }
+        if (prodParmRelease.AVAPrintProdProdOrder)
+        {
+            AVAProdProdOrderController::constructFromProdUpdRelease(prodParmRelease);
+        }
+
+       
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateProdBOM</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    void updateProdBOM()
+    {
+        if (ProdParameters::find().AVAEnableNegativeLocationSearch == NoYes::Yes)
+        {
+            this.avaUpdateProdBomLocation();
+        }
+
+        next updateProdBOM();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateProdBomLocation</Name>
+				<Source><![CDATA[
+    private void avaUpdateProdBomLocation()
+    {
+        ProdBOM                         prodBOM;
+        InventDim                       inventDim;
+        InventDim                       inventDim_New;
+
+        ProdRoute                       prodRoute;
+        InventLocation                  inventLocation;
+        WMSLocationId                   wmsLocationId;
+        WMSLocation                     wmsLocation;
+
+        WrkCtrProdRouteActivity         wrkCtrProdRouteActivity;
+        WrkCtrActivityRequirement       wrkCtrActivityRequirement;
+        WrkCtrActivityRequirementSet    wrkCtrActivityRequirementSet;
+        WrkCtrTable                     wrkCtrTable;
+        WrkCtrResourceGroup             wrkCtrResourceGroup;
+        WrkCtrResourceGroupResource     wrkCtrResourceGroupResource;
+
+        while select forupdate prodBOM
+            where prodBOM.ProdId == prodParmRelease.ProdId
+               && prodBOM.RemainBOMPhysical < 0
+                join inventDim
+                    where inventDim.inventDimId ==  prodBOM.InventDimId
+                       && !inventDim.wMSLocationId
+                       && inventDim.inventLocationId
+        {
+            prodRoute = prodBOM.prodRoute();
+
+            while select wrkCtrProdRouteActivity
+                where wrkCtrProdRouteActivity.OprPriority       == prodRoute.OprPriority
+                   && wrkCtrProdRouteActivity.OprNum            == prodRoute.OprNum
+                   && wrkCtrProdRouteActivity.ProdId            == prodRoute.ProdId
+                   && wrkCtrProdRouteActivity.RouteDataAreaId   == prodRoute.DataAreaId
+            {
+                while select wrkCtrActivityRequirementSet
+                    where wrkCtrActivityRequirementSet.Activity == wrkCtrProdRouteActivity.Activity
+                {
+                    wrkCtrTable         = wrkCtrActivityRequirementSet.resourceRequirement();
+                    wrkCtrResourceGroup = wrkCtrActivityRequirementSet.resourceGroupRequirement();
+
+                    if (wrkCtrResourceGroup)
+                    {
+                        wmsLocation = WMSLocation::find(wrkCtrResourceGroup.InputWMSLocationId, wrkCtrResourceGroup.InputInventLocationId);
+
+                    }
+                    else if (wrkCtrTable)
+                    {
+                        wrkCtrResourceGroupResource = WrkCtrResourceGroupResource::avaFind(wrkCtrTable.WrkCtrId);
+
+                        if (wrkCtrResourceGroupResource)
+                        {
+                            wrkCtrResourceGroup = WrkCtrResourceGroup::find(wrkCtrResourceGroupResource.ResourceGroup);
+                            wmsLocation         = WMSLocation::find(wrkCtrResourceGroup.InputWMSLocationId, wrkCtrResourceGroup.InputInventLocationId);
+                        }
+                    }
+                    
+                    if (wmsLocation)
+                    {
+                        break;
+                    }         
+                }
+
+                if (wmsLocation)
+                {
+                    break;
+                }
+            }
+
+            if (!wmsLocation)
+            {
+                inventLocation  = InventLocation::find(inventDim.InventLocationId);
+                wmsLocation     = WMSLocation::find(inventLocation.DefaultProductionInputLocation, inventLocation.InventLocationId);
+            }
+
+            if (wmsLocation
+             && wmsLocation.inventLocationId == inventDim.InventLocationId)
+            {
+                inventDim_New = prodBOM.inventDim();
+                inventDim_New.wMSLocationId = wmsLocation.wMSLocationId;
+                inventDim_New = InventDim::findOrCreate(inventDim_New);
+
+                prodBOM.InventDimId = inventDim_New.inventDimId;
+                prodBOM.update();
+            }
+            
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

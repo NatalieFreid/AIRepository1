@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXUnitSequenceGroups</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Class for creating the unti sequences groups out of the unit packing structure
+/// </summary>
+public final class NDXUnitSequenceGroups
+{
+    WHSUOMSeqGroupId whsUOMSeqGroupId;
+    List unitOfMeasureList;
+    List unitOfMeasureConversionList;
+    InventTable inventTable;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    void new()
+    {
+        unitOfMeasureList = new List(Types::Record);
+        unitOfMeasureConversionList = new List(Types::Record);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addUnitOfMeasure</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// adds unit of measure to list
+    /// </summary>
+    /// <param name = "_unitOfMeasure">unit of measure record</param>
+    protected void addUnitOfMeasure(UnitOfMeasure _unitOfMeasure)
+    {
+        unitOfMeasureList.addEnd(_unitOfMeasure);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addUnitOfMeasureConversion</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// adds unit of measure to list
+    /// </summary>
+    /// <param name = "_unitOfMeasure">unit of measure record</param>
+    protected void addUnitOfMeasureConversion(UnitOfMeasureConversion _unitOfMeasureConversion)
+    {
+        unitOfMeasureConversionList.addEnd(_unitOfMeasureConversion);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createSequence</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// create sequence
+    /// </summary>
+    /// <returns>returns a sequence WHSUOMSeqGroupTable record</returns>
+    protected WHSUOMSeqGroupTable createSequence()
+    {
+        UnitOfMeasure lUnitOfMeasureItem;
+        ListEnumerator listEnumerator;
+        
+        //int pos = 0;
+        boolean firstRun;
+        str symbol = '';
+
+        listEnumerator = unitOfMeasureList.getEnumerator();
+
+        while(listEnumerator.moveNext())
+        {
+            if(!firstrun)
+            {
+                firstrun = true;
+            }
+            else
+            {
+                this.whsUOMSeqGroupId += '-';
+            }
+
+            lUnitOfMeasureItem = listEnumerator.current();
+
+            symbol = lUnitOfMeasureItem.Symbol;
+
+            //We replace '-' by 
+            symbol = strReplace(symbol, '-', '_');
+            symbol = strReplace(symbol, ' ', '_');
+
+            this.whsUOMSeqGroupId += symbol;
+        }
+
+        return this.storeSequence();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createSequenceNew</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// create sequence
+    /// </summary>
+    /// <returns>returns a sequence WHSUOMSeqGroupTable record</returns>
+    protected WHSUOMSeqGroupTable createSequenceNew()
+    {
+        UnitOfMeasure lUnitOfMeasureUnitId, lUnitOfMeasureItemFrom, lUnitOfMeasureItemTo;
+        UnitOfMeasureConversion lUnitOfMeasureConversionItem;
+
+        ListEnumerator listEnumerator;
+        InventTableModule inventTableModule;
+        UnitIDBase unitId = '';
+
+        List unitOfMeasureListNew = new List(Types::Record);  
+        Set faktorSet = new Set(Types::Real);
+        
+            str symbol = '';
+
+        if(inventTable)
+        {
+            inventTableModule = InventTableModule::find(inventTable.ItemId, ModuleInventPurchSales::Invent);
+        }
+
+        unitId = inventTableModule.UnitId;
+        unitId = strReplace(unitId, '-', '_');
+        unitId = strReplace(unitId, ' ', '_');
+        
+        lUnitOfMeasureUnitId = UnitOfMeasure::findBySymbol(unitId);
+
+        if(lUnitOfMeasureUnitId)
+        {
+            unitOfMeasureListNew.addEnd(lUnitOfMeasureUnitId);
+            this.whsUOMSeqGroupId += unitId;
+        }
+
+        listEnumerator = unitOfMeasureConversionList.getEnumerator();
+
+        while(listEnumerator.moveNext())
+        {
+            symbol = '';
+
+            lUnitOfMeasureConversionItem = listEnumerator.current();
+
+            lUnitOfMeasureItemFrom = UnitOfMeasure::find(lUnitOfMeasureConversionItem.FromUnitOfMeasure);
+            lUnitOfMeasureItemTo = UnitOfMeasure::find(lUnitOfMeasureConversionItem.ToUnitOfMeasure);
+
+            if(unitId != '' && lUnitOfMeasureItemFrom && unitId == lUnitOfMeasureItemFrom.Symbol)
+            {
+                faktorSet.add(lUnitOfMeasureConversionItem.Factor);
+                continue;
+            }
+
+            if(unitId != '' && lUnitOfMeasureItemTo && unitId != lUnitOfMeasureItemTo.Symbol)
+            {
+                continue;
+            }
+            
+            faktorSet.add(lUnitOfMeasureConversionItem.Factor);
+
+            unitOfMeasureListNew.addEnd(lUnitOfMeasureItemFrom);
+            symbol = lUnitOfMeasureItemFrom.Symbol;
+
+            //We replace '-' by
+            symbol = strReplace(symbol, '-', '_');
+            symbol = strReplace(symbol, ' ', '_');
+
+            if( this.whsUOMSeqGroupId != '' && symbol != '')
+            {
+                this.whsUOMSeqGroupId += '-';
+            }
+
+            this.whsUOMSeqGroupId += symbol;
+        }
+
+        if(lUnitOfMeasureUnitId && faktorSet.elements() > 0 && faktorSet.elements() != unitOfMeasureConversionList.elements())
+        {
+            unitOfMeasureListNew = new List(Types::Record);
+            unitOfMeasureListNew.addEnd(lUnitOfMeasureUnitId);
+        }
+
+        this.unitOfMeasureList = unitOfMeasureListNew;
+        return this.storeSequence();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeSequence</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// store sequence into a table
+    /// </summary>
+    /// <returns>WHSUOMSeqGroupTable record</returns>
+    private WHSUOMSeqGroupTable storeSequence()
+    {
+        UnitOfMeasure lUnitOfMeasureItem;
+        
+        ListEnumerator listEnumerator;
+        WHSUOMSeqGroupTable lWHSUOMSeqGroupTable;
+        WHSUOMSeqGroupLine lWHSUOMSeqGroupLine;
+
+        real pos = 1;
+        
+        lWHSUOMSeqGroupTable = WHSUOMSeqGroupTable::find(this.whsUOMSeqGroupId);
+        
+        if(!lWHSUOMSeqGroupTable)
+        {
+            lWHSUOMSeqGroupTable.UOMSeqGroupId =  this.whsUOMSeqGroupId;
+            lWHSUOMSeqGroupTable.UOMSeqGroupName =  this.whsUOMSeqGroupId;
+
+            lWHSUOMSeqGroupTable.insert();
+        }
+
+        listEnumerator = unitOfMeasureList.getEnumerator();
+
+        while(listEnumerator.moveNext())
+        {
+            lUnitOfMeasureItem = listEnumerator.current();
+            lWHSUOMSeqGroupLine = WHSUOMSeqGroupLine::findByUnitId(this.whsUOMSeqGroupId, lUnitOfMeasureItem.Symbol);
+
+            if(!lWHSUOMSeqGroupLine)
+            {
+                lWHSUOMSeqGroupLine = WHSUOMSeqGroupLine::find(this.whsUOMSeqGroupId, pos);
+            }
+
+            if(!lWHSUOMSeqGroupLine)
+            {
+                lWHSUOMSeqGroupLine.UnitId = lUnitOfMeasureItem.Symbol;
+                lWHSUOMSeqGroupLine.UOMSeqGroupId = this.whsUOMSeqGroupId;
+                lWHSUOMSeqGroupLine.LineNum = pos;
+
+                if(unitOfMeasureList.elements() >= 1 && pos == 1)
+                {
+                    lWHSUOMSeqGroupLine.UnitizationGrouping = NoYes::Yes;
+                }
+
+                if(unitOfMeasureList.elements() >= 1 && pos == 1)
+                {
+                    lWHSUOMSeqGroupLine.UnitizationGrouping = NoYes::Yes;
+                }
+
+                if(lWHSUOMSeqGroupLine.UnitId == 'St')
+                {
+                    lWHSUOMSeqGroupLine.DefaultProdUnitId = NoYes::Yes;
+                }
+                
+                lWHSUOMSeqGroupLine.insert();
+            }
+            else if(lWHSUOMSeqGroupLine.UnitId != lUnitOfMeasureItem.Symbol)
+            {
+                Info(strFmt("@NDX:NDXUnitSequenceError", lWHSUOMSeqGroupLine.LineNum, this.whsUOMSeqGroupId, lWHSUOMSeqGroupLine.UnitId, lUnitOfMeasureItem.Symbol));
+            }
+            
+
+            pos++;
+        }
+
+        return lWHSUOMSeqGroupTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// process item with 
+    /// </summary>
+    /// <param name = "_inventTableRecId">recid of inventTable</param>
+    private void process(RecId _inventTableRecId)
+    {
+        WHSUOMSeqGroupTable lWHSUOMSeqGroupTable;
+        WHSInventTable lWHSInventTable;
+        
+        inventTable = InventTable::findByRecId(_inventTableRecId);
+                
+        try
+        {
+            //lWHSUOMSeqGroupTable = this.createSequence();
+            lWHSUOMSeqGroupTable = this.createSequenceNew();
+            lWHSInventTable = WHSInventTable::find(inventTable.ItemId, true);
+
+            if(lWHSInventTable)
+            {
+                ttsbegin;
+                lWHSInventTable.UOMSeqGroupId = lWHSUOMSeqGroupTable.UOMSeqGroupId;
+                lWHSInventTable.update();
+                ttscommit;
+            }
+        }
+        catch
+        {
+            warning(strFmt("@NDX:NDXUnitSequenceError1", inventTable.ItemId));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+	static public void main(Args _args)
+    {
+        UnitOfMeasure lUnitOfMeasure;
+        UnitOfMeasureConversion lUnitOfMeasureConversion;
+        InventTable inventTable, lasiInventTable;
+
+        NDXUnitSequenceGroups lNDXUnitSequenceGroups;
+        
+        RecId lastInventTableRecId;
+        
+        while select inventTable order by inventTable.ItemId, inventTable.DataAreaId, lUnitOfMeasureConversion.NDXUnitLevel
+            join lUnitOfMeasureConversion
+                where lUnitOfMeasureConversion.Product == inventTable.Product
+        {
+            if(inventTable.RecId != lastInventTableRecId)
+            {
+                if(lNDXUnitSequenceGroups != null)
+                {
+                    lNDXUnitSequenceGroups.process(lastInventTableRecId);
+                }
+                
+                lNDXUnitSequenceGroups = new NDXUnitSequenceGroups();
+                lastInventTableRecId = inventTable.RecId;
+            }
+
+            //lUnitOfMeasure = UnitOfMeasure::find(lUnitOfMeasureConversion.FromUnitOfMeasure);
+            //lNDXUnitSequenceGroups.addUnitOfMeasure(lUnitOfMeasure);
+            lNDXUnitSequenceGroups.addUnitOfMeasureConversion(lUnitOfMeasureConversion);
+            
+        }
+
+        //Last record was not processed since the process starts if change occured
+        if(lNDXUnitSequenceGroups != null)
+        {
+            lNDXUnitSequenceGroups.process(lastInventTableRecId);
+        }
+	}
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

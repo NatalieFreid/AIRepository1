@@ -1,0 +1,868 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXRequisitionClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Requisition class
+/// </summary>
+public class NDXRequisitionClass
+{
+    const str levelSep = '.';
+    const int multiplier = 1000;
+    boolean activeChanged;
+
+    NDXFault fehlBase;
+    public NDXUpdatedUTC updatedUTC;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>fillSalesQuotationLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// desolves position of sales quotation
+    /// </summary>
+    /// <param name = "_ndxRequisition">NDXRequisition record</param>
+    void fillSalesQuotationLine(NDXRequisition _ndxRequisition)
+    {
+        SalesQuotationTable   salesQuotationTable;
+        SalesQuotationLine    salesQuotationLine;
+        NDXRequisitionLine    nDX_Requisition_Line;
+        BOMVersion  bOMVersion;
+        InventTable inventTable;
+        container   conLevel;
+        NDXLevel   level;
+        NDXEbene   ebene;
+        
+        salesQuotationTable = SalesQuotationTable::findRec(_ndxRequisition.SalesQuotationRefRecId);
+
+        select count(RecId) from nDX_Requisition_Line
+            where   nDX_Requisition_Line.RequisitionId == _ndxRequisition.RequisitionId
+                &&  nDX_Requisition_Line.SalesQuotationRefRecId == _ndxRequisition.SalesQuotationRefRecId
+                &&  nDX_Requisition_Line.Changed == NoYes::Yes;
+        
+        if (nDX_Requisition_Line.RecId)
+        {
+            if (box::yesNo(strfmt("@NDX:NDXRequisitionInfo", nDX_Requisition_Line.RecId), DialogButton::Yes) == DialogButton::No)
+            {
+                return;
+            }
+        }
+
+        delete_from nDX_Requisition_Line
+            where   nDX_Requisition_Line.RequisitionId == _ndxRequisition.RequisitionId
+            &&  nDX_Requisition_Line.SalesQuotationRefRecId == _ndxRequisition.SalesQuotationRefRecId;
+
+        level = NDXRequisitionLine::getMaxLevel(_ndxRequisition.RequisitionId, false);
+        conLevel += level;
+        ebene = 1;
+        
+        while select salesQuotationLine
+            where salesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+            outer join inventTable
+                where inventTable.ItemId == salesQuotationLine.ItemId
+        {
+            nDX_Requisition_Line.clear();
+            nDX_Requisition_Line.RequisitionId = _ndxRequisition.RequisitionId;
+            nDX_Requisition_Line.SalesQuotationRefRecId = _ndxRequisition.SalesQuotationRefRecId;
+            nDX_Requisition_Line.LineNum          = salesQuotationLine.LineNum;
+            
+            nDX_Requisition_Line.ItemId           = salesQuotationLine.ItemId;
+            nDX_Requisition_Line.ItemName         = inventTable.Product().productName();
+            
+            nDX_Requisition_Line.SalesUnit        = salesQuotationLine.SalesUnit;
+            nDX_Requisition_Line.KCS_CRMIsAlternativeLine = salesQuotationLine.KCS_CRMIsAlternativeLine;
+            nDX_Requisition_Line.KCS_QLInternalPosition   = salesQuotationLine.KCS_QLInternalPosition;
+            nDX_Requisition_Line.KCS_QLLVPosition         = salesQuotationLine.KCS_QLLVPosition;
+            
+            nDX_Requisition_Line.ItemType = inventTable.ItemType;
+            nDX_Requisition_Line.PmfProductType = inventTable.PmfProductType;
+            
+            nDX_Requisition_Line.AVAItemSet = inventTable.AVAItemSet;
+
+            nDX_Requisition_Line.Active  = salesQuotationLine.KCS_CRMIsAlternativeLine == NoYes::Yes ||
+                                                              inventTable.AVAItemSet ||
+                                                              inventTable.ItemType == ItemType::Service ? NoYes::No : NoYes::Yes;
+
+            nDX_Requisition_Line.Qty01            = salesQuotationLine.SalesQty;
+            nDX_Requisition_Line.modifiedField(fieldnum(NDXRequisitionLine, Qty01));
+
+            nDX_Requisition_Line.Changed          = NoYes::No;
+            nDX_Requisition_Line.RequisitionLineType = NDXRequisitionLineType::SalesQuotation;
+
+            bOMVersion = BOMVersion::findValidActive(salesQuotationLine.ItemId);
+            nDX_Requisition_Line.BOMId            = bOMVersion.BOMId;
+            nDX_Requisition_Line.Multiplier       = Multiplier;
+
+            ++level;
+            conLevel = conpoke(conLevel, 1, level);
+            nDX_Requisition_Line.LevelString      = Con2Str(conLevel, levelSep);
+            nDX_Requisition_Line.Level            = level;
+            nDX_Requisition_Line.Level1           = 1;
+            nDX_Requisition_Line.insert();
+
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isLastPos</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// checks if it is last postion
+    /// </summary>
+    /// <param name = "_ndxRequisitionLine">NDXRequisitionLine record</param>
+    /// <param name = "_conLevel">container</param>
+    /// <param name = "_extensionCall">set it to 'true' whwn method is overriden in an extension</param>
+    /// <returns>true or false</returns>
+    public NDXIsLastPos isLastPos(NDXRequisitionLine _ndxRequisitionLine, container _conLevel, boolean _extensionCall = false)
+    {
+        NDXIsLastPos isLastPos;
+        BOMVersion bomVersion;
+        
+        if(!_extensionCall)
+        {
+            bomVersion = BOMVersion::findValidActive(_ndxRequisitionLine.ItemId);
+            isLastPos = !bomVersion || !this.fillLineFromBomVersion(_ndxRequisitionLine.RequisitionId,
+                                                                bomVersion,
+                                                                2,
+                                                                _ndxRequisitionLine.Level,
+                                                                _ndxRequisitionLine.Qty01,
+                                                                _ndxRequisitionLine.Multiplier,
+                                                                _conLevel,
+                                                                _ndxRequisitionLine);
+        }
+
+        return isLastPos;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillSalesLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// desolves postion of sales order record
+    /// </summary>
+    /// <param name = "_ndxRequisition">NDXRequisition records</param>
+    void fillSalesLine(NDXRequisition _ndxRequisition)
+    {
+        SalesTable  salesTable;
+        SalesLine   salesLine;
+        NDXRequisitionLine    nDX_Requisition_Line;
+        BOMVersion  bOMVersion;
+        InventTable inventTable;
+        container   conLevel;
+        NDXLevel   level;
+        NDXEbene   ebene;
+        
+        salesTable = SalesTable::findRecId(_ndxRequisition.SalesTableRefRecId);
+
+        select count(RecId) from nDX_Requisition_Line
+            where   nDX_Requisition_Line.RequisitionId == _ndxRequisition.RequisitionId
+                &&  nDX_Requisition_Line.SalesTableRefRecId == _ndxRequisition.SalesTableRefRecId
+                &&  nDX_Requisition_Line.Changed == NoYes::Yes;
+                
+        if (nDX_Requisition_Line.RecId)
+        {
+            // Bei [%1] Positionen wurden Änderungen vorgenommen! Diese Änderungen gehen verloren. Soll der Vorgang fortgesetzt werden?
+            if (box::yesNo(strfmt("@NDX:NDXRequisitionInfo", nDX_Requisition_Line.RecId), DialogButton::Yes) == DialogButton::No)
+            {
+                return;
+            }
+        }
+
+        delete_from nDX_Requisition_Line
+            where   nDX_Requisition_Line.RequisitionId == _ndxRequisition.RequisitionId
+                &&  nDX_Requisition_Line.SalesTableRefRecId == _ndxRequisition.SalesTableRefRecId;
+
+        level    = NDXRequisitionLine::getMaxLevel(_ndxRequisition.RequisitionId, false);
+        conLevel += level;
+        ebene = 1;
+        
+        while select salesLine
+            where salesLine.SalesId == salesTable.SalesId
+            outer join inventTable
+                where inventTable.ItemId == salesLine.ItemId
+        {
+            if (_ndxRequisition.SalesStatus != SalesStatus::None && salesLine.SalesStatus != _ndxRequisition.SalesStatus)
+            {
+                continue;
+            }
+            nDX_Requisition_Line.clear();
+            nDX_Requisition_Line.RequisitionId      = _ndxRequisition.RequisitionId;
+            nDX_Requisition_Line.SalesTableRefRecId = _ndxRequisition.SalesTableRefRecId;
+            nDX_Requisition_Line.LineNum          = salesLine.LineNum;
+            nDX_Requisition_Line.ItemId           = salesLine.ItemId;
+            nDX_Requisition_Line.SalesStatus      = salesLine.SalesStatus;
+            nDX_Requisition_Line.ItemName         = inventTable.Product().productName();
+            nDX_Requisition_Line.SalesUnit        = salesLine.SalesUnit;
+            nDX_Requisition_Line.ItemType       = inventTable.ItemType;
+            nDX_Requisition_Line.PmfProductType = inventTable.PmfProductType;
+            nDX_Requisition_Line.AVAItemSet = inventTable.AVAItemSet;
+            
+            nDX_Requisition_Line.Active           = NoYes::Yes;
+
+            nDX_Requisition_Line.Qty01            = salesLine.SalesQty;
+            nDX_Requisition_Line.modifiedField(fieldnum(NDXRequisitionLine, Qty01));
+
+            nDX_Requisition_Line.Changed          = NoYes::No;
+            nDX_Requisition_Line.RequisitionLineType = NDXRequisitionLineType::SalesOrder;
+
+            bOMVersion = BOMVersion::findValidActive(salesLine.ItemId);
+            nDX_Requisition_Line.BOMId            = bOMVersion.BOMId;
+            nDX_Requisition_Line.Multiplier       = Multiplier;
+
+            ++level;
+            conLevel = conpoke(conLevel, 1, level);
+            nDX_Requisition_Line.LevelString      = Con2Str(conLevel, levelSep);
+            nDX_Requisition_Line.Level            = level;
+            nDX_Requisition_Line.Level1           = 1;
+            nDX_Requisition_Line.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillLineBOM</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// desolves BOM positions
+    /// </summary>
+    /// <param name = "_ndxRequisition">NDXRequisition record</param>
+    void fillLineBOM(NDXRequisition _ndxRequisition)
+    {
+        NDXRequisitionLine nDX_Requisition_Line;
+
+        RefRecId        refRecId;
+        NDXIsLastPos    isLastPos;
+        container       conLevel;
+        container       conRec;
+        int             i;
+        int             level2;
+        
+        updatedUTC = DateTimeUtil::utcNow();
+
+        while select nDX_Requisition_Line order by nDX_Requisition_Line.Level
+            where   nDX_Requisition_Line.RequisitionId == _ndxRequisition.RequisitionId
+                &&  nDX_Requisition_Line.Level1 == 1
+
+        {
+            conRec += nDX_Requisition_Line.RecId;
+        }
+        
+        for (i=1; i <= conlen(conRec); i++)
+        {
+            level2 = 0;
+            refRecId = conpeek(conRec, i);
+            select forUpdate firstonly nDX_Requisition_Line where nDX_Requisition_Line.RecId == refRecId;
+
+            conLevel = str2con(nDX_Requisition_Line.LevelString, levelSep);
+            
+            isLastPos = this.isLastPos(nDX_Requisition_Line, conLevel);
+            
+            ttsbegin;
+            select forUpdate firstonly nDX_Requisition_Line where nDX_Requisition_Line.RecId == refRecId;
+            nDX_Requisition_Line.IsLastPos = isLastPos;
+            nDX_Requisition_Line.update();
+            ttscommit;
+        }
+
+        // delete not updated lines
+        delete_from nDX_Requisition_Line
+            where   nDX_Requisition_Line.RequisitionId == _ndxRequisition.RequisitionId
+                &&  nDX_Requisition_Line.Level1 != 1
+                &&  nDX_Requisition_Line.UpdatedUTC != updatedUTC ;
+
+        _ndxRequisition.selectForUpdate(true);
+
+        ttsbegin;
+        _ndxRequisition.UpdatedUTC = updatedUTC;
+        _ndxRequisition.update();
+        ttscommit;
+
+        // Summierung + Bestandsermittlung
+        this.buildNDX_Requisition_Line(_ndxRequisition);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillLineFromBomVersion</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// desolve positions from BOM Version
+    /// </summary>
+    /// <param name = "_requisitionId">RequisitionId of NDXRequisition record</param>
+    /// <param name = "_bomVersionBase">bom version</param>
+    /// <param name = "_ebene">level 1</param>
+    /// <param name = "_level">level </param>
+    /// <param name = "_multiplier">multiplier 1</param>
+    /// <param name = "_multiplier2">multiplier 2</param>
+    /// <param name = "_conLevel">container</param>
+    /// <param name = "_nDX_Requisition_LineBase">NDXRequisitionLine record</param>
+    /// <returns>true or false</returns>
+    boolean fillLineFromBomVersion(NDXRequisitionId _requisitionId, BOMVersion _bomVersionBase, NDXLevel _ebene, NDXLevel _level, NDXMultiplier _multiplier, NDXMultiplier _multiplier2, container _conLevel, NDXRequisitionLine _nDX_Requisition_LineBase)
+    {
+        NDXRequisitionLine  nDX_Requisition_Line;
+        BOMVersion bOMVersion;
+        BOM bom;
+        InventTable inventTable;
+        NDXLevel level2;
+        NDXIsLastPos isLastPos;
+        RefRecId refRecId;
+        NDXMultiplier lMultiplier;
+
+        container conlevel = _conLevel;
+
+        if (conLen(conlevel) < _ebene)
+        {
+            conlevel += 0;
+        }
+
+        if (_bomVersionBase)
+        {
+            while select bOM
+                where bOM.BOMId == _bomVersionBase.BOMId
+                outer join inventTable
+                    where inventTable.ItemId == bom.ItemId
+            {
+                ++level2;
+                conlevel = conpoke(conlevel, _ebene, level2);
+
+                nDX_Requisition_Line = NDXRequisitionLine::find(_requisitionId, Con2Str(conlevel, levelSep), true);
+
+                if (!nDX_Requisition_Line)
+                {
+                    nDX_Requisition_Line.RequisitionId = _requisitionId;
+                    nDX_Requisition_Line.LevelString = Con2Str(conlevel, levelSep);
+                    nDX_Requisition_Line.Active = _nDX_Requisition_LineBase.KCS_CRMIsAlternativeLine == NoYes::No && inventTable.ItemType != ItemType::Service;
+                }
+
+                nDX_Requisition_Line.SalesQuotationRefRecId = _nDX_Requisition_LineBase.SalesQuotationRefRecId;
+                //nDX_Requisition_Line.SpecialCalcLfdNr       = _nDX_Requisition_LineBase.SpecialCalcLfdNr;
+                nDX_Requisition_Line.LineNum                = _nDX_Requisition_LineBase.LineNum;
+                
+                nDX_Requisition_Line.ItemId                 = bom.ItemId;
+                nDX_Requisition_Line.ItemName               = inventTable.Product().productName();
+
+                if(bom.BOMQtySerie != 0)
+                {
+                    lMultiplier = ((bom.BOMQty * multiplier) / bom.BOMQtySerie);
+                    nDX_Requisition_Line.Multiplier       = lMultiplier;
+                    nDX_Requisition_Line.Qty01            = (bom.BOMQty / bom.BOMQtySerie) * _multiplier;
+                }
+                else
+                {
+                    nDX_Requisition_Line.Multiplier = 0;
+                    nDX_Requisition_Line.Qty01 = 0;
+                }
+                
+                //Ausschuß berücksichtigen
+                if(inventTable && inventTable.ItemType == ItemType::Item && bOM.ScrapVar > 0)
+                {
+                    nDX_Requisition_Line.Qty01 = nDX_Requisition_Line.Qty01 *  (1 + bOM.ScrapVar/100);
+                }
+
+                nDX_Requisition_Line.modifiedField(fieldnum(NDXRequisitionLine, Qty01));
+
+                nDX_Requisition_Line.SalesUnit        = bom.UnitId;
+                nDX_Requisition_Line.BOMIdBase        = _bomVersionBase.BOMId;
+                nDX_Requisition_Line.LineNumBOM       = bom.LineNum;
+
+                nDX_Requisition_Line.KCS_CRMIsAlternativeLine = _nDX_Requisition_LineBase.KCS_CRMIsAlternativeLine;
+                nDX_Requisition_Line.KCS_QLInternalPosition   = _nDX_Requisition_LineBase.KCS_QLInternalPosition;
+                nDX_Requisition_Line.KCS_QLLVPosition         = _nDX_Requisition_LineBase.KCS_QLLVPosition;
+                nDX_Requisition_Line.ItemType         = inventTable.ItemType;
+                nDX_Requisition_Line.PmfProductType   = inventTable.PmfProductType;
+                nDX_Requisition_Line.AVAItemSet = inventTable.AVAItemSet;
+                nDX_Requisition_Line.Changed          = NoYes::No;
+                nDX_Requisition_Line.RequisitionLineType  = _nDX_Requisition_LineBase.RequisitionLineType;
+                nDX_Requisition_Line.Level            = _level;
+                nDX_Requisition_Line.Level1           = _ebene;
+
+                bOMVersion = BOMVersion::findValidActive(nDX_Requisition_Line.ItemId);
+                nDX_Requisition_Line.BOMId            = bomVersion.BOMId;
+                nDX_Requisition_Line.UpdatedUTC       = updatedUTC;
+
+                ttsbegin;
+                nDX_Requisition_Line.write();
+                ttscommit;
+                refRecId = nDX_Requisition_Line.RecId;
+
+                isLastPos = !bOMVersion || !this.fillLineFromBomVersion(_requisitionId, bOMVersion, _ebene+1, _level,
+                                                                                nDX_Requisition_Line.Qty01,
+                                                                                nDX_Requisition_Line.Multiplier,
+                                                                                conlevel,
+                                                                                _nDX_Requisition_LineBase);
+                
+                
+                select forUpdate firstonly nDX_Requisition_Line where nDX_Requisition_Line.RecId == refRecId;
+                nDX_Requisition_Line.IsLastPos = isLastPos;
+                
+                ttsbegin;
+                nDX_Requisition_Line.update();
+                ttscommit;
+            }
+        }
+        return (level2);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildNDX_Requisition_Line</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Builds NDX_Requisition_Line records
+    /// </summary>
+    /// <param name = "_ndxRequisition">NDXRequisition record</param>
+    public void buildNDX_Requisition_Line(NDXRequisition _ndxRequisition)
+    {
+        NDXRequisitionLineGrp     nDX_Requisition_LineGrp;
+        NDXRequisitionLine        nDX_Requisition_Line;
+        InventTable     inventTable;
+        InventItemGroupItem inventItemGroupItem;
+
+        Query   q = new Query(queryStr(NDXRequisitionLineGrpQuery));
+        QueryRun    qr;
+
+        q.dataSourceTable(tableNum(NDXRequisitionLine)).addRange(fieldNum(NDXRequisitionLine, RequisitionId)).value(queryValue(_ndxRequisition.RequisitionId));
+        qr = new QueryRun(q);
+        
+        while (qr.next())
+        {
+            nDX_Requisition_Line = qr.get(tablenum(NDXRequisitionLine));
+            inventTable = qr.get(tablenum(InventTable));
+            inventItemGroupItem = qr.get(tablenum(InventItemGroupItem));
+            nDX_Requisition_LineGrp = NDXRequisitionLineGrp::findByItemIDAndModelNumber(_ndxRequisition.RequisitionId, nDX_Requisition_Line.ItemId, nDX_Requisition_Line.ModelNumber, true);
+            
+            if (!nDX_Requisition_LineGrp)
+            {
+                nDX_Requisition_LineGrp.RequisitionId      = _ndxRequisition.RequisitionId;
+                nDX_Requisition_LineGrp.ItemId = nDX_Requisition_Line.ItemId;
+            }
+            
+            nDX_Requisition_LineGrp.ItemName   = inventTable.Product().productName();
+            nDX_Requisition_LineGrp.ItemType   = inventTable.ItemType;
+            nDX_Requisition_LineGrp.PmfProductType = inventTable.PmfProductType;
+            nDX_Requisition_LineGrp.ModelNumber = inventTable.NDXModelNumber;
+            nDX_Requisition_LineGrp.ItemBuyerGroupId    = inventTable.ItemBuyerGroupId;
+            
+            nDX_Requisition_LineGrp.ItemGroupId         = inventItemGroupItem.ItemGroupId;
+            
+            nDX_Requisition_LineGrp.SalesUnit           = inventTable.inventTableModuleInvent().UnitId;
+            nDX_Requisition_LineGrp.Active      = NoYes::Yes;
+            nDX_Requisition_LineGrp.Requirement = 0;
+            nDX_Requisition_LineGrp.Fault       = 0;
+            nDX_Requisition_LineGrp.SalesQty   = nDX_Requisition_Line.Qty01;
+            nDX_Requisition_LineGrp.UpdatedUTC = _ndxRequisition.UpdatedUTC;
+            nDX_Requisition_LineGrp.setInventSumValues();
+
+            if(!inventTable)
+            {
+                nDX_Requisition_LineGrp.ModelNumber = NDX_Requisition_Line.ModelNumber;
+                nDX_Requisition_LineGrp.ItemName = NDX_Requisition_Line.ItemName;
+                nDX_Requisition_LineGrp.SalesUnit = NDX_Requisition_Line.SalesUnit;
+            }
+
+            if (nDX_Requisition_LineGrp.validateWrite())
+            {
+                ttsbegin;
+                nDX_Requisition_LineGrp.write();
+                ttscommit;
+            }
+        }
+
+        delete_from nDX_Requisition_LineGrp
+            where   nDX_Requisition_LineGrp.RequisitionId == _ndxRequisition.RequisitionId
+                &&  nDX_Requisition_LineGrp.UpdatedUTC != _ndxRequisition.UpdatedUTC;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkLastPos</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Check last position
+    /// </summary>
+    /// <param name = "_ndxRequisitionId">RequisitionId of NDXRequisition record</param>
+    void checkLastPos(NDXRequisitionId _ndxRequisitionId)
+    {
+        NDXRequisitionLine    nDX_Requisition_Line;
+        NDXRequisitionLineGrp nDX_Requisition_LineGrp;
+        NDXRequisitionLine    NDX_Requisition_LineGrpLevel;
+        NDXRequisitionLine    nDX_Requisition_Line2;
+        boolean isActive;
+        boolean ebeneHasAnylPos;
+        container conLevel;
+        NDXLevelString    levelString;
+        int i;
+
+        // Initialisieren
+        update_recordset nDX_Requisition_Line
+            setting IsLastPos2 = NoYes::No
+                where nDX_Requisition_Line.RequisitionId == _ndxRequisitionId
+                    && nDX_Requisition_Line.IsLastPos2 == NoYes::Yes;
+
+        // Untersuchung der "letzten Positionen"
+        while select NDX_Requisition_LineGrpLevel
+            group by    Level
+            order by    Level
+            where NDX_Requisition_LineGrpLevel.RequisitionId == _ndxRequisitionId
+                && NDX_Requisition_LineGrpLevel.IsLastPos == NoYes::Yes
+        {
+            ebeneHasAnylPos = false;
+            while select    nDX_Requisition_Line
+            where       nDX_Requisition_Line.Level == NDX_Requisition_LineGrpLevel.Level
+                &&      nDX_Requisition_Line.RequisitionId == _ndxRequisitionId
+                &&      nDX_Requisition_Line.IsLastPos == NoYes::Yes
+            {
+                select firstonly nDX_Requisition_LineGrp
+                    where   nDX_Requisition_LineGrp.RequisitionId == _ndxRequisitionId
+                        &&  nDX_Requisition_LineGrp.ItemId == nDX_Requisition_Line.ItemId;
+                
+                isActive = (!nDX_Requisition_LineGrp || nDX_Requisition_LineGrp.Active == NoYes::Yes);
+                isActive = isActive && nDX_Requisition_Line.Active == NoYes::Yes;
+                
+                if (isActive)
+                {
+                    select forUpdate firstonly nDX_Requisition_Line2 where nDX_Requisition_Line2.RecId == nDX_Requisition_Line.RecId;
+                    ttsbegin;
+                    nDX_Requisition_Line2.IsLastPos2 = NoYes::Yes;
+                    nDX_Requisition_Line2.update();
+                    ttscommit;
+                    ebeneHasAnylPos = true;
+                    continue;
+                }
+                // Falls es sich um einen Service-Artikel handelt: keine weitere Aktion
+                if (InventTable::find(nDX_Requisition_Line.ItemId).ItemType == ItemType::Service)
+                {
+                    continue;
+                }
+
+                // Positionen "zurücklaufen"
+                if (nDX_Requisition_Line.Level1 > 1)
+                {
+                    conLevel = str2con(nDX_Requisition_Line.LevelString, '.');
+                    conLevel = condel(conLevel, conlen(conLevel), 1);
+                    levelString = Con2Str(conLevel, '.');
+                }
+                for (i = nDX_Requisition_Line.Level1; i >= 1; i--)
+                {
+                    select firstonly forUpdate nDX_Requisition_Line2
+                        where nDX_Requisition_Line2.RequisitionId == _ndxRequisitionId
+                            && nDX_Requisition_Line2.LevelString   == levelString;
+                    
+                    if (!nDX_Requisition_Line2)
+                    {
+                        continue;
+                    }
+                    
+                    select firstonly nDX_Requisition_LineGrp
+                        where nDX_Requisition_LineGrp.RequisitionId == nDX_Requisition_Line2.RequisitionId
+                            &&  nDX_Requisition_LineGrp.ItemId        == nDX_Requisition_Line2.ItemId;
+                    
+                    isActive = (!nDX_Requisition_LineGrp || nDX_Requisition_LineGrp.Active == NoYes::Yes);
+                    isActive = isActive && nDX_Requisition_Line2.Active == NoYes::Yes;
+                    
+                    // notfalls auf 1.Ebene buchen
+                    if (!isActive && nDX_Requisition_Line2.Level1 == 1)
+                    {
+                        isActive = true;
+                    }
+                    // falls auf höheren Ebenen letzte Positionen vorhanden sind, darf die 1.Position nicht markiert werden
+                    if (isActive && nDX_Requisition_Line2.Level1 == 1 && ebeneHasAnylPos)
+                    {
+                        isActive = false;
+                    }
+
+                    if (isActive)
+                    {
+                        ttsbegin;
+                        nDX_Requisition_Line2.IsLastPos2 = NoYes::Yes;
+                        nDX_Requisition_Line2.update();
+                        ttscommit;
+                        ebeneHasAnylPos = true;
+                        break;
+                    }
+                    else
+                    {
+                        conLevel = str2con(nDX_Requisition_Line2.LevelString, '.');
+                        conLevel = condel(conLevel, conlen(conLevel), 1);
+                        levelString = Con2Str(conLevel, '.');
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkReq_Requisition_SalesQuotation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Check Requirements before executing the real check  for a given NDXRequisition record
+    /// </summary>
+    /// <param name = "_ndxRequisition">NDXRequisition record</param>
+    void checkReq_Requisition_SalesQuotation(NDXRequisition _ndxRequisition)
+    {
+        NDXRequisitionLineGrp nDX_Requisition_LineGrp;
+        NDXRequisitionLine    nDX_Requisition_Line;
+        NDXRequisitionLine   nDX_Requisition_LineGrpLevel;
+
+        // Initialisierung
+        update_recordset nDX_Requisition_LineGrp
+            setting Requirement = 0, Fault = 0
+                where nDX_Requisition_LineGrp.RequisitionId == _ndxRequisition.RequisitionId;
+        
+        update_recordset nDX_Requisition_Line
+            setting Requirement = 0, Fault = 0
+                where nDX_Requisition_Line.RequisitionId == _ndxRequisition.RequisitionId;
+
+        // letzte Position (Buchung) ermitteln
+        this.checkLastPos(_ndxRequisition.RequisitionId);
+
+        // Analyse je Level
+        while select nDX_Requisition_LineGrpLevel
+            group by nDX_Requisition_LineGrpLevel.Level
+        where    nDX_Requisition_LineGrpLevel.RequisitionId == _ndxRequisition.RequisitionId
+        {
+            this.checkReq_Requisition_SalesQuotation2(_ndxRequisition, [nDX_Requisition_LineGrpLevel.Level], 0);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkReq_Requisition_SalesQuotation2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Check requirements 
+    /// </summary>
+    /// <param name = "_ndxRequisition">NDXRequisition record</param>
+    /// <param name = "_conLevel">Level sa container</param>
+    /// <param name = "_fault">Fault(missing)</param>
+    /// <returns>true or false</returns>
+    boolean checkReq_Requisition_SalesQuotation2(NDXRequisition _ndxRequisition, container _conLevel, NDXFault _fault)
+    {
+        NDXRequisitionLineGrp     nDX_Requisition_LineGrp;
+        NDXRequisitionLine        nDX_Requisition_Line;
+        NDXRequisitionLine        nDX_Requisition_LineGrp2;
+
+        boolean checked;
+        int conStrLen;
+        NDXLevelString constr;
+        InventQtyAvailOrdered    inventQtyAvailOrdered;
+        container conTmp;
+        NDXFault fault;
+
+        container conLevel = _conLevel;
+
+        while (true)
+        {
+            constr = Con2Str(conLevel, '.');
+            conStrLen = strlen(constr);
+
+            // Existiert ein Element auf dieser Ebene ?
+            select firstonly forUpdate nDX_Requisition_Line
+                where nDX_Requisition_Line.RequisitionId == _ndxRequisition.RequisitionId
+                    &&  nDX_Requisition_Line.LevelString == constr;
+            
+            if (!nDX_Requisition_Line)
+            {
+                break;
+            }
+            
+            fault = _fault;
+            
+            if (nDX_Requisition_Line.Level1 == 1)
+            {
+                fault = nDX_Requisition_Line.Qty01;
+            }
+
+            fault = fault * (nDX_Requisition_Line.Multiplier / 1000);
+            nDX_Requisition_LineGrp = NDXRequisitionLineGrp::find(_ndxRequisition.RequisitionId, nDX_Requisition_Line.ItemId, true);
+
+            // Verfügbare Menge ermitteln
+            inventQtyAvailOrdered = _ndxRequisition.Simulation == NoYes::Yes ? nDX_Requisition_LineGrp.InventSum_AvailOrdered_Sim : nDX_Requisition_LineGrp.InventSum_AvailOrdered;
+
+            // Die bereits berechneten Bedarfe sind nicht mehr verfügbar und müssen daher vom verfügbaren Bestand reduziert werden
+            select sum(Requirement) from nDX_Requisition_LineGrp2
+                group by ItemId
+                where nDX_Requisition_LineGrp2.RequisitionId == _ndxRequisition.RequisitionId
+                    && nDX_Requisition_LineGrp2.ItemId == nDX_Requisition_Line.ItemId;
+            
+            inventQtyAvailOrdered -= nDX_Requisition_LineGrp2.Requirement;
+
+            // Falls nicht aktiv = 0-Bestand
+            if (nDX_Requisition_LineGrp.Active == NoYes::No)
+            {
+                inventQtyAvailOrdered = 0;
+            }
+
+            // Bedarf (aus "Verfügbare Menge")
+            if (nDX_Requisition_Line.IsLastPos2 == NoYes::Yes)        // letzte buchbare Ebene
+            {
+                // da es sich um die letzte buchbare Ebene der Stückliste handelt, muss Bedarf und Fehl hier gespeichert werden
+                if (inventQtyAvailOrdered <= 0)
+                {
+                    nDX_Requisition_Line.Requirement = 0;
+                    nDX_Requisition_Line.Fault = fault;
+                }
+                else if (inventQtyAvailOrdered > fault) // Bedarf ist kleiner als die verfügbar Menge
+                {
+                    nDX_Requisition_Line.Requirement = fault;
+                    nDX_Requisition_Line.Fault   = 0;
+                }
+                else // Bedarf ist größer als die verfügbare Menge
+                {
+                    nDX_Requisition_Line.Requirement = inventQtyAvailOrdered;
+                    nDX_Requisition_Line.Fault   = fault - inventQtyAvailOrdered;
+                }
+                fault = 0;
+            }
+            else if (inventQtyAvailOrdered <= 0)    // keine "Verfügbare Menge"
+            {
+                nDX_Requisition_Line.Requirement = 0;
+                nDX_Requisition_Line.Fault   = 0;
+            }
+            else     // "Verfügbare Menge" vorhanden
+            {
+                nDX_Requisition_Line.Requirement = min(fault, inventQtyAvailOrdered);
+                nDX_Requisition_Line.Fault = fault - nDX_Requisition_Line.Requirement;
+                fault = nDX_Requisition_Line.Fault;
+            }
+
+            nDX_Requisition_LineGrp.Requirement += nDX_Requisition_Line.Requirement;
+            nDX_Requisition_LineGrp.Fault += nDX_Requisition_Line.Fault;
+            if (nDX_Requisition_LineGrp)
+            {
+                ttsbegin;
+                nDX_Requisition_LineGrp.update();
+                nDX_Requisition_Line.update();
+                ttscommit;
+            }
+
+            checked = true;
+
+            // nächste Ebene prüfen
+            if (nDX_Requisition_Line)
+            {
+                conTmp = conLevel;
+                conTmp += 1;
+
+                this.checkReq_Requisition_SalesQuotation2(_ndxRequisition, conTmp, fault);
+                conLevel = conpoke(conLevel, conlen(conLevel), conpeek(conLevel, conlen(conLevel)) + 1);
+            }
+            if (conlen(conLevel) == 1)  // Ebene 1 wird über den caller gesteuert
+            {
+                break;
+            }
+
+        }
+        return checked;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getInventSumValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// get total values
+    /// </summary>
+    /// <param name = "itemId">itemid</param>
+    /// <param name = "inventSiteIdFilter">inventSiteIdFilter</param>
+    /// <returns>InventSum record</returns>
+    static server InventSum getInventSumValues(ItemId itemId, InventSiteId inventSiteIdFilter = 'SK')
+    {
+        InventSum   inventSum;
+
+        Query   q = new Query();
+        QueryRun    qr;
+        QueryBuildDataSource    qbds, qbds2;
+        
+        qbds = q.addDataSource(tablenum(InventSum));
+        qbds.addRange(fieldnum(InventSum, Closed)).value(QueryValue(NoYes::No));
+        qbds.addRange(fieldnum(InventSum, ClosedQty)).value(QueryValue(NoYes::No));
+        qbds.addRange(fieldnum(InventSum, ItemId)).value(itemId);
+        qbds.addGroupByField(fieldnum(InventSum, ItemId));
+
+        qbds.addSelectionField(fieldnum(InventSum, PostedQty), SelectionField::Sum);
+        qbds.addSelectionField(fieldnum(InventSum, Received), SelectionField::Sum);
+        qbds.addSelectionField(fieldnum(InventSum, Deducted), SelectionField::Sum);
+        qbds.addSelectionField(fieldnum(InventSum, Registered), SelectionField::Sum);
+        qbds.addSelectionField(fieldnum(InventSum, Picked), SelectionField::Sum);
+        
+        //qbds.addSelectionField(fieldnum(InventSum, KCS_CMTDeducted), SelectionField::Sum);
+        
+        qbds.addSelectionField(fieldnum(InventSum, ReservPhysical), SelectionField::Sum);
+        qbds.addSelectionField(fieldnum(InventSum, Ordered), SelectionField::Sum);
+        qbds.addSelectionField(fieldnum(InventSum, Arrived), SelectionField::Sum);
+        qbds.addSelectionField(fieldnum(InventSum, OnOrder), SelectionField::Sum);
+        qbds.addSelectionField(fieldnum(InventSum, ReservOrdered), SelectionField::Sum);
+
+        if (inventSiteIdFilter)
+        {
+            qbds2 = qbds.addDataSource(tablenum(InventDim));
+            qbds2.addGroupByField(fieldnum(InventDim, InventSiteId));
+            qbds2.joinMode(JoinMode::ExistsJoin);
+            qbds2.relations(true);
+            qbds2.fetchMode(QueryFetchMode::One2One);
+            qbds2.addRange(fieldnum(InventDim, InventSiteId)).value(inventSiteIdFilter);
+        }
+
+        qr = new QueryRun(q);
+        qr.next();
+        inventSum = qr.get(tablenum(InventSum));
+        return inventSum;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Main</Name>
+				<Source><![CDATA[
+    static public void Main(Args _args)
+    {
+        NDXRequisition lNDXRequisition;
+        NDXRequisitionClass lNDXRequisitionClass;
+
+        if(_args.dataset() != tableNum(NDXRequisition) && _args.record() == null)
+        {
+            throw Error("@NDX:NDXWrongCall");
+        }
+
+        lNDXRequisition = _args.record();
+        lNDXRequisitionClass = new NDXRequisitionClass();
+
+        switch(_args.menuItemName())
+        {
+            case menuItemActionStr(NDXRequisitionResolveSalesQuotation):
+                lNDXRequisitionClass.fillSalesQuotationLine(lNDXRequisition);
+                break;
+            case menuItemActionStr(NDXRequisitionResolveSalesTable):
+                lNDXRequisitionClass.fillSalesLine(lNDXRequisition);
+                break;
+            case menuItemActionStr(NDXRequisitionResolveFormulaPositions):
+                lNDXRequisitionClass.fillLineBOM(lNDXRequisition);
+                break;
+            case menuItemActionStr(NDXRequisitionCheckRequirement):
+                lNDXRequisitionClass.checkReq_Requisition_SalesQuotation(lNDXRequisition);
+                break;
+            
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

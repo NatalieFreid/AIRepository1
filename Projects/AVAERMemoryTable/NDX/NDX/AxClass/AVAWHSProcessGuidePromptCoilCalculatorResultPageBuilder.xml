@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAWHSProcessGuidePromptCoilCalculatorResultPageBuilder</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// The <c>AVAWHSProcessGuidePromptCoilCalculatorResultPageBuilder</c> builds a page for showing the result of the calculator
+/// and then confirm.
+/// </summary>
+[
+    ProcessGuidePageBuilderName(classStr(AVAWHSProcessGuidePromptCoilCalculatorResultPageBuilder))
+]
+class AVAWHSProcessGuidePromptCoilCalculatorResultPageBuilder extends ProcessGuidePageBuilder
+{
+    WhsrfPassthrough    avaLocalPass;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>addDataControls</Name>
+				<Source><![CDATA[
+    protected final void addDataControls(ProcessGuidePage _page)
+    {
+        boolean     avaEnabled;
+        Weight      avaCoilAdjustWeight;
+        Weight      avaCoilCalculatorWeight;
+        Weight      avaLocationWeight;
+
+        avaLocalPass = controller.parmSessionState().parmPass();
+
+        if (step is AVAWHSProcessGuidePromptPostCoilCalculatorStep)
+        {
+            avaEnabled = false;
+
+            _page.addLabel(ProcessGuideDataTypeNames::Scan,
+                       "@NDX:ConfirmPost",
+                       extendedTypeNum(WHSRFUndefinedDataType));
+        }
+        else
+        {
+            avaEnabled = true;
+        }
+
+        
+        avaCoilCalculatorWeight = this.avaGetCoilCalculatorWeight(true);
+        avaLocationWeight       = this.avaGetLocationWeight();
+        avaCoilAdjustWeight     = avaCoilCalculatorWeight - avaLocationWeight;
+        
+
+                                         
+        _page.addLabel(ProcessGuideDataTypeNames::Scan,
+                       strFmt("@NDX:SystemCoilWeight", avaLocationWeight),
+                       extendedTypeNum(WHSRFUndefinedDataType));
+
+
+        _page.addLabel(ProcessGuideDataTypeNames::Scan,
+                       strFmt("@NDX:CalculatorCoilWeight", avaCoilCalculatorWeight),
+                       extendedTypeNum(WHSRFUndefinedDataType));
+
+        if (WHSRFMenuItemTable::find(avaLocalPass.parmMenuItem()).AVAAllowPostAdjustment == NoYes::Yes)
+        {
+            _page.addTextBox(ProcessGuideDataTypeNames::AVACoilWeight,
+                             "@NDX:CoilAdjustWeight",
+                             extendedTypeNum(AVACoilWeight),
+                             avaEnabled,
+                             avaLocalPass.avaParmCoilWeight() ? WHSWorkExecuteDisplay::num2StrDisplay(avaLocalPass.avaParmCoilWeight()) : WHSWorkExecuteDisplay::num2StrDisplay(avaCoilAdjustWeight));
+        }
+        else
+        {
+            _page.addLabel(ProcessGuideDataTypeNames::Scan,
+                       strFmt("@NDX:CoilDifWeight", WHSWorkExecuteDisplay::num2StrDisplay(avaCoilAdjustWeight)),
+                       extendedTypeNum(WHSRFUndefinedDataType));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetCoilCalculatorWeight</Name>
+				<Source><![CDATA[
+    protected Weight avaGetCoilCalculatorWeight(boolean _rounded = true)
+    {
+        Weight avaCoilCalculatorWeight;
+
+        avaCoilCalculatorWeight = AVACoilCalculator::calculateCoilWeight(avaLocalPass.parmItemId(),
+                                                                         avaLocalPass.avaParmCoilWidth(),
+                                                                         avaLocalPass.avaParmCoilInsideDiameter(),
+                                                                         avaLocalPass.avaParmCoilOutsideDiameter(),
+                                                                         _rounded);
+
+        return avaCoilCalculatorWeight;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaQtyOnLocation</Name>
+				<Source><![CDATA[
+    protected InventQtyPhysicalOnhand avaQtyOnLocation()
+    {
+        InventDim avaInventDimCriteria;
+
+        avaInventDimCriteria = avaLocalPass.createInventDimFromPass();
+
+        avaInventDimCriteria.clearBelowLocationDim(avaLocalPass.parmItemId());
+        avaInventDimCriteria = InventDim::findOrCreate(avaInventDimCriteria);
+        avaInventDimCriteria.LicensePlateId = avaLocalPass.parmLicensePlateId();
+
+        return AVACoilCalculator::qtyOnLocation(avaLocalPass.parmItemId(), avaInventDimCriteria);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetLocationWeight</Name>
+				<Source><![CDATA[
+    protected Weight avaGetLocationWeight(InventQtyPhysicalOnhand _physicalOnhand = this.avaQtyOnLocation())
+    {
+        return AVACoilCalculator::getLocationWeight(avaLocalPass.parmItemId(), _physicalOnhand);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addActionControls</Name>
+				<Source><![CDATA[
+    protected final void addActionControls(ProcessGuidePage _page)
+    {
+        #ProcessGuideActionNames
+
+        if (WHSRFMenuItemTable::find(avaLocalPass.parmMenuItem()).AVAAllowPostAdjustment == NoYes::Yes)
+        {
+            if (step is AVAWHSProcessGuidePromptPostCoilCalculatorStep)
+            {
+                _page.addButton(step.createAction(#ActionOK), true, "@REX4520025");
+            }
+            else
+            {
+                _page.addButton(step.createAction(#ActionOK), true, "@SYS4784");
+
+            }
+        }
+        else
+        {
+            _page.addButton(step.createAction(#ActionOK), true);
+        }
+
+        _page.addButton(step.createAction(#ActionCancelExitProcess));
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,688 @@
+﻿# Technical Specification - AVA Sales Invoice Report
+
+## Document Information
+- **Report Name:** AVA Sales Invoice Report
+- **Report Type:** Query-based SSRS Report
+- **Version:** 1.0
+- **Created:** 2026-02-18
+- **Author:** AI Code Generator
+- **Platform:** Microsoft Dynamics 365 Finance and Operations
+
+## Executive Summary
+
+The AVA Sales Invoice Report is a query-based SSRS report designed for D365 Finance and Operations that displays all invoices associated with sales orders. The report provides flexible filtering by customer account and delivery date range, with detailed line-item information and hierarchical grouping.
+
+## Business Requirements
+
+### Functional Requirements
+
+1. **FR-001: Display Sales Invoices**
+   - The report shall display all invoices linked to sales orders
+   - Each invoice line shall show item details, quantities, and amounts
+
+2. **FR-002: Customer Filtering**
+   - Users shall be able to filter by customer account
+   - Filter shall support single customer or all customers (blank)
+
+3. **FR-003: Date Range Filtering**
+   - Users shall be able to filter by delivery date range
+   - Date range shall support:
+     - From date only (open-ended to future)
+     - To date only (from beginning to specified date)
+     - Both from and to dates (closed range)
+     - No dates (show all)
+
+4. **FR-004: Hierarchical Grouping**
+   - Data shall be grouped by Sales Order (SalesId)
+   - Within each sales order, group by Invoice (InvoiceId)
+   - Within each invoice, show line items
+
+5. **FR-005: Subtotals and Totals**
+   - Display subtotal per invoice (sum of line amounts)
+   - Display subtotal per sales order (sum of all invoice amounts)
+   - Display grand total (sum of all amounts in report)
+
+6. **FR-006: Export Capabilities**
+   - Report shall be exportable to PDF
+   - Report shall be exportable to Excel
+   - Report shall be exportable to Word
+
+### Non-Functional Requirements
+
+1. **NFR-001: Performance**
+   - Report shall execute within 30 seconds for datasets up to 10,000 lines
+   - Query shall use appropriate indexes
+
+2. **NFR-002: Security**
+   - Report shall respect legal entity (DataAreaId) scoping
+   - Report shall enforce role-based access control
+   - Users shall only see data they have permissions to view
+
+3. **NFR-003: Usability**
+   - Parameter dialog shall be intuitive
+   - Default labels shall be in English with support for localization
+   - Error messages shall be clear and actionable
+
+4. **NFR-004: Maintainability**
+   - Code shall follow D365FO best practices
+   - All objects shall use AVA prefix for uniqueness
+   - XML files shall be version-controlled
+
+## Technical Architecture
+
+### Component Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    D365FO User Interface                     │
+└───────────────────────────┬─────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Menu Item (Output)                              │
+│         AVASalesInvoiceReport                                │
+│         ObjectType: Class                                    │
+└───────────────────────────┬─────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Controller Class                                │
+│         AVASalesInvoiceReportController                      │
+│         - main()                                             │
+│         - preRunModifyContract()                             │
+└───────────┬───────────────────────────┬─────────────────────┘
+            │                           │
+            ▼                           ▼
+┌───────────────────────┐   ┌───────────────────────────────┐
+│   Contract Class      │   │        SSRS Report            │
+│ AVASales...Contract   │   │  AVASalesInvoiceReport        │
+│ - parmCustAccount()   │   │  - DataSet                    │
+│ - parmDeliveryDate... │   │  - Parameters                 │
+│ - validate()          │   │  - Design                     │
+└───────────────────────┘   └───────────┬───────────────────┘
+                                        │
+                                        ▼
+                            ┌───────────────────────────────┐
+                            │          Query                │
+                            │ AVASalesInvoiceReportQuery    │
+                            │ - SalesTable                  │
+                            │ - CustTable                   │
+                            │ - CustInvoiceJour             │
+                            │ - CustInvoiceTrans            │
+                            └───────────┬───────────────────┘
+                                        │
+                                        ▼
+                            ┌───────────────────────────────┐
+                            │      Database Tables          │
+                            │ - SalesTable                  │
+                            │ - CustTable                   │
+                            │ - CustInvoiceJour             │
+                            │ - CustInvoiceTrans            │
+                            └───────────────────────────────┘
+```
+
+### Data Flow
+
+1. **User Interaction**
+   - User clicks menu item
+   - Controller.main() is invoked
+   - Dialog shows parameters from Contract
+
+2. **Parameter Entry**
+   - User enters CustAccount (optional)
+   - User enters DeliveryDateFrom (optional)
+   - User enters DeliveryDateTo (optional)
+   - Contract.validate() checks date range logic
+
+3. **Pre-Processing**
+   - Controller.preRunModifyContract() is called
+   - Contract values are retrieved
+   - Query ranges are applied:
+     - CustAccount range (if specified)
+     - DeliveryDate range (if specified)
+
+4. **Query Execution**
+   - Query executes with applied ranges
+   - Joins are performed:
+     - SalesTable ⟕ CustTable (customer name)
+     - SalesTable ⟕ CustInvoiceJour (invoice headers)
+     - CustInvoiceJour ⟕ CustInvoiceTrans (invoice lines)
+   - Results are sorted by SalesId, InvoiceId
+
+5. **Report Rendering**
+   - SSRS receives dataset
+   - Groups data hierarchically
+   - Calculates subtotals and totals
+   - Renders final output
+
+## Database Schema
+
+### Tables Used
+
+#### SalesTable
+- **Purpose:** Sales order header information
+- **Key Fields:**
+  - SalesId (PK) - Sales order number
+  - CustAccount - Customer account number
+  - DeliveryDate - Requested delivery date
+  - DataAreaId - Legal entity
+
+#### CustTable
+- **Purpose:** Customer master data
+- **Key Fields:**
+  - AccountNum (PK) - Customer account number
+  - Name - Customer name
+  - DataAreaId - Legal entity
+
+#### CustInvoiceJour
+- **Purpose:** Customer invoice journal (header)
+- **Key Fields:**
+  - InvoiceId (PK) - Invoice number
+  - InvoiceDate - Invoice date
+  - SalesId (FK) - Related sales order
+  - CurrencyCode - Transaction currency
+  - DataAreaId - Legal entity
+
+#### CustInvoiceTrans
+- **Purpose:** Customer invoice transactions (lines)
+- **Key Fields:**
+  - InvoiceId (FK) - Invoice number
+  - InvoiceDate (FK) - Invoice date (part of composite key)
+  - ItemId - Item number
+  - Name - Item description
+  - Qty - Quantity invoiced
+  - SalesPrice - Unit price
+  - LineAmount - Extended amount
+  - DataAreaId - Legal entity
+
+### Table Relationships
+
+```
+SalesTable (1) ──────────── (M) CustInvoiceJour
+   │                               │
+   │ (1)                           │ (1)
+   │                               │
+   └──── CustTable                 └──── (M) CustInvoiceTrans
+
+Relationships:
+- SalesTable.CustAccount = CustTable.AccountNum
+- SalesTable.SalesId = CustInvoiceJour.SalesId
+- CustInvoiceJour.InvoiceId + InvoiceDate = CustInvoiceTrans.InvoiceId + InvoiceDate
+```
+
+### Query Structure
+
+```sql
+-- Conceptual SQL (actual query is AOT query XML)
+SELECT
+    st.SalesId,
+    st.CustAccount,
+    st.DeliveryDate,
+    ct.Name AS CustomerName,
+    cij.InvoiceId,
+    cij.InvoiceDate,
+    cij.CurrencyCode,
+    cit.ItemId,
+    cit.Name AS ItemName,
+    cit.Qty,
+    cit.SalesPrice,
+    cit.LineAmount
+FROM SalesTable st
+INNER JOIN CustTable ct 
+    ON st.CustAccount = ct.AccountNum
+    AND st.DataAreaId = ct.DataAreaId
+INNER JOIN CustInvoiceJour cij 
+    ON st.SalesId = cij.SalesId
+    AND st.DataAreaId = cij.DataAreaId
+INNER JOIN CustInvoiceTrans cit 
+    ON cij.InvoiceId = cit.InvoiceId
+    AND cij.InvoiceDate = cit.InvoiceDate
+    AND cij.DataAreaId = cit.DataAreaId
+WHERE
+    st.DataAreaId = @currentCompany
+    AND (@custAccount = '' OR st.CustAccount = @custAccount)
+    AND (@deliveryDateFrom IS NULL OR st.DeliveryDate >= @deliveryDateFrom)
+    AND (@deliveryDateTo IS NULL OR st.DeliveryDate <= @deliveryDateTo)
+ORDER BY
+    st.SalesId,
+    cij.InvoiceId
+```
+
+## Object Specifications
+
+### 1. Query: AVASalesInvoiceReportQuery
+
+**File:** `AxQuery/AVASalesInvoiceReportQuery.xml`
+
+**Properties:**
+- Name: AVASalesInvoiceReportQuery
+- Type: AxQuerySimple
+- Extends: QueryRun
+
+**Data Sources:**
+
+| Level | Name | Table | Join Type | Join Condition |
+|-------|------|-------|-----------|----------------|
+| 1 (Root) | SalesTable | SalesTable | - | - |
+| 2 | CustTable | CustTable | Inner Join | SalesTable.CustAccount = CustTable.AccountNum |
+| 2 | CustInvoiceJour | CustInvoiceJour | Inner Join | SalesTable.SalesId = CustInvoiceJour.SalesId |
+| 3 | CustInvoiceTrans | CustInvoiceTrans | Inner Join | CustInvoiceJour.InvoiceId = CustInvoiceTrans.InvoiceId AND CustInvoiceJour.InvoiceDate = CustInvoiceTrans.InvoiceDate |
+
+**Ranges:**
+
+| Range Name | Field | Table | Label |
+|------------|-------|-------|-------|
+| CustAccount | CustAccount | SalesTable | @SYS7407 |
+| DeliveryDate | DeliveryDate | SalesTable | @SYS22447 |
+
+**OrderBy:**
+1. SalesTable.SalesId (Ascending)
+2. CustInvoiceJour.InvoiceId (Ascending)
+
+**Dynamic Fields:** Yes (all data sources)
+
+### 2. Contract Class: AVASalesInvoiceReportContract
+
+**File:** `AxClass/AVASalesInvoiceReportContract.xml`
+
+**Properties:**
+- Name: AVASalesInvoiceReportContract
+- Extends: SRSReportDataContractBase
+- Attributes:
+  - [DataContractAttribute]
+  - [SysOperationContractProcessingAttribute(classStr(AVASalesInvoiceReportController))]
+
+**Class Variables:**
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| custAccount | CustAccount | Customer account filter |
+| deliveryDateFrom | TransDate | Delivery date from |
+| deliveryDateTo | TransDate | Delivery date to |
+
+**Methods:**
+
+| Method | Return Type | Parameters | Attributes | Description |
+|--------|-------------|------------|------------|-------------|
+| parmCustAccount | CustAccount | CustAccount _custAccount | [DataMemberAttribute("CustAccount")] | Get/set customer account |
+| parmDeliveryDateFrom | TransDate | TransDate _deliveryDateFrom | [DataMemberAttribute("DeliveryDateFrom")], [SysOperationLabelAttribute], [SysOperationDisplayOrderAttribute('1')] | Get/set delivery date from |
+| parmDeliveryDateTo | TransDate | TransDate _deliveryDateTo | [DataMemberAttribute("DeliveryDateTo")], [SysOperationLabelAttribute], [SysOperationDisplayOrderAttribute('2')] | Get/set delivery date to |
+| validate | boolean | - | - | Validates date range logic |
+
+**Validation Rules:**
+- deliveryDateFrom must be <= deliveryDateTo (if both specified)
+- Returns false if validation fails
+
+### 3. Controller Class: AVASalesInvoiceReportController
+
+**File:** `AxClass/AVASalesInvoiceReportController.xml`
+
+**Properties:**
+- Name: AVASalesInvoiceReportController
+- Extends: SrsReportRunController
+
+**Methods:**
+
+| Method | Visibility | Return Type | Parameters | Description |
+|--------|-----------|-------------|------------|-------------|
+| new | protected | void | - | Constructor; sets report name and caption |
+| main | public static | void | Args _args | Entry point for report execution |
+| prePromptModifyContract | protected | void | - | Pre-prompt contract modification |
+| preRunModifyContract | protected | void | - | Applies contract parameters to query ranges |
+
+**preRunModifyContract Logic:**
+1. Retrieve contract instance
+2. Retrieve query from contract
+3. Get SalesTable data source
+4. If CustAccount specified:
+   - Apply range using SrsReportHelper::addParameterValueRangeToQuery
+5. If DeliveryDate specified:
+   - Build date range string (from..to, from.., ..to)
+   - Find or create DeliveryDate range
+   - Set range value
+
+**main Method Logic:**
+1. Instantiate controller
+2. Set report name (ssrsReportStr(AVASalesInvoiceReport, Report))
+3. Set args from parameter
+4. Show dialog (parmShowDialog(true))
+5. Start operation
+
+### 4. SSRS Report: AVASalesInvoiceReport
+
+**File:** `AxReport/AVASalesInvoiceReport.xml`
+
+**Properties:**
+- Name: AVASalesInvoiceReport
+- Report Type: Query-based
+
+**Data Source:**
+- Name: AVASalesInvoiceReportQuery
+- Query: AVASalesInvoiceReportQuery
+- DynamicFilters: true
+
+**Data Set: AVASalesInvoiceDataSet**
+
+| Field Name | Source Field | Data Source | Type | Description |
+|------------|--------------|-------------|------|-------------|
+| SalesId | SalesId | SalesTable | String | Sales order number |
+| CustAccount | CustAccount | SalesTable | String | Customer account |
+| DeliveryDate | DeliveryDate | SalesTable | Date | Delivery date |
+| CustomerName | Name | CustTable | String | Customer name |
+| InvoiceId | InvoiceId | CustInvoiceJour | String | Invoice number |
+| InvoiceDate | InvoiceDate | CustInvoiceJour | Date | Invoice date |
+| CurrencyCode | CurrencyCode | CustInvoiceJour | String | Currency code |
+| ItemId | ItemId | CustInvoiceTrans | String | Item number |
+| ItemName | Name | CustInvoiceTrans | String | Item description |
+| Qty | Qty | CustInvoiceTrans | Real | Quantity |
+| SalesPrice | SalesPrice | CustInvoiceTrans | Real | Unit price |
+| LineAmount | LineAmount | CustInvoiceTrans | Real | Extended amount |
+
+**Parameters:**
+
+| Parameter | Type | Nullable | Prompt | Description |
+|-----------|------|----------|--------|-------------|
+| CustAccount | String | No | @SYS7407 | Customer account |
+| DeliveryDateFrom | DateTime | Yes | @SYS22447 | Delivery date from |
+| DeliveryDateTo | DateTime | Yes | @SYS318425 | To date |
+
+**Design:**
+- Design Name: Report
+- Template: ReportTemplate.AutoDesignTemplate
+- Precision Design: Standard 8.5" x 11" page
+
+**Grouping Structure:**
+```
+SalesId Group
+  ├─ InvoiceId Group
+  │   ├─ Detail Line (ItemId, ItemName, Qty, SalesPrice, LineAmount)
+  │   └─ Invoice Subtotal (Sum of LineAmount)
+  └─ Sales Order Subtotal (Sum of Invoice Subtotals)
+Grand Total (Sum of all amounts)
+```
+
+### 5. Menu Item: AVASalesInvoiceReport
+
+**File:** `AxMenuItemOutput/AVASalesInvoiceReport.xml`
+
+**Properties:**
+- Name: AVASalesInvoiceReport
+- Type: AxMenuItemOutput
+- Object: AVASalesInvoiceReportController
+- ObjectType: Class
+- Configuration Key: LogisticsBasic
+- Label: @AVA:SalesInvoiceReport
+- HelpText: @AVA:SalesInvoiceReportHelp
+
+## Labels and Localization
+
+### System Labels Used
+
+| Label ID | English Text | Usage |
+|----------|--------------|-------|
+| @SYS7407 | Customer account | Customer account parameter |
+| @SYS22447 | Delivery date | Delivery date from parameter |
+| @SYS318425 | To date | Delivery date to parameter |
+| @SYS318698 | Sales invoice report | Dialog caption |
+| @SYS84811 | %1 must be less than or equal to %2 | Date validation error |
+
+### Custom Labels Required
+
+| Label ID | English Text | Usage |
+|----------|--------------|-------|
+| @AVA:SalesInvoiceReport | Sales Invoice Report | Menu item label |
+| @AVA:SalesInvoiceReportHelp | Display all invoices associated with sales orders | Menu item help text |
+
+**Note:** If custom label file is not available, substitute with system labels:
+- Use @SYS318698 for menu item label
+- Use @SYS318699 for menu item help text
+
+## Security Model
+
+### Security Objects
+
+| Object Type | Name | Purpose |
+|-------------|------|---------|
+| Query | AVASalesInvoiceReportQuery | Data retrieval |
+| Class | AVASalesInvoiceReportController | Report execution |
+| Class | AVASalesInvoiceReportContract | Parameter contract |
+| Report | AVASalesInvoiceReport | SSRS report definition |
+| Menu Item (Output) | AVASalesInvoiceReport | Entry point |
+
+### Recommended Security Configuration
+
+**Privilege:** AVASalesInvoiceReportView
+- Entry Point: Menu Item (AVASalesInvoiceReport)
+- Access Level: Read
+- Permission: Manual
+
+**Duty:** SalesInvoiceReportMaintain
+- Privilege: AVASalesInvoiceReportView
+- Description: Run sales invoice reports
+
+**Role Assignment:**
+- Sales clerk
+- Accounts receivable clerk
+- Sales manager
+- Accounts receivable manager
+
+### Data Security
+
+- **Legal Entity Scoping:** All tables respect DataAreaId
+- **Row-Level Security:** Inherits from table permissions
+- **Customer Security:** Respects CustTable security policies
+
+## Testing Specification
+
+### Unit Tests
+
+1. **Test Query Execution**
+   - Verify query returns data
+   - Verify joins are correct
+   - Verify ordering
+
+2. **Test Contract Validation**
+   - Valid date range: Pass
+   - Invalid date range (from > to): Fail
+   - Null dates: Pass
+
+3. **Test Controller Range Application**
+   - Customer account range applied correctly
+   - Date range applied correctly
+   - Multiple ranges work together
+
+### Integration Tests
+
+1. **Test End-to-End Report Execution**
+   - Launch from menu item
+   - Enter parameters
+   - Generate report
+   - Verify output
+
+2. **Test with Various Parameter Combinations**
+   - No parameters (all data)
+   - Customer only
+   - Date range only
+   - Customer + date range
+
+3. **Test Export Functions**
+   - Export to PDF
+   - Export to Excel
+   - Export to Word
+
+### Performance Tests
+
+1. **Load Test**
+   - 100 sales orders, 500 invoices, 5,000 lines
+   - Target: < 30 seconds
+
+2. **Stress Test**
+   - 1,000 sales orders, 5,000 invoices, 50,000 lines
+   - Target: < 5 minutes
+
+### Test Data Requirements
+
+- Minimum 10 sales orders with invoices
+- Various delivery dates (past, present, future)
+- Multiple customers
+- Multiple invoice lines per invoice
+- Mixed currency codes
+
+## Performance Considerations
+
+### Indexes Required
+
+**SalesTable:**
+- Primary index on SalesId
+- Index on (CustAccount, DeliveryDate) for filtering
+
+**CustInvoiceJour:**
+- Primary index on InvoiceId
+- Index on SalesId for join
+
+**CustInvoiceTrans:**
+- Primary index on (InvoiceId, InvoiceDate, LineNum)
+- Covering index for report fields
+
+### Optimization Techniques
+
+1. **Query Optimization:**
+   - Use DynamicFields=Yes to include only needed fields
+   - Ensure proper join order (smallest to largest tables)
+   - Apply ranges early in execution
+
+2. **Report Optimization:**
+   - Use report caching when appropriate
+   - Limit date ranges for large datasets
+   - Consider batch execution for very large reports
+
+3. **Database Optimization:**
+   - Ensure statistics are up to date
+   - Monitor query execution plans
+   - Add filtered indexes if needed
+
+## Maintenance and Support
+
+### Change Management
+
+- Version all XML files in source control
+- Document all changes in commit messages
+- Test thoroughly before deployment
+- Maintain change log
+
+### Monitoring
+
+- Track report execution times
+- Monitor error logs
+- Review user feedback
+- Analyze usage patterns
+
+### Common Modifications
+
+1. **Add New Field:**
+   - Add to query data source
+   - Add to report dataset
+   - Add to report layout
+
+2. **Add New Parameter:**
+   - Add variable to contract
+   - Add parm method with attributes
+   - Add range application in controller
+   - Add parameter to report
+
+3. **Change Grouping:**
+   - Modify report design
+   - Update precision design
+   - Test subtotals
+
+## Compliance and Standards
+
+### D365FO Best Practices
+
+- ✅ Use EDT for all field types
+- ✅ Use label references (no hardcoded strings)
+- ✅ Follow naming conventions (AVA prefix)
+- ✅ Include XML documentation
+- ✅ Respect legal entity scoping
+- ✅ Use SRS framework properly
+
+### Code Standards
+
+- ✅ Proper indentation (4 spaces)
+- ✅ Meaningful variable names
+- ✅ XML comments for all methods
+- ✅ No compiler warnings
+- ✅ No best practice violations
+
+### Security Standards
+
+- ✅ Entry point security
+- ✅ Data access permissions
+- ✅ Role-based access control
+- ✅ Audit trail support
+
+## Appendix
+
+### A. File Inventory
+
+| # | File Name | Location | Type | Size (approx) |
+|---|-----------|----------|------|---------------|
+| 1 | AVASalesInvoiceReportQuery.xml | AxQuery/ | Query | 4 KB |
+| 2 | AVASalesInvoiceReportContract.xml | AxClass/ | Class | 3 KB |
+| 3 | AVASalesInvoiceReportController.xml | AxClass/ | Class | 4 KB |
+| 4 | AVASalesInvoiceReport.xml | AxReport/ | Report | 5 KB |
+| 5 | AVASalesInvoiceReport.xml | AxMenuItemOutput/ | Menu Item | 1 KB |
+
+### B. Dependencies
+
+**Framework Dependencies:**
+- SrsReportDataContractBase
+- SrsReportRunController
+- SrsReportHelper
+- QueryRun
+- SSRS Report Server
+
+**Table Dependencies:**
+- SalesTable
+- CustTable
+- CustInvoiceJour
+- CustInvoiceTrans
+
+**EDT Dependencies:**
+- CustAccount
+- TransDate
+- SalesIdBase
+- InvoiceId
+- ItemId
+- Name
+- Qty
+- SalesPrice
+- AmountCur
+- CurrencyCode
+
+### C. Glossary
+
+| Term | Definition |
+|------|------------|
+| AOT | Application Object Tree - metadata repository in D365FO |
+| Contract | Data contract class for SSRS report parameters |
+| Controller | Class that orchestrates report execution |
+| DataAreaId | Legal entity identifier in D365FO |
+| EDT | Extended Data Type |
+| Query | AOT object defining data retrieval logic |
+| SSRS | SQL Server Reporting Services |
+| SRS | SSRS integration framework in D365FO |
+
+### D. References
+
+- Microsoft Dynamics 365 Finance and Operations Developer Documentation
+- SSRS Reports Programming Guide
+- D365FO Best Practices Guide
+- X++ Language Reference
+
+---
+
+**Document Version:** 1.0  
+**Last Updated:** 2026-02-18  
+**Status:** Final  
+**Approved By:** _______________

@@ -1,0 +1,336 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAWHSWorkTableDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// The <c>AVAWHSWorkTableDbt_Extension</c> represents a extension of WHSWorkTable table.
+/// </summary>
+[
+    ExtensionOf(tableStr(WHSWorkTable))
+]
+final class AVAWHSWorkTableDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// insert AVA 
+    /// </summary>
+    public void insert()
+    {
+        AVAWorkFullModeIDisposable          avaAVAWorkFullModeIDisposable;
+        AVAWhsSplitWorkProcessIDisposable   avaWhsSplitWorkProcessIDisposable;
+
+        avaAVAWorkFullModeIDisposable       = AVAWorkFullModeIDisposable::current();
+        avaWhsSplitWorkProcessIDisposable   = AVAWhsSplitWorkProcessIDisposable::current();
+
+        if (avaAVAWorkFullModeIDisposable
+         && avaAVAWorkFullModeIDisposable.workFullLockMode == NoYes::Yes
+         && avaWhsSplitWorkProcessIDisposable
+         && this.Frozen == NoYes::Yes)
+        {
+            this.Frozen = NoYes::No;
+        }
+
+        next insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 15-07-2025
+    /// </summary>
+    public void update()
+    {
+        boolean     avaClosed;
+
+        avaClosed = (this.orig().WorkStatus != WHSWorkStatus::Closed && this.WorkStatus == WHSWorkStatus::Closed);
+
+        next update();
+
+        if (avaClosed && this.WorkStatus == WHSWorkStatus::Closed)
+        {
+            this.avaUpdateOnClose();
+            this.AVAupdateItemCycleCountStatus();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateOnClose</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 15-07-2025
+    /// </summary>
+    public void avaUpdateOnClose()
+    {
+        AVAHandoverDocManager::manageFromWorkTable(this);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAupdateItemCycleCountStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 10-07-2025
+    /// </summary>
+    public void AVAupdateItemCycleCountStatus()
+    {
+        AVAItemCycleCountOverviewObject         updateItemCycleCountOverviewObject;
+        AVAItemCycleCountOverviewObject         checkItemCycleCountOverviewObject;
+        InventItemLocation                      inventItemLocation;
+        InventDim                               locInventDim;
+        InventItemLocationCountingStatus        inventItemLocationCountingStatus;
+        AVAItemCycleCountOverviewLine           updateItemCycleCountOverviewLine;
+
+        if (this.WorkTransType == WHSWorkTransType::CycleCount || this.WorkTransType == WHSWorkTransType::CycleCountAccepted)
+        {
+            select firstonly updateItemCycleCountOverviewObject
+                where updateItemCycleCountOverviewObject.ItemCycleCountObject == AVAItemCycleCountObject::WorkTable
+                && updateItemCycleCountOverviewObject.ObjectId             == this.WorkId;
+
+            if (updateItemCycleCountOverviewObject.RecId)
+            {
+                updateItemCycleCountOverviewObject.Posted = NoYes::Yes;
+                updateItemCycleCountOverviewObject.selectForUpdate(true);
+                ttsbegin;
+                updateItemCycleCountOverviewObject.update();
+                ttscommit;
+
+                select firstonly checkItemCycleCountOverviewObject
+                    where checkItemCycleCountOverviewObject.ItemCycleCountOverviewLine == updateItemCycleCountOverviewObject.ItemCycleCountOverviewLine
+                       && !checkItemCycleCountOverviewObject.Posted;
+
+                if (!checkItemCycleCountOverviewObject)
+                {
+                    select firstonly  inventItemLocation
+                      where inventItemLocation.ItemId ==   updateItemCycleCountOverviewObject.ItemId
+                            join locInventDim
+                                where locInventDim.inventDimId == inventItemLocation.inventDimId
+                                   && locInventDim.InventLocationId == updateItemCycleCountOverviewObject.InventLocationId
+                            outer join inventItemLocationCountingStatus
+                                where inventItemLocationCountingStatus.ItemId == inventItemLocation.ItemId
+                                   && InventItemLocationCountingStatus.InventDimId == inventItemLocation.inventDimId;
+
+                    if (inventItemLocationCountingStatus.RecId)
+                    {
+                        inventItemLocationCountingStatus.selectForUpdate(true);
+                        inventItemLocationCountingStatus.CountingStarted = NoYes::No;
+                        ttsbegin;
+                        inventItemLocationCountingStatus.update();
+                        ttscommit;
+                    }
+
+                    if(inventItemLocation.RecId)
+                    {
+                        inventItemLocation.AVAInvCountNeeded = NoYes::No;
+                        inventItemLocation.AVAInvCountLast   = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                        inventItemLocation.selectForUpdate(true);
+                        ttsbegin;
+                        inventItemLocation.update();
+                        ttscommit;
+                    }
+
+                    select firstonly forupdate updateItemCycleCountOverviewLine
+                        where updateItemCycleCountOverviewLine.RecId == updateItemCycleCountOverviewObject.ItemCycleCountOverviewLine;
+
+                    if (updateItemCycleCountOverviewLine)
+                    {
+                        //updateItemCycleCountOverviewLine.ItemCycleCountStarted = NoYes::No;
+                        ttsbegin;
+                        //updateItemCycleCountOverviewLine.update();
+                        updateItemCycleCountOverviewLine.delete();
+                        ttscommit;
+                    }
+
+                }
+            }
+
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>delete</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 10-07-2025
+    /// </summary>
+    public void delete()
+    {
+        AVAItemCycleCountOverviewLine       itemCycleCountOverviewLine;
+        AVAItemCycleCountOverviewObject     itemCycleCountOverviewObject;
+        AVAItemCycleCountOverviewObject     deleteItemCycleCountOverviewObject;
+        InventItemLocation                  inventItemLocation;
+        InventDim                           inventItemLocationInventDim;
+        InventItemLocationCountingStatus    inventItemLocationCountingStatus;
+
+        next delete();
+
+        if (this.WorkTransType == WHSWorkTransType::Invent)
+        {
+            select firstonly itemCycleCountOverviewObject
+                where  itemCycleCountOverviewObject.ObjectId == this.WorkId;
+
+            if (itemCycleCountOverviewObject)
+            {
+                select firstonly forupdate itemCycleCountOverviewLine
+                    where itemCycleCountOverviewLine.RecId == itemCycleCountOverviewObject.ItemCycleCountOverviewLine;
+
+                if (itemCycleCountOverviewLine)
+                {
+                    itemCycleCountOverviewLine.ItemCycleCountStarted = NoYes::No;
+                    ttsbegin;
+                    itemCycleCountOverviewLine.update();
+
+                    select firstonly inventItemLocation
+                        where inventItemLocation.ItemId                 == itemCycleCountOverviewLine.ItemId
+                        join inventItemLocationInventDim
+                            where inventItemLocationInventDim.inventDimId == inventItemLocation.inventDimId
+                               && inventItemLocationInventDim.InventLocationId == itemCycleCountOverviewLine.InventLocationId
+                        outer join inventItemLocationCountingStatus
+                            where inventItemLocationCountingStatus.ItemId          == inventItemLocation.ItemId
+                               && inventItemLocationCountingStatus.InventDimId     == inventItemLocation.inventDimId; 
+
+                    if (inventItemLocationCountingStatus.RecId)
+                    {
+                        inventItemLocationCountingStatus.selectForUpdate(true);
+                        inventItemLocationCountingStatus.CountingStarted = NoYes::No;
+                        inventItemLocationCountingStatus.update();
+                    }
+
+                    delete_from deleteItemCycleCountOverviewObject
+                        where deleteItemCycleCountOverviewObject.ItemCycleCountOverviewLine == itemCycleCountOverviewLine.RecId;
+
+                    ttscommit;
+                }
+            }
+        }
+
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>cancelWork</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 11-07-2025
+    /// </summary>
+    /// <param name = "_workId">_workId</param>
+    /// <param name = "_throwError">_throwError</param>
+    /// <param name = "_allowCancelClosed">_allowCancelClosed</param>
+    /// <param name = "_cancelReplenishmentWorkWithDependentWork">_cancelReplenishmentWorkWithDependentWork</param>
+    /// <param name = "_cancellingProductReceipt">_cancellingProductReceipt</param>
+    /// <param name = "_decrementLoadLineWorkCreatedQty">_decrementLoadLineWorkCreatedQty</param>
+    /// <returns>boolean</returns>
+    public static boolean cancelWork(
+        WHSWorkId    _workId,
+        boolean      _throwError,
+        boolean      _allowCancelClosed,
+        UnknownNoYes _cancelReplenishmentWorkWithDependentWork,
+        boolean      _cancellingProductReceipt,
+        boolean      _decrementLoadLineWorkCreatedQty)
+    {
+        boolean ret;
+        AVAItemCycleCountOverviewLine       itemCycleCountOverviewLine;
+        AVAItemCycleCountOverviewObject     itemCycleCountOverviewObject;
+        AVAItemCycleCountOverviewObject     deleteItemCycleCountOverviewObject;
+        InventItemLocation                  inventItemLocation;
+        InventDim                           inventItemLocationInventDim;
+        InventItemLocationCountingStatus    inventItemLocationCountingStatus;
+        WHSWorkTable        whsWorkTable = whsWorkTable::find(_workId) ;
+
+        ret = next cancelWork(_workId,_throwError,_allowCancelClosed,_cancelReplenishmentWorkWithDependentWork,_cancellingProductReceipt,_decrementLoadLineWorkCreatedQty);
+
+        if (whsWorkTable.WorkTransType == WHSWorkTransType::CycleCount)
+        {
+            select firstonly itemCycleCountOverviewObject
+                where  itemCycleCountOverviewObject.ObjectId == whsWorkTable.WorkId;
+
+            if (itemCycleCountOverviewObject)
+            {
+                select firstonly forupdate itemCycleCountOverviewLine
+                    where itemCycleCountOverviewLine.RecId == itemCycleCountOverviewObject.ItemCycleCountOverviewLine;
+
+                if (itemCycleCountOverviewLine)
+                {
+                    //itemCycleCountOverviewLine.ItemCycleCountStarted = NoYes::No;
+                    ttsbegin;
+                    //itemCycleCountOverviewLine.update();
+
+                    select firstonly inventItemLocation
+                        where inventItemLocation.ItemId                 == itemCycleCountOverviewLine.ItemId
+                        join inventItemLocationInventDim
+                            where inventItemLocationInventDim.inventDimId == inventItemLocation.inventDimId
+                               && inventItemLocationInventDim.InventLocationId == itemCycleCountOverviewLine.InventLocationId
+                        outer join inventItemLocationCountingStatus
+                            where inventItemLocationCountingStatus.ItemId          == inventItemLocation.ItemId
+                               && inventItemLocationCountingStatus.InventDimId     == inventItemLocation.inventDimId;
+
+                    if (inventItemLocationCountingStatus.RecId)
+                    {
+                        inventItemLocationCountingStatus.selectForUpdate(true);
+                        inventItemLocationCountingStatus.CountingStarted = NoYes::No;
+                        inventItemLocationCountingStatus.update();
+                    }
+                    
+                    /*while select deleteItemCycleCountOverviewObject
+                        where deleteItemCycleCountOverviewObject.ItemCycleCountOverviewLine == itemCycleCountOverviewLine.RecId
+                        && deleteItemCycleCountOverviewObject.Posted == NoYes::No
+                    {
+                        if(deleteItemCycleCountOverviewObject.ObjectId != _workId)
+                        {
+                            WHSWorkTable::performWorkCancelation(WHSWorkTable::find(deleteItemCycleCountOverviewObject.ObjectId));    
+                        }
+
+                        deleteItemCycleCountOverviewObject.selectForUpdate(true);
+                        deleteItemCycleCountOverviewObject.delete();
+
+                    }*/
+
+                    itemCycleCountOverviewLine.selectForUpdate(true);
+                    itemCycleCountOverviewLine.delete();
+
+                    ttscommit;
+                    
+                }
+            }
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitFromWorkRemplateCycleCount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 30-07-2025
+    /// </summary>
+    /// <param name = "_workTemplateCode">_workTemplateCode</param>
+    public void avaInitFromWorkRemplateCycleCount(WHSWorkTemplateCode       _workTemplateCode)
+    {
+        WHSWorkTemplateTable        whsWorkTemplateTable = WHSWorkTemplateTable::find(_workTemplateCode, WHSWorkTransType::CycleCount);
+
+        this.WorkTemplateCode = _workTemplateCode;
+        this.WorkPoolId       = whsWorkTemplateTable.WorkPoolId;
+        this.WorkPriority     = whsWorkTemplateTable.DefaultWorkPriority;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

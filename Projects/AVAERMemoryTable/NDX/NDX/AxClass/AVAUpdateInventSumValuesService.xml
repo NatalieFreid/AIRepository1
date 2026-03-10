@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAUpdateInventSumValuesService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN/2025/09/08  AVA_013106_InventSum
+/// </summary>
+final class AVAUpdateInventSumValuesService extends SysOperationServiceBase
+{
+    InventLocationId    inventLocationId;
+    InventSiteId        inventSiteId;
+    AVAInventSumType    sumType;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>startOperation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/09/08  AVA_013106_InventSum
+    /// </summary>
+    /// <param name = "_dataContract">AVAUpdateInventSumValuesContract</param>
+    public void startOperation(AVAUpdateInventSumValuesContract _dataContract)
+    {
+
+        System.Exception ex;
+        #OCCRetryCount
+
+        inventLocationId    = _dataContract.parmInventLocationId();
+        inventSiteId        = _dataContract.parmInventSiteId();
+        sumType             = _dataContract.parmSumType();
+
+        try
+        {
+            this.processOperation();
+        }
+
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+
+        catch (Exception::Error)
+        {
+            error("@NDX:NXAErrorOccured");
+            retry;
+        }
+
+        catch (Exception::CLRError)
+        {
+            ex = ClrInterop::getLastException();
+
+            if (ex != null)
+            {
+                ex = ex.get_InnerException();
+                if (ex != null)
+                {
+                    error("@NDX:NXAErrorOccured");
+                }
+            }
+
+            retry;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processOperation</Name>
+				<Source><![CDATA[
+    private void processOperation()
+    {
+        AVAInventSumDateTrans   inventSumTrans;
+        InventSum               inventSum;
+
+        while select inventSum order by ItemId
+                        where inventSum.InventSiteId == inventSiteId
+                           && inventSum.inventLocationId == inventLocationId
+        {
+
+            select firstonly forupdate inventSumTrans where inventSumTrans.ItemId == inventSum.ItemId 
+                                                     && inventSumTrans.Type == sumType
+                                                     && inventSumTrans.InventSiteId == inventSiteId
+                                                     && inventSumTrans.InventLocationId == inventLocationId
+                                                     && inventSumTrans.WMSLocationId == inventSum.wMSLocationId
+                                                     && inventSumTrans.InventColorId == inventSum.InventColorId;
+
+            if (inventSumTrans.RecId)
+            {
+                ttsbegin;
+                inventSumTrans.D365Qty = inventSum.PostedQty;
+                inventSumTrans.DiffQty = inventSumTrans.D365Qty - inventSumTrans.PhysQty;
+                if (inventSumTrans.PhysQty)
+                {
+                    inventSumTrans.DiffValue = inventSumTrans.DiffQty * inventSumTrans.PhysValue / inventSumTrans.PhysQty;
+                }
+                else if(inventSumTrans.D365Qty)
+                {
+                    inventSumTrans.DiffValue = inventSumTrans.DiffQty * inventSumTrans.D365Value / inventSumTrans.D365Qty;
+                }
+
+                inventSumTrans.update();
+                ttscommit;
+            }
+            else
+            {
+                if (inventSum.PostedQty || inventSum.PostedValue)
+                {
+                    ttsbegin;
+                    inventSumTrans.ItemId = inventSum.ItemId;
+                    inventSumTrans.Type = sumType;
+                    inventSumTrans.InventSiteId = inventSiteId;
+                    inventSumTrans.InventLocationId = inventLocationId;
+                    inventSumTrans.WMSLocationId = inventSum.wMSLocationId;
+                    inventSumTrans.InventColorId = inventSum.InventColorId;
+                    InventSumTrans.TransDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+                    inventSumTrans.D365Qty = inventSum.PostedQty;
+                    inventSumTrans.D365Value = inventSum.PostedValue;
+                    inventSumTrans.DiffQty = inventSumTrans.D365Qty - inventSumTrans.PhysQty;
+                    inventSumTrans.DiffValue = inventSumTrans.DiffQty * inventSumTrans.D365Value / inventSumTrans.D365Qty;
+                    inventSumTrans.insert();
+                    ttscommit;
+                }
+            }
+        }
+        While select forupdate inventsumtrans where !inventSumTrans.D365Qty
+                                        && inventsumtrans.PhysQty
+        {
+            ttsbegin;
+            inventSumTrans.DiffQty = -inventSumTrans.PhysQty;
+            inventSumTrans.DiffValue = -inventSumTrans.PhysValue;
+            inventSumTrans.update();
+            ttscommit;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>OnHandByDate</Name>
+				<Source><![CDATA[
+    private qty OnHandByDate(ItemId _itemId, InventDim _inventDim, transDate _transDate)
+    {
+        InventDimParm inventDimParm;
+        InventSumDatePhysicalDim    inventSumDateDim;
+
+        inventDimParm.initFromInventDim(_inventDim);
+        inventSumDateDim = InventSumDatePhysicalDim::newParameters(_transDate, _itemId, _inventDim, inventDimParm);
+        inventSumDateDim.init();
+        return inventSumDateDim.postedQty();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

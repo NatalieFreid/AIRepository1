@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAImportWagesService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed by AVANADE
+/// </summary>
+class AVAImportWagesService extends SysOperationServiceBase
+{
+    #File
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_contract">AVAImportWagesContract</param>
+    public void process(AVAImportWagesContract _contract)
+    {
+        DialogGroup                     dlgUploadGroup;
+        FileUploadBuild                 fileUploadBuild;
+        FormBuildControl                formBuildControl;
+
+        LedgerJournalTable              LedgerJournalTable;
+        LedgerJournalTrans              ledgerJournalTrans;
+        TransDate                       transDate;
+        Voucher                         voucher;
+        JournalVoucherNum               journalVoucherNum;
+        MainAccountNum                  offsetAccount, ledgerAccount;
+        MainAccount                     offsetMainAccount, ledgerMainAccount;
+        String10                        debitCreditFlag, taxFlag;
+        String255                       postingTxt, strAmount;
+        CurrencyCode                    currencyCode;
+        Amount                          amount;
+        DimensionValue                  costCentre, costUnit; 
+        int                             readCount, countFile;
+        str                             fileUrl; 
+        CommaTextStreamIo               textStream, addStream;
+        LedgerDimensionDefaultAccount   ledgerDimDefaultAccount;
+        DimensionHierarchyid            dimHierarchyId;
+        DimensionAttributeValueSet           DimensionAttributeValueSet;
+        DimensionAttributeValueSetItem    DimensionAttributeValueSetItem;
+        DimensionAttributeValue                DimensionAttributeValue;
+        DimensionAttribute                         DimensionAttribute;
+        Filename                        fileName;
+        RecordInsertList                insList = new RecordInsertList(tableNum(LedgerJournalTrans));
+
+
+        if (_contract.parmLedgerJournalTable().TableId == tableNum(LedgerJournalTable))
+        {
+            LedgerJournalTable = _contract.parmLedgerJournalTable();
+        }
+        else
+        {
+            throw error("@SYS59121");
+        }
+        
+        
+        
+        Dialog                      dialog = new Dialog("@NDX:NXAImportWages");
+
+        dlgUploadGroup          = dialog.addGroup("@SYS54759");
+        formBuildControl        = dialog.formBuildDesign().control(dlgUploadGroup.name());
+        fileUploadBuild         = formBuildControl.addControlEx(classstr(FileUpload), 'Upload');
+        fileUploadBuild.style(FileUploadStyle::MinimalWithFilename);
+        fileUploadBuild.fileTypesAccepted('.txt, .csv');
+
+        if (dialog.run() && dialog.closedOk())
+        {
+            FileUpload fileUploadControl     = dialog.formRun().control(dialog.formRun().controlId('Upload'));
+            FileUploadTemporaryStorageResult fileUploadResult = fileUploadControl.getFileUploadResult();
+
+            if (fileUploadResult && fileUploadResult.getUploadStatus())
+            {
+                fileUrl     = fileUploadResult.getDownloadUrl();
+                textStream  = CommaTextStreamIo::constructForRead(File::UseFileFromURL(fileUrl));
+                addStream   = CommaTextStreamIo::constructForAppend(File::UseFileFromURL(fileUrl));
+                fileName    = fileUploadResult.getFileName();
+            }
+        }
+        
+        textStream.inFieldDelimiter(';');
+        textStream.inRecordDelimiter(#delimiterCRLF);
+        
+        container currentLine = textStream.read();
+
+        if (conlen(currentLine) != 14)
+        {
+            throw error("@NDX:NXANotValidFile");
+        }
+
+        journalVoucherNum = new JournalVoucherNum(JournalTableData::newTable(LedgerJournalTable));
+
+        //while(currentLine)
+        while(!textStream.status())
+        {
+            ledgerJournalTrans.clear();
+            ledgerJournalTrans.JournalNum = LedgerJournalTable.JournalNum;
+            ledgerJournalTrans.initValue();
+            voucher = journalVoucherNum.getNew(true);
+            if (!voucher)
+            {
+                Info("@SYS26396");
+            }
+            else
+            {
+                ledgerJournalTrans.Voucher = voucher;
+            }
+            transDate = str2Date(conPeek(currentLine, 1), 123);
+            ledgerJournalTrans.transDate = transDate ? transDate : dateNull();
+            countFile       = conPeek(currentLine, 12);
+            ledgerJournalTrans.OffsetAccountType = LedgerJournalACType::Ledger;
+            ledgerJournalTrans.AccountType = LedgerJournalACType::Ledger;
+            ledgerAccount   = conPeek(currentLine, 3);
+            offsetAccount   = conPeek(currentLine, 2);
+            costCentre      = conPeek(currentLine, 6);
+            if (CostCentre)
+            {
+                select firstonly DimensionAttributeValue 
+                        where DimensionAttributeValue.DisplayValue == costCentre
+                    join DimensionAttribute 
+                        where DimensionAttribute.RecId == DimensionAttributeValue.DimensionAttribute
+                            && DimensionAttribute.Type == DimensionAttributeType::ExistingList;
+                select firstonly DimensionAttributeValueSetItem where DimensionAttributeValueSetItem.DimensionAttributeValue == DimensionAttributeValue.RecId
+                    join DimensionAttributeValueSet
+                        where DimensionAttributeValueSet.RecId == DimensionAttributeValueSetItem.DimensionAttributeValueSet;
+                if (!DimensionAttributeValueSet.RecId)
+                {
+                    select firstonly DimensionAttributeValueSetItem where DimensionAttributeValueSetItem.DisplayValue == costCentre
+                    join DimensionAttributeValueSet
+                        where DimensionAttributeValueSet.RecId == DimensionAttributeValueSetItem.DimensionAttributeValueSet;
+                }
+                if (!DimensionAttributeValueSet.RecId)
+                {
+                    warning(strFmt("@NDX:NXAFalseCostCentre", costCentre, countFile));
+                }
+
+                ledgerJournalTrans.DefaultDimension = DimensionAttributeValueSet.RecId;
+            }
+            ledgerMainAccount   = MainAccount::findByMainAccountId(ledgerAccount);
+            offsetMainAccount   = MainAccount::findByMainAccountId(offsetAccount);
+            if (!offsetMainAccount)
+            {
+                warning(strFmt("@NDX:NXAFalseOffsetAccount", countFile));
+                ledgerJournalTrans.OffsetLedgerDimension = LedgerSystemAccounts::find(LedgerPostingType::ErrorAccount).LedgerDimension;
+            }
+            else
+            {
+                dimHierarchyId = DimensionHierarchy::getAccountStructure(offsetMainAccount.RecId);
+                ledgerDimDefaultAccount = LedgerDimensionDefaultingEngine::getLedgerDimensionFromAccountAndDim(offsetMainAccount.RecId, dimHierarchyId, ledgerJournalTrans.OffsetDefaultDimension);
+                ledgerJournalTrans.OffsetLedgerDimension = ledgerDimDefaultAccount;
+                ledgerJournalTrans.OffsetLedgerDimension = LedgerDimensionFacade::serviceCreateLedgerDimension(ledgerJournalTrans.OffsetLedgerDimension, ledgerJournalTrans.OffsetDefaultDimension);
+
+            }
+            if (!ledgerMainAccount)
+            {
+                warning(strFmt("@NDX:NXAFalseLedgerAccount", countFile));
+                ledgerJournalTrans.LedgerDimension = LedgerSystemAccounts::find(LedgerPostingType::ErrorAccount).LedgerDimension;
+            }
+            else
+            {
+                dimHierarchyId = DimensionHierarchy::getAccountStructure(ledgerMainAccount.RecId);
+                ledgerDimDefaultAccount = LedgerDimensionDefaultingEngine::getLedgerDimensionFromAccountAndDim(ledgerMainAccount.RecId, dimHierarchyId, ledgerJournalTrans.DefaultDimension);
+                ledgerJournalTrans.LedgerDimension = ledgerDimDefaultAccount;
+                ledgerJournalTrans.LedgerDimension = LedgerDimensionFacade::serviceCreateLedgerDimension(ledgerJournalTrans.LedgerDimension, ledgerJournalTrans.DefaultDimension);
+            }
+
+            debitCreditFlag = conPeek(currentLine, 4);
+            strAmount       = conPeek(currentLine, 5);
+            strAmount       = strReplace(strAmount, ',', '.');
+            amount          = str2Num(strAmount);
+            if (debitCreditFlag == 'H')
+            {
+                ledgerJournalTrans.AmountCurDebit = amount;
+            }
+            //else if (debitCreditFlag == 'S')
+            else
+            {
+                ledgerJournalTrans.AmountCurCredit = amount;
+            }
+            postingTxt      = conPeek(currentLine, 7);
+            currencyCode    = conPeek(currentLine, 8);
+            taxFlag         = conPeek(currentLine, 10);
+            if (taxFlag == 'FULL')
+            {
+                ledgerJournalTrans.TaxGroup = 'D-INL';
+                ledgerJournalTrans.TaxItemGroup = 'VOLL-LST';
+            }
+            costUnit        = conPeek(currentLine, 11);
+            countFile       = conPeek(currentLine, 12);
+            LedgerJournalTrans.Txt = postingTxt;
+            //ledgerJournalTrans.insert();
+            insList.add(ledgerJournalTrans);
+            journalVoucherNum.used(voucher);
+                    
+            currentLine = textStream.read();
+            readCount++;
+        }
+        insList.insertDatabase();
+
+        info(strfmt("@NDX:NXAGAEBImportedPos", readCount, countFile));
+            
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

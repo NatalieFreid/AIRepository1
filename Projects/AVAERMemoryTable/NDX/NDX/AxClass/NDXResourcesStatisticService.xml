@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXResourcesStatisticService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Service Class for Rasource statistics batch job
+/// </summary>
+public final class NDXResourcesStatisticService  extends SysOperationServiceBase
+{
+    NDXResourcesStatisticController controller;
+
+    utcdatetime lastExport;
+
+    identifierName className;
+    identifierName methodName;
+    str importKey = 'CollectResourcesDataKey';
+
+    NDXDate fromDate,toDate;
+    ResResourceType resourceType;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmController</Name>
+				<Source><![CDATA[
+    public NDXResourcesStatisticController parmController(NDXResourcesStatisticController _controller = controller)
+    {
+        controller = _controller;
+        return controller;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    protected void new()
+    {
+        SysOperationExecutionMode executionMode = SysOperationExecutionMode::Asynchronous;
+                
+        className = classId2Name(classIdGet(this));
+        methodName = 'collectData';
+        importKey = strFmt('%1%2%3',className, methodName, importKey);
+        lastExport = DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(), DateTimeUtil::getUserPreferredTimeZone());
+
+        controller = NDXResourcesStatisticController::construct(className, methodName, executionMode);
+        controller.parmDialogCaption("@NDX:NDXResourcesStatisticCollectDataBatch");
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>collectData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Import from PIMCore
+    /// </summary>
+    /// <param name = "_D365PIMCoreExportContract">D365PIMCoreExportContract record</param>
+    public void collectData(NDXResourcesStatisticContract _contract)
+    {
+        //check is import is allready running
+        //[isImportRunning] = sgoc.find(DMFConstants::DataPopulationGlobalCacheScope, [importKey]);
+        //if(isImportRunning)
+        //{
+        //    warning(strFmt('@NDXMagento:MagentoImportRunning', magentoObject));
+        //    return;
+        //}
+        //sgoc.insert(DMFConstants::DataPopulationGlobalCacheScope, [importKey], [true]);
+        //sgoc.remove(DMFConstants::DataPopulationGlobalCacheScope, [importKey]);
+
+        DimensionAttributeValueSet lDimensionAttributeValueSet;
+        NDXResourcesStatisticHelper ndx_ResourceStatisticHelper = NDXResourcesStatisticHelper::construct(_contract.parmResourceType());
+
+        if (_contract.parmFromJob() == NoYes::Yes)
+        {
+            this.NDXSetJobRef(_contract);
+        }
+        
+        if (_contract.parmFromBDE() == NoYes::Yes)
+        {
+            nDX_ResourceStatisticHelper.fillFromKCS_SFCFeedback(_contract.parmFromDate(), _contract.parmToDate());
+        }
+        
+        if (_contract.parmFromJournal() == NoYes::Yes)
+        {
+            nDX_ResourceStatisticHelper.fillFromProdJournalRoute(_contract.parmFromDate(), _contract.parmToDate());
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXSetJobRef</Name>
+				<Source><![CDATA[
+    void NDXSetJobRef(NDXResourcesStatisticContract _contract)
+    {
+        ProdJournalRoute        prodJournalRoute, prodJournalRouteRef;
+        Query                   q;
+        QueryBuildDataSource    qbds;
+        QueryRun                qr;
+        int                     anzRef, anzNoRef;
+
+        fromDate = _contract.parmFromDate();
+        toDate = _contract.parmToDate();
+
+        // Untersuchung der Datensätze des Zeitraums, bei denen die JobId nicht eingetragen ist
+        if(!this.controller.parmInBatch())
+        {
+            info(strfmt('@NXD2285', NDXHelperCommon::seconds2Str(), fromDate, toDate));         // [%1] JobId in ProdJournalRoute prüfen; Zeitraum [%2 - %3]
+        }
+
+        q = new Query();
+        qbds = q.addDataSource(tablenum(ProdJournalRoute));
+        qbds.update(true);
+        if (fromDate || toDate)
+        {
+            qbds.addRange(fieldnum(ProdJournalRoute, TransDate)).value(SysQuery::range(fromDate, toDate));
+        }
+
+        qbds.addRange(fieldnum(ProdJournalRoute, JobId)).value(SysQuery::valueEmptyString());
+        qbds.addRange(fieldnum(ProdJournalRoute, NDXJobId)).value(SysQuery::valueEmptyString());
+        
+        qr = new QueryRun(q);
+        
+        while (qr.next())
+        {
+            prodJournalRoute = qr.get(tablenum(ProdJournalRoute));
+            
+            // Referenzdatensatz lokalisieren
+            select firstOnly prodJournalRouteRef
+            where   prodJournalRouteRef.ProdId      == prodJournalRoute.ProdId
+                &&  prodJournalRouteRef.TransDate   == prodJournalRoute.TransDate
+                &&  prodJournalRouteRef.OprNum      == prodJournalRoute.OprNum
+                &&  prodJournalRouteRef.JobType     == prodJournalRoute.JobType
+                &&  prodJournalRouteRef.QtyGood     == prodJournalRoute.QtyGood
+                &&  prodJournalRouteRef.JobId;
+            
+            if (prodJournalRouteRef)
+            {
+                ttsbegin;
+                prodJournalRoute.NDXJobId                    = prodJournalRouteRef.JobId;
+                prodJournalRoute.NDXProdJournalRouteRefRecId = prodJournalRouteRef.RecId;
+                prodJournalRoute.update();
+                ttscommit;
+                ++anzRef;
+            }
+            else
+            ++anzNoRef;
+        }
+
+        if(!this.controller.parmInBatch())
+        {
+            info(strfmt("@NDX:NDXResourcesStatisticInfo1", NDXHelperCommon::seconds2Str(), anzRef, anzNoRef));         // [%1] Korrigierte Einträge [%2]; ohne Referenz [%3]
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Constructor
+    /// </summary>
+    /// <returns>D365PIMCoreExportService instance</returns>
+    static public NDXResourcesStatisticService construct()
+    {
+         return new NDXResourcesStatisticService();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>collectDataBatch</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Stats the batch job
+    /// </summary>
+    /// <param name = "_args">aguments</param>
+    static public void collectDataBatch(Args _args)
+    {
+        NDXResourcesStatisticController controller;
+        NDXResourcesStatisticService resourcesStatisticService;
+
+        SysOperationStartResult result;
+
+        resourcesStatisticService = NDXResourcesStatisticService::construct();
+
+        controller = resourcesStatisticService.parmController();
+        
+        NDXResourcesStatisticContract contractNDXResourcesStatisticContract =  controller.getDataContractObject();
+        contractNDXResourcesStatisticContract.initialize();
+
+        if (_args && _args.parmEnumType() && _args.parmEnumType() == enumnum(ResResourceType))
+        {
+            contractNDXResourcesStatisticContract.parmResourceType(_args.parmEnum());
+        }
+        
+        result = controller.startOperation();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    static public void main(Args _args)
+    {
+        NDXResourcesStatisticService::collectDataBatch(_args);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

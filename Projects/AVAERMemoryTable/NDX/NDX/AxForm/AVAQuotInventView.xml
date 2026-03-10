@@ -1,0 +1,370 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>AVAQuotInventView</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class AVAQuotInventView extends FormRun
+{
+    SalesQuotationTable     salesQuotationTable;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        super();
+        if (this.args() && this.args().dataset() == tableNum(SalesQuotationTable))
+        {
+            salesQuotationTable = this.args().record();
+        }
+
+        if (salesQuotationTable)
+        {
+            this.iniBOMPos(salesQuotationTable);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>iniBOMPos</Name>
+				<Source><![CDATA[
+    void iniBOMPos(SalesQuotationTable      _salesQuotationTable)
+    {
+        SalesQuotationLine      sql;
+        InventDim               inventDim;
+        InventDimParm           inventDimParm;
+        InventSum               inventSum;
+        BOMVersion              bomV;
+        BOM                     bom;
+        Qty                     QuotQty, AvailQty, OrderedQty;
+        InventDim               bomInventDim;
+        InventDimParm           bomInventDimParm;
+        InventSum               bomInventSum;
+        AVAQuotAvailState       ItemSetState, bomState;
+
+
+        while select sql order by KCS_QLLVPosition where sql.QuotationId == _salesQuotationTable.QuotationId
+        {
+            AVAQuotInventView.clear();
+            AVAQuotInventView.QuotationId               = _salesQuotationTable.QuotationId;
+            AVAQuotInventView.QuotInventSiteId          = _salesQuotationTable.InventSiteId;
+            AVAQuotInventView.QuotQty                   = sql.SalesQty;
+            AVAQuotInventView.KCS_QLInternalPosition    = sql.KCS_QLInternalPosition;
+            AVAQuotInventView.KCS_QLLVPosition          = sql.KCS_QLLVPosition;
+            AVAQuotInventView.ItemId                    = sql.ItemId;
+            inventDim                                   = sql.inventDim();
+            inventDimParm.initFromInventDim(inventDim);
+            AVAQuotInventView.ItemInventSiteId          = inventDim.InventSiteId;
+            AVAQuotInventView.InventLocationId          = inventDim.InventLocationId;
+            inventSum                                   = inventSum::findSum(AVAQuotInventView.ItemId, inventDim, inventDimParm);
+            AVAQuotInventView.AvailQty                  = inventSum.AvailPhysical;
+            AVAQuotInventView.OrderedQty                = inventSum.OnOrder;
+            AVAQuotInventView.QuotAvailState            = (AVAQuotInventView.AvailQty - AVAQuotInventView.OrderedQty) >= AVAQuotInventView.QuotQty ? AVAQuotAvailState::OK : AVAQuotAvailState::notOK;
+            //AVAQuotInventView.RevRecBundle              = sql.inventTable().RevRecBundle;
+            AVAQuotInventView.IsItemSet                 = sql.inventTable().AVAItemSet;
+            if(AVAQuotInventView.IsItemSet)
+            {
+                ItemSetState = AVAQuotAvailState::OK;
+                bomV = BOMVersion::findActive(AVAQuotInventView.ItemId, DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), AVAQuotInventView.QuotQty, inventDim);
+                if(bomV)
+                {
+                    while select bom where bom.BOMId == bomV.BOMId
+                    {
+                        bomInventDim    = inventDim;
+                        bomInventDimParm.initFromInventDim(bomInventDim);
+                        bomInventSum              = InventSum::findSum(bom.ItemId, bomInventDim, bomInventDimParm);
+                        AvailQty                  = bomInventSum.PhysicalInvent - (bomInventSum.ReservPhysical - bomInventSum.Ordered);
+                        OrderedQty                = bominventSum.OnOrder;
+                        bomState                  = (AvailQty - OrderedQty) >= QuotQty ? AVAQuotAvailState::OK : AVAQuotAvailState::notOK;
+                        if (bomState == AVAQuotAvailState::notOK)
+                        {
+                            ItemSetState = AVAQuotAvailState::notOK;
+                        }
+
+                    }
+                }
+            }
+            AVAQuotInventView.QuotAvailState = ItemSetState;
+            AVAQuotInventView.insert();
+
+            //if(AVAQuotInventView.RevRecBundle)
+            if(AVAQuotInventView.IsItemSet)
+            {
+                bomV = BOMVersion::findActive(AVAQuotInventView.ItemId, DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), AVAQuotInventView.QuotQty, inventDim);
+                if(bomV)
+                {
+                    while select bom where bom.BOMId == bomV.BOMId
+                    {
+                        this.insertBOMPos(bom, inventDim, AVAQuotInventView.QuotQty, AVAQuotInventView.KCS_QLLVPosition, AVAQuotInventView.KCS_QLInternalPosition);
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertBOMPos</Name>
+				<Source><![CDATA[
+    void insertBOMPos(BOM _bom, InventDim _inventDim, Qty _bundleQty, KCS_QLLVPosition _lvPos, KCS_QLInternalPosition _intPos)
+    {
+        InventDim       bomInventDim;
+        InventDimParm   bomInventDimParm;
+        InventSum       bomInventSum;
+
+        AVAQuotInventView.clear();
+        AVAQuotInventView.ItemId            = _bom.ItemId;
+        AVAQuotInventView.QuotQty           = _bundleQty * _bom.BOMQty / (_bom.BOMQtySerie ? _bom.BOMQtySerie : 1);
+        AVAQuotInventView.KCS_QLLVPosition  = _lvPos;
+        AVAQuotInventView.KCS_QLInternalPosition    = _intPos;
+        //bomInventDim    = InventItemInventSetup::find(AVAQuotInventView.ItemId, _inventDim.inventDimId).inventDimDefault();
+        bomInventDim    = _inventDim;
+        bomInventDimParm.initFromInventDim(bomInventDim);
+        bomInventSum                        = InventSum::findSum(AVAQuotInventView.ItemId, bomInventDim, bomInventDimParm);
+        //AVAQuotInventView.AvailQty                  = bominventSum.AvailPhysical;
+        AVAQuotInventView.AvailQty                  = bomInventSum.PhysicalInvent - (bomInventSum.ReservPhysical - bomInventSum.Ordered);
+        AVAQuotInventView.OrderedQty                = bominventSum.OnOrder;
+        AVAQuotInventView.QuotAvailState            = (AVAQuotInventView.AvailQty - AVAQuotInventView.OrderedQty) >= AVAQuotInventView.QuotQty ? AVAQuotAvailState::OK : AVAQuotAvailState::notOK;
+        AVAQuotInventView.insert();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="" />
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>AVAQuotInventView</Name>
+			<Table>AVAQuotInventView</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AvailabilityDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AvailQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventLocationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemInventSiteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_QLInternalPosition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_QLLVPosition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderedQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QuotationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QuotAvailState</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QuotInventSiteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QuotQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RevRecBundle</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@NDX:NXAAvailability</Caption>
+		<Pattern xmlns="">SimpleList</Pattern>
+		<PatternVersion xmlns="">1.1</PatternVersion>
+		<Style xmlns="">SimpleList</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>FormActionPaneControl1</Name>
+				<Type>ActionPane</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>FormGroupControl1</Name>
+				<Pattern>CustomAndQuickFilters</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl>
+						<Name>QuickFilterControl1</Name>
+						<FormControlExtension>
+							<Name>QuickFilterControl</Name>
+							<ExtensionComponents />
+							<ExtensionProperties>
+								<AxFormControlExtensionProperty>
+									<Name>targetControlName</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>placeholderText</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>defaultColumnName</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+							</ExtensionProperties>
+						</FormControlExtension>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+				<FrameType>None</FrameType>
+				<Style>CustomFilter</Style>
+				<ViewEditMode>Edit</ViewEditMode>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGridControl">
+				<Name>FormGridControl1</Name>
+				<Type>Grid</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AVAQuotInventView_KCS_QLLVPosition</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>KCS_QLLVPosition</DataField>
+						<DataSource>AVAQuotInventView</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>AVAQuotInventView_KCS_QLInternalPosition</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>KCS_QLInternalPosition</DataField>
+						<DataSource>AVAQuotInventView</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCheckBoxControl">
+						<Name>AVAQuotInventView_RevRecBundle</Name>
+						<Type>CheckBox</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>IsItemSet</DataField>
+						<DataSource>AVAQuotInventView</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AVAQuotInventView_ItemId</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>ItemId</DataField>
+						<DataSource>AVAQuotInventView</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AVAQuotInventView_ItemInventSiteId</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>ItemInventSiteId</DataField>
+						<DataSource>AVAQuotInventView</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AVAQuotInventView_InventLocationId</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>InventLocationId</DataField>
+						<DataSource>AVAQuotInventView</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>AVAQuotInventView_QuotQty</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>QuotQty</DataField>
+						<DataSource>AVAQuotInventView</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>AVAQuotInventView_OrderedQty</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>OrderedQty</DataField>
+						<DataSource>AVAQuotInventView</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>AVAQuotInventView_AvailQty</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AvailQty</DataField>
+						<DataSource>AVAQuotInventView</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormComboBoxControl">
+						<Name>AVAQuotInventView_QuotAvailState</Name>
+						<Type>ComboBox</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>QuotAvailState</DataField>
+						<DataSource>AVAQuotInventView</DataSource>
+						<Items />
+					</AxFormControl>
+				</Controls>
+				<DataSource>AVAQuotInventView</DataSource>
+				<Style>Tabular</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAInventJournalTableDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// NS Zelinka 20.02.26
+/// Extension of table InventJournalTable
+/// </summary>
+[ExtensionOf(tableStr(InventJournalTable))]
+final class AVAInventJournalTableDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaFindOrCreateInventJournal_ProjProd</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns an exisiting InventJournalTable for provided ProjId and ProdId
+    /// If it doesn't exist, the journal gets created
+    /// </summary>
+    /// <param name = "_projId">ProjId</param>
+    /// <param name = "_prodId">ProdId</param>
+    /// <returns>InventJournalTable</returns>
+    public static InventJournalTable avaFindOrCreateInventJournal_ProjProd(
+        ProjId _projId,
+        ProdId _prodId)
+    {
+        InventJournalTable avaInventJournalTable = InventJournalTable::avaFindInventJournal_ProjProd(_projId, _prodId);
+
+        if(!avaInventJournalTable)
+        {
+            avaInventJournalTable = InventJournalTable::avaCreateJournal_ProjProd(_projId, _prodId);
+        }
+
+        return avaInventJournalTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaFindInventJournal_ProjProd</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds a not posted InventJournal of type Project that is connected to provided ProjId and ProdId
+    /// </summary>
+    /// <param name = "_projId">ProjId</param>
+    /// <param name = "_prodId">ProdId</param>
+    /// <param name = "_selectForUpdate">boolean</param>
+    /// <returns>InventJournalTable</returns>
+    public static InventJournalTable avaFindInventJournal_ProjProd(
+        ProjId _projId,
+        ProdId _prodId,
+        boolean _selectForUpdate = false)
+    {
+        InventJournalTable avaInventJournalTable;
+        InventJournalTrans avaInventJournalTrans;
+
+        if(_selectForUpdate)
+        {
+            avaInventJournalTable.selectForUpdate(_selectForUpdate);
+        }
+
+        select firstonly avaInventJournalTable
+            join avaInventJournalTrans
+            where avaInventJournalTable.Posted          == NoYes::No
+            && avaInventJournalTable.JournalType        == InventJournalType::project
+            && avaInventJournalTable.AVAProjProduction  == _prodId
+            && avaInventJournalTable.JournalId          == avaInventJournalTrans.JournalId
+            && avaInventJournalTrans.ProjId             == _projId;
+
+        return avaInventJournalTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCreateJournal_ProjProd</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates a new InventJournalTable for provided ProjId and ProdId
+    /// </summary>
+    /// <param name = "_projId">ProjId</param>
+    /// <param name = "_prodId">ProdId</param>
+    /// <returns>InventJournalTable</returns>
+    public static InventJournalTable avaCreateJournal_ProjProd(
+        ProjId _projId,
+        ProdId _prodId)
+    {
+        InventJournalTable avaInventJournalTable;
+
+        ttsbegin;
+
+        avaInventJournalTable.initValue();
+        avaInventJournalTable.initFromInventJournalName(InventJournalName::find(ProjParameters::find().inventJournalNameId));
+        avaInventJournalTable.JournalId         = NumberSeq::newGetNum(InventParameters::numRefInventJournalId()).num();
+        avaInventJournalTable.AVAProjProduction = _prodId;
+        avaInventJournalTable.insert();
+
+        ttscommit;
+
+        return avaInventJournalTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateDelete</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 26.02.24
+    /// CoC method for validateDelete
+    /// </summary>
+    /// <returns>boolean value - true or false</returns>
+    public boolean validateDelete()
+    {
+        boolean ret = next validateDelete();
+
+        if (ret         &&
+            this.Posted &&  
+            (   this.JournalType == InventJournalType::Movement         ||
+                this.JournalType == InventJournalType::LossProfit       ||
+                this.JournalType == InventJournalType::Transfer         ||
+                this.JournalType == InventJournalType::BOM              ||
+                this.JournalType == InventJournalType::OwnershipChange  ||
+                this.JournalType == InventJournalType::Count            ||
+                this.JournalType == InventJournalType::TagCounting)         )
+        {
+            ret = checkFailed("@NDX:NXAPostedRecordCanNotDeleted");
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>delete</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 10-07-2025
+    /// </summary>
+    public void delete()
+    {
+        AVAItemCycleCountOverviewObject         itemCycleCountOverviewObject;
+        AVAItemCycleCountOverviewLine           itemCycleCountOverviewLine;
+        InventItemLocation                      inventItemLocation;
+        InventDim                               inventItemLocationInventDim;
+        InventItemLocationCountingStatus        inventItemLocationCountingStatus;
+        next delete();
+        if (this.JournalType == InventJournalType::Count)
+        {
+            select firstonly itemCycleCountOverviewObject
+                where itemCycleCountOverviewObject.ItemCycleCountObject == AVAItemCycleCountObject::InventJournal
+                   && itemCycleCountOverviewObject.ObjectId             == this.JournalId;
+
+            if (itemCycleCountOverviewObject)
+            {
+                select firstonly itemCycleCountOverviewLine
+                    where itemCycleCountOverviewLine.RecId == itemCycleCountOverviewObject.ItemCycleCountOverviewLine;
+                ttsbegin;
+                if (itemCycleCountOverviewLine)
+                {
+                    itemCycleCountOverviewLine.selectForUpdate(true);
+                    itemCycleCountOverviewLine.ItemCycleCountStarted = NoYes::No;
+                    itemCycleCountOverviewLine.InventJournalId = '';
+                    itemCycleCountOverviewLine.update();
+                }
+
+                select firstonly inventItemLocation
+                        where inventItemLocation.ItemId                 == itemCycleCountOverviewLine.ItemId
+                        join inventItemLocationInventDim
+                            where inventItemLocationInventDim.inventDimId == inventItemLocation.inventDimId
+                               && inventItemLocationInventDim.InventLocationId == itemCycleCountOverviewLine.InventLocationId
+                        outer join inventItemLocationCountingStatus
+                            where inventItemLocationCountingStatus.ItemId          == inventItemLocation.ItemId
+                               && inventItemLocationCountingStatus.InventDimId     == inventItemLocation.inventDimId;
+
+                if (inventItemLocationCountingStatus.RecId)
+                {
+                    inventItemLocationCountingStatus.selectForUpdate(true);
+                    inventItemLocationCountingStatus.CountingStarted = NoYes::No;
+                    inventItemLocationCountingStatus.CountingJournalId = '';
+                    inventItemLocationCountingStatus.update();
+                }
+
+                itemCycleCountOverviewObject.selectForUpdate(true);
+                itemCycleCountOverviewObject.delete();
+
+                ttscommit;
+            }
+
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPurchPurchaseOrderDPCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// extension of class PurchPurchaseOrderDP
+/// </summary>
+[ExtensionOf(classStr(PurchPurchaseOrderDP))]
+final class AVAPurchPurchaseOrderDPCls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initializePurchaseOrderHeader</Name>
+				<Source><![CDATA[
+        /// <summary>
+    /// Initializes the purchase order header.
+    /// </summary>
+    /// <param name = "_vendPurchOrderJour">
+    /// A <c>VendPurchOrderJour</c> purchase order journal header which the order header is initialized from.
+    /// </param>
+    /// <returns>
+    /// The initialized <c>PurchPurchaseOrderHeader</c> record.
+    /// </returns>
+    protected PurchPurchaseOrderHeader initializePurchaseOrderHeader(VendPurchOrderJour _vendPurchOrderJour)
+    {
+        FormTextType avaFormTextType;
+        PurchPurchaseOrderHeader purchPurchaseOrderHeader = next initializePurchaseOrderHeader(_vendPurchOrderJour);
+
+        purchPurchaseOrderHeader.AVAPurchNumberSequence = PurchAgreementHeader::find(_vendPurchOrderJour.AVAMatchingAgreement).PurchNumberSequence;
+        //purchPurchaseOrderHeader.AVAOrderConfirmation   = PurchAgreementHeader::find(_vendPurchOrderJour.AVAMatchingAgreement).AVAOrderConfirmation;
+        purchPurchaseOrderHeader.AVAOrderConfirmation   = AgreementLine::find(_vendPurchOrderJour.purchTable().avaFindFirstPurchLine().matchingAgreementLine()).AVAOrderConfirmation;
+        purchPurchaseOrderHeader.AVACashDisc            = _vendPurchOrderJour.AVACashDisc;
+        purchPurchaseOrderHeader.Payment                = _vendPurchOrderJour.AVAPayment;
+        purchPurchaseOrderHeader.AVAEmailRecipient      = _vendPurchOrderJour.AVAEmailRecipient;
+
+        purchPurchaseOrderHeader.AVARequesterName       = HcmWorker::find(_vendPurchOrderJour.AVARequester).avaPersonName();
+        purchPurchaseOrderHeader.AVARequesterEmail      = HcmWorker::find(_vendPurchOrderJour.AVARequester).email();
+        purchPurchaseOrderHeader.AVARequesterPhone      = HcmWorker::find(_vendPurchOrderJour.AVARequester).phone() + ' ' + HcmWorker::find(_vendPurchOrderJour.AVARequester).phoneLocal();
+
+        purchPurchaseOrderHeader.AVAWPPName             = HcmWorker::find(_vendPurchOrderJour.AVAWorkerPurchPlacer).avaPersonName();
+        purchPurchaseOrderHeader.AVAWPPEmail            = HcmWorker::find(_vendPurchOrderJour.AVAWorkerPurchPlacer).email();
+        purchPurchaseOrderHeader.AVAWPPPhone            = HcmWorker::find(_vendPurchOrderJour.AVAWorkerPurchPlacer).phone() + ' ' + HcmWorker::find(_vendPurchOrderJour.AVAWorkerPurchPlacer).phoneLocal();
+
+        if (this.parmKCS_DLMReminderMode())
+        {
+            switch (this.parmKCS_DLMPurchReminderType())
+            {
+                case AVAAVMPurchReminderType::Delivery :
+                    avaFormTextType = vendPurchOrderJour.purchTable().avaDeliveryFormTextType();
+                    purchPurchaseOrderHeader.AVAReminderCount   = vendPurchOrderJour.purchTable().KCS_DLMMaxReminderCounter();
+                    break;
+                case AVAAVMPurchReminderType::Confirm  :
+                    avaFormTextType = vendPurchOrderJour.purchTable().avaConfirmFormTextType();
+                    purchPurchaseOrderHeader.AVAReminderCount   = vendPurchOrderJour.purchTable().KCS_DLMMaxReminderCounterConfirm();
+                    break;
+            }
+            
+            purchPurchaseOrderHeader.avaInitFromFormLetterRemarks(FormLetterRemarks::find(vendPurchOrderJour.purchTable().LanguageId, avaFormTextType));
+        }
+
+        return purchPurchaseOrderHeader;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeOrderLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes an order line.
+    /// </summary>
+    /// <param name = "_purchaseOrderHeader">
+    /// A <c>PurchPurchaseOrderHeader</c> record which is the order header.
+    /// </param>
+    /// <param name = "_highlightUpdated">
+    /// A Boolean describing whether an updated order line must be highlighted.
+    /// </param>
+    /// <param name = "_orderLineSelection">
+    /// A <c>PurchPurchaseOrderDPOrderLineQuerySelection</c> object which the order line should be created for.
+    /// </param>
+    /// <returns>
+    /// The initialized <c>PurchPurchaseOrderTmp</c> order line record.
+    /// </returns>
+    protected PurchPurchaseOrderTmp initializeOrderLine(
+        PurchPurchaseOrderHeader                    _purchaseOrderHeader,
+        boolean                                     _highlightUpdated,
+        PurchPurchaseOrderDPOrderLineQuerySelection _orderLineSelection)
+    {
+        #xppTexts
+        InventTable avaInventTable = _orderLineSelection.parmPurchLineAllVersions().inventTable();
+        EcoResProductTranslation avaProductTranslation = EcoResProductTranslation::findByProductLanguage(avaInventTable.Product, this.parmPurchTableAllVersions().LanguageId);
+        ExternalItemId avaExternalItemId = avaInventTable.externalItemId(ModuleInventCustVend::Vend, this.parmPurchTableAllVersions().OrderAccount);
+        CustVendExternalItem avaCustVendExternalItem = CustVendExternalItem::findExternalItemId(ModuleInventPurchSalesVendCustGroup::Vend, this.parmPurchTableAllVersions().OrderAccount,avaExternalItemId);;
+
+        PurchPurchaseOrderTmp purchPurchaseOrderTmp = next initializeOrderLine(_purchaseOrderHeader, _highlightUpdated, _orderLineSelection);
+
+        purchPurchaseOrderTmp.AVAInventLocationId   = _orderLineSelection.parmPurchLineAllVersions().inventDim().InventLocationId;
+        purchPurchaseOrderTmp.AVAPriceUnit          = _orderLineSelection.parmPurchLineAllVersions().PriceUnit;
+        purchPurchaseOrderTmp.AVAReqAttention       = _orderLineSelection.parmPurchLineAllVersions().ReqAttention;
+        purchPurchaseOrderTmp.AVAExtItemDesc        = avaCustVendExternalItem.Description;
+
+        [purchPurchaseOrderTmp.AVATotalMarkupAmount, purchPurchaseOrderTmp.AVAMarkupCodeList, purchPurchaseOrderTmp.AVAMarkupValueList] = this.avaMarkUpValues(_purchaseOrderHeader, _orderLineSelection.parmPurchLineAllVersions());
+
+        if(avaProductTranslation)
+        {
+            str avaName;
+            if(avaProductTranslation.NDXProductName1)
+            {
+                avaName = avaProductTranslation.NDXProductName1;
+            }
+            if(avaProductTranslation.NDXProductName2)
+            {
+                avaName += #newLine + avaProductTranslation.NDXProductName2;
+            }
+
+            purchPurchaseOrderTmp.Name  = avaName + #newLine + purchPurchaseOrderTmp.Name;
+        }
+
+
+        return purchPurchaseOrderTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaMarkupValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA <c>avaMarkupValues</c>
+    /// </summary>
+    /// <param name = "_purchaseOrderHeader">PurchPurchaseOrderHeader</param>
+    /// <param name = "_purchLineAllVersions">PurchLineAllVersions</param>
+    /// <returns>container</returns>
+    public container avaMarkupValues(
+        PurchPurchaseOrderHeader _purchaseOrderHeader,
+        PurchLineAllVersions _purchLineAllVersions)
+    {
+        if(_purchLineAllVersions.IsArchived)
+        {
+            return this.avaLineHistoryMarkup(_purchaseOrderHeader, _purchLineAllVersions);
+        }
+        else
+        {
+            return this.avaLineMarkup(_purchaseOrderHeader, _purchLineAllVersions);
+        }                                            
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaLineMarkup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// gets a container with relevant report charges values from MarkupTrans
+    /// </summary>
+    /// <param name = "_purchaseOrderHeader">PurchPurchaseOrderHeader</param>
+    /// <param name = "_purchLineAllVersions">PurchLineAllVersions</param>
+    /// <returns>container</returns>
+    public container avaLineMarkup(
+        PurchPurchaseOrderHeader _purchaseOrderHeader,
+        PurchLineAllVersions _purchLineAllVersions)
+    {
+        str avaMarkupCodeList, avaMarkupCodeValue;
+        MarkupAmount avaTotalMarkupAmount, avaCalcAmount;
+        MarkupTrans avaMarkupTrans;
+
+        while select avaMarkupTrans
+            where avaMarkupTrans.TransTableId == tableNum(PurchLine)
+            && avaMarkupTrans.TransRecId == _purchLineAllVersions.RecId
+        {
+            if(avaMarkupCodeList != ''
+                || avaMarkupCodeValue != '')
+            {
+                avaMarkupCodeList += '\n';
+                avaMarkupCodeValue += '\n';
+            }
+
+            avaCalcAmount = avaMarkupTrans.calcDistributionAmount(_purchLineAllVersions.PurchQty, _purchLineAllVersions.LineAmount, _purchaseOrderHeader.PurchOrderDate);
+            avaTotalMarkupAmount += avaCalcAmount;
+            avaMarkupCodeList += avaMarkupTrans.MarkupCode + ': ' + avaMarkupTrans.Txt;
+
+            if(avaMarkupTrans.MarkupCategory == MarkupCategory::Fixed)
+            {
+                avaMarkupCodeValue += strFmt('%1 %2', num2Str(avaCalcAmount, 1, 2, 2, 1), avaMarkupTrans.CurrencyCode);
+            }
+            else if(avaMarkupTrans.MarkupCategory == MarkupCategory::Percent)
+            {
+                avaMarkupCodeValue += strFmt('%1 %', num2Str(avaMarkupTrans.Value, 1, 2, 2, 1));
+            }
+            else if(avaMarkupTrans.MarkupCategory == MarkupCategory::Pcs)
+            {
+                avaMarkupCodeValue += strFmt("@NDX:NXAPOPerPiece", num2Str(avaMarkupTrans.Value, 1, 2, 2, 1), avaMarkupTrans.CurrencyCode, num2Str(this.avaGetMarkupPriceUnit(_purchLineAllVersions.ItemId, avaMarkupTrans.ModuleType), 1, 0, 2, 1));
+            }
+            else if(avaMarkupTrans.MarkupCategory == MarkupCategory::AVAMTZ)
+            {
+                //avaMarkupCodeValue += strFmt('%1 %2',  num2Str(avaCalcAmount, 1, 2, 2, 1), avaMarkupTrans.CurrencyCode);
+                avaMarkupCodeValue += strFmt("@NDX:NXAPOPerPiece", num2Str(avaMarkupTrans.Value, 1, 2, 2, 1), avaMarkupTrans.CurrencyCode, num2Str(avaMarkupTrans.AVACalcQty, 1, 0, 2, 1));
+            }
+            else
+            {
+                avaMarkupCodeValue += strFmt('%1 %2', num2Str(avaCalcAmount, 1, 2, 2, 1), avaMarkupTrans.CurrencyCode);
+            }
+
+        }
+
+        return [avaTotalMarkupAmount, avaMarkupCodeList, avaMarkupCodeValue];
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaLineHistoryMarkup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// gets a container with relevant report charges values from MarkupTransHistory
+    /// </summary>
+    /// <param name = "_purchaseOrderHeader">PurchPurchaseOrderHeader</param>
+    /// <param name = "_purchLineAllVersions">PurchLineAllVersions</param>
+    /// <returns>container</returns>
+    public container avaLineHistoryMarkup(
+        PurchPurchaseOrderHeader _purchaseOrderHeader,
+        PurchLineAllVersions _purchLineAllVersions)
+    {
+        str avaMarkupCodeList, avaMarkupCodeValue;
+        MarkupAmount avaTotalMarkupAmount, avaCalcAmount;
+        MarkupTrans avaMarkupTrans;
+        MarkupTransHistory avaMarkupTransHistory;
+        PurchLine avaPurchLine = PurchLine::findInventTransId(_purchLineAllVersions.InventTransId);
+        VersioningTimeStamp versionDateTime = _purchLineAllVersions.VersionDateTime;
+
+        Query markupTransHistoryQuery = new Query();
+        markupTransHistoryQuery.addDataSource(tableNum(MarkupTransHistory));
+        markupTransHistoryQuery.validTimeStateAsOfDateTime(versionDateTime);
+        markupTransHistoryQuery.dataSourceNo(1).addRange(fieldNum(MarkupTransHistory, TransTableId)).value(queryValue(tableNum(PurchLine)));
+        markupTransHistoryQuery.dataSourceNo(1).addRange(fieldNum(MarkupTransHistory, TransRecId)).value(queryValue(avaPurchLine.RecId));
+        
+        QueryRun avaHistoryRun = new QueryRun(markupTransHistoryQuery);
+        
+        while(avaHistoryRun.next())
+        {
+            if(avaMarkupCodeList != ''
+                || avaMarkupCodeValue != '')
+            {
+                avaMarkupCodeList += '\n';
+                avaMarkupCodeValue += '\n';
+            }
+
+            avaMarkupTransHistory = avaHistoryRun.get(tableNum(MarkupTransHistory));
+            avaMarkupTrans.initFromMarkupTransHistory(avaMarkupTransHistory);
+
+            avaCalcAmount = avaMarkupTrans.calcDistributionAmount(_purchLineAllVersions.PurchQty, _purchLineAllVersions.LineAmount, _purchaseOrderHeader.PurchOrderDate);
+            avaTotalMarkupAmount += avaCalcAmount;
+            avaMarkupCodeList += avaMarkupTrans.MarkupCode + ': ' + avaMarkupTrans.Txt;
+
+            if(avaMarkupTrans.MarkupCategory == MarkupCategory::Fixed)
+            {                                                                     
+                avaMarkupCodeValue += strFmt('%1 %2', num2Str(avaCalcAmount, 1, 2, 2, 1), avaMarkupTrans.CurrencyCode);
+            }
+            else if(avaMarkupTrans.MarkupCategory == MarkupCategory::Percent)
+            {
+                avaMarkupCodeValue += strFmt('%1 %', num2Str(avaMarkupTrans.Value, 1, 2, 2, 1));
+            }
+            else if(avaMarkupTrans.MarkupCategory == MarkupCategory::Pcs)
+            {
+                avaMarkupCodeValue += strFmt("@NDX:NXAPOPerPiece", num2Str(avaMarkupTrans.Value, 1, 2, 2, 1), avaMarkupTrans.CurrencyCode, num2Str(this.avaGetMarkupPriceUnit(_purchLineAllVersions.ItemId, avaMarkupTrans.ModuleType), 1, 0, 2, 1));
+            }
+            else if(avaMarkupTrans.MarkupCategory == MarkupCategory::AVAMTZ)
+            {
+                //avaMarkupCodeValue += strFmt('%1 %2', num2Str(avaCalcAmount, 1, 2, 2, 1), avaMarkupTrans.CurrencyCode);
+                avaMarkupCodeValue += strFmt("@NDX:NXAPOPerPiece", num2Str(avaMarkupTrans.Value, 1, 2, 2, 1), avaMarkupTrans.CurrencyCode, num2Str(avaMarkupTrans.AVACalcQty, 1, 0, 2, 1));
+            }
+            else
+            {
+                avaMarkupCodeValue += strFmt('%1 %2', num2Str(avaCalcAmount, 1, 2, 2, 1), avaMarkupTrans.CurrencyCode);
+            }
+
+            avaMarkupTrans.clear();
+        }
+
+        return [avaTotalMarkupAmount, avaMarkupCodeList, avaMarkupCodeValue];
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetMarkupPriceUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the priceUnit for an ItemId and its associated ModuleType
+    /// </summary>
+    /// <param name = "_itemId">_itemId</param>
+    /// <param name = "_moduleType">_moduleType</param>
+    /// <returns>PriceUnit</returns>
+    public PriceUnit avaGetMarkupPriceUnit(ItemId _itemId, MarkupModuleType _moduleType)
+    {
+        PriceUnit avaPriceUnit;
+        InventTable avaInventTable = InventTable::find(_itemId);
+
+        if(avaInventTable
+        && _moduleType == MarkupModuleType::Cust)
+        {
+            avaPriceUnit = avaInventTable.inventTableModuleSales().priceUnit();
+        }
+        else if(avaInventTable
+        && _moduleType == MarkupModuleType::Vend)
+        {
+            avaPriceUnit = avaInventTable.inventTableModulePurch().priceUnit();
+        }
+        else if(avaInventTable
+        && _moduleType == MarkupModuleType::Invent)
+        {
+            avaPriceUnit = avaInventTable.inventTableModuleInvent().priceUnit();
+        }
+
+        return avaPriceUnit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

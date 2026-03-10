@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVABOMDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN 2024/05/15   AVA_011126_StatusNotAllowedToAddNewBOMLine
+/// </summary>
+[ExtensionOf(tableStr(BOM))]
+final class AVABOMDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    boolean validateWrite(boolean checkCircularity)
+    {
+        KCS_KAOItemStateTable   itemStateTable;
+        NDXItemStateTable       ndxItemStateTable;
+
+        boolean ret = next validateWrite(checkCircularity);
+        if (ret)
+        {
+            itemStateTable = KCS_KAOItemStateTable::find(this.inventTable().KCS_KAOItemState);
+            if (itemStateTable.ProdBlock)
+            {
+                select firstonly ndxItemStateTable where ndxItemStateTable.RefRecId_KCS_KAO_ItemStateTable == itemStateTable.RecId;
+                ret = checkFailed(strFmt("@NDX:NXANotAllowedNewBOMLine", ndxItemStateTable.InfoItemState));
+            }
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>inventColorId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/07/11
+    /// </summary>
+    /// <returns>EcoResItemColorName</returns>
+    
+    [SysClientCacheDataMethodAttribute]
+    public display EcoResItemColorName inventColorId()
+    {
+        return this.inventDim().InventColorId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>inventSiteId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/07/11
+    /// </summary>
+    /// <returns>InventSiteId</returns>
+    
+    [SysClientCacheDataMethodAttribute]
+    public display InventSiteId inventSiteId()
+    {
+        return this.inventDim().InventSiteId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayItemType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/07/11
+    /// </summary>
+    /// <returns>Name</returns>
+    [SysClientCacheDataMethodAttribute]
+    public display Name displayItemType()
+    {
+        return enum2Str(this.inventTable().ItemType);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>vendId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 02.07.2025
+    /// </summary>
+    /// <param name = "_parentItemId">_parentItemId</param>
+    /// <param name = "_parentConfigId">_parentConfigId</param>
+    /// <param name = "_itemRouteId">_itemRouteId</param>
+    /// <param name = "_siteId">_siteId</param>
+    /// <returns>VendAccount</returns>
+    public VendAccount vendId(
+        ItemId                      _parentItemId,
+        EcoResItemConfigurationName _parentConfigId,
+        ItemRouteId                 _itemRouteId,
+        InventSiteId                _siteId
+        )
+    {
+
+        VendAccount   vendId  = next vendId(_parentItemId,_parentConfigId,_itemRouteId,_siteId);
+        Route       route = this.route(_itemRouteId);
+        RouteOpr    routeOpr;
+
+        if (route)
+            routeOpr = route.routeOpr(_parentItemId,_parentConfigId,_siteId, null);
+
+        if (routeOpr.RecId)
+        {
+            vendId = routeOpr.RouteOprMap::wrkCtrVendId();
+        }
+
+        if (! vendId)
+        {
+            vendId = this.VendId;
+        }
+
+        if (! vendId)
+        {
+            InventTable inventTable = this.inventTable();
+            vendId      = inventTable.KCS_HK2Vendor != '' ? InventTable.KCS_HK2Vendor : inventTable.primaryVendorId(this.InventDimId);
+        }
+
+        return vendId;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

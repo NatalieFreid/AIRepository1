@@ -1,0 +1,791 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxMap xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXResourcesStatisticLineMap</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class NDXResourcesStatisticLineMap extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initFromInventTable</Name>
+				<Source><![CDATA[
+    public void initFromInventTable()
+    {
+        InventTable inventTable;
+        
+        if (!this.ItemId)
+        {
+            return;
+        }
+
+        inventTable             = InventTable::find(this.ItemId);
+        this.ItemName           = inventTable.ItemName();
+        this.ItemName2          = inventTable.product().NDXProductName2();
+        this.ItemGroupId        = inventTable.itemGroupId();
+        this.UnitOfMeasureRefRecId = UnitOfMeasure::findBySymbol(InventTableModule::find(this.ItemId, ModuleInventPurchSales::Invent).UnitId).RecId;
+        this.GoodsID            = inventTable.KCS_GoodsID;
+        this.GoodsDescription   = KCS_GoodsGroup::find(this.GoodsID).KCS_GoodsDescription;
+        
+        //this.ReqSeriesID        = inventTable.KCS_ReqSeriesID;
+        this.NetWeightPerUnitId = inventTable.NetWeight / 1000;  // Artikelgewicht ist in Gramm
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>timevalueFromBDE</Name>
+				<Source><![CDATA[
+    public void timevalueFromBDE()
+    {
+        NDXResourcesStatisticBDEJour    nDX_ResourceStatisticBDE;
+        ProdRouteJob                    prodRouteJob;
+        ProdRoute                       prodRoute;
+        int                             secRef;
+        InventQty                       qty;
+        ;
+
+        prodRouteJob    = ProdRouteJob::findJobId(this.JobId);
+        prodRoute       = ProdRoute::find(this.ProdId, prodRouteJob.OprNum, prodRouteJob.OprPriority);
+        switch (this.RouteJobType)
+        {
+            case NDXRouteJobType::process  :
+                secRef  = any2int64(prodRoute.ProcessTime * 60);
+                break;
+            case NDXRouteJobType::setup    :
+                secRef  = any2int64(prodRoute.SetupTime * 60);
+                break;
+        }
+
+        // Menge der Produktion für Umrechnung ermitteln
+        if (this.ProdReportedGood)
+        {
+            qty = this.ProdReportedGood;
+        }
+        else
+        {
+            nDX_ResourceStatisticBDE = NDXResourcesStatisticBDEJour::find(NDXJournalBDE::BDE, this.SFCId);
+            qty = nDX_ResourceStatisticBDE.ProdReportedGood;
+        }
+        this.ProdQtyGoodRef = qty;
+
+        secRef       = any2int64(secRef * qty);
+        if (prodRoute.ProcessPerQty)
+        {
+            secRef   = real2int(secRef     / prodRoute.ProcessPerQty);
+        }
+        this.TimeSecRef     = secRef;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromWrkCtrTable</Name>
+				<Source><![CDATA[
+    public void initFromWrkCtrTable()
+    {
+        WrkCtrTable         wrkCtrTable;
+        
+        if (this.WrkCtrId)
+        {
+            wrkCtrTable = WrkCtrTable::find(this.WrkCtrId);
+        }
+        
+        this.Dimension_WrkCtr = wrkCtrTable.DefaultDimension;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromProdTableJour</Name>
+				<Source><![CDATA[
+    public void initFromProdTableJour(ProdTableJour prodTableJour)
+    {
+        this.ItemId = prodTableJour.ItemId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setWeight</Name>
+				<Source><![CDATA[
+    void setWeight()
+    {
+        this.NetWeight = this.NetWeightPerUnitId * this.ProdReportedGood;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setClockCycleValues</Name>
+				<Source><![CDATA[
+    public void setClockCycleValues()
+    {
+        this.OutputActual = this.ProdReportedGood + this.ProdReportedError;
+        if (this.OutputActual)
+        {
+            this.ClockCycleActual  = (this.TimeSec / this.OutputActual / 60) * 1000;
+        }
+        
+        if (this.ProdReportedGood)
+        {
+            this.ClockCycleTarget  = (this.TimeSecRef / this.ProdReportedGood / 60) * 1000;
+        }
+
+        this.ClockCycleTargetSum   = (this.ClockCycleTarget * this.OutputActual * 60) / 1000;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateProdTable</Name>
+				<Source><![CDATA[
+    public void updateProdTable(NoYes _fromBDE, ResResourceType _resourceType)
+    {
+        NDXProdTable               nDX_ProdTable;
+        
+        // nur ausführen, wenn Tabelle = NDX_ResourceStatisticLine
+        if (this.TableId != tablenum(NDXResourcesStatisticLine))
+        {
+            return;
+        }
+
+        ttsbegin;
+        nDX_ProdTable = NDXProdTable::find(this.ProdDate, this.ProdId, _resourceType, true);
+        if (!nDX_ProdTable)
+        {
+            nDX_ProdTable.ProdDate      = this.ProdDate;
+            nDX_ProdTable.ProdId        = this.ProdId;
+            nDX_ProdTable.ResResourceType  = _resourceType;
+        }
+        nDX_ProdTable.FoundInKCS_SFCFeedback    = NoYes::Yes;
+        switch (this.RouteJobType)
+        {
+            case NDXRouteJobType::Interruption:
+                nDX_ProdTable.SecDisruptionBDE      += this.TimeSec;
+                break;
+            case NDXRouteJobType::Process    :
+                nDX_ProdTable.SecProcessingBDE      += this.TimeSec;
+                break;
+            case NDXRouteJobType::Setup      :
+                nDX_ProdTable.SecSettingsBDE        += this.TimeSec;
+                break;
+            default :
+                info(strfmt('@NXD2978', this.RouteJobType));                // TransactionType [%1] wird nicht berücksichtigt!
+                break;
+        }
+
+        if (nDX_ProdTable.validateWrite())
+        {
+            nDX_ProdTable.write();
+        }
+        
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    static NDXResourcesStatisticLineMap find(ResResourceType _resourceType,
+                                         TransDate              _prodDate,
+                                         WrkCtrId               _wrkCtrId,
+                                         ProdWorker             _prodWorker,
+                                         AVAProdId              _prodId,
+                                         JmgJobId               _jobId,
+                                         AVANdxSFCId            _sfcId,
+                                         tableId                _tableId,
+                                         ProdJournalIdRoute     _journalId    = '',
+                                         LineNum                _lineNum      = 0,
+                                         boolean                _update     = false)
+    {
+        NDXResourcesStatisticLineMap   cursor;
+        HcmWorker lHCMWorker = HcmWorker::find(_prodWorker);
+
+        cursor = SysDictTable::newTableId(_tableId).makeRecord();
+        cursor.selectForUpdate(_update);
+
+        if (_resourceType == ResResourceType::Machine)
+        {
+            select      cursor
+                where   cursor.ResResourceType == _resourceType
+                    &&  cursor.ProdDate     == _prodDate
+                    &&  cursor.WrkCtrId     == _wrkCtrId
+                    &&  cursor.ProdId       == _prodId
+                    &&  cursor.JobId        == _jobId
+                    &&  cursor.SFCId        == _sfcId
+                    &&  cursor.JournalId    == _journalId
+                    &&  cursor.LineNum      == _lineNum;
+        }
+        else
+        {
+            select      cursor
+                where   cursor.ResResourceType == _resourceType
+                    &&  cursor.ProdDate     == _prodDate
+                    &&  cursor.PersonnelNumber == lHCMWorker.PersonnelNumber
+                    &&  cursor.ProdId       == _prodId
+                    &&  cursor.JobId        == _jobId
+                    &&  cursor.SFCId        == _sfcId
+                    &&  cursor.JournalId    == _journalId
+                    &&  cursor.LineNum      == _lineNum;
+        }
+
+        return cursor;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromProdJournalRoute</Name>
+				<Source><![CDATA[
+    public void initFromProdJournalRoute(ProdJournalRoute  prodJournalRoute)
+    {
+        Seconds                 secRef  = 0;
+        HcmWorker lHcmWorker = HcmWorker::find(prodJournalRoute.Worker);
+        
+        if (!this.ProdDate)
+        {
+            this.ProdDate       = prodJournalRoute.TransDate;
+            this.WrkCtrId       = prodJournalRoute.WrkCtrId;
+            this.PersonnelNumber = lHcmWorker.PersonnelNumber;
+            this.Worker         = prodJournalRoute.Worker;
+            this.ProdId         = prodJournalRoute.ProdId;
+            this.JobId          = prodJournalRoute.JobId;
+            if (!this.JobId)
+            {
+                this.JobId      = prodJournalRoute.JobId;
+            }
+            this.SFCId          = '';
+            this.JournalId      = prodJournalRoute.JournalId;
+            this.LineNum        = prodJournalRoute.LineNum;
+        }
+        switch (prodJournalRoute.JobType)
+        {
+            case RouteJobType::Setup    :
+                this.RouteJobType   = NDXRouteJobType::Setup;
+                break;
+            case RouteJobType::Process  :
+                this.RouteJobType   = NDXRouteJobType::Process;
+                break;
+        }
+        this.TimeSec            = prodJournalRoute.Hours * (60 * 60);
+        this.TimeSecRef         = this.TimeSec;
+        this.ProdReportedGood   = prodJournalRoute.QtyGood;
+        this.ProdDescription    = prodJournalRoute.OprId;
+        this.Dimension          = prodJournalRoute.DefaultDimension;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>timevalueFromProdJournalRoute</Name>
+				<Source><![CDATA[
+    public void timevalueFromProdJournalRoute(ProdJournalRoute     prodJournalRoute)
+    {
+        Seconds secRef;
+        
+        // Umrechnung auf Sekunden
+        secRef = prodJournalRoute.Hours * (60 * 60);  // Zeit wird in Stunden angegeben
+
+        this.TimeSecRef = secRef;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromProdTable</Name>
+				<Source><![CDATA[
+    public  void initFromProdTable(ProdTable prodTable)
+    {
+        this.ItemId = prodTable.ItemId;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<FieldGroups />
+	<Fields>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldDate">
+			<Name>ProdDate</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldString">
+			<Name>WrkCtrId</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldString">
+			<Name>ProdId</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldString">
+			<Name>SFCId</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldInt">
+			<Name>TimeSec</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldString">
+			<Name>ProdDescription</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldReal">
+			<Name>ProdReportedGood</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldEnum">
+			<Name>RouteJobType</Name>
+			<EnumType>NDXRouteJobType</EnumType>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldString">
+			<Name>JournalId</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldReal">
+			<Name>LineNum</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldInt">
+			<Name>TimeSecRef</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldReal">
+			<Name>ProdQtyGoodRef</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldEnum">
+			<Name>ResResourceType</Name>
+			<EnumType>ResResourceType</EnumType>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldString">
+			<Name>PersonnelNumber</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldString">
+			<Name>ItemId</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldEnum">
+			<Name>ProductionTimeType</Name>
+			<EnumType>NDXProductionTimeType</EnumType>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldInt">
+			<Name>ProdJahr</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldInt">
+			<Name>ProdMonat</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldReal">
+			<Name>ProdReportedError</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldReal">
+			<Name>ProdRepErrorOrig</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldString">
+			<Name>ItemName</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldString">
+			<Name>ItemName2</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldReal">
+			<Name>ClockCycleTargetSum</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldReal">
+			<Name>ClockCycleTarget</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldReal">
+			<Name>ClockCycleActual</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldReal">
+			<Name>OutputActual</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldInt64">
+			<Name>UnitOfMeasureRefRecId</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldString">
+			<Name>ItemGroupId</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldString">
+			<Name>GoodsId</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldString">
+			<Name>GoodsDescription</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldString">
+			<Name>ReqSeriesID</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldEnum">
+			<Name>ResourceBaseType</Name>
+			<EnumType>NDXResourceBaseType</EnumType>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldReal">
+			<Name>NetWeight</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldReal">
+			<Name>NetWeightPerUnitId</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldString">
+			<Name>JobId</Name>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldInt64">
+			<Name>Dimension</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldInt64">
+			<Name>Dimension_WrkCtr</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxMapBaseField>
+		<AxMapBaseField xmlns=""
+			i:type="AxMapFieldInt64">
+			<Name>Worker</Name>
+			<ExtendedDataType>ProdWorker</ExtendedDataType>
+		</AxMapBaseField>
+	</Fields>
+	<Mappings>
+		<AxTableMapping>
+			<MappingTable>NDXResourcesStatisticLine</MappingTable>
+			<Connections>
+				<AxTableMappingConnection>
+					<MapField>ProdDate</MapField>
+					<MapFieldTo>ProdDate</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>WrkCtrId</MapField>
+					<MapFieldTo>WrkCtrId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProdId</MapField>
+					<MapFieldTo>ProdId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>SFCId</MapField>
+					<MapFieldTo>SFCId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>TimeSec</MapField>
+					<MapFieldTo>TimeSec</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProdDescription</MapField>
+					<MapFieldTo>ProdDescription</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProdReportedGood</MapField>
+					<MapFieldTo>ProdReportedGood</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>RouteJobType</MapField>
+					<MapFieldTo>RouteJobType</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>JournalId</MapField>
+					<MapFieldTo>JournalId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>LineNum</MapField>
+					<MapFieldTo>LineNum</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>TimeSecRef</MapField>
+					<MapFieldTo>TimeSecRef</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProdQtyGoodRef</MapField>
+					<MapFieldTo>ProdQtyGoodRef</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ResResourceType</MapField>
+					<MapFieldTo>ResResourceType</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>PersonnelNumber</MapField>
+					<MapFieldTo>PersonnelNumber</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ItemId</MapField>
+					<MapFieldTo>ItemId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProductionTimeType</MapField>
+					<MapFieldTo>ProductionTimeType</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProdJahr</MapField>
+					<MapFieldTo>ProdJahr</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProdMonat</MapField>
+					<MapFieldTo>ProdMonat</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProdReportedError</MapField>
+					<MapFieldTo>ProdReportedError</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProdRepErrorOrig</MapField>
+					<MapFieldTo>ProdRepErrorOrig</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ItemName</MapField>
+					<MapFieldTo>ItemName</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ItemName2</MapField>
+					<MapFieldTo>ItemName2</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ClockCycleTargetSum</MapField>
+					<MapFieldTo>ClockCycleTargetSum</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ClockCycleTarget</MapField>
+					<MapFieldTo>ClockCycleTarget</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ClockCycleActual</MapField>
+					<MapFieldTo>ClockCycleActual</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>OutputActual</MapField>
+					<MapFieldTo>OutputActual</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>UnitOfMeasureRefRecId</MapField>
+					<MapFieldTo>UnitOfMeasureRefRecId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ItemGroupId</MapField>
+					<MapFieldTo>ItemGroupId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>GoodsId</MapField>
+					<MapFieldTo>GoodsId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>GoodsDescription</MapField>
+					<MapFieldTo>GoodsDescription</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ReqSeriesID</MapField>
+					<MapFieldTo>ReqSeriesID</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ResourceBaseType</MapField>
+					<MapFieldTo>ResourceBaseType</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>NetWeight</MapField>
+					<MapFieldTo>NetWeight</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>NetWeightPerUnitId</MapField>
+					<MapFieldTo>NetWeightPerUnitId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>JobId</MapField>
+					<MapFieldTo>JobId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>Dimension</MapField>
+					<MapFieldTo>Dimension</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>Dimension_WrkCtr</MapField>
+					<MapFieldTo>Dimension_WrkCtr</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>Worker</MapField>
+					<MapFieldTo>Worker</MapFieldTo>
+				</AxTableMappingConnection>
+			</Connections>
+		</AxTableMapping>
+		<AxTableMapping>
+			<MappingTable>NDXResourcesStatisticLine_2</MappingTable>
+			<Connections>
+				<AxTableMappingConnection>
+					<MapField>ProdDate</MapField>
+					<MapFieldTo>ProdDate</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>WrkCtrId</MapField>
+					<MapFieldTo>WrkCtrId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProdId</MapField>
+					<MapFieldTo>ProdId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>SFCId</MapField>
+					<MapFieldTo>SFCId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>TimeSec</MapField>
+					<MapFieldTo>TimeSec</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProdDescription</MapField>
+					<MapFieldTo>ProdDescription</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProdReportedGood</MapField>
+					<MapFieldTo>ProdReportedGood</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>RouteJobType</MapField>
+					<MapFieldTo>RouteJobType</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>JournalId</MapField>
+					<MapFieldTo>JournalId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>LineNum</MapField>
+					<MapFieldTo>LineNum</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>TimeSecRef</MapField>
+					<MapFieldTo>TimeSecRef</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProdQtyGoodRef</MapField>
+					<MapFieldTo>ProdQtyGoodRef</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ResResourceType</MapField>
+					<MapFieldTo>ResResourceType</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>PersonnelNumber</MapField>
+					<MapFieldTo>PersonnelNumber</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ItemId</MapField>
+					<MapFieldTo>ItemId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProductionTimeType</MapField>
+					<MapFieldTo>ProductionTimeType</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProdJahr</MapField>
+					<MapFieldTo>ProdJahr</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProdMonat</MapField>
+					<MapFieldTo>ProdMonat</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProdReportedError</MapField>
+					<MapFieldTo>ProdReportedError</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ProdRepErrorOrig</MapField>
+					<MapFieldTo>ProdRepErrorOrig</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ItemName</MapField>
+					<MapFieldTo>ItemName</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ItemName2</MapField>
+					<MapFieldTo>ItemName2</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ClockCycleTargetSum</MapField>
+					<MapFieldTo>ClockCycleTargetSum</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ClockCycleTarget</MapField>
+					<MapFieldTo>ClockCycleTarget</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ClockCycleActual</MapField>
+					<MapFieldTo>ClockCycleActual</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>OutputActual</MapField>
+					<MapFieldTo>OutputActual</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>UnitOfMeasureRefRecId</MapField>
+					<MapFieldTo>UnitOfMeasureRefRecId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ItemGroupId</MapField>
+					<MapFieldTo>ItemGroupId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>GoodsId</MapField>
+					<MapFieldTo>GoodsId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>GoodsDescription</MapField>
+					<MapFieldTo>GoodsDescription</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ReqSeriesID</MapField>
+					<MapFieldTo>ReqSeriesID</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>ResourceBaseType</MapField>
+					<MapFieldTo>ResourceBaseType</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>NetWeight</MapField>
+					<MapFieldTo>NetWeight</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>NetWeightPerUnitId</MapField>
+					<MapFieldTo>NetWeightPerUnitId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>JobId</MapField>
+					<MapFieldTo>JobId</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>Dimension</MapField>
+					<MapFieldTo>Dimension</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>Dimension_WrkCtr</MapField>
+					<MapFieldTo>Dimension_WrkCtr</MapFieldTo>
+				</AxTableMappingConnection>
+				<AxTableMappingConnection>
+					<MapField>Worker</MapField>
+					<MapFieldTo>Worker</MapFieldTo>
+				</AxTableMappingConnection>
+			</Connections>
+		</AxTableMapping>
+	</Mappings>
+</AxMap>

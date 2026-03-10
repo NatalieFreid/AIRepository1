@@ -1,0 +1,430 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVARUMUnitOfMeasureConversionTbl_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(tableStr(UnitOfMeasureConversion))]
+final class AVARUMUnitOfMeasureConversionTbl_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes default unit of measure conversion values.
+    /// </summary>
+    public void initValue()
+    {
+        next initValue();
+
+        this.AVARUMUnitOrder = 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unitMap</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Builds a map of all units of measure, mapping their RecId to their Symbol.
+    /// </summary>
+    /// <returns>
+    ///     A map where the key is the RecId (Int64) of the unit and the value is the Symbol (String).
+    /// </returns>
+    static Map unitMap()
+    {
+        Map uomMap = new Map(Types::Int64, Types::String);
+        UnitOfMeasure uom;
+
+        while select RecId, Symbol from uom
+        {
+            uomMap.insert(uom.RecId, uom.Symbol);
+        }
+
+        return uomMap;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getUnitConversion_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Retrieves the unit conversion information for a given item, product dimension, sales quantity, and units.
+    /// </summary>
+    /// <param name="_itemId">The item ID for which the conversion is required.</param>
+    /// <param name="_productInventDimId">The product dimension ID (InventDimId).</param>
+    /// <param name="_salesUnit">The sales unit of measure symbol.</param>
+    /// <param name="_salesQty">The sales quantity to be converted.</param>
+    /// <param name="_priceUnitId">The price unit of measure symbol.</param>
+    /// <returns>
+    /// An <c>AVARUMUnitConversionItem</c> object containing the conversion factor and conversion text.
+    /// </returns>
+    /// <remarks>
+    /// Throws an error if the item or product is not found, or if the unit is not defined in the unit sequence group.
+    /// The conversion text describes the conversion steps and the factor is the total conversion factor.
+    /// </remarks>
+    internal static AVARUMUnitConversionItem getUnitConversion_AVA(ItemId _itemId, InventDimId _productInventDimId, UnitOfMeasureSymbol _salesUnit, SalesQty _salesQty, AVARUMPriceUnitId _priceUnitId)
+    {
+        AVARUMUnitConversionItem conversionItem;
+        InventDimCombination inventDimComb;
+        InventTable inventTable;
+        RefRecId productRecId;
+        EcoResDistinctProductVariant productVariant;
+        AVARUMUnitOfMeasureConversionText convertText;
+        UnitOfMeasureConversionFactor priceFactor;
+        UnitOfMeasureConversion uomConversion;
+        UnitOfMeasureSymbol productDefaultUnit;
+        RefRecId salestUnitRefRecId;
+        AVARUMUnitOrder salesUnitOrder;
+        SalesQty qtyFrom;
+        UnitOfMeasureConversionFactor salesQtyFactor;
+        UnitOfMeasureConversionFactor qtyFactor;
+        List convertTextList;
+        InventDim locInventDim;
+        EcoResProduct ecoResProduct;
+
+        conversionItem = AVARUMUnitConversionItem::default();
+        locInventDim = InventDim::find(_productInventDimId);    
+    
+        if (locInventDim.configId != '')  
+        {
+            inventDimComb = InventDimCombination::findByInventDim(_itemId, locInventDim);
+            productRecId = inventDimComb.DistinctProductVariant;
+            inventTable = InventTable::find(inventDimComb.ItemId);
+        }
+        else
+        {
+            inventTable = InventTable::find(_itemId);
+            productRecId = inventTable.Product;
+        }
+
+        if (!inventTable || !productRecId)
+        {
+            throw Global::error(strFmt("@AVARUM:ItemNotFoundForProduct", _itemId));
+        }
+
+        ecoResProduct = EcoResProduct::find(productRecId);
+
+        /// Unit conversions are only relevant for products of type Item. 
+        /// For other product types, return the default conversion item with factor 1 and empty text.
+        if (ecoResProduct.ProductType != EcoResProductType::Item)
+        {
+            return conversionItem;
+        }
+
+        productVariant = EcoResDistinctProductVariant::find(productRecId);
+        productDefaultUnit = inventTable.salesUnitId();
+        salestUnitRefRecId = UnitOfMeasure::findBySymbol(_salesUnit).RecId;
+        
+        select firstonly AVARUMUnitOrder, Factor from uomConversion
+            where uomConversion.Product == productRecId &&
+                uomConversion.FromUnitOfMeasure == salestUnitRefRecId &&
+                uomConversion.AVARUMUnitOrder > 0;
+
+        if (!uomConversion)
+        {
+            throw Global::error(strFmt("@AVARUM:UnitConversionNoOrderForProductDefined", _salesUnit, productVariant.DisplayProductNumber));
+        }
+         
+        convertTextList = new List(Types::String);
+        qtyFrom = _salesQty;
+        qtyFactor = 1;
+        salesQtyFactor = 1;
+        salesUnitOrder = uomConversion.AVARUMUnitOrder;
+        uomConversion = null;
+
+        /// Example conversion steps:
+        /// 50 St a 0,5 kg = 25 kg
+        /// 50 Karton a 12 St = 600 St a 0,5 kg = 300 kg
+        /// 50 Pal a 80 Karton = 4.000 Karton a 12 St = 48.000 St a 0,5 kg = 24.000 kg
+        while select uomConversion
+            order by
+                uomConversion.AVARUMUnitOrder desc
+            where uomConversion.Product == productRecId &&
+                uomConversion.AVARUMUnitOrder > 0 &&
+                uomConversion.AVARUMUnitOrder <= salesUnitOrder
+        {
+            var fromUnitSymbol = UnitOfMeasure::find(uomConversion.FromUnitOfMeasure).Symbol;
+            var toUnitSymbol = UnitOfMeasure::find(uomConversion.ToUnitOfMeasure).Symbol;
+
+            var txt = strfmt
+            (
+                "@AVARUM:UnitOfMeasureConversionTextPattern",
+                Global::real2Str(qtyFrom),
+                fromUnitSymbol,
+                Global::real2Str(uomConversion.Factor),
+                toUnitSymbol
+            );
+              
+            convertTextList.addEnd(txt);
+
+            qtyFrom = qtyFrom * uomConversion.Factor;
+            qtyFactor = qtyFactor * uomConversion.Factor;
+
+            /// Capture the sales quantity factor when reaching the price unit.
+            if (toUnitSymbol == _priceUnitId)
+            {
+                salesQtyFactor = qtyFactor;
+            }
+        }
+           
+        /// Build the conversion text only if there are conversion steps.
+        if (convertTextList.elements() > 0)
+        {
+            /// Finally, add the conversion for the product's default unit.
+            /// Last qtyFrom value is the converted quantity to the product default unit.
+            convertTextList.addEnd(strFmt("@AVARUM:UnitOfMeasureConversionTextPatternBaseUnit", qtyFrom, productDefaultUnit));
+
+            var le = convertTextList.getEnumerator();
+            convertText = '';
+
+            while (le.moveNext())
+            {
+                convertText += convertText ? ' = ' : '';
+                convertText += any2str(le.current());
+            }
+        }
+
+        conversionItem = AVARUMUnitConversionItem::construct(salesQtyFactor, convertText);
+
+        return conversionItem;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>changeOrder_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Changes the order of the unit of measure conversion up or down.
+    /// </summary>
+    /// <param name = "_isUp">Indicates whether to move the order up (true) or down (false).</param>
+    /// <param name = "_remove">Indicates whether the order is being removed. If true, the current record will be set to zero and other records will be adjusted accordingly.</param>
+    public void changeOrder_AVA(boolean _isUp, boolean _remove = false)
+    {
+        UnitOfMeasureConversion uomConversion;
+        QueryBuildDataSource qbds;
+        Query query;
+        QueryRun queryRun;
+        boolean found;
+
+        if (!_remove)
+        {
+            query = new Query();
+            qbds = query.addDataSource(tableNum(UnitOfMeasureConversion));
+            qbds.update(true);
+            qbds.addOrderByField(fieldNum(UnitOfMeasureConversion, AVARUMUnitOrder), SortOrder::Ascending);
+            qbds.addRange(fieldNum(UnitOfMeasureConversion, Product)).value(Global::queryValue(this.Product));
+        
+            if (_isUp)
+            {
+                qbds.addRange(fieldNum(UnitOfMeasureConversion, AVARUMUnitOrder)).value(Global::queryValue(this.AVARUMUnitOrder - 1 <= 0 ? -1 : this.AVARUMUnitOrder + 1));
+            }
+            else
+            {
+                qbds.addRange(fieldNum(UnitOfMeasureConversion, AVARUMUnitOrder)).value(Global::queryValue(this.AVARUMUnitOrder - 1 <= 0 ? -1 : this.AVARUMUnitOrder - 1));
+            }
+
+            queryRun = new QueryRun(query);
+              
+            try
+            {
+                ttsbegin;
+
+               
+                    /// Special case: If moving up and current order is 1, set any existing order 2 to 1 first.
+                    if (_isUp && this.AVARUMUnitOrder == 1)
+                    {
+                        while select forUpdate uomConversion
+                            order by uomConversion.AVARUMUnitOrder
+                            where uomConversion.Product == this.Product &&
+                                uomConversion.AVARUMUnitOrder == 2
+                        {
+                            uomConversion.AVARUMUnitOrder = 1;
+                            uomConversion.update();
+                            found = true;
+                        }
+                    }
+
+                    while (queryRun.next())
+                    {
+                        uomConversion = queryRun.get(tableNum(UnitOfMeasureConversion));
+                        found = true;
+
+                        if (_isUp)
+                        {
+                            uomConversion.AVARUMUnitOrder -= 1;
+                        }
+                        else
+                        {
+                            uomConversion.AVARUMUnitOrder += 1;
+                        }
+
+                        uomConversion.update();
+                    }
+                
+                    uomConversion = null;
+
+                if (_isUp)
+                {
+                    /// If moving up from zero, adjust all other records.
+                    if (this.AVARUMUnitOrder == 0)
+                    {
+                        /// Adjust all other records' order accordingly.
+                        while select forUpdate uomConversion
+                            order by uomConversion.AVARUMUnitOrder
+                            where uomConversion.Product == this.Product &&
+                                uomConversion.AVARUMUnitOrder > 0
+                        {
+                            uomConversion.AVARUMUnitOrder += 1;
+                            uomConversion.update();
+                        }
+
+                        /// If moving up from zero, set to 1.
+                        this.AVARUMUnitOrder = 1;
+                    }
+
+                    if (found)
+                    {
+                        this.AVARUMUnitOrder += 1;
+                    }
+                }
+                else
+                {
+                    if (found)
+                    {
+                        this.AVARUMUnitOrder -= 1;
+                    }
+                    else
+                    {
+                        /// Adjust all other records' order accordingly.
+                        while select forUpdate uomConversion
+                            order by uomConversion.AVARUMUnitOrder
+                            where uomConversion.Product == this.Product &&
+                                uomConversion.AVARUMUnitOrder > 0 &&
+                                uomConversion.AVARUMUnitOrder != this.AVARUMUnitOrder
+                        {
+                            uomConversion.AVARUMUnitOrder -= 1;
+                            uomConversion.update();
+                        }
+
+                        // If no lower order found, set to zero.
+                        this.AVARUMUnitOrder = 0;
+                    }
+                }
+
+                ttscommit; 
+            }
+            catch
+            {
+                throw Global::error("@AVARUM:UnitOfMeasureConversionChangeOrderError");
+            }
+        }
+        else
+        {
+            /// On remove, adjust all higher order records accordingly.
+            while select forUpdate uomConversion
+                order by uomConversion.AVARUMUnitOrder
+                where uomConversion.Product == this.Product &&
+                    uomConversion.AVARUMUnitOrder > 0 &&
+                    uomConversion.AVARUMUnitOrder > this.AVARUMUnitOrder
+            {
+                uomConversion.AVARUMUnitOrder -= 1;
+                uomConversion.update();
+            }
+
+            // If no lower order found, set to zero.
+            this.AVARUMUnitOrder = 0;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>removeOrder_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Removes all order values for the product's unit of measure conversions.
+    /// </summary>
+    public void removeOrder_AVA()
+    {
+        UnitOfMeasureConversion uomConversion;
+
+        try
+        {
+            ttsbegin;
+      
+            /// Adjust all other records' order accordingly.
+            while select forUpdate uomConversion
+            order by uomConversion.AVARUMUnitOrder
+                where uomConversion.Product == this.Product &&
+                    uomConversion.AVARUMUnitOrder > 0
+            {
+                uomConversion.AVARUMUnitOrder  = 0;
+                uomConversion.update();
+            }
+
+            ttscommit;
+        }
+        catch
+        {
+            throw Global::error("@AVARUM:UnitOfMeasureConversionRemoveOrderError");
+        }       
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMaxUnitOrder_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the maximum unit order for a product.
+    /// </summary>
+    /// <param name = "_productRecId">The product RecId.</param>
+    /// <returns>The maximum AVARUMUnitOrder value.</returns>
+    public static AVARUMUnitOrder getMaxUnitOrder_AVA(RefRecId _productRecId)
+    {
+        UnitOfMeasureConversion uomConversion;
+        AVARUMUnitOrder maxOrder = 0;
+     
+        select firstonly maxof(AVARUMUnitOrder) from uomConversion
+            where uomConversion.Product == _productRecId &&
+                uomConversion.AVARUMUnitOrder > 0;
+        
+        maxOrder = uomConversion.AVARUMUnitOrder;
+
+        return maxOrder;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMinUnitOrder_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the minimum unit order for a product.
+    /// </summary>
+    /// <param name = "_productRecId">The product RecId.</param>
+    /// <returns>The minimum AVARUMUnitOrder value.</returns>
+    public static AVARUMUnitOrder getMinUnitOrder_AVA(RefRecId _productRecId)
+    {
+        UnitOfMeasureConversion uomConversion;
+        AVARUMUnitOrder minOrder = 0;
+     
+        select firstonly minof(AVARUMUnitOrder) from uomConversion
+            where uomConversion.Product == _productRecId &&
+                uomConversion.AVARUMUnitOrder > 0;
+        
+        minOrder = uomConversion.AVARUMUnitOrder;
+
+        return minOrder;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

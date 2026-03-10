@@ -1,0 +1,877 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAListZ5ACreate</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// This class is currently undocumented!
+/// </summary>
+class AVAListZ5ACreate extends RunBase
+{
+    PerDate                   perDate;
+    AVAListZ5AInclOwnCountry inclOwnCountry;
+
+    AVAListZ5ADispatchId     listZ5ADispatchId;
+    NumberSeq                num;
+    PostingProfile           postingProfileCust;
+    PostingProfile           postingProfilePrePaymentCust;
+    PostingProfile           postingProfileVend;
+    PostingProfile           postingProfilePrePaymentVend;
+
+    DialogField              dlgPerDate;
+    DialogField              dlgInclOwnCountry;
+    AddressCountryRegionId   ownCountryRegionId;
+
+    #define.CurrentVersion(1)
+    #define.Version1(1)
+    #localmacro.CurrentList
+        perDate,
+        inclOwnCountry
+    #endmacro
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createSumLine</Name>
+				<Source><![CDATA[
+    private void createSumLine(AVAListZ5AType _type)
+    {
+        AVAListZ5AData z5aLines;
+        AVAListZ5AData z5aLineSum1;
+        AVAListZ5AData z5aLineSum2;
+        AVAListZ5AData z5aLineSum3;
+        #define.EUR('EUR')
+        ;
+        ttsBegin;
+        while select
+            sum(PayablesDeposits),
+            sum(PayablesMoreThanOneYear),
+            sum(PayablesTillOneYear),
+            sum(ReceivableDeposits),
+            sum(ReceivableMoreThanOneYear),
+            sum(ReceivableTillOneYear)
+        from z5aLines
+            group by z5aLines.CurrencyCode
+            where z5aLines.Type         == _type
+            &&    z5aLines.DispatchId   == listZ5ADispatchId
+        {
+            z5aLineSum1.DispatchId                  = listZ5ADispatchId;
+            z5aLineSum1.Status                      = AVAListZ5AStatus::New;
+            z5aLineSum1.Type                        = _type;
+            z5aLineSum1.SeqNum                      = AVAListZ5AData::maxSeqNumDispatchType(listZ5ADispatchId, _type) + 1;
+            z5aLineSum1.PosType                     = AVAListZ5APosType::Sum;
+            z5aLineSum1.CountryRegionName           = "@SYS13865";
+            z5aLineSum1.PayablesDeposits           += z5aLines.PayablesDeposits;
+            z5aLineSum1.PayablesMoreThanOneYear    += z5aLines.PayablesMoreThanOneYear;
+            z5aLineSum1.PayablesTillOneYear        += z5aLines.PayablesTillOneYear;
+            z5aLineSum1.ReceivableDeposits         += z5aLines.ReceivableDeposits;
+            z5aLineSum1.ReceivableMoreThanOneYear  += z5aLines.ReceivableMoreThanOneYear;
+            z5aLineSum1.ReceivableTillOneYear      += z5aLines.ReceivableTillOneYear;
+
+            if(z5aLines.CurrencyCode == #EUR)
+            {
+                z5aLineSum2.DispatchId                  = listZ5ADispatchId;
+                z5aLineSum2.Status                      = AVAListZ5AStatus::New;
+                z5aLineSum2.Type                        = _type;
+                z5aLineSum2.SeqNum                      = AVAListZ5AData::maxSeqNumDispatchType(listZ5ADispatchId, _type) + 2;
+                z5aLineSum2.PosType                     = AVAListZ5APosType::Sum;
+                z5aLineSum2.CountryRegionName           = "@NDX:AVAZ5AInEUR";
+                z5aLineSum2.CurrencyCode                = 'EUR';
+                z5aLineSum2.PayablesDeposits           += z5aLines.PayablesDeposits;
+                z5aLineSum2.PayablesMoreThanOneYear    += z5aLines.PayablesMoreThanOneYear;
+                z5aLineSum2.PayablesTillOneYear        += z5aLines.PayablesTillOneYear;
+                z5aLineSum2.ReceivableDeposits         += z5aLines.ReceivableDeposits;
+                z5aLineSum2.ReceivableMoreThanOneYear  += z5aLines.ReceivableMoreThanOneYear;
+                z5aLineSum2.ReceivableTillOneYear      += z5aLines.ReceivableTillOneYear;
+            }
+    
+            if(z5aLines.CurrencyCode != #EUR)
+            {
+                z5aLineSum3.DispatchId                  = listZ5ADispatchId;
+                z5aLineSum3.Status                      = AVAListZ5AStatus::New;
+                z5aLineSum3.Type                        = _type;
+                z5aLineSum3.SeqNum                      = AVAListZ5AData::maxSeqNumDispatchType(listZ5ADispatchId, _type) + 3;
+                z5aLineSum3.PosType                     = AVAListZ5APosType::Sum;
+                z5aLineSum3.CountryRegionName           = "@NDX:AVAZ5AOthCurrency";
+                z5aLineSum3.PayablesDeposits           += z5aLines.PayablesDeposits;
+                z5aLineSum3.PayablesMoreThanOneYear    += z5aLines.PayablesMoreThanOneYear;
+                z5aLineSum3.PayablesTillOneYear        += z5aLines.PayablesTillOneYear;
+                z5aLineSum3.ReceivableDeposits         += z5aLines.ReceivableDeposits;
+                z5aLineSum3.ReceivableMoreThanOneYear  += z5aLines.ReceivableMoreThanOneYear;
+                z5aLineSum3.ReceivableTillOneYear      += z5aLines.ReceivableTillOneYear;
+            }
+        }
+    
+        if( z5aLineSum1.PayablesDeposits           != 0
+        ||  z5aLineSum1.PayablesMoreThanOneYear    != 0
+        ||  z5aLineSum1.PayablesTillOneYear        != 0
+        ||  z5aLineSum1.ReceivableDeposits         != 0
+        ||  z5aLineSum1.ReceivableMoreThanOneYear  != 0
+        ||  z5aLineSum1.ReceivableTillOneYear      != 0)
+        {
+            z5aLineSum1.TransDate=PerDate;
+            z5aLineSum1.insert();
+        }
+    
+        if( z5aLineSum2.PayablesDeposits           != 0
+        ||  z5aLineSum2.PayablesMoreThanOneYear    != 0
+        ||  z5aLineSum2.PayablesTillOneYear        != 0
+        ||  z5aLineSum2.ReceivableDeposits         != 0
+        ||  z5aLineSum2.ReceivableMoreThanOneYear  != 0
+        ||  z5aLineSum2.ReceivableTillOneYear      != 0)
+        {
+            z5aLineSum2.TransDate=PerDate;
+            z5aLineSum2.insert();
+        }
+    
+        if( z5aLineSum3.PayablesDeposits           != 0
+        ||  z5aLineSum3.PayablesMoreThanOneYear    != 0
+        ||  z5aLineSum3.PayablesTillOneYear        != 0
+        ||  z5aLineSum3.ReceivableDeposits         != 0
+        ||  z5aLineSum3.ReceivableMoreThanOneYear  != 0
+        ||  z5aLineSum3.ReceivableTillOneYear      != 0)
+        {
+            z5aLineSum3.TransDate=PerDate;
+            z5aLineSum3.insert();
+        }
+        ttsCommit;
+        z5aLineSum1.clear();
+        z5aLineSum2.clear();
+        z5aLineSum3.clear();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createSumLines</Name>
+				<Source><![CDATA[
+    private void createSumLines()
+    {
+        this.createSumLine(AVAListZ5AType::Misc);
+    
+        this.createSumLine(AVAListZ5AType::ParticipantOnReporter);
+    
+        this.createSumLine(AVAListZ5AType::SharedParticipantOnCustVend);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteOldValues</Name>
+				<Source><![CDATA[
+    private void deleteOldValues()
+    {
+        AVAListZ5AData listZ5AData;
+    
+        delete_from listZ5AData
+            where listZ5AData.Status==AVAListZ5AStatus::New;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteZeroLines</Name>
+				<Source><![CDATA[
+    private void deleteZeroLines()
+    {
+        AVAListZ5AData listZ5AData;
+
+        ttsBegin;
+        /*while select listZ5AData
+            where listZ5AData.DispatchId                 == listZ5ADispatchId
+            &&    listZ5AData.PosType                    == AVAListZ5APosType::Position
+            &&    listZ5AData.PayablesDeposits           == 0
+            &&    listZ5AData.PayablesMoreThanOneYear    == 0
+            &&    listZ5AData.PayablesTillOneYear        == 0
+            &&    listZ5AData.ReceivableDeposits         == 0
+            &&    listZ5AData.ReceivableMoreThanOneYear  == 0
+            &&    listZ5AData.ReceivableTillOneYear      == 0
+        {
+            listZ5AData.delete();
+        }*/
+        delete_from listZ5AData where listZ5AData.DispatchId == listZ5ADispatchId
+            &&    listZ5AData.PosType                    == AVAListZ5APosType::Position
+            &&    listZ5AData.PayablesDeposits           == 0
+            &&    listZ5AData.PayablesMoreThanOneYear    == 0
+            &&    listZ5AData.PayablesTillOneYear        == 0
+            &&    listZ5AData.ReceivableDeposits         == 0
+            &&    listZ5AData.ReceivableMoreThanOneYear  == 0
+            &&    listZ5AData.ReceivableTillOneYear      == 0;
+
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVAZ5A
+    /// </summary>
+    /// <returns>dialog object</returns>
+    public Object dialog()
+    {
+        DialogRunbase dialog = super();
+        #resAppl
+        
+        dlgPerDate = dialog.addFieldValue(extendedTypeStr(PerDate), perDate);
+        dlgInclOwnCountry = dialog.addFieldValue(extendedTypeStr(AVAListZ5AInclOwnCountry), inclOwnCountry);
+    
+        return dialog;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFromDialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  AVAZ5A
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean getFromDialog()
+    {
+        perDate = dlgPerDate.value();
+        inclOwnCountry = dlgInclOwnCountry.value();
+    
+        return super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isOwnCountry</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVAZ5A
+    /// </summary>
+    /// <param name = "_country">AddressCountryRegionId</param>
+    /// <returns>boolean</returns>
+    protected boolean isOwnCountry(AddressCountryRegionId _country)
+    {
+        CompanyInfo companyInfo;
+        LogisticsPostalAddress LogisticsPostalAddress;
+    
+        if (!ownCountryRegionId)
+        {
+            companyInfo=companyInfo::find();
+            LogisticsPostalAddress=companyInfo.postalAddress();
+            ownCountryRegionId=LogisticsPostalAddress.CountryRegionId;
+        }
+
+        if (ownCountryRegionId==_country)
+        {
+            return true;
+        }
+    
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVAZ5A
+    /// </summary>
+    /// <returns>container</returns>
+    public container pack()
+    {
+        return [#CurrentVersion,#CurrentList];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findProjInvoiceJourFromCustTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// findProjInvoiceJourFromCustTrans
+    /// </summary>
+    /// <param name = "_custTrans">_custTrans</param>
+    /// <returns>ProjInvoiceJour</returns>
+    public ProjInvoiceJour findProjInvoiceJourFromCustTrans(CustTrans _custTrans)
+    {
+        ProjInvoiceJour projInvoiceJour;
+        select * from projInvoiceJour where projInvoiceJour.LedgerVoucher  == _custTrans.Voucher
+                                        &&  projInvoiceJour.InvoiceAccount == _custTrans.AccountNum
+                                        &&  ProjInvoiceJour.InvoiceDate    == _custTrans.Transdate;
+
+        return projInvoiceJour;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processCustTransOpen</Name>
+				<Source><![CDATA[
+    private void processCustTransOpen()
+    {
+        Query                                   queryCust           = new Query(queryStr(AVACustTransOpenPerDate));
+        QueryRun                                qrCustZ5A;
+        CustTable                               custTable;
+        CustTrans                               custTrans;
+        CustTransDetails                        custTransDetails;
+    
+        LogisticsAddressCountryRegionId         countryRegionId;
+        LogisticsAddressCountryRegionISOCode    countryRegionISOCode;
+        AmountCur                               amountCurOpen;
+        AmountMST                               amountMSTOpen;
+        AVAListZ5AData                          listZ5AData;
+        ListSeqNum                              seqNum;
+        AVAListZ5AType                          type;
+        AVAListZ5AData                          listZ5AUpdate;
+        CurrencyCode                            currencyCode;
+        boolean                                 ignore;
+        ProjInvoiceJour                         projInvoiceJour;
+        CustInvoiceJour                         custInvoiceJour;
+        AVAListZ5ADataDetails                   listZ5ADataDetails;
+        
+        SysQuery::findOrCreateRange(queryCust.dataSourceTable(tableNum(CustTable)), fieldNum(CustTable, AVAListZ5AType)).value(SysQuery::valueNot(AVAListZ5AType::IgnoreInReporting));
+        qrCustZ5A                       = new QueryRun(queryCust);
+    
+        custTransDetails                = new CustTransDetails(custTrans, perDate);
+        seqNum                          = AVAListZ5AData::maxAllSeqNum();
+        postingProfileCust              = CustParameters::find().PostingProfile;
+        postingProfilePrePaymentCust    = CustParameters::find().PrepaymentPostingProfile;
+    
+        while (qrCustZ5A.next())
+        {
+            listZ5ADataDetails.clear();
+            listZ5ADataDetails.initValue();
+
+            if (qrCustZ5A.changed(tablenum(CustTable)))
+            {
+                custTable               = qrCustZ5A.get(tablenum(CustTable));
+                countryRegionId         = custTable.countryRegionId();
+                countryRegionISOCode    = LogisticsAddressCountryRegion::find(countryRegionId).ISOcode;
+                if (!countryRegionId)
+                {
+                    warning(strFmt("@NDX:AVAZ5AErrorWrongCust", custTable.AccountNum));
+                }
+            }
+    
+            custTrans = qrCustZ5A.get(tablenum(CustTrans));
+            ignore=false;
+
+            if (this.isOwnCountry(custTable.postalAddress().CountryRegionId) && !inclOwnCountry)
+            {
+                ignore=true;
+            }
+
+            if (custTrans.TransDate <= perDate   &&
+               (custTrans.Closed   == dateNull() ||
+                custTrans.Closed   > perDate)
+                && !ignore)
+            {
+                custinvoiceJour = custTrans.custInvoiceJour_RU();
+                projInvoiceJour = this.findProjInvoiceJourFromCustTrans(custtrans);
+                TransDate invoiceDate = custTrans.TransDate;
+                TransDate dueDate     = custTrans.DueDate;
+                   
+                /*
+                if(custinvoiceJour.RecId)
+                {
+                    if(custinvoiceJour.DueDate)
+                    {
+                        dueDate = custinvoiceJour.DueDate;
+                    }
+                        
+                    if(custinvoiceJour.DocumentDate)
+                    {
+                        invoiceDate = custinvoiceJour.DocumentDate;
+                    }
+                    else
+                    {
+                        invoiceDate = custinvoiceJour.InvoiceDate;
+                    }
+                }
+                else
+                {
+                    if(projInvoiceJour.RecId)
+                    {
+                        if(projInvoiceJour.DueDate)
+                        {
+                            dueDate = projInvoiceJour.DueDate;
+                        }
+                            
+                        invoiceDate = projInvoiceJour.InvoiceDate;
+                    }
+                }
+*/
+
+                if(!dueDate)
+                {
+                    dueDate = perDate;
+                }
+
+                boolean longterm = (dueDate - invoiceDate) >= 365;
+                
+                currencyCode  = custTrans.CurrencyCode;
+                custTransDetails.setCustVendTrans(custTrans);
+                custTransDetails.setTransDate(perDate);
+                [amountCurOpen, amountMSTOpen] = custTransDetails.amountCurMSTSettled();
+                amountCurOpen = custTrans.AmountCur - amountCurOpen;
+                amountMSTOpen = custTrans.AmountMST - amountMSTOpen;
+    
+    
+                custTransDetails.setCustVendTrans(custTrans);
+                custTransDetails.setTransDate(dateMax());
+    
+                type = custTable.AVAListZ5AType;
+    
+                listZ5AData  = AVAListZ5AData::findActiveLine(listZ5ADispatchId, AVAListZ5AStatus::New, type, countryRegionId, currencyCode, true);
+
+                ttsBegin;
+                seqNum                             += 10;
+    
+                listZ5AData.DispatchId              = listZ5ADispatchId;
+                listZ5AData.Status                  = AVAListZ5AStatus::New;
+                listZ5AData.Type                    = type;
+                listZ5AData.SeqNum                  = seqNum;
+                listZ5AData.PosType                 = AVAListZ5APosType::Position;
+                listZ5AData.CountryRegionId         = countryRegionId;
+                listZ5AData.CountryRegionISOCode    = countryRegionISOCode;
+                listZ5AData.CountryRegionName       = listZ5AData.displayCountryRegionName();
+                listZ5AData.CurrencyCode            = currencyCode;
+                listZ5AData.TransDate               = PerDate;
+    
+                switch(custTrans.PostingProfile)
+                {
+                    case postingProfileCust:
+                        //AKonto
+                        if(projInvoiceJour.ProjInvoiceType == ProjInvoiceType::OnAccount)
+                        {
+                            listZ5AData.ReceivableDeposits          += amountMSTOpen;
+                            listZ5ADataDetails.ReceivableDeposits   += amountMSTOpen;
+                        }
+                        else
+                        {
+                            if(longterm)
+                            {
+                                listZ5AData.ReceivableMoreThanOneYear           += amountMSTOpen;
+                                listZ5ADataDetails.ReceivableMoreThanOneYear    += amountMSTOpen;
+                            }
+                            else
+                            {
+                                listZ5AData.ReceivableTillOneYear           += amountMSTOpen;
+                                listZ5ADataDetails.ReceivableTillOneYear    += amountMSTOpen;
+                            }
+                        }
+                        break;
+                    //AKonto
+                    case postingProfilePrePaymentCust:
+                        listZ5AData.ReceivableDeposits          += amountMSTOpen;
+                        listZ5ADataDetails.ReceivableDeposits   += amountMSTOpen;
+                        break;
+                }
+
+                if(listZ5AData.RecId)
+                {
+                    //listZ5AUpdate.update();
+                    listZ5AData.update();
+                }
+                else
+                {
+                    listZ5AData.insert();
+                }
+
+                listZ5ADataDetails.initFromAVAListZ5AData(listZ5AData);
+                listZ5ADataDetails.initFromCustTrans(custTrans);
+                listZ5ADataDetails.insert();
+
+                ttsCommit;
+
+                listZ5AData.clear();
+                listZ5AUpdate.clear();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processVendTransOpen</Name>
+				<Source><![CDATA[
+    private void processVendTransOpen()
+    {
+        Query                                   queryVend = new Query(queryStr(AVAVendTransOpenPerDate));
+        QueryRun                                qrVendZ5A;
+        VendTable                               vendTable;
+        VendTrans                               vendTrans;
+        CustVendTransDetails                    vendTransDetails;
+    
+        LogisticsAddressCountryRegionId         countryRegionId;
+        LogisticsAddressCountryRegionISOCode    countryRegionISOCode;
+        AmountCur                               amountCurOpen;
+        AmountMST                               amountMSTOpen;
+        AVAListZ5AData                          listZ5AData;
+        ListSeqNum                              seqNum;
+        AVAListZ5AType                          type;
+        AVAListZ5AData                          listZ5AUpdate;
+        CurrencyCode                            currencyCode;
+        boolean                                 ignore;
+        AVAListZ5ADataDetails                  listZ5ADataDetails;
+
+        SysQuery::findOrCreateRange(queryVend.dataSourceTable(tableNum(VendTable)), fieldNum(VendTable, AVAListZ5AType)).value(SysQuery::valueNot(AVAListZ5AType::IgnoreInReporting));
+        qrVendZ5A                       = new QueryRun(queryVend);
+    
+        vendTransDetails                = new CustVendTransDetails(vendTrans, perDate);
+        seqNum                          = AVAListZ5AData::maxAllSeqNum();
+        postingProfileVend              = VendParameters::find().PostingProfile;
+        postingProfilePrePaymentVend    = VendParameters::find().PrepaymentPostingProfile;
+    
+        while (qrVendZ5A.next())
+        {
+            listZ5ADataDetails.clear();
+            listZ5ADataDetails.initValue();
+
+            if (qrVendZ5A.changed(tablenum(VendTable)))
+            {
+                vendTable               = qrVendZ5A.get(tablenum(VendTable));
+                countryRegionId         = vendTable.countryRegionId();
+                countryRegionISOCode    = LogisticsAddressCountryRegion::find(countryRegionId).ISOcode;
+                if (!countryRegionId)
+                {
+                    warning(strFmt("@NDX:AVAZ5AErrorWrongVend", vendTable.AccountNum));
+                }
+            }
+            vendTrans = qrVendZ5A.get(tablenum(VendTrans));
+    
+            ignore=false;
+            if (this.isOwnCountry(vendTable.postalAddress().CountryRegionId) && !inclOwnCountry)
+            {
+                ignore=true;
+            }
+    
+            if (vendTrans.TransDate <= perDate   &&
+               (vendTrans.Closed   == dateNull() ||
+                vendTrans.Closed   > perDate)
+                && !ignore)
+            {
+                TransDate dueDate     = vendTrans.DueDate;
+                TransDate invoiceDate = vendTrans.TransDate;
+
+                //vendInvoiceJour vendInvoiceJour = vendTrans.vendInvoiceJour();
+                //if(vendInvoiceJour.RecId)
+                //{
+                //    if(vendInvoiceJour.DueDate)
+                //    {
+                //        dueDate = vendInvoiceJour.DueDate;
+                //    }
+                //    if(vendInvoiceJour.DocumentDate)
+                //    {
+                //        invoiceDate = vendInvoiceJour.DocumentDate;
+                //    }
+                //    else
+                //    {
+                //        invoiceDate = vendInvoiceJour.InvoiceDate;
+                //    }
+                //}
+
+                if(!dueDate)
+                {
+                    dueDate = perDate;
+                }
+
+                boolean longterm = (dueDate - invoiceDate) >= 365;
+
+                currencyCode                    = vendTrans.CurrencyCode;
+                vendTransDetails.setCustVendTrans(vendTrans);
+                vendTransDetails.setTransDate(perDate);
+                [amountCurOpen, amountMSTOpen]  = vendTransDetails.amountCurMSTSettled();
+                amountCurOpen                   = vendTrans.AmountCur - amountCurOpen;
+                amountMSTOpen                   = vendTrans.AmountMST - amountMSTOpen;
+
+                vendTransDetails.setCustVendTrans(vendTrans);
+                vendTransDetails.setTransDate(dateMax());
+    
+                type                            = vendTable.AVAListZ5AType;
+    
+                listZ5AData = AVAListZ5AData::findActiveLine(listZ5ADispatchId, AVAListZ5AStatus::New, type, countryRegionId, currencyCode);
+
+                ttsBegin;
+                seqNum                             += 10;
+    
+                listZ5AData.DispatchId              = listZ5ADispatchId;
+                listZ5AData.Status                  = AVAListZ5AStatus::New;
+                listZ5AData.Type                    = type;
+                listZ5AData.SeqNum                  = seqNum;
+                listZ5AData.PosType                 = AVAListZ5APosType::Position;
+                listZ5AData.CountryRegionId         = countryRegionId;
+                listZ5AData.CountryRegionISOCode    = countryRegionISOCode;
+                listZ5AData.CountryRegionName       = listZ5AData.displayCountryRegionName();
+                listZ5AData.CurrencyCode            = currencyCode;
+                listZ5AData.TransDate               = PerDate;
+    
+                switch(vendTrans.PostingProfile)
+                {
+                    case postingProfileVend:
+
+                        if(longterm)
+                        {
+                            listZ5AData.PayablesMoreThanOneYear         -= amountMSTOpen;
+                            listZ5ADataDetails.PayablesMoreThanOneYear  -= amountMSTOpen;
+                        }
+                        else
+                        {
+                            listZ5AData.PayablesTillOneYear          -= amountMSTOpen;
+                            listZ5ADataDetails.PayablesTillOneYear   -= amountMSTOpen;
+                        }
+                        break;
+                    case postingProfilePrePaymentVend:
+                        listZ5AData.PayablesDeposits          -= amountMSTOpen;
+                        listZ5ADataDetails.PayablesDeposits   -= amountMSTOpen;
+                        break;
+                }
+    
+                if(listZ5AData.RecId)
+                {
+                    listZ5AData.selectForUpdate(true);
+                    listZ5AData.update();
+                }
+                else
+                {
+                    listZ5AData.insert();
+                }
+
+                listZ5ADataDetails.initFromAVAListZ5AData(listZ5AData);
+                listZ5ADataDetails.initFromVendTrans(vendTrans);
+                listZ5ADataDetails.insert();
+
+                ttsCommit;
+
+                listZ5AData.clear();
+                listZ5AUpdate.clear();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method is currently undocumented!
+    /// </summary>
+    public void run()
+    {
+        #OCCRetryCount
+        if (! this.validate())
+        {
+            throw error(Global::strMin());
+        }
+    
+        try
+        {
+            ttsbegin;
+    
+            //num                 = NumberSeq::newGetNum(IntrastatParameters::numRefListDispatchId(),true);
+            num                 = NumberSeq::newGetNum(IntrastatParameters::AVAnumRefList5ADispatchId(), true);
+    
+            listZ5ADispatchId   = num.num();
+    
+            this.deleteOldValues();
+    
+            this.processCustTransOpen();
+    
+            this.processVendTransOpen();
+    
+            this.updateCreditAmount();
+    
+            this.createSumLines();
+    
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVAZ5A
+    /// </summary>
+    /// <param name = "packedClass">container</param>
+    /// <returns>boolean</returns>
+    public boolean unpack(container packedClass)
+    {
+        Version version = RunBase::getVersion(packedClass);
+    
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version,#CurrentList] = packedClass;
+                break;
+            default:
+                return false;
+        }
+    
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCreditAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method is currently undocumented!
+    /// </summary>
+    void updateCreditAmount()
+    {
+        AVAListZ5AData z5aLines;
+    
+        while select forUpdate z5ALines
+            where z5aLines.DispatchId == listZ5ADispatchId
+               && (z5aLines.ReceivableDeposits < 0
+               ||  z5aLines.ReceivableMoreThanOneYear < 0
+               ||  z5aLines.ReceivableTillOneYear < 0
+               ||  z5aLines.PayablesDeposits < 0
+               ||  z5aLines.PayablesMoreThanOneYear < 0
+               ||  z5aLines.PayablesTillOneYear < 0)
+        {
+            ttsBegin;
+            if (z5aLines.ReceivableDeposits < 0)
+            {
+                z5aLines.PayablesDeposits += -z5aLines.ReceivableDeposits;
+                z5aLines.ReceivableDeposits = 0;
+            }
+            if (z5aLines.ReceivableMoreThanOneYear < 0)
+            {
+                z5aLines.PayablesMoreThanOneYear += -z5aLines.ReceivableMoreThanOneYear;
+                z5aLines.ReceivableMoreThanOneYear = 0;
+            }
+            if (z5aLines.ReceivableTillOneYear < 0)
+            {
+                z5aLines.PayablesTillOneYear += -z5aLines.ReceivableTillOneYear;
+                z5aLines.ReceivableTillOneYear = 0;
+            }
+            if (z5aLines.PayablesDeposits < 0)
+            {
+                z5aLines.ReceivableDeposits += -z5aLines.PayablesDeposits;
+                z5aLines.PayablesDeposits = 0;
+            }
+            if (z5aLines.PayablesMoreThanOneYear < 0)
+            {
+                z5aLines.ReceivableMoreThanOneYear += -z5aLines.PayablesMoreThanOneYear;
+                z5aLines.PayablesMoreThanOneYear = 0;
+            }
+            if (z5aLines.PayablesTillOneYear < 0 )
+            {
+                z5aLines.ReceivableTillOneYear += - z5aLines.PayablesTillOneYear;
+                z5aLines.PayablesTillOneYear = 0;
+            }
+            z5aLines.update();
+            ttsCommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVAZ5A
+    /// </summary>
+    /// <returns>AVAListZ5ACreate</returns>
+    static AVAListZ5ACreate construct()
+    {
+        return new AVAListZ5ACreate();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVAZ5A
+    /// </summary>
+    /// <returns>str</returns>
+    static ClassDescription description()
+    {
+        return "@NDX:AVAZ5ADispatch";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVAZ5A
+    /// </summary>
+    /// <param name = "_args">args</param>
+    static void main(Args _args)
+    {
+        #Task
+        AVAListZ5ACreate   AVAListZ5ACreate;
+        FormRun             formRun;
+        Object              obj;
+        ;
+        AVAListZ5ACreate = AVAListZ5ACreate::construct();
+    
+        if (AVAListZ5ACreate.prompt())
+        {
+            //AVAListZ5ACreate.run();
+            AVAListZ5ACreate.runOperation();
+        }
+    
+        if(_args)
+        {
+            formRun = _args.caller();
+            if(formRun)
+            {
+                obj=formRun;
+                if(formRun.name() == formStr(AVAListZ5AData))
+                {
+                    obj.AVARefresh();
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    protected boolean canRunInNewSession()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

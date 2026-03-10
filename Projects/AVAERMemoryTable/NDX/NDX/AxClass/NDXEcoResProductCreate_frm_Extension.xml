@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXEcoResProductCreate_frm_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 03.05.21
+/// PBI: 3530
+/// </summary>
+[ExtensionOf(formStr(EcoResProductCreate))]
+public final class NDXEcoResProductCreate_frm_Extension
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>onProductNumberChanged</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 03.05.21
+    /// on change of the product number, set the product searchName
+    /// </summary>
+    /// <param name = "_identification">EcoResProductIdentificationData</param>
+    /// <param name = "_productNumber">EcoResProductNumber</param>
+    protected void onProductNumberChanged(EcoResProductIdentificationData _identification, EcoResProductNumber _productNumber)
+    {
+        EcoResProductNumber productNumber = _identification.parmProductNumber();
+        productNumber = NDXItemIdHandler::constructFromDataAreaId().checkItemId(productNumber, "@NDX:NDXCheckItemIdAttachedMessage1");
+
+        _identification.companySpecificData().parmItemId(productNumber);
+        next onProductNumberChanged(_identification, _productNumber);
+
+        if (!this.applyingTemplate())
+        {
+            EcoResProductCrossTableManager::defaultProductSearchName(this as EcoResIProductCrossTableData);
+            NDXModelNumber nDXModelNumber_ = NDXModelNumberHandler::construct().nDXModelNumberFromProductNumber(_productNumber);
+            _identification.companySpecificData().parmNDXModelNumber(nDXModelNumber_);
+            NDXItemIdentification_NDXModelNumber.text(nDXModelNumber_);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>releaseProductToCompany</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 09.08.23
+    /// save NDXModelNumber to inventTable
+    /// </summary>
+    protected void releaseProductToCompany()
+    {
+        next releaseProductToCompany();
+        if (this.productData().identification().isReleasedProduct())
+        {
+            NDXModelNumber nDXModelNumber = this.productData().identification().companySpecificData().parmNDXModelNumber();
+            InventTable inventTable = InventTable::findByProduct(createdEcoResProduct.RecId, true);
+            if (inventTable.RecId > 0 && inventTable.NDXModelNumber != nDXModelNumber)
+            {
+                ttsbegin;
+                inventTable.NDXModelNumber = nDXModelNumber;
+                inventTable.update();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 26.05.21
+    /// </summary>
+    public void init()
+    {
+        next init();
+        Identification_Name.visible(false);
+        this.setPerCompanyControlsVisibleNDX();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setPerCompanyControlsVisibleNDX</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 26.05.21
+    /// </summary>
+    public void setPerCompanyControlsVisibleNDX()
+    {
+        NDXModelNumber.visible(this.productData().identification().isReleasedProduct());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>onItemIdChanged</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 26.05.21
+    /// set Modellnumber
+    /// </summary>
+    /// <param name = "_identification">EcoResProductIdentificationData</param>
+    /// <param name = "_itemId">ItemId</param>
+    protected void onItemIdChanged(EcoResProductIdentificationData _identification, ItemId _itemId)
+    {
+        if (!NDXDataAreaType::ConstructFromDataAreaId().isChecked())
+        {
+            NDXDataAreaType::MessageItemIdPrefixSettingMissing();
+        }
+        next onItemIdChanged(_identification, _itemId);
+        NDXModelNumber nDXModelNumber_ = NDXModelNumberHandler::construct().nDXModelNumberFromItemId(_itemId);
+        _identification.companySpecificData().parmNDXModelNumber(nDXModelNumber_);
+        NDXItemIdentification_NDXModelNumber.text(nDXModelNumber_);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.05.21
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean validateWrite()
+    {
+        boolean ret = next validateWrite();
+        if (ret)
+        {
+            ret = NDXDataAreaType::ConstructFromDataAreaId().isChecked();
+            if (!ret)
+            {
+                error("@NDX:NDXItemIdPrefixSettingIsMissing");
+            }
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createData2Controls</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 26.08.21
+    /// add Identification_nDXProductName1, Identification_nDXProductName2 to data2Controls
+    /// </summary>
+    protected void createData2Controls()
+    {
+        next createData2Controls();
+        data2Controls = conIns(data2Controls,
+                                   conLen(data2Controls) + 1,
+                                   [tableStr(EcoResProductTranslation), [[fieldNum(EcoResProductTranslation, NDXProductName1), formControlStr(EcoResProductCreate, Identification_nDXProductName1)]]]);
+        data2Controls = conIns(data2Controls,
+                                   conLen(data2Controls) + 1,
+                                   [tableStr(EcoResProductTranslation), [[fieldNum(EcoResProductTranslation, NDXProductName2), formControlStr(EcoResProductCreate, Identification_nDXProductName2)]]]);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>write</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 26.08.21
+    /// save NDXProductName1, NDXProductName2
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean write()
+    {
+        boolean retVal;
+
+        this.productData().identification().parmNDXProductName1(Identification_nDXProductName1.Text());
+        this.productData().identification().parmNDXProductName2(Identification_nDXProductName2.Text());
+
+        if (Identification_Name.Text() == '')
+        {
+            this.productData().identification().parmProductName(this.productData().identification().parmNDXProductName1());
+        }
+        retVal = next write();
+
+        EcoResProductTranslation ecoResProductTranslation = EcoResProductTranslation::NDXfindByProductOrSystemLanguage(createdEcoResProduct.RecId,
+            SystemParameters::getSystemLanguageId(),
+            fieldNum(EcoResProductTranslation, Name));
+        if (ecoResProductTranslation)
+        {
+            if (ecoResProductTranslation.NDXProductName1 != this.productData().identification().parmNDXProductName1() ||
+                ecoResProductTranslation.NDXProductName2 != this.productData().identification().parmNDXProductName2())
+            {
+                ttsbegin;
+                ecoResProductTranslation.NDXProductName1 = this.productData().identification().parmNDXProductName1();
+                ecoResProductTranslation.NDXProductName2 = this.productData().identification().parmNDXProductName2();
+                if (ecoResProductTranslation.validateWrite())
+                {
+                    ecoResProductTranslation.write();
+                }
+                ttscommit;
+            }
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

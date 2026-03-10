@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesFormLetterParmData_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(classStr(SalesFormLetterParmData))]
+internal final class AVASalesFormLetterParmData_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createParmUpdate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>Common</returns>
+    protected Common createParmUpdate()
+    {
+        SalesParmUpdate  locSalesParmUpdate;
+       
+        locSalesParmUpdate = next createParmUpdate();
+        //locSalesParmUpdate.AVAEDITransfer = NoYes::Yes;
+        locSalesParmUpdate.AVASendEmail     = NoYes::Yes;
+
+        return locSalesParmUpdate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initParmTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 30.04.2024
+    /// </summary>
+    /// <param name = "_salesTable">_salesTable</param>
+    /// <param name = "_salesLine">_salesLine</param>
+    /// <param name = "_tableRefId">_tableRefId</param>
+    /// <param name = "_postingProfile">_postingProfile</param>
+    /// <param name = "_inventProfileType">_inventProfileType</param>
+    /// <param name = "_inventOwnerId">_inventOwnerId</param>
+    /// <param name = "_mcrPackingBoxName">_mcrPackingBoxName</param>
+    /// <returns></returns>
+    protected SalesParmTable initParmTable(SalesTable           _salesTable,
+                                           Common               _salesLine,
+                                           TradeLineRefId       _tableRefId,
+                                           CustPostingProfile   _postingProfile,
+                                           InventProfileType_RU _inventProfileType,
+                                           InventOwnerId_RU     _inventOwnerId,
+                                           MCRPackingBoxName    _mcrPackingBoxName)
+    {
+        SalesParmTable   salesParmTable  = next initParmTable(_salesTable,_salesLine,_tableRefId,_postingProfile,_inventProfileType,_inventOwnerId,_mcrPackingBoxName);
+        SalesParmUpdate  salesParmUpdate = this.parmParmUpdate();
+
+        date                endOfLastMonthDate;
+        TransDate           lastPackingSlipDate;
+        CustPackingSlipJour custPackingSlipJour;
+
+        if(salesParmUpdate.AVAInvoiceBackdatingDays > 0 && dayofmth(systemdateget()) <= salesParmUpdate.AVAInvoiceBackdatingDays)
+        {
+            endOfLastMonthDate =Str2DateDMY(strfmt("01.%1.%2",mthofyr(salesParmTable.Transdate),year(salesParmTable.transDate)));
+            endOfLastMonthDate -= 1;
+
+            if(_salesTable.AVARepPckSlipNum && _salesTable.AVARepPckSlipDate)
+            {
+                lastPackingSlipDate = _salesTable.AVARepPckSlipDate;
+            }
+            else
+            {
+                lastPackingSlipDate = _salesTable.lastPackingSlipDate();
+                if(lastPackingSlipDate == dateNull())
+                {
+                    lastPackingSlipDate = salesParmTable.Transdate;
+                }
+            }
+
+            if(mthofyr(lastPackingSlipDate) == mthofyr(endOfLastMonthDate))
+            {
+                salesParmTable.Transdate = endOfLastMonthDate;
+            }
+        } 
+        salesParmUpdate.reread();
+        salesParmUpdate.selectForUpdate(true);
+        salesParmUpdate.AVAEDITransfer = AVAMSQProcessingQueue::findExportFromProcessTOSWithoutPatam(AVAMSQOutIntProcesses::AVAEDISalesInvoiceOut,CustVendACType::Cust,_salesTable.CustAccount) ? NoYes::Yes  : NoYes::No;
+        
+        ttsbegin;
+        salesParmUpdate.doUpdate();
+        ttscommit;
+        this.parmParmUpdate(salesParmUpdate);
+        return salesParmTable;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

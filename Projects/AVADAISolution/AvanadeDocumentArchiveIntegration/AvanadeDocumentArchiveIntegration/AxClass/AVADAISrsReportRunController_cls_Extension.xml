@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADAISrsReportRunController_cls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using Microsoft.Dynamics.ApplicationPlatform.SSRSReportRuntime.Instrumentation;
+using Microsoft.Dynamics.AX.Framework.Reporting.Shared;
+
+/// <summary>
+/// Extension of SrsReportRunController.
+/// </summary>
+
+[extensionOf(classStr(SrsReportRunController))]
+final class AVADAISrsReportRunController_cls_Extension
+{
+    private AVADAIReportService     daiService;
+    #SRSFramework
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>reportViewerRefreshComplete</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// On screen PDF + export data.
+    /// </summary>
+    /// <param name = "_executionInfo">The execution info.</param>
+    /// <param name = "_reportContract">The report contract.</param>
+    public void reportViewerRefreshComplete(SRSReportExecutionInfo _executionInfo, SrsReportDataContract _reportContract)
+    {
+        //Microsoft.Dynamics.AX.Framework.Reporting.Shared.ReportingService.ParameterValue[]  parameterValueArray;
+        Object            srsProxy;
+        Map               reportParametersMap;
+        AVADAIExecutionId executionId;
+        boolean           export2Archive;
+        
+        next reportViewerRefreshComplete(_executionInfo, _reportContract);
+
+        if(isConfigurationkeyEnabled(configurationKeyNum(AVADAI)))
+        {
+            // If archive required print to archive after rendering is done.
+            if (_executionInfo.parmIsSuccessful())
+            {
+
+                if(this.parmActivityId())
+                {
+                    InstrumentationHelper::SetExternalActivityId(this.parmActivityId());
+                }
+
+                if (this.AVADAIisArchiveReport())
+                {
+                    SrsReportRunService service = new SrsReportRunService();
+                    setPrefix("@AVADAI:AVADAIShort");
+   
+                    try
+                    {
+                        // verify if this actually prints a file
+                        _reportContract.parmPrintSettings().printMediumType(SRSPrintMediumType::File);
+                        _reportContract.parmPrintSettings().fileFormat(SRSReportFileFormat::PDF);						                          
+                        _reportContract.parmPrintSettings().fileName(daiService.getReportSetup().ReportFilePrefix + _executionInfo.parmExecutionId() + '.' + daiService.getReportSetup().ReportFileExt);
+    
+                        reportParametersMap = service.createParamMapFromContract(_reportContract);
+                        //parameterValueArray = SrsReportRunUtil::getParameterValueArray(reportParametersMap);
+            
+					    // This code path should not happen since getReportDataContract() will set the report config.
+                        if (!_reportContract.parmReportServerConfig())
+                        {
+                            _reportContract.parmReportServerConfig(SRSConfiguration::getDefaultServerConfiguration());
+                        }
+
+                        srsProxy = SRSProxy::constructWithConfiguration(_reportContract.parmReportServerConfig());
+                        srsProxy.AVADAIparmCalledRVRefreshComplete(true);
+                        //export to PDF
+                        //srsProxy.renderReportToByteArray(_reportContract.parmReportPath(), parameterValueArray, SRSReportFileFormat::PDF, _reportContract.parmPrintSettings().deviceInfo(), '');
+                        srsProxy.renderReportToByteArray(_reportContract.parmReportPath(), SrsReportRunUtil::getParameterValueArray(reportParametersMap), SRSReportFileFormat::PDF, _reportContract.parmPrintSettings().deviceInfo(), '');
+                        
+                        srsProxy.AVADAIparmCalledRVRefreshComplete(false);
+
+                        executionId = (srsProxy.parmReportExecutionInfo()) ? srsProxy.parmReportExecutionInfo().parmExecutionId() : '';
+                    }
+                    catch
+                    {
+                        warning(strfmt("@AVADAI:ErrorReportGeneration", daiService.getReportSetup().ReportFileExt,daiService.getReportSetup().Report));
+                    }           
+                }
+
+                //export data
+                if (executionId && this.AVADAIReportService().isDAIEnabled() && this.AVADAIReportService().isDAIMetadataExport())
+                {
+                    export2Archive = AVADAIReportExportRunContoller::construct(this, daiService, executionId).exportReport();
+                    if(!export2Archive)
+                    {
+                        // delete PDF and protocol entry if it was created
+                        AVADAIReportExportTable::deleteTempExportTable(executionId);
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVADAIisArchiveReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  Export to PDF.
+    /// </summary>
+    /// <returns>true/false</returns>
+    protected boolean AVADAIisArchiveReport()
+    {
+        if(isConfigurationkeyEnabled(configurationKeyNum(AVADAI)))
+        {
+            if (!daiService)
+            {
+                this.AVADAIReportService();
+            }
+        }
+
+        return daiService.isDAIEnabled() && daiService.isDAIReportExport() && daiService.isDAIReport();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVADAIERReportService</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns export info for Electronic reporting.
+    /// </summary>
+    /// <param name = "_reportPath">The report path.</param>
+    /// <returns>A new <c>AVAERDAIReportService</c> object.</returns>
+    [SuppressBPWarning('BPErrorLabelIsText', 'It was Microsoft who defined the Macro with double quotes which now causes the error, not us')]
+    public AVADAIReportService AVADAIERReportService(str _reportPath = this.parmReportName())
+    {
+        AVADAIReportName        report;
+        AVADAIReportDesign      design;
+        
+        if(isConfigurationkeyEnabled(configurationKeyNum(AVADAI)))
+        {
+            // Always reinitalize, otherwise ignoreArchive won't be properly filled with each new printed document when it has been already cleared
+            //if (!daiService)
+            {
+                daiService = AVADAIReportService::construct();
+                [report, design] = [_reportPath,'Report'];
+                daiService.parmReport(report, design);
+            }
+        }
+
+        return daiService;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVADAIReportService</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns export info.
+    /// </summary>
+    /// <param name = "_reportPath">The report path.</param>
+    /// <returns>A new <c>AVADAIReportService</c> object.</returns>
+    [SuppressBPWarning('BPErrorLabelIsText', 'It was Microsoft who defined the Macro with double quotes which now causes the error, not us')]
+    protected AVADAIReportService AVADAIReportService(str _reportPath = this.parmReportName())
+    {
+        AVADAIReportName        report;
+        AVADAIReportDesign      design;
+        
+        if(isConfigurationkeyEnabled(configurationKeyNum(AVADAI)))
+        {
+            if (!daiService)
+            {
+
+                daiService = AVADAIReportService::construct();
+
+                [report, design] = SrsReportRunUtil::getReportAndDesignName(_reportPath);
+            
+                report = strReplace(report, '/' + #ReportFolder + '/', '');
+
+                daiService.parmReport(report, design);
+            }
+        }
+
+        return daiService;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// extension of runReport export data.
+    /// </summary>
+    public void runReport()
+    {
+        boolean export2Archive;
+
+        next runReport();
+
+        if(isConfigurationkeyEnabled(configurationKeyNum(AVADAI)))
+        {
+            //export
+            if (this.AVADAIReportService().isDAIEnabled() && this.AVADAIReportService().isDAIMetadataExport() && this.parmReportContract().parmPrintSettings().printMediumType() != SRSPrintMediumType::Screen)
+            {
+                //SRSReportExecutionInfo executionInfo = this.parmReportContract().parmReportExecutionInfo();
+                Object executionInfo = this.parmReportContract().parmReportExecutionInfo();
+
+                if (executionInfo)
+                {
+                    //export data
+                    export2Archive = AVADAIReportExportRunContoller::construct(this, daiService, executionInfo.parmExecutionId()).exportReport();
+                    if(!export2Archive)
+                    {
+                        // delete PDF and protocol entry if it was created
+                        AVADAIReportExportTable::deleteTempExportTable(executionInfo.parmExecutionId());
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>resetDaiService</Name>
+				<Source><![CDATA[
+    public void resetDaiService()
+    {
+        daiService = null;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

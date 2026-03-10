@@ -1,0 +1,724 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADirPartyQuickCreateFormFrm_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>AVADirPartyQuickCreateFormFrm_Extension</c> class is the extension for <c>DirPartyQuickCreateForm</c>
+/// </summary>
+[ExtensionOf(FormStr(DirPartyQuickCreateForm))]
+final class AVADirPartyQuickCreateFormFrm_Extension
+{
+
+    
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>setElectronicAddressLocation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>setElectronicAddressLocation</c> method.
+    /// </summary>
+    public void setElectronicAddressLocation()
+    {
+        DirPartyLocation        partyLocation;
+        LogisticsLocationRecId  locationRecId;
+
+        select firstonly partyLocation 
+        where   partyLocation.Party             == DirPartyTable.RecId
+            &&  partyLocation.IsPostalAddress   == false;
+
+        locationRecId = partyLocation.Location;
+
+        next setElectronicAddressLocation();
+
+        if (AVALogisticsElectronicAddressMobile.Locator)
+        {
+            AVALogisticsElectronicAddressMobile.Location = locationRecId;
+        }
+
+        if (AVALogisticsElectronicAddressURL.Locator)
+        {
+            AVALogisticsElectronicAddressURL.Location = locationRecId;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetPhonePrefix</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets Phone and Fax prefix according to country region Id
+    /// </summary>
+    public void avaSetPhonePrefix()
+    {
+        FormBuildDataSource locfbds = this.form().dataSource(1);
+        LogisticsAddressCountryRegion avaCountryRegion;
+
+        switch(locfbds.table())
+        {
+            case tableNum(ContactPerson):
+                ContactPerson avaContactPerson = DirPartyEntity as ContactPerson;
+                avaCountryRegion = LogisticsAddressCountryRegion::find(DirParty::primaryPostalAddress(avaContactPerson.ContactForParty).CountryRegionId);
+        
+                //DirPartyTable_DirOrganization.
+                if ( LogisticsElectronicAddressBusinessPhone.Locator == '')
+                {
+                    LogisticsElectronicAddressBusinessPhone.Locator = avaCountryRegion.AVAPhonePrefix;
+                }
+                if (LogisticsElectronicAddressFax.Locator == '')
+                {
+                    LogisticsElectronicAddressFax.Locator = avaCountryRegion.AVAPhonePrefix;
+                }
+                if (AVALogisticsElectronicAddressMobile.Locator == '')
+                {
+                    AVALogisticsElectronicAddressMobile.Locator = avaCountryRegion.AVAPhonePrefix;
+                }
+                break;
+
+            case tableNum(smmBusRelTable):
+                avaCountryRegion = LogisticsAddressCountryRegion::find(logisticsPostalAddress.CountryRegionId);
+        
+                //DirPartyTable_DirOrganization.
+                LogisticsElectronicAddressBusinessPhone.Locator = avaCountryRegion.AVAPhonePrefix;
+                LogisticsElectronicAddressFax.Locator = avaCountryRegion.AVAPhonePrefix;
+                AVALogisticsElectronicAddressMobile.Locator = avaCountryRegion.AVAPhonePrefix;
+                break;
+
+            default:
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateControlBasedOnCountry</Name>
+				<Source><![CDATA[
+    public void updateControlBasedOnCountry()
+    {
+        next updateControlBasedOnCountry();
+
+        this.avaSetPhonePrefix();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refreshAddresses</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>refreshAddresses</c> method.
+    /// </summary>
+    public void refreshAddresses()
+    {
+        DirPartyLocation            primaryDirPartyLocation;
+        LogisticsLocation           primaryLogisticsLocation;
+        LogisticsElectronicAddress  primaryLogisticElectronicAddress;
+
+        next refreshAddresses();
+
+        //get and set primary postal address if available
+        primaryDirPartyLocation     = DirPartyLocation::findPrimaryPartyLocation(dirPartyTable.RecId);
+        primaryLogisticsLocation    = LogisticsLocation::find(primaryDirPartyLocation.Location);
+
+        //get and set primary URL electronic address if available
+        select  primaryLogisticElectronicAddress
+        where   primaryLogisticElectronicAddress.RecId == DirPartyTable.PrimaryContactURL;
+
+        AVALogisticsElectronicAddressURL.data(primaryLogisticElectronicAddress);
+        AVALogisticsElectronicAddressURL_DS.setCurrent();
+        if(     primaryDirPartyLocation.RecId
+            &&  primaryLogisticsLocation.RecId
+            &&  primaryLogisticElectronicAddress.RecId)
+        {
+            AVALogisticsElectronicAddressURL_DS.allowEdit(false);
+        }
+        else
+        {
+            AVALogisticsElectronicAddressURL_DS.initValue();
+            AVALogisticsElectronicAddressURL_DS.allowEdit(true);
+        }
+                
+        //get and set primary URL electronic address if available
+        select  primaryLogisticElectronicAddress
+        where   primaryLogisticElectronicAddress.RecId == DirPartyTable.AVAgetLogisticsElectronicAddress(   LogisticsElectronicAddressMethodType::Phone,
+                                                                                                            false,  //_isPrivate
+                                                                                                            true,   //_isPrimary
+                                                                                                            true    //_isMobilePhone
+                                                                                                            ).RecId;
+
+        AVALogisticsElectronicAddressMobile.data(primaryLogisticElectronicAddress);
+        AVALogisticsElectronicAddressMobile_DS.setCurrent();
+        if(     primaryDirPartyLocation.RecId
+            &&  primaryLogisticsLocation.RecId
+            &&  primaryLogisticElectronicAddress.RecId)
+        {
+            AVALogisticsElectronicAddressMobile_DS.allowEdit(false);
+        }
+        else
+        {
+            AVALogisticsElectronicAddressMobile_DS.initValue();
+            AVALogisticsElectronicAddressMobile_DS.allowEdit(true);
+        }
+                
+        this.refreshUI();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>init</c> method.
+    /// </summary>
+    public void init()
+    {
+        FormBuildDataSource locfbds;
+
+        locfbds = this.form().dataSource(1);
+
+        next init();
+
+        DirPartyTable_DirOrganization_NumberOfEmployees.allowEdit(true);
+        DirPartyTable_DirOrganization_NumberOfEmployees.enabled(true);
+
+        if(locfbds.table() == tableNum(ContactPerson))
+        {
+            DirPartyEntity_DS.object(fieldNum(ContactPerson, AVAContactPersonJobTitle)).visible(true);
+            DirPartyEntity_DS.object(fieldNum(ContactPerson, Title)).visible(false);
+            DirPartyEntity_DS.object(fieldNum(ContactPerson, Profession)).visible(false);
+            DirPartyEntity_DS.refresh();
+
+            this.design().controlName(formcontrolstr(DirPartyQuickCreateForm, PostalAddressTabPage)).visible(false);
+            AVALogisticsElectronicAddressMobile_Locator.visible(true);
+            AVALogisticsElectronicAddressURL_Locator.visible(false);
+
+            Name_FirstName.mandatory(false);
+            DirPartyTable_DirPerson_DS.object(fieldNum(DirPerson,PersonalTitle)).mandatory(true);
+            DirPartyTable_DirPerson_DS.object(fieldNum(DirPerson,ProfessionalTitle)).visible(false);
+        }
+        else
+        {
+            this.design().controlName(formcontrolstr(DirPartyQuickCreateForm, PostalAddressTabPage)).visible(true);
+            AVALogisticsElectronicAddressMobile_Locator.visible(false);
+            AVALogisticsElectronicAddressURL_Locator.visible(true);
+
+            LogisticsElectronicAddressBP_Locator.mandatory(true);
+            LogisticsPostalAddress_Street.mandatory(true);
+            LogisticsPostalAddress_ZipCode.mandatory(true);
+            LogisticsPostalAddress_City.mandatory(true);
+            LogisticsPostalAddress_CountryRegionId.mandatory(true);
+
+            AVALogisticsElectronicAddressMobile_ds.allowedit(false);
+            AVALogisticsElectronicAddressMobile_ds.allowCreate(false);
+        }
+
+        DirPersonName_ds.object(fieldNum(DirPersonName,LastNamePrefix)).mandatory(false);
+
+        if(locfbds.table() == tableNum(smmBusRelTable))
+        {
+            AddressBooks.visible(false);
+        }
+
+      
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refreshUI</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>refreshUI</c> method.
+    /// </summary>
+    public void refreshUI()
+    {
+        FormBuildDataSource locfbds;
+        DirPartyType        partyType;
+        boolean             isPerson;
+
+        locfbds = this.form().dataSource(1);
+        
+        partyType   = dirPartyTable.type();
+        isPerson    = (partyType == DirPartyType::Person);
+        
+        next refreshUI();
+
+        // Person
+        AVADirPartyTable_DirPersonGroup.visible(isPerson);
+
+        // Organization
+        DirPartyTable_DirOrganization_NumberOfEmployees.visible(!isPerson);
+        AVADirPartyTable_DirOrganizationGroup.visible(!isPerson);
+
+        if(locfbds.table() == tableNum(smmBusRelTable))
+        {
+            DirPartyTable_DirOrganization_NumberOfEmployees.visible(false);
+            AddressBooks.visible(false);
+        }
+
+        if (this.args().menuItemName() ==  menuItemDisplayStr(AVAsmmBusRelQuickCopy))
+        {
+            smmBusRelTable                   copySmmBusRelTable = this.args().record();
+
+            LogisticsElectronicAddress       copyLogisticsElectronicAddress  = DirParty::primaryElectronicAddress(copySmmBusRelTable.Party, LogisticsElectronicAddressMethodType::Email);
+            //  LogisticsElectronicAddress       newLogisticsElectronicAddress   = this.cursor();
+
+            // newLogisticsElectronicAddress.Locator = copyLogisticsElectronicAddress.Locator;
+            // element.setElectronicAddressLocation();
+            FormStringControl       eMailCtrl = this.design().controlName('LogisticsElectronicAddressEmail_Locator');
+            if (eMailCtrl)
+            {
+                eMailCtrl.text(copyLogisticsElectronicAddress.Locator);
+                // eMailCtrl.modified();
+            }
+        }
+
+        
+
+        Args   elementArgs = this.args();
+
+        if (elementArgs.caller() is FormRun && elementArgs.caller() && elementArgs.parmObject() is FormControl)
+        {
+            FormControl  callerControler = elementArgs.parmObject() as FormControl;
+
+            if (callerControler.name()  == formControlStr(SalesTable, AVAEDIBuyerContactCreate)
+             || callerControler.name()  == formControlStr(SalesTable,AVAContactBtnHeader)
+             || callerControler.name()  == formControlStr(SalesTable, AVACContactBtn))
+            {
+                FormRun             callerFormRun = elementArgs.caller();
+                //FormDataSource      ediAddressDS  = callerFormRun.dataSource(formDataSourceStr(SalesTable,AVAEDIAddress));
+                FormDataSource      salesTableDS  = callerFormRun.dataSource(formDataSourceStr(SalesTable,SalesTable));
+                if (salesTableDS)
+                {
+                    AVAEDIAddress       ediAddress;
+                    SalesTable          locSalesTable = salesTableDS.cursor();
+                    select firstonly ediAddress
+                        where ediAddress.RefTableId == locSalesTable.TableId
+                           && ediAddress.RefRecId   == locSalesTable.RecId
+                           && ediAddress.EDIAddressType == AVAEDIAddressType::Buyer;
+
+                    if(ediAddress.RecId)
+                    {
+                        FormStringControl       eMailCtrl = this.design().controlName('LogisticsElectronicAddressEmail_Locator');
+                        if (eMailCtrl)
+                        {
+                            eMailCtrl.text(ediAddress.ContactPersonEmail);
+                            LogisticsElectronicAddressEmail.Locator = ediAddress.ContactPersonEmail;
+
+                            LogisticsElectronicAddressBusinessPhone.Locator = ediAddress.ContactPersonPhone;
+                            LogisticsElectronicAddressBP_Locator.text(ediAddress.ContactPersonPhone);
+                            this.setElectronicAddressLocation();
+
+                           
+                            // eMailCtrl.modified();
+                        }
+                    }
+                }
+            }
+            
+        }
+
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refreshCaller</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>refreshCaller</c> method.
+    /// </summary>
+    public void refreshCaller()
+    {
+        Args    locArgs;
+        FormRun locFormRunCaller;
+
+        locArgs             = this.args();
+        locFormRunCaller    = locArgs.caller();
+
+        if (locArgs.caller() && locArgs.caller().name() == formStr(smmBusRelTable))
+        {
+            if (formHasMethod(locFormRunCaller, literalStr(AVAaftersmmBusRelTableCreation)))
+            {
+                locFormRunCaller.AVAaftersmmBusRelTableCreation();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void closeOk()
+    {
+        Args                    callerArgs = this.args();
+        Common                  locCallerRecord = callerArgs.record();
+        smmBusRelTable          locSmmBusRelTable;
+        CustTable               loccustTable;
+        Object                  formRun;
+        ContactPerson           contactPerson;
+        ContactPersonName       locContactPersonName;
+
+
+        formRun = callerArgs.caller();
+        if (callerArgs.caller().name() == formStr(smmBusRelTable) && dirPartyEntity.TableId == tableNum(ContactPerson))
+        {
+            contactPerson = ContactPerson::findRecId(dirPartyEntity.Recid);
+            locSmmBusRelTable       = smmBusRelTable::findByParty(contactPerson.ContactForParty);
+            callerRecord = null;
+        }
+
+        if (callerArgs.caller().name() == formStr(CustTable) && dirPartyEntity.TableId == tableNum(ContactPerson))
+        {
+            contactPerson = ContactPerson::findRecId(dirPartyEntity.Recid);
+            loccustTable           = CustTable::findByPartyRecId(contactPerson.ContactForParty);
+            callerRecord = null;
+        }
+        if (callerArgs.caller().name() == formStr(AVAKBVCreateRequestTable) && dirPartyEntity.TableId == tableNum(ContactPerson))
+        {
+            contactPerson = ContactPerson::findRecId(dirPartyEntity.Recid);
+            callerRecord = null;
+        }
+        if (callerArgs.caller().name() == formStr(AVAKBVCreateBuildingProjectTable) && dirPartyEntity.TableId == tableNum(ContactPerson))
+        {
+            contactPerson = ContactPerson::findRecId(dirPartyEntity.Recid);
+            callerRecord = null;
+        }
+        if (callerArgs.caller().name() == formStr(AVAKBVBuildingProjectTable) && dirPartyEntity.TableId == tableNum(ContactPerson))
+        {
+            contactPerson = ContactPerson::findRecId(dirPartyEntity.Recid);
+            callerRecord = null;
+        }
+        if (callerArgs.caller().name() == formStr(AVAKBVRequestTable) && dirPartyEntity.TableId == tableNum(ContactPerson))
+        {
+            contactPerson = ContactPerson::findRecId(dirPartyEntity.Recid);
+            callerRecord = null;
+        }
+
+        if (callerArgs.caller().name() == formStr(smmBusRelTable) && dirPartyEntity.TableId == tableNum(smmBusRelTable))
+        {
+            locSmmBusRelTable       = smmBusRelTable::findRec(dirPartyEntity.RecId);
+            callerRecord = null;
+        }
+        if (callerArgs.caller().name() == formStr(SalesCreateOrder) && dirPartyEntity.TableID == tableNum(ContactPerson))
+        {
+            contactPerson = ContactPerson::findRecId(dirPartyEntity.RecId);
+            callerRecord = null;
+        }
+        if (callerArgs.caller().name() == formStr(SalesTable) && dirPartyEntity.TableID == tableNum(ContactPerson))
+        {
+            contactPerson = ContactPerson::findRecId(dirPartyEntity.RecId);
+            callerRecord = null;
+        }
+        if (this.args().menuItemName() == menuItemDisplayStr(AVAsmmBusRelQuickCopy))
+        {
+            FormDataSource                  LEAEmailDS = this.dataSource(formDataSourceStr(DirPartyQuickCreateForm,LogisticsElectronicAddressEmail));
+            FormDataSource                  LEAURLDS  = this.dataSource(formDataSourceStr(DirPartyQuickCreateForm,AVALogisticsElectronicAddressURL));
+            LogisticsElectronicAddress      LESEmail  = LEAEmailDS.cursor();
+            LogisticsElectronicAddress      LESURL    = LEAURLDS.cursor();
+            smmBusRelTable                   copySmmBusRelTable = this.args().record();
+            LogisticsElectronicAddress       copyLogisticsElectronicAddressEmail  = DirParty::primaryElectronicAddress(copySmmBusRelTable.Party, LogisticsElectronicAddressMethodType::Email);
+            LogisticsElectronicAddress       copyLogisticsElectronicAddressURL  = DirParty::primaryElectronicAddress(copySmmBusRelTable.Party, LogisticsElectronicAddressMethodType::URL);
+            
+            DirPartyLocation            partyLocation;
+            select firstonly partyLocation
+                                where   partyLocation.Party             == DirPartyTable.RecId
+                                    &&  partyLocation.IsPostalAddress   == false;
+
+            if (copyLogisticsElectronicAddressEmail.Locator != '' && LESEmail.Locator == '' && !LESEmail.PrivateForParty)
+            {
+                LogisticsElectronicAddress      checkLEAEmail;
+
+                select firstonly checkLEAEmail
+                            where checkLEAEmail.PrivateForParty == dirPartyTable.RecId
+                                && checkLEAEmail.Locator         == LESEmail.Locator
+                                && checkLEAEmail.Type            == LogisticsElectronicAddressMethodType::Email
+                                && checkLEAEmail.IsPrimary       == true;
+
+                if (!checkLEAEmail.RecId)
+                {
+
+                    checkLEAEmail.Location  = partyLocation.Location;
+                    checkLEAEmail.Type      = LogisticsElectronicAddressMethodType::Email;
+                    checkLEAEmail.IsPrimary = true;
+                    checkLEAEmail.Locator   = copyLogisticsElectronicAddressEmail.Locator;
+                    checkLEAEmail.PrivateForParty =  DirPartyTable.RecId;
+                    checkLEAEmail.insert();
+                }
+            }
+
+            if (copyLogisticsElectronicAddressURL.Locator != '' && LESURL.Locator == '' && !LESURL.PrivateForParty)
+            {
+                LogisticsElectronicAddress      checkLEAURL;
+
+                select firstonly checkLEAURL
+                        where checkLEAURL.PrivateForParty == dirPartyTable.RecId
+                            && checkLEAURL.Locator         == LESEmail.Locator
+                       && checkLEAURL.Type            == LogisticsElectronicAddressMethodType::URL
+                            && checkLEAURL.IsPrimary       == true;
+
+                if (!checkLEAURL.RecId)
+                {
+                    checkLEAURL.Location  = partyLocation.Location;
+                    checkLEAURL.Type      = LogisticsElectronicAddressMethodType::URL;
+                    checkLEAURL.IsPrimary = true;
+                    checkLEAURL.Locator   = copyLogisticsElectronicAddressURL.Locator;
+                    checkLEAURL.PrivateForParty =  DirPartyTable.RecId;
+                    checkLEAURL.insert();
+                }
+            }
+            
+        }
+
+        Args   elementArgs = this.args();
+
+    /*    if (elementArgs.caller() is FormRun && elementArgs.caller() && elementArgs.parmObject() is FormControl)
+        {
+            FormControl  callerControler = elementArgs.parmObject() as FormControl;
+
+            if (callerControler.name()  == formControlStr(SalesTable, AVAEDIBuyerContactCreate))
+            {
+
+                FormDataSource                  LEAEmailDS = this.dataSource(formDataSourceStr(DirPartyQuickCreateForm,LogisticsElectronicAddressEmail));
+                LogisticsElectronicAddress      LESEmail  = LEAEmailDS.cursor();
+
+                DirPartyLocation            partyLocation;
+                select firstonly partyLocation
+                                where   partyLocation.Party             == DirPartyTable.RecId
+                                    &&  partyLocation.IsPostalAddress   == false;
+
+                if (LESEmail.Locator != '' && !LESEmail.PrivateForParty)
+                {
+                    LogisticsElectronicAddress      checkLEAEmail;
+
+                    select firstonly checkLEAEmail
+                            where checkLEAEmail.PrivateForParty == dirPartyTable.RecId
+                                && checkLEAEmail.Locator         == LESEmail.Locator
+                                && checkLEAEmail.Type            == LogisticsElectronicAddressMethodType::Email
+                                && checkLEAEmail.IsPrimary       == true;
+
+                    if (!checkLEAEmail.RecId)
+                    {
+
+                        checkLEAEmail.Location  = partyLocation.Location;
+                        checkLEAEmail.Type      = LogisticsElectronicAddressMethodType::Email;
+                        checkLEAEmail.IsPrimary = true;
+                        checkLEAEmail.Locator   = LESEmail.Locator;
+                        checkLEAEmail.PrivateForParty =  DirPartyTable.RecId;
+                        checkLEAEmail.insert();
+                    }
+                }
+            }
+        }    */
+
+        next closeOk();
+        
+
+        switch (locCallerRecord.TableId)
+        {
+            case tableNum(smmBusRelTable) :
+                if (dirPartyEntity.TableId == tableNum(smmBusRelTable)
+                    && formRun && formHasMethod(formRun, identifierstr(AVAsetContextFindRecord)))
+                {
+                    formRun.AVAsetContextFindRecord(locSmmBusRelTable);
+                }
+                if(dirPartyEntity.TableId == tableNum(ContactPerson) && formRun && formHasMethod(formRun, identifierstr(AVAsetContext)))
+                {
+                    formRun.AVAsetContext(locSmmBusRelTable);
+                }
+
+                if(callerArgs.parmObject() is FormControl)
+                {
+                    FormControl        contactPersonBtn = callerArgs.parmObject();
+                    FormRun            callerForm       = callerArgs.caller();
+                    KCS_KBVRequestTable      requestTable;
+                   
+                    if (callerForm.name() == formStr(AVAKBVCreateRequestTable))
+                    {
+                        FormDataSource     BVRequestDS = callerForm.dataSource(formDataSourceStr(AVAKBVCreateRequestTable,KCS_KBVRequestTable)) as FormDataSource;
+                        if (BVRequestDS)
+                        {
+                            requestTable = BVRequestDS.cursor();
+                        }
+                    }
+                    
+                    locContactPersonName = ContactPerson::name(contactPerson.ContactPersonId);
+                    
+                    switch (contactPersonBtn.name())
+                    {
+                        case formControlStr (AVAKBVCreateRequestTable,ButtonGroupFields1) :
+                            if (formHasMethod(callerForm,identifierStr(editContactPersonName1)))
+                            {
+                                callerForm.editContactPersonName1(true, locContactPersonName);
+                                FormStringControl       contactPerson1 = callerForm.design().controlName(formControlStr(AVAKBVCreateRequestTable,editContactPersonName1));
+                                FormStringControl       contactPersonId1 = callerForm.design().controlName(formControlStr(AVAKBVCreateRequestTable,ContactPersonId1));
+                                contactPersonId1.text(contactPerson.ContactPersonId);
+                                contactPerson1.modified();
+                            }
+                            break;
+
+                        case formControlStr (AVAKBVCreateRequestTable,ButtonGroupFields2) :
+                            if (formHasMethod(callerForm,identifierStr(editContactPersonName2)))
+                            {
+                                callerForm.editContactPersonName2(true, locContactPersonName);
+                                FormStringControl       contactPerson2 = callerForm.design().controlName(formControlStr(AVAKBVCreateRequestTable,editContactPersonName2));
+                                FormStringControl       contactPersonId2 = callerForm.design().controlName(formControlStr(AVAKBVCreateRequestTable,ContactPersonId2));
+                                contactPersonId2.text(contactPerson.ContactPersonId);
+                                contactPerson2.modified();
+                            }
+                            break;
+
+                        case formControlStr (AVAKBVCreateRequestTable,ButtonGroupFields3) :
+                            if (formHasMethod(callerForm,identifierStr(editContactPersonName3)))
+                            {
+                                callerForm.editContactPersonName3(true, locContactPersonName);
+                                FormStringControl       contactPerson3 = callerForm.design().controlName(formControlStr(AVAKBVCreateRequestTable,editContactPersonName3));
+                                FormStringControl       contactPersonId3 = callerForm.design().controlName(formControlStr(AVAKBVCreateRequestTable,ContactPersonId3));
+                                contactPersonId3.text(contactPerson.ContactPersonId);
+                                contactPerson3.modified();
+                            }
+                            break;
+
+                        case formControlStr (AVAKBVCreateRequestTable,ButtonGroupRequester) :
+                            requestTable.ContactPersonId = contactPerson.ContactPersonId;
+                            break;
+
+                        case formControlStr(AVAKBVBuildingProjectTable,  RelationNewContact) :
+                            if (formHasMethod(callerForm,identifierStr(setContactPersonNameRel)))
+                            {
+                                callerForm.setContactPersonNameRel(contactPerson.ContactPersonId);
+                            }
+                            break;
+
+                        case formControlStr(AVAKBVCreateBuildingProjectTable,  ButtonGroupFields1) :
+                            if (formHasMethod(callerForm,identifierStr(editContactPersonName1)))
+                            {
+                                callerForm.editContactPersonName1(true, locContactPersonName);
+                                FormStringControl       contactPerson1 = callerForm.design().controlName(formControlStr(AVAKBVCreateBuildingProjectTable,editContactPersonName1));
+                                FormStringControl       contactPersonId1 = callerForm.design().controlName(formControlStr(AVAKBVCreateBuildingProjectTable,DirPartyId1));
+                                contactPersonId1.text(contactPerson.ContactPersonId);
+                                contactPerson1.modified();
+                            }
+                            break;
+
+                        case formControlStr(AVAKBVCreateBuildingProjectTable,  ButtonGroupFields2) :
+                            if (formHasMethod(callerForm,identifierStr(editContactPersonName2)))
+                            {
+                                callerForm.editContactPersonName2(true, locContactPersonName);
+                                FormStringControl       contactPerson2 = callerForm.design().controlName(formControlStr(AVAKBVCreateBuildingProjectTable,editContactPersonName2));
+                                FormStringControl       contactPersonId2 = callerForm.design().controlName(formControlStr(AVAKBVCreateBuildingProjectTable,DirPartyId2));
+                                contactPersonId2.text(contactPerson.ContactPersonId);
+                                contactPerson2.modified();
+                            }
+                            break;
+
+                        case formControlStr(AVAKBVRequestTable,  RelationNewContact) :
+                            if (formHasMethod(callerForm,identifierStr(setContactPersonNameRel)))
+                            {
+                                callerForm.setContactPersonNameRel(contactPerson.ContactPersonId);
+                            }
+                            break;
+
+                        default : 
+                            break;
+                    }
+                }
+
+               
+
+                break;
+
+            case tableNum(CustTable) :
+                FormRun            callerForm       = callerArgs.caller();
+                SalesTable         salesTable;
+                if(formRun && formHasMethod(formRun, identifierstr(AVAsetContext)))
+                {
+                    formRun.AVAsetContext(loccustTable);
+                }
+
+                if (callerForm.name() == formStr(SalesCreateOrder))
+                {
+                    FormDataSource  salesTableDS = callerForm.dataSource(formDataSourceStr(SalesCreateOrder,SalesTable)) as FormDataSource;
+                    if (salesTableDS)
+                    {
+                        salesTable =salesTableDS.cursor();
+                        salesTable.ContactPersonId = ContactPerson.ContactPersonId;
+                    }
+                }
+                if (callerForm.name() == formStr(SalesTable))
+                {
+                    FormDataSource  salesTableDS = callerForm.dataSource(formDataSourceStr(SalesTable,SalesTable)) as FormDataSource;
+                    if (salesTableDS)
+                    {
+                        salesTable.data(salesTableDS.cursor());
+                        salesTable.ContactPersonId = ContactPerson.ContactPersonId;
+                        ttsbegin;
+                        salesTable.selectForUpdate(true);
+                        salesTable.doUpdate();
+                        ttscommit;
+                        //salesTableDS.reread();
+                        salesTableDS.executeQuery();
+                        salesTableDS.positionToRecord(salesTable);
+
+                    }
+                }
+                break;
+
+
+            default : 
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getEntityFilter</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Filter for the dirpartylookup to filter in the lookup only the entities supported; ex: contactperson
+    /// </summary>
+    /// <returns>
+    /// The entities filter for that entity if any; if none is provided the filter will default to non-active filter.
+    /// </returns>
+    public dirPartyLookupEntitiesFilter getEntityFilter()
+    {
+        dirPartyLookupEntitiesFilter avaEntityFilter = next getEntityFilter();
+        FormControl avaContactForPartyControl = this.control(this.controlId('DynamicHeader_ContactForParty'));
+
+        if(this.AVAIsMultipleContact.checked() == NoYes::No
+            && !DirParameters::find().AVARelationshipTypeId)
+        {
+            warning(strFmt("@NDX:NXADirParameterRelationshipWarning", "@SYS334374", "@SYS336209"));
+        }
+        else if(this.AVAIsMultipleContact.checked() == NoYes::No
+            && avaContactForPartyControl.valueStr() == '0')
+        {
+            info("@NDX:NXAContactLimitingInfo");
+        }
+        else if(this.AVAIsMultipleContact.checked() == NoYes::No)
+        {
+            avaEntityFilter.parmFilterRelationshipType(DirParameters::find().AVARelationshipTypeId);
+            avaEntityFilter.parmFilterParentParty(str2Int64(avaContactForPartyControl.valueStr()));
+        }
+
+        return avaEntityFilter;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

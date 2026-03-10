@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAEntAssetLifecycleStateUpdate_ObjectTableCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN/2025/04/07        AVA_012999_EntAsset_Project
+/// </summary>
+[ExtensionOf(classStr(EntAssetLifecycleStateUpdate_ObjectTable))]
+final class AVAEntAssetLifecycleStateUpdate_ObjectTableCls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>updateLifecycleState</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/04/07        AVA_012999_EntAsset_Project
+    /// </summary>
+    public void updateLifecycleState()
+    {
+        SetEnumerator   enumerator;
+        EntAssetObjectTable				objectTable;
+        KCS_PTMToolTable                toolTable;
+        EntAssetWorkOrderParentProject  assetWorkOrderParentProject;
+        RefRecId                        defaultAssetWorkOrderType = EntAssetWorkOrderType::findByWorkOrderTypeId(ProjParameters::find().AVAEntAssetWorkOrderTypeID).RecId;
+        TransDate                       transDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+
+        objectLifecycleState = EntAssetObjectLifecycleState::find(this.parmNewLifecycleState().LifecycleState);
+        if (objectLifecycleState.ObjectActive)
+        {
+            enumerator = recIdSet.getEnumerator();
+    
+            while (enumerator.moveNext())
+            {
+                objectTable = EntAssetObjectTable::findRecId(enumerator.current());
+                if (!objectTable.checkEntAssetObjectTable())
+                {
+                    throw error("@NDX:NXAUpdateCancelled");
+                }
+            }
+            
+        }
+        next updateLifecycleState(); 
+
+        enumerator = recIdSet.getEnumerator();
+    
+        while (enumerator.moveNext())
+        {
+            objectTable = EntAssetObjectTable::findRecId(enumerator.current());
+            toolTable = KCS_PTMToolTable::find(objectTable.ObjectID);
+            if (toolTable.AVAICProjMaintenance)
+            {
+                if (!EntAssetWorkOrderParentProject::exist(0,objectTable.ObjectType, objectTable.RecId, toolTable.AVAICProjMaintenance, transDate))
+                {
+                    ttsbegin;
+                    assetWorkOrderParentProject.selectForUpdate();
+                    assetWorkOrderParentProject.Object = objectTable.RecId;
+                    assetWorkOrderParentProject.ObjectType = objectTable.objectType;
+                    assetWorkOrderParentProject.ProjId = toolTable.AVAICProjMaintenance;
+                    assetWorkOrderParentProject.ValidFrom = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+                    assetWorkOrderParentProject.ValidTo = DateTimeUtil::date(DateTimeUtil::maxValue());
+                    assetWorkOrderParentProject.insert();
+                    ttscommit;
+                }
+            }
+
+            if (toolTable.AVAICProjProd)
+            {
+                if (defaultAssetWorkOrderType)
+                {
+                    if(!EntAssetWorkOrderParentProject::exist(defaultAssetWorkOrderType,objectTable.ObjectType, objectTable.RecId,toolTable.AVAICProjProd, transDate))
+                    {
+                        ttsbegin;
+                        assetWorkOrderParentProject.selectForUpdate();
+                        assetWorkOrderParentProject.WorkOrderType = defaultAssetWorkOrderType;
+                        assetWorkOrderParentProject.Object = objectTable.RecId;
+                        assetWorkOrderParentProject.ObjectType = objectTable.objectType;
+                        assetWorkOrderParentProject.ProjId = toolTable.AVAICProjProd;
+                        assetWorkOrderParentProject.ValidFrom = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+                        assetWorkOrderParentProject.ValidTo = DateTimeUtil::date(DateTimeUtil::maxValue());
+                        assetWorkOrderParentProject.insert();
+                        ttscommit;
+                    }
+                }
+            }
+        }  
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPrintMgmtReportFormatPublisher_cls_EventHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+internal final class AVAPrintMgmtReportFormatPublisher_cls_EventHandler
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>PrintMgmtReportFormatPublisher_notifyPopulate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// add PrintMgmtDocumentTypes
+    /// </summary>
+    [SubscribesTo(classStr(PrintMgmtReportFormatPublisher), delegateStr(PrintMgmtReportFormatPublisher, notifyPopulate))]
+    public static void PrintMgmtReportFormatPublisher_notifyPopulate()
+    {
+
+        #PrintMgmtSetup
+        #ISOCountryRegionCodes
+        
+        void addAX(PrintMgmtDocumentType _type, PrintMgmtReportFormatCountryRegionId _countryRegionId = #NoCountryRegionId)
+        {
+            PrintMgmtReportFormatName formatName = PrintMgmtDocType::construct(_type).getDefaultReportFormat();
+            
+            AVAPrintMgmtReportFormatPublisher_cls_EventHandler::avaAdd(_type, formatName, formatName, _countryRegionId, true);
+        }
+
+        ttsbegin;
+        addAX(PrintMgmtDocumentType::Quotation); 
+           
+        ttscommit;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaAdd</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Duplictaed this add method of class PrintMgmtReportFormatSubscriber to access locally
+    /// </summary>
+    public static boolean avaAdd(PrintMgmtDocumentType                _type,
+                                 PrintMgmtReportFormatName            _name,
+                                 PrintMgmtReportFormatDescription     _description,
+                                 PrintMgmtReportFormatCountryRegionId _countryRegionId,
+                                 PrintMgmtReportFormatSystem          _system,
+                                 PrintMgmtSSRS                        _ssrs = PrintMgmtSSRS::SSRS
+                                 )
+    {
+        PrintMgmtReportFormat printMgmtReportFormat;
+        boolean isDuplicateFound;
+        boolean isSystemFormatWithDifferentDescriptionFound;
+
+        #PrintMgmtSetup
+
+        isSystemFormatWithDifferentDescriptionFound = _system && (select firstOnly RecId from printMgmtReportFormat
+            where printMgmtReportFormat.DocumentType == _type
+                && printMgmtReportFormat.Description != _description
+                && printMgmtReportFormat.System == true).RecId != 0;
+
+        // If the format no longer matches up with the existing system formats, change them all to
+        // non-system formats. This ensure existing links / setup will not be broken, but also provides
+        // a way for the user to fix the formats.
+        if (isSystemFormatWithDifferentDescriptionFound)
+        {
+            update_recordSet printMgmtReportFormat
+                setting System = false
+                where printMgmtReportFormat.DocumentType == _type
+                    && printMgmtReportFormat.Description != _description
+                    && printMgmtReportFormat.System == true;
+        }
+
+        isDuplicateFound = (select RecId from printMgmtReportFormat
+            where printMgmtReportFormat.DocumentType == _type
+                && printMgmtReportFormat.Description == _description
+                && printMgmtReportFormat.CountryRegionId == _countryRegionId).RecId != 0;
+
+        if (isDuplicateFound)
+        {
+            if(_system)
+            {
+                // We must ensure that the system report always matches the country context
+                // of the company. If the the country context has been chagned multiple times
+                // such that the report format already exists, we must change it back to system.
+                update_recordSet printMgmtReportFormat
+                    setting System = true
+                    where printMgmtReportFormat.DocumentType == _type
+                        && printMgmtReportFormat.Description == _description
+                        && printMgmtReportFormat.CountryRegionId == _countryRegionId;
+
+                update_recordSet printMgmtReportFormat
+                    setting System = false
+                    where printMgmtReportFormat.DocumentType == _type
+                        && printMgmtReportFormat.Description != _description
+                        && printMgmtReportFormat.CountryRegionId == _countryRegionId;
+
+            }
+            else
+            {
+                return false;
+            }
+        }
+        else
+        {
+            // Add the new format
+            printMgmtReportFormat.clear();
+            printMgmtReportFormat.DocumentType = _type;
+            printMgmtReportFormat.Name = _name;
+            printMgmtReportFormat.Description = _description;
+            printMgmtReportFormat.CountryRegionId = _countryRegionId;
+            printMgmtReportFormat.System = _system;
+            printMgmtReportFormat.ssrs = _ssrs;
+            printMgmtReportFormat.insert();
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

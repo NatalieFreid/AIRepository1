@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADAIERPrintMgmtDataProviderReport_Cls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using Microsoft.Dynamics365.LocalizationFramework;
+using BCS = Microsoft.Dynamics365.LocalizationFramework.ExternalApi.BCS;
+using System.Reflection;
+
+/// <summary>
+/// This extension of <c>ERPrintMgmtDataProviderReport</c> class helps to run ER report. Here it is used to hook into the preRunAction method.
+/// </summary>
+[ExtensionOf(classStr(ERPrintMgmtDataProviderReport))]
+final class AVADAIERPrintMgmtDataProviderReport_Cls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>preRunAction</Name>
+				<Source><![CDATA[
+    protected void preRunAction(ERIFormatMappingRun _mappingRun)
+    {
+        next preRunAction(_mappingRun);
+
+        if(isConfigurationkeyEnabled(configurationKeyNum(AVADAI)))
+        {
+            ERFormatMappingTable formatMappingTable = ERFormatMappingTable::find(_mappingRun.getFormatMappingTableRecId());
+            Name reportName = formatMappingTable.Name;
+
+            AVADAIReportService reportService = AVADAIReportService::construct();
+
+            reportService.parmReport(reportName, 'Report');
+
+            if (reportService.isDAIReportExport())
+            {
+                // copy the mapping execution without using ER destinations
+                ERIFormatMappingRun avaMappingRunCopy = this.avaCreateFormatMappingRunCopy(_mappingRun);
+
+                ERFileDestinationMemory avaFileDestination = new ERFileDestinationMemory();
+
+                avaMappingRunCopy.withFileDestination(avaFileDestination);
+
+                int infologLine = infologLine();
+            
+                str filename = avaMappingRunCopy.run();
+        
+                System.IO.Stream reportStream = avaFileDestination.GetStream();
+
+                // clear any warnings issued by report
+                infolog.clear(infologLine);
+
+                // check whether report is generated
+                if (!CLRInterop::isNull(reportStream))
+                {
+                    // since ER destinations aren't used we do convert the output by ourself to PDF
+                    reportStream = this.avaConvertToPdf(reportStream, filename);
+
+                    System.Byte[] bytes = this.avaStream2ByteArray(reportStream);
+
+                    // generate metatada and report data for xport
+                    this.avaExport(bytes, reportService.getReportSetup());
+                }
+        
+                // Add stream to message queue
+                /* don't export directly
+                AVAMSQFileHandling::writeQueueRecordFromStream(reportStream,fileName,AVAMSQTransformationDefinition::findId(reportSetup.ReportTransfDefId).RecId);
+                */
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCreateFormatMappingRunCopy</Name>
+				<Source><![CDATA[
+    public ERIFormatMappingRun avaCreateFormatMappingRunCopy(ERIFormatMappingRun _mappingRun)
+    {
+        SysDictClass avaDictClassMappingRun = SysDictClass::newName(classStr(ERFormatMappingRun));
+            
+        ERIFormatMappingRun avaMappingRunCopy = avaDictClassMappingRun.callStatic(staticmethodStr(ERFormatMappingRun, constructByFormatMappingId), _mappingRun.getFormatMappingTableRecId());
+        
+        // copy some stuff set in ERPrintMgmtDataProviderReport.runER() with reflection
+        avaDictClassMappingRun.callObject(
+                methodStr(ERFormatMappingRun, parmParametersAction),
+                avaMappingRunCopy,
+                avaDictClassMappingRun.callObject(methodStr(ERFormatMappingRun, parmParametersAction), _mappingRun));
+
+        // use .NET reflection on members without accessor method
+        var avaBindingFlags = BindingFlags::Instance | BindingFlags::NonPublic;
+        var avaFieldInfoIntegrationPoint = _mappingRun.GetType().GetField('integrationPoint', avaBindingFlags);
+
+        var avaIntegrationPoint = avaFieldInfoIntegrationPoint.GetValue(_mappingRun);
+        avaFieldInfoIntegrationPoint.SetValue(avaMappingRunCopy, avaIntegrationPoint);
+
+        // disable execution of ER destinations
+        avaDictClassMappingRun.callObject(methodStr(ERFormatMappingRun, parmUseDestinations), avaMappingRunCopy, false);
+
+        return avaMappingRunCopy;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaConvertToPdf</Name>
+				<Source><![CDATA[
+    public System.IO.Stream avaConvertToPdf(
+        System.IO.Stream _stream,
+        Filepath _filePath,
+        /*ERFormatFileDestinationPdfConversionSettings*/ Object _pdfConversionSettings = null,
+        str _culture = 'en-US')
+    {
+        var fileStream = _stream;
+        var filePath = _filePath;
+        const str pdfExtension = '.pdf';
+        // commenting the condition to avoid compilation issues on 10.0.33 as this feature had been removed by MS
+        //if (FeatureStateProvider::isFeatureEnabled(ERPdfConversionFeature::instance())) 
+        {
+            var fileExtension = System.IO.Path::GetExtension(_filePath);
+            if (!FileExtensionUtils::CanBeConvertedToPDF(fileExtension))
+            {
+                error("@ElectronicReporting:UnableToConvertIntoPDF");
+            }
+            else if (fileExtension != pdfExtension)
+            {
+                try
+                {
+                    SysDictClass dc = SysDictClass::newName(classStr(ERPdfConversionService));
+
+                    BCS.ConvertToPdfResponse conversionResult = dc.callStatic(staticmethodStr(ERPdfConversionService, convertFileToPdf), fileStream, fileExtension/*, newGuid(), _pdfConversionSettings, this.avaGetLocaleIdentifier(_culture)*/);
+                
+                    filePath = System.IO.Path::ChangeExtension(filePath, pdfExtension);
+                    if (conversionResult.IsValidResponse)
+                    {
+                        fileStream = conversionResult.ResultStream;
+                    }
+                    // be silent on errors for now
+                    /*
+                    else
+                    {
+                        error(strFmt("@ElectronicReporting:FailedToConvertIntoPDF", _filePath, conversionResult.Error));
+                    }
+                    */
+                }
+                catch
+                {
+                    exceptionTextFallThrough();
+                }
+            }
+        }
+
+        return fileStream;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetLocaleIdentifier</Name>
+				<Source><![CDATA[
+    public int avaGetLocaleIdentifier(str _culture)
+    {
+        var ret = 0;
+
+        if (!ERCultureUtils::TryGetCultureLocaleIdentifier(_culture, byref ret))
+        {
+            warning("@ElectronicReporting:IncorrectLocale");
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaExport</Name>
+				<Source><![CDATA[
+    public void avaExport(System.Byte[] _archive, AVADAIReport _avaDAIReport)
+    {
+        ttsbegin;
+
+        AVADAIExecutionId avaExecutionId = PrintMgmtReportRun::avaExportER(
+                                                this.reportRunController,
+                                                this.printMgmtPrintSettingDetail,
+                                                this.queryTableBuffer,
+                                                _avaDAIReport.Report);
+
+        if (avaExecutionId)
+        {
+            AVADAIReportExportTable avaExportTable = AVADAIReportExportTable::find(avaExecutionId, true);
+        
+            AVADAIReportExportWork  reportExportWork = AVADAIReportExportWork::findOrCreate(avaExportTable, true);
+
+            reportExportWork.ReportData = AVAMSQFileHandling::uploadBufferToContainer(_archive);
+            reportExportWork.update();
+
+            avaExportTable.ProcessStatus   = AVADAIReportExportTable::getProcessStatusReportPrepared();
+            avaExportTable.ReportExported  = NoYes::Yes;
+            avaExportTable.update();
+
+            // need to add reporting data to queue here, since ExportTable has the wrong state
+            AVAMSQProcessingQueue::insertIntoProcessQueueContainer(_avaDAIReport.ReportTransfDefId, reportExportWork.ReportData, avaExportTable.ReportFileName);
+        }
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaStream2ByteArray</Name>
+				<Source><![CDATA[
+    public System.Byte[] avaStream2ByteArray(System.IO.Stream _stream)
+    {
+        System.Byte[] bytes;
+
+        _stream.Seek(0, System.IO.SeekOrigin::Begin);
+
+        using (var memStream = new System.IO.MemoryStream())
+        {
+            _stream.CopyTo(memStream);
+            bytes = memStream.ToArray();
+        }
+
+        return bytes;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

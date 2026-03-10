@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPrintMgmtReportFormatDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(tableStr(PrintMgmtReportFormat))]
+internal final class AVAPrintMgmtReportFormatDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>findByHierarchyPrintType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_documentType">_documentType</param>
+    /// <param name = "_hierarchyType">_hierarchyType</param>
+    /// <param name = "_nodeType">_nodeType</param>
+    /// <param name = "_printType">_printType</param>
+    /// <param name = "_referencedTableBuffer">_referencedTableBuffer</param>
+    /// <returns>PrintMgmtReportFormat</returns>
+    public static PrintMgmtReportFormat findByHierarchyPrintType(
+        PrintMgmtDocumentType _documentType,
+        PrintMgmtHierarchyType _hierarchyType,
+        PrintMgmtNodeType _nodeType,
+        PrintMgmtDocInstanceType _printType,
+        Common _referencedTableBuffer = null)
+    {
+        PrintMgmtReportFormat reportFormat;
+
+        PrintMgmtNodeInstance nodeInstance = new PrintMgmtNodeInstance();
+        nodeInstance.parmNodeDefinition(PrintMgmtNode::construct(_nodeType));
+        nodeInstance.parmReferencedTableBuffer(_referencedTableBuffer);
+
+        PrintMgmtHierarchy hierarchy = PrintMgmtHierarchy::construct(_hierarchyType);
+
+        while (nodeInstance)
+        {
+            PrintMgmtDocInstance docInstance;
+            PrintMgmtSettings settings;
+
+            // Main lookup query
+            select firstonly reportFormat
+                exists join settings
+                    where reportFormat.RecId == settings.ReportFormat
+                exists join docInstance
+                    where settings.ParentId == docInstance.RecId
+                    && docInstance.DocumentType == _documentType
+                    && docInstance.NodeType == nodeInstance.parmNodeDefinition().getNodeType()
+                    && docInstance.PrintType == _printType
+                    && docInstance.PriorityId == 1
+                    && ((docInstance.ReferencedRecId == _referencedTableBuffer.RecId
+                        && docInstance.ReferencedTableId == _referencedTableBuffer.TableId)
+                    || (!docInstance.ReferencedRecId
+                        && !docInstance.ReferencedTableId));
+
+            if (reportFormat)
+            {
+                break;
+            }
+
+            // Could not catch the validation error by common means, have to validate here
+            if (!(hierarchy.isValidNodeType(nodeInstance.parmNodeDefinition().getNodeType())
+                && nodeInstance.parmNodeDefinition().isValidDocumentType(_documentType)))
+            {
+                warning("@ApplicationFoundation:ValidationErrorsExist");
+                break;
+            }
+
+            // There are no PrintMgmtSettings associated with current node type, getting parent
+            nodeInstance = hierarchy.getParent(nodeInstance, _documentType);
+        }
+
+        return reportFormat;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

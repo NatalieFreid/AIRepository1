@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVALedgerAllocCreateBasisRuleFromDestination</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA
+/// </summary>
+internal final class AVALedgerAllocCreateBasisRuleFromDestination 
+{
+    private LedgerAllocationRuleID          ruleId;
+    private MainAccountNum                  mainAccount;
+    private LedgerDefaultDimensionValueSet  dimSet;
+    private LedgerAllocationBasisNum        basisNum;
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmBasisNum</Name>
+				<Source><![CDATA[
+    public LedgerAllocationBasisNum parmBasisNum(LedgerAllocationBasisNum _basisNum = basisNum)
+    {
+        basisNum = _basisNum;
+        return basisNum;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmDimSet</Name>
+				<Source><![CDATA[
+    public LedgerDefaultDimensionValueSet parmDimSet(LedgerDefaultDimensionValueSet _dimSet = dimSet)
+    {
+        dimSet = _dimSet;
+        return dimSet;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmMainAccount</Name>
+				<Source><![CDATA[
+    public MainAccountNum parmMainAccount(MainAccountNum _mainAccount = mainAccount)
+    {
+        mainAccount = _mainAccount;
+        return mainAccount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmRuleId</Name>
+				<Source><![CDATA[
+    public LedgerAllocationRuleID parmRuleId(LedgerAllocationRuleID _ruleId = RuleId)
+    {
+        ruleId = _ruleId;
+        return ruleId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    public static AVALedgerAllocCreateBasisRuleFromDestination construct(LedgerAllocationRuleID _ruleId)
+    {
+        AVALedgerAllocCreateBasisRuleFromDestination createBasisRule = new AVALedgerAllocCreateBasisRuleFromDestination();
+        createBasisRule.parmRuleId(_ruleId);
+        return createBasisRule;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createBasisRule</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <returns>LedgerAllocationBasisNum</returns>
+    public LedgerAllocationBasisNum createBasisRule()
+    {
+        LedgerAllocationBasisRule           basisRule;
+        LedgerAllocationBasisRuleSource     basisRuleSource;
+        NumberSeq                           sequence;
+        DimensionLedgerAccountType          accountType;
+        DimensionAttributeValueSet          DimensionAttributeValueSet;
+        DimensionAttributeValueSetItem      DimensionAttributeValueSetItem;
+        DimensionAttributeValue             DimensionAttributeValue;
+        DimensionAttribute                  DimensionAttribute;
+        RecordInsertList                    recInsertList;
+        real                                i;
+        LedgerAllocationRule                ledgerAllocationRule = ledgerAllocationRule::find(ruleId);
+
+        ttsbegin;
+        sequence = NumberSeq::newGetNum( NumberSeqReference::findReference(extendedTypeNum(LedgerAllocationBasisNum)));
+
+        basisRule.BasisId = sequence.num();
+        //basisRule.EffectiveStartDate = mkDate(1,1,2022);
+        basisRule.EffectiveStartDate = ledgerAllocationRule.EffectiveStartDate;
+        basisRule.EffectiveEndDate  = ledgerAllocationRule.EffectiveEndDate;
+        basisRule.BasisActive = NoYes::Yes;
+        basisRule.DateInterval = ledgerAllocationRule.DateInterval;
+        basisRule.Description = strFmt("@NDX:NXAP1CommaP2", ruleId, basisRule.BasisId);
+        basisRule.insert();
+        basisNum = basisRule.BasisId;
+        recInsertList = new RecordInsertList(tableNum(LedgerAllocationBasisRuleSource));
+        ttscommit;
+        if (basisNum && (mainAccount || dimSet))
+        {
+            if (mainAccount)
+            {
+                ttsbegin;
+                basisRuleSource.company = curExt();
+                basisRuleSource.BasisId = basisNum;
+                accountType = MainAccount::findByMainAccountId(mainAccount).Type;
+                if (accountType == DimensionLedgerAccountType::Total)
+                {
+                    basisRuleSource.FieldSetting = LedgerAllocationAccountDimension::SumAccount;
+                }
+                else
+                {
+                    basisRuleSource.FieldSetting = LedgerAllocationAccountDimension::Account;
+                }
+                basisRuleSource.BasisCriteria = mainAccount;
+                basisRuleSource.BasisDimensionAttribute = 0;
+                basisRuleSource.LineNum = LedgerAllocationbasisRuleSources::lastSourceLineNum(basisNum) + 1;
+                basisRuleSource.insert();
+                ttscommit;
+            }
+            if (dimSet)
+            {
+                i = LedgerAllocationbasisRuleSources::lastSourceLineNum(basisNum);
+                while select DimensionAttributeValueSet where  DimensionAttributeValueSet.RecId == dimSet
+                    join RecId, DisplayValue from DimensionAttributeValueSetItem
+                        where DimensionAttributeValueSetItem.DimensionAttributeValueSet == DimensionAttributeValueSet.RecId
+                    join RecId from DimensionAttributeValue
+                        where DimensionAttributeValue.RecId == DimensionAttributeValueSetItem.DimensionAttributeValue
+                    join RecId, Name from DimensionAttribute
+                        where DimensionAttribute.RecId == DimensionAttributeValue.DimensionAttribute 
+                {
+                    basisRuleSource.clear();
+                    basisRuleSource.company = curExt();
+                    basisRuleSource.BasisId = basisNum;
+                    basisRuleSource.FieldSetting = LedgerAllocationAccountDimension::Dimension;
+                    basisRulesource.BasisDimensionAttribute = DimensionAttribute.RecId;
+                    basisRuleSource.BasisCriteria = DimensionAttributeValueSetItem.DisplayValue;
+                    i++;
+                    basisRuleSource.LineNum = i;
+                    recInsertList.add(basisRuleSource);
+                }
+                recInsertList.insertDatabase();
+            }
+        }
+        return basisNum;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>UpdateBasisRule</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    public void UpdateBasisRule()
+    {
+        LedgerAllocationBasisRule           basisRule;
+        LedgerAllocationBasisRuleSource     basisRuleSource;
+        //NumberSeq                           sequence;
+        DimensionLedgerAccountType          accountType;
+        DimensionAttributeValueSet          DimensionAttributeValueSet;
+        DimensionAttributeValueSetItem      DimensionAttributeValueSetItem;
+        DimensionAttributeValue             DimensionAttributeValue;
+        DimensionAttribute                  DimensionAttribute;
+        //RecordInsertList                    recInsertList;
+        real                                i;
+        //LedgerAllocationRule                ledgerAllocationRule = ledgerAllocationRule::find(ruleId);
+        RecordInsertList                    recInsertList = new RecordInsertList(tableNum(LedgerAllocationBasisRuleSource));
+
+
+        select firstonly basisRule where basisRule.BasisId == basisNum;
+        delete_from basisRuleSource where basisRuleSource.BasisId == basisNum;
+        if (basisNum && (mainAccount || dimSet))
+        {
+            if (mainAccount)
+            {
+                ttsbegin;
+                basisRuleSource.company = curExt();
+                basisRuleSource.BasisId = basisNum;
+                accountType = MainAccount::findByMainAccountId(mainAccount).Type;
+                if (accountType == DimensionLedgerAccountType::Total)
+                {
+                    basisRuleSource.FieldSetting = LedgerAllocationAccountDimension::SumAccount;
+                }
+                else
+                {
+                    basisRuleSource.FieldSetting = LedgerAllocationAccountDimension::Account;
+                }
+                basisRuleSource.BasisCriteria = mainAccount;
+                basisRuleSource.BasisDimensionAttribute = 0;
+                basisRuleSource.LineNum = LedgerAllocationbasisRuleSources::lastSourceLineNum(basisNum) + 1;
+                basisRuleSource.insert();
+                ttscommit;
+            }
+            if (dimSet)
+            {
+                i = LedgerAllocationbasisRuleSources::lastSourceLineNum(basisNum);
+                while select DimensionAttributeValueSet where  DimensionAttributeValueSet.RecId == dimSet
+                    join RecId, DisplayValue from DimensionAttributeValueSetItem
+                        where DimensionAttributeValueSetItem.DimensionAttributeValueSet == DimensionAttributeValueSet.RecId
+                    join RecId from DimensionAttributeValue
+                        where DimensionAttributeValue.RecId == DimensionAttributeValueSetItem.DimensionAttributeValue
+                    join RecId, Name from DimensionAttribute
+                        where DimensionAttribute.RecId == DimensionAttributeValue.DimensionAttribute
+                {
+                    i++;
+                    basisRuleSource.clear();
+                    basisRuleSource.company = curExt();
+                    basisRuleSource.BasisId = basisNum;
+                    basisRuleSource.FieldSetting = LedgerAllocationAccountDimension::Dimension;
+                    basisRulesource.BasisDimensionAttribute = DimensionAttribute.RecId;
+                    basisRuleSource.BasisCriteria = DimensionAttributeValueSetItem.DisplayValue;
+                    basisRuleSource.LineNum = i;
+                    recInsertList.add(basisRuleSource);
+                }
+                recInsertList.insertDatabase();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

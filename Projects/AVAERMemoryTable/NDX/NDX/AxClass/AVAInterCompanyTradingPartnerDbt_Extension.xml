@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAInterCompanyTradingPartnerDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA
+/// </summary>
+[ExtensionOf(tableStr(InterCompanyTradingPartner))]
+final class AVAInterCompanyTradingPartnerDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaICPriceTransfer</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    public void avaICPriceTransfer()
+    {
+        PriceDiscTable              priceDiscTableCust, priceDiscTableVend;
+        InterCompanyTradingPartner  icTradingPartnerVend = InterCompanyTradingRelation::getRelatedTradingPartner(this);
+        CustPriceGroup              custPriceGroup;
+        VendPriceGroup              vendPriceGroup;
+        ItemId                      custItemId, vendItemId;
+        RefRecId                    ICRecId;
+
+        custPriceGroup = this.custTable().AVANetPG2;
+        vendPriceGroup = icTradingPartnerVend.vendTable().PriceGroup;
+        if (custPriceGroup && custPriceGroup != vendPriceGroup)
+        {
+            throw Error(strFmt("@NDX:NXAICPriceTransferFalseGroup", custPriceGroup, vendPriceGroup));
+        }
+
+        while select priceDiscTableCust where priceDiscTableCust.relation == PriceType::PriceSales
+                                           && priceDiscTableCust.AccountCode == PriceDiscPartyCodeType::GroupId
+                                           && PriceDiscTableCust.AccountRelation == custPriceGroup
+                                           && PriceDiscTableCust.ItemCode == PriceDiscProductCodeType::Table
+        {
+            custItemId = priceDiscTableCust.ItemRelation;
+            vendItemId = InventTable::findByProductInCompany(InventTable::find(custItemId).Product, icTradingPartnerVend.VendorDataAreaId).ItemId;
+            if (!vendItemId)
+            {
+                warning(strFmt("@NDX:NXAICPriceTransNoICItem", custItemId));
+            }
+            else
+            {
+                ICRecId = priceDiscTableCust.RecId;
+                changecompany (icTradingPartnerVend.VendorDataAreaId)
+                {
+                    select firstonly priceDiscTableVend where priceDiscTableVend.relation == PriceType::PricePurch
+                                                       && priceDiscTableVend.AccountCode == PriceDiscPartyCodeType::Table
+                                                       && priceDiscTableVend.AccountRelation == vendPriceGroup
+                                                       && priceDiscTableVend.AVAICRecId == ICRecId;
+                    if (priceDiscTableVend) //update
+                    {
+                        if (priceDiscTableVend.UnitId != priceDiscTableCust.UnitId || 
+                            priceDiscTableVend.FromDate != priceDiscTableCust.FromDate ||
+                            priceDiscTableVend.ToDate != priceDiscTableCust.ToDate ||
+                            priceDiscTableVend.Currency != priceDiscTableCust.Currency ||
+                            priceDiscTableVend.Amount != priceDiscTableCust.Amount ||
+                            priceDiscTableVend.PriceUnit != priceDiscTableCust.PriceUnit)
+                        {
+                            ttsbegin;
+                            priceDiscTableVend.selectForUpdate(true);
+                            priceDiscTableVend.UnitId   = priceDiscTableCust.UnitId;
+                            priceDiscTableVend.FromDate = priceDiscTableCust.FromDate;
+                            priceDiscTableVend.ToDate   = priceDiscTableCust.ToDate;
+                            priceDiscTableVend.Currency = priceDiscTableCust.Currency;
+                            priceDiscTableVend.Amount   = priceDiscTableCust.Amount;
+                            priceDiscTableVend.Module = ModuleInventCustVend::Vend;
+                            priceDiscTableVend.update();
+                            ttscommit;
+                        }
+                    
+                    }
+                    else  //insert
+                    {
+                        ttsbegin;
+                        priceDiscTableVend.selectForUpdate();
+                        priceDiscTableVend.relation = PriceType::PricePurch;
+                        PriceDiscTableVend.AccountCode  = PriceDiscPartyCodeType::Table;
+                        priceDiscTableVend.AccountRelation  = vendPriceGroup;
+                        priceDiscTableVend.AVAICRecId   = ICRecId;
+                        priceDiscTableVend.ItemCode = PriceDiscProductCodeType::Table;
+                        priceDiscTableVend.ItemRelation = vendItemId;
+                        priceDiscTableVend.UnitId   = priceDiscTableCust.UnitId;
+                        priceDiscTableVend.FromDate = priceDiscTableCust.FromDate;
+                        priceDiscTableVend.ToDate   = priceDiscTableCust.ToDate;
+                        priceDiscTableVend.Currency = priceDiscTableCust.Currency;
+                        priceDiscTableVend.Amount   = priceDiscTableCust.Amount;
+                        priceDiscTableVend.priceUnit    = priceDiscTableCust.priceUnit;
+                        priceDiscTableVend.InventDimId  = InventDim::findOrCreateBlank().inventDimId;
+                        priceDiscTableVend.Module = ModuleInventCustVend::Vend;
+                        priceDiscTableVend.insert();
+                        ttscommit;
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ndxICPriceTransfer</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Copies prices from customer to vendor intercompany
+    /// </summary>
+    public void ndxICPriceTransfer()
+    {
+        PriceDiscTable              priceDiscTableCust, priceDiscTableVend;
+        InterCompanyTradingPartner  icTradingPartnerVend = InterCompanyTradingRelation::getRelatedTradingPartner(this);
+        AccountNum                  custAccount;
+        CustPriceGroup              custPriceGroup;
+        VendAccount                 vendAccount;
+        ItemId                      custItemId, vendItemId;
+        RefRecId                    ICRecId;
+
+        InventTable                 inventTable;
+
+        custAccount = this.custTable().AccountNum;
+        custPriceGroup = this.custTable().AVANetPG2;
+        vendAccount = icTradingPartnerVend.vendTable().AccountNum;
+        
+        if (!custPriceGroup || !vendAccount)
+        {
+            throw Error(strFmt("@NDX:NDXICPriceTransferErrorPriceGroup", custAccount));
+        }
+
+        while select priceDiscTableCust where priceDiscTableCust.relation == PriceType::PriceSales
+            && priceDiscTableCust.AccountCode == PriceDiscPartyCodeType::GroupId
+            && PriceDiscTableCust.AccountRelation == custPriceGroup
+            && PriceDiscTableCust.ItemCode == PriceDiscProductCodeType::Table
+            join inventTable
+                where inventTable.ItemId == priceDiscTableCust.ItemRelation
+                && inventTable.KCS_KAOItemState != 'ARCHIV'
+        {
+            custItemId = priceDiscTableCust.ItemRelation;
+            
+            vendItemId = InventTable::findByProductInCompany(InventTable::find(custItemId).Product, icTradingPartnerVend.VendorDataAreaId).ItemId;
+
+            //look in externalItem
+            if(!vendItemId)
+            {
+                changecompany(icTradingPartnerVend.VendorDataAreaId)
+                {
+                    vendItemId = CustVendExternalItem::findExternalItemId(ModuleInventPurchSalesVendCustGroup::Vend, vendAccount, custItemId).ItemId;
+                }
+            }
+            
+            if (!vendItemId)
+            {
+                warning(strFmt("@NDX:NDXAICPriceTransNoICItem", custItemId, priceDiscTableCust.FromDate, priceDiscTableCust.ToDate));
+            }
+            else
+            {
+                ICRecId = priceDiscTableCust.RecId;
+                changecompany (icTradingPartnerVend.VendorDataAreaId)
+                {
+                    select firstonly priceDiscTableVend where priceDiscTableVend.relation == PriceType::PricePurch
+                        && priceDiscTableVend.AccountCode == PriceDiscPartyCodeType::Table
+                        && priceDiscTableVend.AccountRelation == vendAccount
+                        && priceDiscTableVend.AVAICRecId == ICRecId;
+
+                    if (priceDiscTableVend) //update
+                    {
+                        if (priceDiscTableVend.UnitId != priceDiscTableCust.UnitId ||
+                            priceDiscTableVend.FromDate != priceDiscTableCust.FromDate ||
+                            priceDiscTableVend.ToDate != priceDiscTableCust.ToDate ||
+                            priceDiscTableVend.Currency != priceDiscTableCust.Currency ||
+                            priceDiscTableVend.Amount != priceDiscTableCust.Amount ||
+                            priceDiscTableVend.PriceUnit != priceDiscTableCust.PriceUnit)
+                        {
+                            ttsbegin;
+                            priceDiscTableVend.selectForUpdate(true);
+                            priceDiscTableVend.UnitId   = priceDiscTableCust.UnitId;
+                            priceDiscTableVend.PriceUnit = priceDiscTableCust.PriceUnit;
+                            priceDiscTableVend.FromDate = priceDiscTableCust.FromDate;
+                            priceDiscTableVend.ToDate   = priceDiscTableCust.ToDate;
+                            priceDiscTableVend.Currency = priceDiscTableCust.Currency;
+                            priceDiscTableVend.Amount   = priceDiscTableCust.Amount;
+                            priceDiscTableVend.Module = ModuleInventCustVend::Vend;
+                            priceDiscTableVend.update();
+                            ttscommit;
+                        }
+                    
+                    }
+                    else  //insert
+                    {
+                        ttsbegin;
+                        priceDiscTableVend.selectForUpdate();
+                        priceDiscTableVend.relation = PriceType::PricePurch;
+                        PriceDiscTableVend.AccountCode  = PriceDiscPartyCodeType::Table;
+                        priceDiscTableVend.AccountRelation  = vendAccount;
+                        priceDiscTableVend.AVAICRecId   = ICRecId;
+                        priceDiscTableVend.ItemCode = PriceDiscProductCodeType::Table;
+                        priceDiscTableVend.ItemRelation = vendItemId;
+                        priceDiscTableVend.UnitId   = priceDiscTableCust.UnitId;
+                        priceDiscTableVend.FromDate = priceDiscTableCust.FromDate;
+                        priceDiscTableVend.ToDate   = priceDiscTableCust.ToDate;
+                        priceDiscTableVend.Currency = priceDiscTableCust.Currency;
+                        priceDiscTableVend.Amount   = priceDiscTableCust.Amount;
+                        priceDiscTableVend.PriceUnit = priceDiscTableCust.PriceUnit;
+                        priceDiscTableVend.InventDimId  = InventDim::findOrCreateBlank().inventDimId;
+                        priceDiscTableVend.Module = ModuleInventCustVend::Vend;
+                        priceDiscTableVend.insert();
+                        ttscommit;
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

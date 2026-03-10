@@ -1,0 +1,837 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXCSD</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// DebuC 22.09.23
+/// </summary>
+class NDXCSD
+{
+    utcdatetime CSDChecked;
+    public NDXCentralStoreId targetCentralStoreId;
+    NDXVerband nDX_Verband;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>checkCentralStore</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Vollständigkeits-Prüfung zu einem Zentrallager
+    /// </summary>
+    /// <param name = "_nDX_CentralStore">Zentrallager, für das die Überprüfung durchgeführt werden soll</param>
+    /// <param name = "_withInfo">display info</param>
+    /// <returns>container</returns>
+    /// <remarks>
+    /// geprüft wird für das aktuelle Verteilset und für das mit dem höchsten Abschlussjahr
+    /// Prüfung: 100% verteilt , Referenz auf alle Debitoren?
+    /// </remarks>
+    public container checkCentralStore(NDX_CentralStore _nDX_CentralStore, boolean _withInfo = true)
+    {
+        NDX_CentralStore nDX_CentralStore = _nDX_CentralStore;
+
+        NDX_CentralStoreDistributionTable   nDX_CentralStoreDistributionTable;
+        NDX_CentralStoreDistributionTable   nDX_CentralStoreDistributionTable2;
+        
+        CustTable                           custTable;
+        CustAccount                         masterAlliance;
+
+        NDXCSDPct                           pct;
+        container                           conInfo         = connull();
+        container                           conException    = connull();
+        container                           conEbene        = connull();
+        container                           conInfo2;
+        
+        NDXCompanyBE                        firma;
+        int                                 abschlJahr, umsatzJahr;
+        int                                 j;
+        int                                 nFehl;
+        int                                 nAnz, i, nAnz2;
+
+        Query                               q;
+        QueryRun                            qr;
+        QueryBuildDataSource                qbds;
+        utcdatetime                         CSD_Checked = DateTimeUtil::utcNow();
+        str                                 queryValue;
+
+        firma       = NDXHelperCommon::CompanyId2NDXCompany();
+        abschlJahr  = year(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+        umsatzJahr  = abschlJahr;
+        
+        ttsbegin;
+        nDX_CentralStore.selectForUpdate(true);
+        nDX_CentralStore.initForCSDCheck(CSD_Checked);
+
+        // Debitor zum Zentrallager gefunden?
+        custTable = custTable::find(nDX_CentralStore.CentralStoreId);
+        nDX_CentralStore.CSD_DebitOK = custTable ? NoYes::Yes : NoYes::No;
+        if (_withInfo)
+        {
+            if (!custTable)
+            {
+                conEbene += [strfmt("@NDX:NDXCentralStoreInfo", curext(), nDX_CentralStore.CentralStoreId),
+                        ["@NDX:NDXCentralStoreInfo1"],
+                        [Exception::Info]]; //Zentrallager [%1-%2]; Debitor zum Zentrallager nicht gefunden
+            }
+        }
+
+        q       = new Query();
+        qbds    = q.addDataSource(tablenum(NDX_CentralStoreDistributionTable));
+        for (j=1; j <= enumcnt(NDXCSDYear); j++)
+        {
+            qbds.clearRanges();
+            qbds.sortClear();
+            qbds.addRange(fieldnum(nDX_CentralStoreDistributionTable, CentralStoreId)).value(nDX_CentralStore.CentralStoreId);
+            switch (j)
+            {
+                case enum2int(NDXCSDYear::Active):
+                    nDX_CentralStoreDistributionTable2 = nDX_CentralStoreDistributionTable::findCSAktive(nDX_CentralStore.CentralStoreId);
+                    qbds.addRange(fieldnum(nDX_CentralStoreDistributionTable, Aktiv)).value(QueryValue(NoYes::Yes));
+                    break;
+                case enum2int(NDXCSDYear::ClosingYear):
+                case enum2int(NDXCSDYear::BeforeClosingYear):
+                    umsatzJahr -= 1;
+                    abschlJahr -= 1;
+                    qbds.firstOnly(true);
+                    qbds.addOrderByField(fieldnum(nDX_CentralStoreDistributionTable, CentralStoreId));
+                    qbds.addOrderByField(fieldnum(nDX_CentralStoreDistributionTable, AbschlussJahr), SortOrder::Descending);
+
+                    queryValue = strfmt('(%1 <= %2)', fieldid2name(tablenum(nDX_CentralStoreDistributionTable), fieldnum(nDX_CentralStoreDistributionTable, AbschlussJahr)), abschlJahr);
+                    qbds.addRange(fieldnum(nDX_CentralStoreDistributionTable, RecId)).value(queryValue);
+                    break;
+            }
+            qr = new QueryRun(q);
+            qr.next();
+            nDX_CentralStoreDistributionTable = qr.get(tablenum(NDX_CentralStoreDistributionTable));
+
+            if (j == enum2int(NDXCSDYear::Active) || (nDX_CentralStoreDistributionTable
+                && nDX_CentralStoreDistributionTable.AbschlussJahr
+                && nDX_CentralStoreDistributionTable.AbschlussJahr <= abschlJahr))
+            {
+                if (nDX_CentralStoreDistributionTable)
+                {
+                    [nDX_CentralStoreDistributionTable, pct, nAnz2] = NDXCSD::checkCSDSet(nDX_CentralStoreDistributionTable);
+                    switch (j)
+                    {
+                        case enum2int(NDXCSDYear::Active) :
+                            nDX_CentralStore.CSD_Aktiv              = nDX_CentralStoreDistributionTable.ValidFrom;
+                            nDX_CentralStore.CSD_DebitorAktivOK     = nDX_CentralStoreDistributionTable.CSD_DebitOK;
+                            nDX_CentralStore.CSD_PctAktivOK         = nDX_CentralStoreDistributionTable.CSD_PctOK;
+                            nDX_CentralStore.CSD_PctAktiv           = pct;
+                            nDX_CentralStore.CSD_DebitorAktivFehl   = nAnz2;
+                            break;
+                        case enum2int(NDXCSDYear::ClosingYear):
+                            nDX_CentralStore.CSD_AbschlJ              = nDX_CentralStoreDistributionTable.AbschlussJahr;
+                            nDX_CentralStore.CSD_DebitorAbschlJOK     = nDX_CentralStoreDistributionTable.CSD_DebitOK;
+                            nDX_CentralStore.CSD_PctAbschlJOK         = nDX_CentralStoreDistributionTable.CSD_PctOK;
+                            nDX_CentralStore.CSD_PctAbschlJ           = pct;
+                            nDX_CentralStore.CSD_DebitorAbschlJFehl   = nAnz2;
+                            break;
+                        case enum2int(NDXCSDYear::BeforeClosingYear):
+                            nDX_CentralStore.CSD_AbschlVJ             = nDX_CentralStoreDistributionTable.AbschlussJahr;
+                            nDX_CentralStore.CSD_DebitorAbschlVJOK    = nDX_CentralStoreDistributionTable.CSD_DebitOK;
+                            nDX_CentralStore.CSD_PctAbschlVJOK        = nDX_CentralStoreDistributionTable.CSD_PctOK;
+                            nDX_CentralStore.CSD_PctAbschlVJ          = pct;
+                            nDX_CentralStore.CSD_DebitorAbschlVJFehl  = nAnz2;
+                            break;
+                    }
+
+                    if (_withInfo)
+                    {
+                        if (nDX_CentralStore.CSD_DebitorAktivOK == NoYes::No)
+                        {
+                            switch (j)
+                            {
+                                case enum2int(NDXCSDYear::Active) :
+                                    // aktives Erfassungsset gültig ab [%1] [%2] Debitorenkonten ohne Debitor-Referenz
+                                    conInfo         += strfmt("@NDX:NDXCentralStoreInfo2", nDX_CentralStoreDistributionTable.ValidFrom, nAnz2);
+                                    break;
+                                case enum2int(NDXCSDYear::ClosingYear):
+                                case enum2int(NDXCSDYear::BeforeClosingYear):
+                                    // Abschluss-Erfassungsset [%1] gültig ab [%2] [%3] Debitorenkonten ohne Debitor-Referenz
+                                    conInfo         += strfmt("@NDX:NDXCentralStoreInfo3", nDX_CentralStoreDistributionTable.AbschlussJahr, nDX_CentralStoreDistributionTable.ValidFrom, nAnz2);
+                                    break;
+                            }
+                            conException    += Exception::Warning;
+
+                            [conInfo2, nAnz] = NDXCSD::getNotReferencedAccounts(nDX_CentralStoreDistributionTable.CSDId);
+                            conInfo         += conInfo2;
+                            for (i=1; i<=nAnz; i++)
+                            {
+                                conException += Exception::Info;
+                            }
+                        }
+                        if (nDX_CentralStore.CSD_PctAktivOK    == NoYes::No)
+                        {
+                            switch (j)
+                            {
+                                case enum2int(NDXCSDYear::Active) :
+                                    // aktives Erfassungsset gültig ab [%1] Verteilprozente <> 100% [%2]
+                                    conInfo         += strfmt("@NDX:NDXCentralStoreInfo5", nDX_CentralStoreDistributionTable.ValidFrom, pct);
+                                    break;
+                                case enum2int(NDXCSDYear::ClosingYear):
+                                case enum2int(NDXCSDYear::BeforeClosingYear):
+                                    // Abschluss-Erfassungsset [%1] gültig ab [%2] Verteilprozente <> 100% [%3]
+                                    conInfo         += strfmt("@NDX:NDXCentralStoreInfo6" , nDX_CentralStoreDistributionTable.AbschlussJahr, nDX_CentralStoreDistributionTable.ValidFrom, pct);
+                                    break;
+                            }
+                            conException    += Exception::Warning;
+
+                        }
+                    }
+
+                    // Verbandstruktur prüfen
+                    //[conInfo2, nAnz, masterAlliance, nFehl] = NDXCSD::getNotReferencedAccountsVerband(nDX_CentralStore, nDX_CentralStoreDistributionTable.CSDId);
+                    [conInfo2, nAnz, masterAlliance, nFehl] = this.getNotReferencedAccountsVerband(nDX_CentralStore, nDX_CentralStoreDistributionTable.CSDId);
+                    switch (j)
+                    {
+                        case enum2int(NDXCSDYear::Active):
+                            nDX_CentralStore.CSD_AllianceAktivFehl      = nFehl;
+                            nDX_CentralStore.CSD_AllianceAktivOK        = !nDX_CentralStore.CSD_AllianceAktivFehl;
+                            break;
+                        case enum2int(NDXCSDYear::ClosingYear):
+                            nDX_CentralStore.CSD_AllianceAbschlJFehl    = nFehl;
+                            nDX_CentralStore.CSD_AllianceAbschlJOK      = !nDX_CentralStore.CSD_AllianceAbschlJFehl;
+                            break;
+                        case enum2int(NDXCSDYear::BeforeClosingYear):
+                            nDX_CentralStore.CSD_AllianceAbschlVJFehl   = nFehl;
+                            nDX_CentralStore.CSD_AllianceAbschlVJOK     = !nDX_CentralStore.CSD_AllianceAbschlVJFehl;
+                            break;
+                    }
+
+                    if (conInfo2)
+                    {
+                        switch (j)
+                        {
+                            case enum2int(NDXCSDYear::Active):
+                                // aktives Erfassungsset gültig ab [%1] [%3] Debitoren ohne Referenz in Verbandstruktur [%2]
+                                conInfo += strfmt("@NDX:NDXCentralStoreInfo7", nDX_CentralStoreDistributionTable.ValidFrom, masterAlliance, nFehl);
+                                break;
+                            case enum2int(NDXCSDYear::ClosingYear):
+                            case enum2int(NDXCSDYear::BeforeClosingYear):
+
+                                // Abschluss-Erfassungsset [%1] gültig ab [%2] [%4] Debitoren ohne Referenz in Verbandstruktur [%3]
+                                conInfo += strfmt("@NDX:NDXCentralStoreInfo8",nDX_CentralStoreDistributionTable.AbschlussJahr, nDX_CentralStoreDistributionTable.ValidFrom, masterAlliance, nFehl);
+                                break;
+                        }
+                        conException    += Exception::Warning;
+
+                        conInfo         += conInfo2;
+                        
+                        for (i=1; i<=nAnz; i++)
+                        {
+                            conException += Exception::Info;
+                        }
+
+                    }
+
+                }
+            }
+        }
+        
+        if (conInfo)
+        {
+            conEbene += [strfmt("@NDX:NDXCentralStoreInfo9", curext(), nDX_CentralStore.CentralStoreId), conInfo, conException];  // Zentrallager [%1-%2] %3
+        }
+
+        nDX_CentralStore.update();
+        ttscommit;
+
+        return [nDX_CentralStore, conEbene];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkCSDSet</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Check a CentralStoreDistributionTable set
+    /// </summary>
+    /// <param name = "nDX_CentralStoreDistributionTable">CentralStoreDistributionTable record</param>
+    /// <returns>container</returns>
+    static container checkCSDSet(NDX_CentralStoreDistributionTable  nDX_CentralStoreDistributionTable)
+    {
+        const real LimitOK = 0.5;
+
+        NDX_CentralStoreDistributionLine    nDX_CentralStoreDistributionLine;
+        CustTable                           custTable;
+
+        NDXCSDPct                          minPct, maxPct;
+        NDXCSDPct                          pct;
+
+        minPct  = 100 - LimitOK;
+        maxPct  = 100 + LimitOK;
+
+        ttsbegin;
+        nDX_CentralStoreDistributionTable.selectForUpdate(true);
+
+        // wurden 100% der Umsatzwerte verteilt?
+        select sum(CSDPct) from nDX_CentralStoreDistributionLine
+            where nDX_CentralStoreDistributionLine.CSDId == nDX_CentralStoreDistributionTable.CSDId;
+
+        pct = nDX_CentralStoreDistributionLine.CSDPct;
+        nDX_CentralStoreDistributionTable.CSD_PctOK = (pct >= minPct && pct <= maxPct);
+
+        // bestehen zu allen eingetragenen Debitorenkonten Referenzen?
+        select count(recid) from nDX_CentralStoreDistributionLine
+            where nDX_CentralStoreDistributionLine.CSDId == nDX_CentralStoreDistributionTable.CSDId
+            notexists join  custTable
+                where custTable.AccountNum == nDX_CentralStoreDistributionLine.CustAccount;
+
+        nDX_CentralStoreDistributionTable.CSD_DebitOK   = (nDX_CentralStoreDistributionLine.RecId == 0);
+
+        nDX_CentralStoreDistributionTable.update();
+        ttscommit;
+
+        return [nDX_CentralStoreDistributionTable, pct, nDX_CentralStoreDistributionLine.RecId];
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getNotReferencedAccounts</Name>
+				<Source><![CDATA[
+    static container getNotReferencedAccounts(NDXCSDId _csdId)
+    {
+        #define.MaxValues(10)
+
+        NDX_CentralStoreDistributionLine    nDX_CentralStoreDistributionLine;
+        CustTable                           custTable;
+
+        str                                 info = '';
+        container                           conInfo = connull();
+        int                                 i = 0;
+        int                                 nFehl = 0;
+        CustAccount                         custAccount;
+
+        while select nDX_CentralStoreDistributionLine
+            where nDX_CentralStoreDistributionLine.CSDId == _csdId
+            notexists join  custTable
+                where custTable.AccountNum == nDX_CentralStoreDistributionLine.CustAccount
+        {
+            ++i;
+            ++nFehl;
+            if (i > #MaxValues)
+            {
+                coninfo += strfmt('  [%1]', info);
+                info   = '';
+                i       = 1;
+            }
+            custAccount = nDX_CentralStoreDistributionLine.CustAccount;
+
+            if (!custAccount)
+            {
+                custAccount = "@NDXBase:NDXCaptionEmpty";
+            }
+
+            if (info)
+            {
+                info = strfmt('%1, %2', info, custAccount);
+            }
+            else
+            {
+                info = strfmt('%1', custAccount);
+            }
+        }
+        if (info)
+        {
+            coninfo += strfmt('  [%1]', info);
+        }
+
+        return [coninfo, conlen(conInfo), nFehl];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getNotReferencedAccountsVerband</Name>
+				<Source><![CDATA[
+    public container getNotReferencedAccountsVerband(NDX_CentralStore _NDX_CentralStore, NDXCSDId _csdId, boolean _lTestEnvironment = false)
+    {
+        const int maxValues = 10;
+
+        NDX_CentralStoreDistributionLine    nDX_CentralStoreDistributionLine;
+
+        //NDXVerband                          nDX_Verband;
+        Container                           conChildren;
+        int                                 nPos;
+        int                                 nFehl = 0;
+
+        str                                 info = '';
+        container                           conInfo = connull();
+        int                                 i = 0;
+        CustAccount                         custAccount;
+
+        if (!_csdId)
+        {
+            return conInfo;
+        }
+
+        if(nDX_Verband == null || nDX_Verband.parmCustAccount() != _NDX_CentralStore.CentralStoreId)
+        {
+            nDX_Verband = NDXVerband::constructor(_NDX_CentralStore.CentralStoreId);
+        }
+        
+        conChildren   = nDX_Verband.getChildrenFromMaster();
+
+        while select nDX_CentralStoreDistributionLine
+            where nDX_CentralStoreDistributionLine.CSDId == _csdId
+        {
+            nPos = confind(conChildren, nDX_CentralStoreDistributionLine.CustAccount);
+            if (!nPos)
+            {
+                ++nFehl;
+                ++i;
+                if (i > maxValues)
+                {
+                    coninfo += strfmt('  [%1]', info);
+                    info   = '';
+                    i       = 1;
+                }
+
+                custAccount = nDX_CentralStoreDistributionLine.CustAccount;
+                
+                if (!custAccount)
+                {
+                    custAccount = "@NDXBase:NDXCaptionEmpty";
+                }
+
+                if (info)
+                {
+                    info = strfmt('%1, %2', info, custAccount);
+                }
+                else
+                {
+                    info = strfmt('%1', custAccount);
+                }
+
+            }
+        }
+
+        if (info)
+        {
+            coninfo += strfmt('  [%1]', info);
+        }
+
+        return [coninfo, conlen(conInfo), nDX_Verband.masterAlliance, nFehl];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkCentralStores</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks central warehouse
+    /// </summary>
+    /// <param name = "_contract">NDXCSDContract record</param>
+    public void checkCentralStores(NDXCSDContract _contract)
+    {
+        NDX_CentralStore        nDX_CentralStore, nDX_CentralStore2;
+
+        container               conEbene1, conEbene = connull();
+        boolean all = _contract.parmCSDAll();
+
+        utcdatetime start;
+        nDX_CentralStore = _contract.parmCommon();
+        
+        if(all)
+        {
+            while select nDX_CentralStore
+                where nDX_CentralStore.Deaktiv    == NoYes::No
+            {
+                [nDX_CentralStore2, conEbene1] = this.checkCentralStore(nDX_CentralStore);
+                conEbene += conEbene1;
+            }
+            //info(strfmt("@NDX:NDXCentralStoreInfo4", DateTimeUtil::getDifference(DateTimeUtil::utcNow(),start), conEbene));
+            NDXHelperInfoDisplay::infoWithPrefix(strfmt("@NDX:NDXCentralStoreInfo4", datetime2Str(DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(), DateTimeUtil::getUserPreferredTimeZone()))), conEbene);
+        }
+        else
+        {
+            [nDX_CentralStore2, conEbene] = this.checkCentralStore(nDX_CentralStore);
+            NDXHelperInfoDisplay::infoWithPrefix(strfmt("@NDX:NDXCentralStoreInfo16", datetime2Str(DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(), DateTimeUtil::getUserPreferredTimeZone())), nDX_CentralStore2.CentralStoreId), conEbene);
+        }
+        
+        
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkCentralStoreDistributionLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks central store distribution positions
+    /// </summary>
+    /// <param name = "_contract">NDXCSDContract record</param>
+    public void checkCentralStoreDistributionLine(NDXCSDContract _contract)
+    {
+        NDX_CentralStoreDistributionLine    ndx_CentralStoreDistributionLine;
+        NDX_CentralStoreDistributionTable ndx_CentralStoreDistributionTable;
+        Container conChildren;
+
+        int nPos, nAnz = 0;
+        str infoMessage = "";
+        
+        ndx_CentralStoreDistributionTable = _contract.parmCommon();
+
+        infoMessage = (strfmt("@NDX:NDXCentralStoreInfo17", ndx_CentralStoreDistributionTable.CentralStoreId, ndx_CentralStoreDistributionTable.ValidFrom));
+        
+        if(nDX_Verband == null || nDX_Verband.parmCustAccount() != ndx_CentralStoreDistributionTable.CentralStoreId)
+        {
+            nDX_Verband = NDXVerband::constructor(ndx_CentralStoreDistributionTable.CentralStoreId);
+        }
+        conChildren = nDX_Verband.getChildrenFromMaster();
+        
+        while select ndx_CentralStoreDistributionLine
+            where ndx_CentralStoreDistributionLine.CSDId == ndx_CentralStoreDistributionTable.CSDId
+        {
+            nPos = confind(conChildren, ndx_CentralStoreDistributionLine.CustAccount);
+            if (!nPos)
+            {
+                infoMessage += '\n' + strfmt("@NDX:NDXCentralStoreInfo14", ndx_CentralStoreDistributionLine.CustAccount, ndx_CentralStoreDistributionLine.CSDPct, nDX_Verband.masterAlliance ); //Debitor [%1] mit [%2]% Umsatz-Anteil konnte im Verband [%3] nicht ermittelt werden
+                ++nAnz;
+            }
+        }
+        
+        if (nAnz)
+        {
+            infoMessage += '\n' + strfmt("@NDX:NDXCentralStoreInfo10", nAnz, nDX_Verband.masterAlliance); // Insgesamt konnten [%1] Debitoren nicht im Verband [%2] ermittelt werden!
+        }
+        else
+        {
+            infoMessage += '\n' + "@NDX:NDXCentralStoreInfo11"; // Alle Debitoren der Umsatzverteilung konnten dem Verband zugeordnet werden.
+        }
+
+        Info(infoMessage);
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCentralStoresFromCustAccount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "custAccount">CustAccount</param>
+    /// <returns>container</returns>
+    static container getCentralStoresFromCustAccount(CustAccount custAccount)
+    {
+        NDX_CentralStoreDistributionTable   nDX_CentralStoreDistributionTable;
+
+        Query                       qCSGrp;
+        QueryRun                    qrCSGrp;
+        QueryBuildDataSource        qbdsCSGrp, qbdsCS2Grp;
+        container                   conCS = connull();
+        ;
+        nDX_CentralStoreDistributionTable.setTmp();
+
+        qCSGrp     = new Query();
+        qbdsCSGrp  = qCSGrp.addDataSource(tablenum(NDX_CentralStoreDistributionTable));
+        qbdsCSGrp.addGroupByField(fieldnum(NDX_CentralStoreDistributionTable, CentralStoreId));
+        
+        // Verknüpfung mit Debitoren-Datensatz
+        qbdsCS2Grp = qbdsCSGrp.addDataSource(tablenum(NDX_CentralStoreDistributionLine));
+        qbdsCS2Grp.addLink(fieldnum(NDX_CentralStoreDistributionTable, CSDId), fieldnum(NDX_CentralStoreDistributionLine, CSDId));
+        qbdsCS2Grp.joinMode(JoinMode::ExistsJoin);
+        qbdsCS2Grp.addRange(fieldnum(NDX_CentralStoreDistributionLine, CustAccount)).value(custAccount);
+        qrCSGrp    = new QueryRun(qCSGrp);
+
+        while (qrCSGrp.next())
+        {
+            nDX_CentralStoreDistributionTable = qrCSGrp.get(tablenum(NDX_CentralStoreDistributionTable));
+            conCS += nDX_CentralStoreDistributionTable.CentralStoreId;
+        }
+
+        return conCS;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCentralStoreDistribution4CustAccount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "centralStoreId">NDXCentralStoreId</param>
+    /// <param name = "custAccount">CustAccount</param>
+    /// <param name = "jahr">NDXYear</param>
+    /// <returns>NDXCentralStoreDistributionLine</returns>
+    static NDX_CentralStoreDistributionLine getCentralStoreDistribution4CustAccount(NDXCentralStoreId centralStoreId,
+                                                                                CustAccount        custAccount,
+                                                                                NDXYear            jahr)
+    {
+        NDX_CentralStoreDistributionTable       nDX_CentralStoreDistributionTable;
+        NDX_CentralStoreDistributionLine        nDX_CentralStoreDistributionLine, nDX_CentralStoreDistributionLine2;
+
+        NDXYear                     jahrAktuell;
+        boolean                     lSetExists;
+        ;
+
+        #localmacro.selectActive
+        select firstonly nDX_CentralStoreDistributionLine
+            where       nDX_CentralStoreDistributionLine.CustAccount        == custAccount
+            exists join nDX_CentralStoreDistributionTable
+                where   nDX_CentralStoreDistributionTable.CentralStoreId    == centralStoreId                           &&
+                        nDX_CentralStoreDistributionTable.CSDId             == nDX_CentralStoreDistributionLine.CSDId   &&
+                        nDX_CentralStoreDistributionTable.Aktiv             == NoYes::Yes;
+        #endmacro
+
+
+
+        jahrAktuell = year(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+
+        // 1. falls das Auswertungsjahr dem aktuellen Jahr entspricht: aktiv markierte Erfassungsset
+        if (jahr == jahrAktuell)
+        {
+            #selectActive
+        }
+        else
+        {
+            // 2. Existiert ein Abschluss-Set
+            select firstonly nDX_CentralStoreDistributionLine
+            exists join nDX_CentralStoreDistributionTable
+                where   nDX_CentralStoreDistributionTable.CentralStoreId    == centralStoreId                           &&
+                        nDX_CentralStoreDistributionTable.CSDId             == nDX_CentralStoreDistributionLine.CSDId   &&
+                        nDX_CentralStoreDistributionTable.AbschlussJahr     == jahr;
+            lSetExists = (nDX_CentralStoreDistributionLine != null);
+            if (lSetExists)
+            {
+                // Existiert ein Eintrag für den Debitor ?
+                select firstonly nDX_CentralStoreDistributionLine
+                where       nDX_CentralStoreDistributionLine.CustAccount        == custAccount
+                exists join nDX_CentralStoreDistributionTable
+                    where   nDX_CentralStoreDistributionTable.CentralStoreId    == centralStoreId                           &&
+                            nDX_CentralStoreDistributionTable.CSDId             == nDX_CentralStoreDistributionLine.CSDId   &&
+                            nDX_CentralStoreDistributionTable.AbschlussJahr     == jahr;
+            }
+            // 3. Existiert ein Abschluss-Set mit Abschlussjahr > Auswertungsjahr
+            //    und ein Abschluss-Set mit Abschlussjahr < Auswertungsjahr
+            if (!lSetExists)
+            {
+                select firstOnly    nDX_CentralStoreDistributionLine2
+                exists join     nDX_CentralStoreDistributionTable
+                    where       nDX_CentralStoreDistributionTable.CentralStoreId    == centralStoreId                           &&
+                                nDX_CentralStoreDistributionTable.CSDId             == nDX_CentralStoreDistributionLine.CSDId   &&
+                                nDX_CentralStoreDistributionTable.AbschlussJahr     > jahr;
+                lSetExists = (nDX_CentralStoreDistributionLine2 != null);
+                if (lSetExists)
+                {
+                    select firstOnly    nDX_CentralStoreDistributionLine
+                    order by        nDX_CentralStoreDistributionTable.AbschlussJahr desc
+                    where           nDX_CentralStoreDistributionLine.CustAccount        == custAccount
+                    join            nDX_CentralStoreDistributionTable
+                        where       nDX_CentralStoreDistributionTable.CentralStoreId    == centralStoreId                           &&
+                                    nDX_CentralStoreDistributionTable.CSDId             == nDX_CentralStoreDistributionLine.CSDId   &&
+                                    nDX_CentralStoreDistributionTable.AbschlussJahr     < jahr;
+                }
+            }
+            // 4. Falls kein Eintrag lokalisiert werden konnte, den aktiven nehmen
+            if (!lSetExists)
+            {
+                #selectActive
+            }
+        }
+
+        return nDX_CentralStoreDistributionLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createCSDSpreadingTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Create new CentralStoreDistributionTable Set
+    /// </summary>
+    /// <param name = "centralStoreDistributionTable">CentralStoreDistributionTable orig record</param>
+    /// <param name = "_validFrom">dfrom date</param>
+    /// <returns>CentralStoreDistributionTable</returns>
+    static NDX_CentralStoreDistributionTable createCSDSpreadingTable(NDX_CentralStoreDistributionTable centralStoreDistributionTable, NDXValidFrom _validFrom = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        NDX_CentralStoreDistributionTable       nDX_CentralStoreDistributionTable;
+        NDX_CentralStoreDistributionLine        nDX_CentralStoreDistributionLine;
+        NDX_CentralStoreDistributionLine        nDX_CentralStoreDistributionLineCopy;
+        
+        ttsbegin;
+        nDX_CentralStoreDistributionTable = NDX_CentralStoreDistributionTable::create(centralStoreDistributionTable, true);
+        nDX_CentralStoreDistributionTable.ValidFrom = _validFrom;
+        
+        if (nDX_CentralStoreDistributionTable.validateWrite())
+        {
+            nDX_CentralStoreDistributionTable.write();
+        }
+
+        while select nDX_CentralStoreDistributionLine
+            where nDX_CentralStoreDistributionLine.CSDId == centralStoreDistributionTable.CSDId
+        {
+            nDX_CentralStoreDistributionLineCopy.data(nDX_CentralStoreDistributionLine);
+            nDX_CentralStoreDistributionLineCopy.CSDId  = nDX_CentralStoreDistributionTable.CSDId;
+            nDX_CentralStoreDistributionLineCopy        = NDX_CentralStoreDistributionLine::findOrCreate(nDX_CentralStoreDistributionLineCopy);
+
+            if(nDX_CentralStoreDistributionLineCopy.validateWrite())
+            {
+                nDX_CentralStoreDistributionLineCopy.write();
+            }
+        }
+        ttscommit;
+
+        return nDX_CentralStoreDistributionTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyCSDSpreadingTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Make a copy from CentralStoreDistributionTable
+    /// </summary>
+    /// <param name = "origCentralStoreDistributionTable">CentralStoreDistributionTable orig record</param>
+    static void copyCSDSpreadingTable(NDX_CentralStoreDistributionTable origCentralStoreDistributionTable)
+    {
+        NDX_CentralStoreDistributionTable       nDX_CentralStoreDistributionTable, nDX_CentralStoreDistributionTableNew;
+        NDX_CentralStoreDistributionLine        nDX_CentralStoreDistributionLineFrom, nDX_CentralStoreDistributionLineTo;
+        NDXCSDId target_CSDIdBase;
+        NDXCentralStoreId targetStoreId;
+
+        FormRun formRun;
+        Args args = new Args();
+        NDXCSD lNDX_CSD = new NDXCSD();
+        boolean overwriteValues;
+        ;
+
+        args.name(formstr(NDXCSDCopyDialog));
+        args.record(origCentralStoreDistributionTable);
+        args.caller(lNDX_CSD);
+        formRun = ClassFactory.formRunClass(args);
+        formRun.init();
+        formRun.run();
+        formRun.wait(true);
+
+        targetStoreId = lNDX_CSD.targetCentralStoreId;
+
+        if(formRun.closedOk() && targetStoreId != '' && origCentralStoreDistributionTable.CentralStoreId != targetStoreId)
+        {
+            //Create new set for the target store get thenewest record
+            select nDX_CentralStoreDistributionTable order by nDX_CentralStoreDistributionTable.ValidFrom desc
+                where nDX_CentralStoreDistributionTable.CentralStoreId == targetStoreId;
+
+            nDX_CentralStoreDistributionTable.CentralStoreId = targetStoreId;
+
+            target_CSDIdBase = nDX_CentralStoreDistributionTable.CSDId;
+
+            //if the is allready set with the same date
+            if(nDX_CentralStoreDistributionTable && nDX_CentralStoreDistributionTable.ValidFrom == origCentralStoreDistributionTable.ValidFrom)
+            {
+                if(Box::yesNo(strFmt("@NDX:NDXCentralStoreInfo15", targetStoreId, origCentralStoreDistributionTable.ValidFrom),DialogButton::No, '') == DialogButton::Yes)
+                {
+                    overwriteValues = true;
+                }
+                else
+                {
+                    return;
+                }
+            }
+
+            ttsbegin;
+            //get CSDId of the new set
+            if(overwriteValues)
+            {
+                delete_from nDX_CentralStoreDistributionLineTo
+                    where nDX_CentralStoreDistributionLineTo.CSDId == target_CSDIdBase;
+            }
+            else
+            {
+                //Create NDX_CentralStoreDistributionTable for target
+                nDX_CentralStoreDistributionTable = NDX_CentralStoreDistributionTable::create(nDX_CentralStoreDistributionTable, true);
+                nDX_CentralStoreDistributionTable.ValidFrom = origCentralStoreDistributionTable.ValidFrom;
+                nDX_CentralStoreDistributionTable.AbschlussJahr = origCentralStoreDistributionTable.AbschlussJahr;
+                if (nDX_CentralStoreDistributionTable.validateWrite())
+                {
+                    nDX_CentralStoreDistributionTable.write();
+                }
+                //Change for nue target scdId
+                target_CSDIdBase = nDX_CentralStoreDistributionTable.CSDId;
+            }
+
+            //Copy lines
+            while select nDX_CentralStoreDistributionLineFrom
+                where nDX_CentralStoreDistributionLineFrom.CSDId == origCentralStoreDistributionTable.CSDId
+            {
+                nDX_CentralStoreDistributionLineTo.data(nDX_CentralStoreDistributionLineFrom);
+                nDX_CentralStoreDistributionLineTo.CSDId  = nDX_CentralStoreDistributionTable.CSDId;
+                nDX_CentralStoreDistributionLineTo = NDX_CentralStoreDistributionLine::findOrCreate(nDX_CentralStoreDistributionLineTo, true);
+
+                nDX_CentralStoreDistributionLineTo.CSDPrice = nDX_CentralStoreDistributionLineFrom.CSDPrice;
+                nDX_CentralStoreDistributionLineTo.CSDPct = nDX_CentralStoreDistributionLineFrom.CSDPct;
+
+                if (nDX_CentralStoreDistributionLineTo.validateWrite())
+                {
+                    nDX_CentralStoreDistributionLineTo.write();
+                }
+            }
+
+            //update the parent
+            select firstonly forupdate nDX_CentralStoreDistributionTableNew
+                where nDX_CentralStoreDistributionTableNew.CSDId == target_CSDIdBase
+                    && nDX_CentralStoreDistributionTableNew.CentralStoreId == targetStoreId;
+
+            nDX_CentralStoreDistributionTableNew.AbschlussJahr = origCentralStoreDistributionTable.AbschlussJahr;
+            nDX_CentralStoreDistributionTableNew.ValidFrom = origCentralStoreDistributionTable.ValidFrom;
+
+            if(origCentralStoreDistributionTable.Aktiv)
+            {
+                nDX_CentralStoreDistributionTableNew.Aktiv = origCentralStoreDistributionTable.Aktiv;
+            }
+            nDX_CentralStoreDistributionTableNew.update();
+            ttscommit;
+
+            info(strFmt("@NDX:NDXCentralStoreInfo13", origCentralStoreDistributionTable.CentralStoreId, targetStoreId));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Main Funtion for CSD sets
+    /// </summary>
+    /// <param name = "_args">args</param>
+    static void main(Args _args)
+    {
+        if(_args != null && _args.dataset() == tableNum(NDX_CentralStoreDistributionTable) && _args.record())
+        {
+            switch(_args.menuItemName())
+            {
+                case menuItemActionStr(NDXCSDCreateSet):
+                    NDXCSD::createCSDSpreadingTable(_args.record());
+                    break;                
+                case menuItemActionStr(NDXCSDCopySet):
+                    NDXCSD::copyCSDSpreadingTable(_args.record());
+                    break;
+            }
+
+            if(FormDataUtil::isFormDataSource(_args.record()))
+            {
+                FormDataUtil::getFormDataSource(_args.record()).research();
+            }
+            
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

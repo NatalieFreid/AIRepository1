@@ -1,0 +1,921 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXVerbandSE</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// DebuC 22.09.23
+/// </summary>
+class NDXVerbandSE
+{
+    const str MasterAllianceAllDebitor = '1';
+    CustAccount                 custAccount;
+    AVATOSId                    masterAlliance;
+    smmSalesDistrictId          salesDistrictId;
+    CommissSalesGroup           salesGroupId; 
+    int                         nAnzChilds;
+    boolean                     lInfoLog;
+    boolean                     lMasterAllianceChanged;
+    boolean                     lVerbandChecked;
+    boolean                     lVerbandCheckOK;
+    boolean                     lTestEnvironment;
+    boolean                     lgotCSFromMaster;    // wurden die Zentrallager über den Master ermittelt?
+    boolean                     lgotChildsFromMaster;
+    boolean                     lAlliance;
+    boolean                     lSalesGroupMaster;
+    str                         strVerbandCheck;
+    NDXSalesPerDebitor          lSalesPerDebitor;
+    container                   conChildsData, conChilds;
+    container                   conMasterAlliance;
+    container                   conChildsMaster; 
+    container                   conMasters;
+    FormStaticTextControl       ctrlStatus;
+    str                         ctrlStatusText;
+    NDXUmsSignature             umsSignature;
+    NDXCompanyBE                firma;
+    NDXTmpVerband nDXTmpVerband;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmSalesGroupId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_SalesGroupId">CommissSalesGroup</param>
+    /// <returns>CommissSalesGroup</returns>
+    CommissSalesGroup parmSalesGroupId(CommissSalesGroup _SalesGroupId = SalesGroupId)
+    {
+        salesGroupId = _SalesGroupId;
+        return salesGroupId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmlSalesGroupMaster</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "l_lSalesGroupMaster">boolean</param>
+    /// <returns>boolean</returns>
+    boolean parmlSalesGroupMaster(boolean l_lSalesGroupMaster = lSalesGroupMaster)
+    {
+        ;
+        lSalesGroupMaster   = l_lSalesGroupMaster;
+        return lSalesGroupMaster;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmlAlliance</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_lAlliance">boolean</param>
+    /// <returns>boolean</returns>
+    boolean parmlAlliance(boolean _lAlliance = lAlliance)
+    {
+        lAlliance = _lAlliance;
+
+        if (lAlliance)
+        {
+            this.parmlSalesGroupMaster(false);
+        }
+        return lAlliance;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_umsSignature">NDXUmsSignature</param>
+    /// <param name = "_lTestEnvironment">boolean</param>
+    /// <param name = "_custAccount">custAccount</param>
+    protected void new(
+        NDXUmsSignature _umsSignature = curuserid(),
+         boolean _lTestEnvironment = false,
+         custAccount _custAccount = '')
+    {
+        custAccount         = _custAccount;
+        conChildsData       = connull();
+        conMasterAlliance   = conNull();
+        umsSignature        = _umsSignature;
+        lTestEnvironment    = _lTestEnvironment;
+
+        this.init4NewBuild();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    public static NDXVerbandSE construct(NDXUmsSignature   _umsSignature       = curuserid(),
+         boolean            _lTestEnvironment   = false,
+         custAccount        _custAccount        = '')
+    {
+        NDXVerbandSE verband = new NDXVerbandSE(_umsSignature,_lTestEnvironment,_custAccount);
+
+        return verband;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init4NewBuild</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    void init4NewBuild()
+    {
+        ;
+
+        lgotCSFromMaster    = false;
+        lgotChildsFromMaster = false;
+        lVerbandChecked     = false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildAllianceTree</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "lWithInfo">boolean</param>
+    static void buildAllianceTree(boolean lWithInfo = false)
+    {
+        ;
+        if (lWithInfo)
+        {
+            info(strfmt('[%1] Start: Ermittlung der Verbandstrukturen und deren Debitoren', NDXHelperCommon::seconds2Str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()))));
+        }
+        // Ermittlung aller Verbandsstrukturen in tables.NDX_AllianceTree
+        NDXVerbandSE::getAllianceParentChild();
+        // Debitoren aller Unterverbände ermitteln
+        NDXAllianceTreeCustomer::buildFromNDXAllianceTree();
+        if (lWithInfo)
+        {
+            info(strfmt('[%1] Ende: Ermittlung der Verbandstrukturen und deren Debitoren', NDXHelperCommon::seconds2Str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()))));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAllianceParentChild</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    static void getAllianceParentChild()
+    {
+        CustTable               c1, c2, c3, allianceRoot;
+        KCS_TOSTable            tosTable1, tosTableRoot;
+        NDXAllianceTree         nDXAllianceTree;
+        NDXUmsatzClass          nDXUmsatzClass;
+        KCS_BOSAllianceID       allianceRootID;
+        container               conFirmen;
+        int                     i;
+        dataAreaId              company;
+        NDXCompanys             firma;
+
+        void getValue(AVATOSId l_alliance, int level = 2)
+        {
+            KCS_TOSTable tosTable;
+            
+            while select tosTable
+                where tosTable.ParentTosId == l_alliance
+            {
+                //info(strfmt('Alliance [%3] Level [%2] AccountNum [%1]', l_c1.AccountNum, level, l_alliance));
+                NDXAllianceTree::insertRecords(firma, allianceRootID, l_alliance, tosTable.TosId, 0, level);
+                getValue(tosTable.TosId, level + 1);
+            }
+        }
+        ;
+
+        //--> 1.1: NDX/PAFFH/NDX_TASK1235003633/18.12.2014
+        nDXUmsatzClass = NDXUmsatzClass::construct();
+        conFirmen = nDXUmsatzClass.parmConFirmen();
+        //<-- NDX/PAFFH/NDX_TASK1235003633/18.12.2014
+
+
+        // alte Einträge bereinigen
+        delete_from nDXAllianceTree;
+
+        //--> 1.1: NDX/PAFFH/NDX_TASK1235003633/18.12.2014
+        for (i=1; i <= conlen(conFirmen); i++)
+        {
+            firma = conpeek(conFirmen, i);
+            company = NDXHelperCommon::NDXCompanys2CompanyId(firma);
+
+            changecompany(company)
+            {
+                //<-- NDX/PAFFH/NDX_TASK1235003633/18.12.2014
+                tosTableRoot    = null;
+                tosTable1       = null;
+                allianceRoot    = null;
+                c1              = null;
+                c2              = null;
+                c3              = null;
+                // Schleife über alle Root-Verbände
+                //TODO DebuC durch KCS_TOSTAble tauschen
+                //while select        KCS_BOSAllianceID
+                //from            allianceRoot
+                //order by        KCS_BOSAllianceID
+                //group by        KCS_BOSAllianceID
+                //where           allianceRoot.KCS_BOSAllianceID
+                //notexists join  c3
+                //    where       c3.AccountNum == allianceRoot.KCS_BOSAllianceID && c3.KCS_BOSAllianceID
+                while select tosTableRoot
+                    where tosTableRoot.ParentTosId == ''
+                {
+                    allianceRootID = tosTableRoot.TOSId;
+                    //c4 = CustTable::find(allianceRootID);
+                    NDXAllianceTree::insertRecords(firma, allianceRootID, tosTableRoot.TOSId, tosTableRoot.TOSId, 0, 0);
+                    // Schleife über alle Mittglieder der 1.Ebene des Verbands
+                    //while select    AccountNum, Party
+                    //from        c1
+                    //group by    AccountNum, Party
+                    //where       c1.KCS_BOSAllianceID == allianceRoot.KCS_BOSAllianceID
+                    //exists join c2
+                    //    where   c2.KCS_BOSAllianceID == c1.AccountNum
+                    while select tosTable1
+                        where tosTable1.ParentTosId == tosTableRoot.TosId
+                    {
+                        //info(strfmt('Alliance [%3] Level [%2] AccountNum [%1]', c1.AccountNum, 1, alliancRoot.KCS_BOSAllianceID));
+                        NDXAllianceTree::insertRecords(firma, allianceRootID, tosTable1.ParentTosId, tosTable1.TosId, 0, 1);
+                        // Unterverbände abarbeiten
+                        getValue(tosTable1.TosId);
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCSFromMaster</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// last modified: PaffH 05.02.25
+    /// </summary>
+    /// <param name = "conFirmen">container</param>
+    /// <param name = "threadControl">NDXTmpUmsatzClassThreadControl</param>
+    /// <param name = "_storeCopyFrom">NDXCentralStoreId</param>
+    void getCSFromMaster(container conFirmen = [NDXHelperCommon::CompanyId2NDXCompany(curext(), lTestEnvironment)],
+                     NDXTmpUmsatzClassThreadControl threadControl = null,
+                     NDXCentralStoreId _storeCopyFrom = '') 
+    {
+        NDX_CentralStore    nDX_CentralStore;
+        int                     i, nBis, nAnz = 0;
+        custAccount             lcustAccount;
+        container               conDataArea;
+        str                     text;
+        container               lconFirmen = conFirmen;
+
+        if (!lgotCSFromMaster)
+        {
+            if (!lconFirmen)
+            {
+                lconFirmen = [NDXHelperCommon::CompanyId2NDXCompany(curext(), lTestEnvironment)];
+            }
+
+            //TODO PaffH: checkpoint NDXTmpVerband
+            delete_from nDXTmpVerband
+            where   nDXTmpVerband.UmsSignature == umsSignature;
+
+            conDataArea = NDXHelperCommon::NDXCompanys2CompanyIdImpCon(lconFirmen, lTestEnvironment);
+
+            nBis = conlen(conChilds);
+            for (i = 1; i <= nBis; i++)
+            {
+                lcustAccount = conpeek(conChilds, i);
+                while select crosscompany:conDataArea  nDX_CentralStore
+                    where       nDX_CentralStore.CentralStoreId == lcustAccount &&
+                                nDX_CentralStore.Deaktiv        == NoYes::No
+                {
+                    if (nDX_CentralStore && nDX_CentralStore.CentralStoreId != _StoreCopyFrom)
+                    {
+                        ttsbegin;
+                        //TODO PaffH: checkpoint NDXTmpVerband
+                        nDXTmpVerband = NDXTmpVerband::find(nDXTmpVerband, umsSignature, nDX_CentralStore.dataAreaId, nDX_CentralStore.CentralStoreId, true);
+                        nDXTmpVerband.UmsSignature     = umsSignature;
+                        nDXTmpVerband.CentralStoreId   = nDX_CentralStore.CentralStoreId;
+                        nDXTmpVerband.Company          = nDX_CentralStore.dataAreaId;
+                        if (nDXTmpVerband.validateWrite())
+                        {
+                            nDXTmpVerband.write();
+                        }
+                        ttscommit;
+                        ++nAnz;
+                        
+                        if (threadControl && (nAnz mod 10 == 0))
+                        {
+                            text = strfmt("@NDX:NDXCentralWarehouseNumber", NDXHelperCommon::seconds2Str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone())), nAnz, nDX_CentralStore.CentralStoreId); // [%1] Zentrallager: Nr. [%2] [%3]
+                            NDXTmpUmsatzClassThreadControl::setInfoStatic(threadControl, text, true);
+                        }
+                    }
+                }
+            }
+            lgotCSFromMaster = true;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNAnzChilds</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <returns>int</returns>
+    public int parmNAnzChilds()
+    {
+        return nAnzChilds;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChildsFromSalesGroupId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "lSaveToTable">boolean</param>
+    /// <param name = "conCompanies">Container</param>
+    /// <param name = "_umsSignature">NDXUmsSignature</param>
+    void getChildsFromSalesGroupId(boolean lSaveToTable           = false,
+                               Container conCompanies         = [curext()],
+                               NDXUmsSignature _umsSignature = NDXUmsatzConstants::CalculatedUser)
+    {
+        #AviFiles
+
+        CustTable                  alliance;
+        NDXUmsSalesGroupMember     nDX_UmsSalesGroupMember;
+        NDXTmpCustomerAlliance     nDX_TmpCustomerAlliance;
+
+        int                         i;
+        NDXCompanyBE                lfirma;
+
+        Query                       q = new Query();
+        QueryRun                    qr;
+        QueryBuildDataSource        qbds;
+        container                   conComp;
+        SysOperationProgress        progress;
+        int                         nTotal;
+        ;
+
+        if (!salesGroupId)
+        {
+        //return conChilds;
+            return;
+        }
+
+
+        //--> 1.6: NDX/PAFFH/NDX_TASK1235003633/06.12.2014
+        if (lSaveToTable)
+        {
+            for (i=1; i<=conlen(conCompanies); i++)
+            {
+                lfirma = NDXHelperCommon::CompanyId2NDXCompany(conpeek(conCompanies, i));
+                delete_from nDX_TmpCustomerAlliance
+                where   nDX_TmpCustomerAlliance.UmsSignature    == _umsSignature     &&
+                        nDX_TmpCustomerAlliance.Alliance        == salesGroupId      &&
+                        nDX_TmpCustomerAlliance.Company           == lfirma;
+            }
+        }
+        qbds = q.addDataSource(tablenum(NDXUmsSalesGroupMember));
+        qbds.addRange(fieldnum(NDXUmsSalesGroupMember, SalesGroup)).value(salesGroupId);
+        for (i=1; i<=conlen(conCompanies); i++)
+        {
+            qbds.addRange(fieldnum(NDXUmsSalesGroupMember, CompanyId)).value(conpeek(conCompanies, i));
+        }
+        qr = new QueryRun(q);
+        nTotal     = NDXHelperCommon::anzRecords(q, tablenum(NDXUmsSalesGroupMember));
+        progress   = SysOperationProgress::newGeneral(#aviUpdate, "@NDX:NDXSalesDistrictCustomer", nTotal);     // VK-Bereich-Debitoren
+        nAnzChilds = 0;
+        conChilds  = connull();
+        while (qr.next())
+        {
+            nDX_UmsSalesGroupMember = qr.get(tablenum(NDXUmsSalesGroupMember));
+            // falls Verband; nicht berücksichtigen
+            conComp = [nDX_UmsSalesGroupMember.CompanyId];
+            select firstonly crosscompany:conComp alliance where
+            alliance.KCS_TOSId == nDX_UmsSalesGroupMember.AccountNum;
+            if (alliance)
+            {
+                continue;
+            }
+
+
+            ++nAnzChilds;
+            progress.setCount(nAnzChilds);
+            progress.setText(strfmt('(%1/%2) %3', nAnzChilds, nTotal, nDX_UmsSalesGroupMember.AccountNum));
+            if (lSaveToTable)
+            {
+                nDX_TmpCustomerAlliance.UmsSignature    = _umsSignature;
+                nDX_TmpCustomerAlliance.Alliance        = salesGroupId;
+                nDX_TmpCustomerAlliance.CustAccount     = nDX_UmsSalesGroupMember.AccountNum;
+                //--> 1.7: NDX/PAFFH/NDX_TASK1235003913/09.09.2015
+                nDX_TmpCustomerAlliance.CustParty    = nDX_UmsSalesGroupMember.Party;
+                //<-- NDX/PAFFH/NDX_TASK1235003913/09.09.2015
+                nDX_TmpCustomerAlliance.Company           = nDX_UmsSalesGroupMember.Company;
+                nDX_TmpCustomerAlliance.insert();
+            }
+            conChilds += nDX_UmsSalesGroupMember.AccountNum;
+        }
+        /*
+
+
+        conChilds  = connull();
+
+        firma = NDX_Utility::CompanyId2NDX_Firma(conpeek(conCompanies, 1));         // 1.5: NDX/PAFFH/NDX_TASK1235003759/08.11.2014
+
+
+        // Kontonummern sammeln
+        while select    AccountNum from nDX_UmsSalesGroupMember
+        group by    AccountNum
+        order by    AccountNum
+        where       nDX_UmsSalesGroupMember.SalesGroup == salesGroupId
+        {
+        //--> 1.3: NDX/PaffH/31.08.2012
+        //if (!confind(conChilds, custTable.AccountNum))                          // 1.2: NDX/PAFFH/NDX_TASK1235003297/20.06.2012
+        //    conChilds   += custTable.AccountNum;
+        if (!confind(conChilds, nDX_UmsSalesGroupMember.AccountNum))                          // 1.2: NDX/PAFFH/NDX_TASK1235003297/20.06.2012
+        conChilds   += nDX_UmsSalesGroupMember.AccountNum;
+        //<-- NDX/PaffH/31.08.2012
+        }
+
+        if (lSaveToTable)
+        this.saveChildData2NDX_TmpCustomerAlliance();
+
+        nAnzChilds = conlen(conChilds);                                             // 1.4: NDX/PAFFH/NDX_TASK1235003633/27.03.2014
+
+        return conChilds;
+        */
+        //<-- NDX/PAFFH/NDX_TASK1235003633/06.12.2014
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChildsFromMaster</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// last modified: PaffH 05.02.25
+    /// </summary>
+    /// <param name = "lSaveToTable">boolean</param>
+    /// <param name = "conCompany">container</param>
+    /// <returns>container</returns>
+    container getChildsFromMaster(boolean lSaveToTable = false, container conCompany = [curext()])
+    {
+        NDXTmpCustomerAlliance     nDXTmpCustomerAlliance;
+        CustTable                   custTableBOSAlliance;
+        CustTable                   custTable, custTable2;
+
+        AVATOSId                    kCS_BOSAllianceID;
+        int                         i, j;
+        CompanyId                   companyId;
+        //NDXRecordBlockContract blockContract;
+        Set set1 = new Set(Types::Int64);
+
+
+        // rekursiver Aufruf zur Ermittlung der Struktur-Aufhänger
+        void getMasters(AVATOSId _Master)
+        {
+            KCS_TOSTable    tosTable;
+            ;
+            while select    tosTable
+            where       tosTable.ParentTOSId  == _Master
+            {
+                conMasters      += tosTable.TOSId;
+                getMasters(tosTable.TOSId);
+            }
+        }
+        ;
+
+        if (!lgotChildsFromMaster)
+        {
+            for (j = 1; j <= conlen(conCompany); j++)
+            {
+                companyId = conpeek(conCompany, j);
+                firma = NDXHelperCommon::CompanyId2NDXCompany(companyId);
+
+                if (lSaveToTable)
+                {
+                    //TODO PaffH: checkpoint NDXTmpVerband
+                    delete_from nDXTmpCustomerAlliance
+                    where   nDXTmpCustomerAlliance.UmsSignature    == umsSignature     &&
+                            nDXTmpCustomerAlliance.Alliance        == masterAlliance   &&
+                            nDXTmpCustomerAlliance.Company         == firma;
+                    //blockContract = NDXTmpCustomerAllianceBlock::blockCheck(umsSignature, masterAlliance, firma, true);
+                    //if (blockContract.parmBlocked() == NoYes::Yes)
+                    //{
+                    //    while select RecId from nDXTmpCustomerAlliance
+                    //    where nDXTmpCustomerAlliance.UmsSignature == umsSignature
+                    //    && nDXTmpCustomerAlliance.Alliance == masterAlliance
+                    //    && nDXTmpCustomerAlliance.Company == firma
+                    //    {
+                    //        set1.add(nDXTmpCustomerAlliance.RecId);
+                    //    }
+                    //}
+                }
+
+                conMasters      = connull();
+                conChilds       = connull();
+                conChildsMaster = connull();
+
+                changecompany(companyId)
+                {
+                    custTable   = null;
+                    custTable2  = null;
+                    custTableBOSAlliance = CustTable::find(masterAlliance);
+
+                    if (!masterAlliance)
+                    {
+                        this.getMaster();
+                    }
+
+                    if (!masterAlliance)
+                    {
+                        return conChilds;
+                    }
+
+                    // Aufhänger ermitteln
+                    getMasters(masterAlliance);
+
+                    conMasters += masterAlliance;
+
+                    // Clients aus den Strukturen ermitteln
+                    for (i=1; i<=conlen(conMasters); i++)
+                    {
+                        kCS_BOSAllianceID   = conpeek(conMasters,i);
+                        // Alle Kunden der Struktur durchlaufen
+                        // alle selektieren, aussern denen die ebenfalls eine Struktur bilden
+                        while select        custTable
+                        where           custTable.KCS_TOSId == kCS_BOSAllianceID
+                        notexists join  custTable2
+                            where       custTable2.KCS_TOSId == custTable.AccountNum
+                        {
+                            conChilds       += custTable.AccountNum;
+                            conChildsMaster += kCS_BOSAllianceID;
+                            if (lSaveToTable)
+                            {
+                                //if (blockContract && blockContract.parmBlocked())
+                                {
+                                    nDXTmpCustomerAlliance = NDXTmpCustomerAlliance::findOrCreate(
+                                    umsSignature, masterAlliance, kCS_BOSAllianceID, custTable.AccountNum, firma, custTableBOSAlliance.Party, custTable.Party, false);
+                                    if (nDXTmpCustomerAlliance)
+                                    {
+                                        set1.remove(nDXTmpCustomerAlliance.RecId);
+                                    }
+                                    else
+                                    {
+                                        nDXTmpCustomerAlliance.insert();
+                                    }
+                                }
+                            }
+                        }
+                        if (lSaveToTable)
+                        {
+                            //if (blockContract && blockContract.parmBlocked())
+                            {
+                                ttsbegin;
+                                SetEnumerator enum = set1.getEnumerator();
+                                while (enum.moveNext())
+                                {
+                                    delete_from nDXTmpCustomerAlliance
+                                    where nDXTmpCustomerAlliance.RecId == enum.current();
+                                }
+                                ttscommit;
+                                //NDXTmpCustomerAllianceBlock::unblock(umsSignature, masterAlliance, firma);
+                            }
+                        }
+                    }
+                }
+                nAnzChilds += conlen(conChilds);
+            }
+            lgotChildsFromMaster = true;
+        }
+        return conChilds;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMaster</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_custAccount">CustAccount</param>
+    /// <param name = "companyId">CompanyId</param>
+    /// <returns>container</returns>
+    NDXMasterAllianceStructure getMaster(CustAccount _custAccount = custAccount,
+                    CompanyId     companyId = curext())
+    {
+        CustTable                   custTableBOSAlliance;
+        CustTable                   custTable;
+        KCS_TOSTable                tosTable;
+        KCS_TOSTable                tosTableAlliance;
+        NDXMasterAllianceStructure  masterAllianceStructure;
+
+        AVATOSId                    lmasterAlliance;
+        ;
+        custAccount             = _custAccount;
+        conMasterAlliance       = conNull();
+
+        changecompany(companyId)
+        {
+            masterAllianceStructure = NDXMasterAllianceStructure::construct();
+            tosTable                = null;
+            tosTableAlliance        = null;
+            custTable               = null;
+            custTableBOSAlliance    = null;
+            //TODO: DebuC austauschen durch KCS_TOSTable
+            //--> 1.4: NDX/PAFFH/NDX_TASK1235003633/05.04.2014
+            //select firstOnly custTableBOSAlliance where custTableBOSAlliance.KCS_BOSAllianceID == custAccount;
+            select firstonly tosTable where tosTable.TosId == CustTable::find(custAccount).KCS_TOSId;
+
+            if (tosTable)
+            {
+                masterAllianceStructure.addMasterAlliance(custAccount, NDXMasterAllianceType::AccountNum);
+            }
+
+            //<-- NDX/PAFFH/NDX_TASK1235003633/05.04.2014
+
+            custTableBOSAlliance    = CustTable::find(custAccount);
+
+            lmasterAlliance         = custTableBOSAlliance.KCS_TOSId;
+            if (lmasterAlliance)
+            {
+                masterAllianceStructure.addMasterAlliance(lmasterAlliance, NDXMasterAllianceType::TOSId);
+
+                while (tosTable.ParentTosId)
+                {
+                    tosTable = KCS_TOSTable::find(lmasterAlliance);
+                    if (tosTable && tosTable.ParentTosId)
+                    {
+                        lmasterAlliance     = tosTable.ParentTosId;
+                        masterAllianceStructure.addMasterAlliance(lmasterAlliance, NDXMasterAllianceType::TOSId);
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                //--> 1.1: NDX/PaffH/21.09.2010
+                // Falls custTableBOSAlliance.KCS_BOSAllianceID nicht gefüllt ist,
+                // kann es sein dass es sich um die oberste Ebene handelt
+                select firstOnly tosTableAlliance where tosTableAlliance.ParentTosId == tosTable.TosId;
+                if (custTable)
+                {
+                    lmasterAlliance     = tosTable.TosId;
+                    masterAllianceStructure.addMasterAlliance(lmasterAlliance, NDXMasterAllianceType::TOSId);
+                }
+                //<-- NDX/PaffH/21.09.2010
+            }
+        }
+
+        lMasterAllianceChanged  = (masterAlliance != lmasterAlliance);
+        masterAlliance          = lmasterAlliance;
+        masterAllianceStructure.parmMasterAlliance(masterAlliance);
+        return masterAllianceStructure;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromNDXUmsatzClass</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "nDX_UmsatzClass">NDXUmsatzClass</param>
+    void initFromNDXUmsatzClass(NDXUmsatzClass nDX_UmsatzClass)
+    {
+        ;
+        this.parmUmsSignature(nDX_UmsatzClass.parmUmsSignature());
+        this.parmMasterAlliance(nDX_UmsatzClass.parmMasterAlliance());
+        this.parmlAlliance(nDX_UmsatzClass.parmlAlliance());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmUmsSignature</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_umsSignature">NDXUmsSignature</param>
+    /// <returns>NDXUmsSignature</returns>
+    NDXUmsSignature parmUmsSignature(NDXUmsSignature _umsSignature = umsSignature)
+    {
+        umsSignature = _umsSignature;
+        return umsSignature;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmMasterAlliance</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_masterAlliance">CustAccount</param>
+    /// <returns>CustAccount</returns>
+    CustAccount parmMasterAlliance(CustAccount _masterAlliance = masterAlliance)
+    {
+        masterAlliance = _masterAlliance;
+        return masterAlliance;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMasters</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "conDataArea">container</param>
+    /// <returns>int</returns>
+    static int getMasters(container  conDataArea = [curext()])
+    {
+        CustTable           custTable;
+        NDXMasterAlliance   nDX_MasterAlliance;
+
+        int                 nAnzMasters, i, j;
+        NDXVerbandSE          nDX_Verband;
+        NDXUmsSignature     umsSignature = curuserid();
+
+        //--> 1.1: NDX/PAFFH/NDX_TASK1235003759/07.11.2014
+        Query                       q = new Query();
+        QueryBuildDataSource        qbds;
+        QueryRun                    qr;
+        Set                         setOld = new Set(Types::Container);
+        Set                         setNew = new Set(Types::Container);
+        Set                         setDel = new Set(Types::Container);
+        Set                         setApp = new Set(Types::Container);
+        SetEnumerator               enum;
+        CompanyId                   company;
+        NDXMasterAllianceType       type;
+        AVATOSId                    allianceMaster;
+        NDXMasterAllianceStructure  masterAllianceStructure;
+        MapEnumerator               masterAllianceMapEnumerator;
+        //<-- NDX/PAFFH/NDX_TASK1235003759/07.11.2014
+
+        ;
+        //--> 1.1: NDX/PAFFH/NDX_TASK1235003759/07.11.2014
+        qbds = q.addDataSource(tablenum(NDXMasterAlliance));
+        for (i=1; i<=conlen(conDataArea); i++)
+        {
+            qbds.addRange(fieldnum(NDXMasterAlliance, Company)).value(conpeek(conDataArea, i));
+        }
+        qr = new QueryRun(q);
+        while (qr.next())
+        {
+            nDX_MasterAlliance = qr.get(tablenum(NDXMasterAlliance));
+            setOld.add([ nDX_MasterAlliance.Company, nDX_MasterAlliance.AllianceMaster, nDX_MasterAlliance.Type]);
+        }
+
+        //delete_from nDX_MasterAlliance;
+        //<-- NDX/PAFFH/NDX_TASK1235003759/07.11.2014
+
+        nDX_Verband = NDXVerbandSE::construct(umsSignature, false);
+        for (j=1; j <= conlen(conDataArea); j++)
+        {
+            company = conpeek(conDataArea, j);
+            changecompany(company)
+            {
+                custTable = null;
+                while select custTable
+                {
+                    masterAllianceStructure  = nDX_Verband.getMaster(custTable.AccountNum, custTable.dataAreaId);
+                    masterAllianceMapEnumerator = masterAllianceStructure.getMasterAllianceEnumerator();
+                    while(masterAllianceMapEnumerator.moveNext())
+                    {
+                        if (setNew.add([custTable.dataAreaId, masterAllianceMapEnumerator.currentKey(),masterAllianceMapEnumerator.currentValue()]))
+                        {
+                            ++nAnzMasters;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Einträge löschen
+        setDel = Set::difference(setOld, setNew);
+        enum = setDel.getEnumerator();
+        while (enum.moveNext())
+        {
+            company         = conpeek(enum.current(), 1);
+            allianceMaster  = conpeek(enum.current(), 2);
+            type            = conPeek(enum.current(), 3);
+            nDX_MasterAlliance = NDXMasterAlliance::find(allianceMaster, company,type, true);
+            if (nDX_MasterAlliance)
+            { 
+                ttsbegin;
+                nDX_MasterAlliance.delete();
+                ttscommit;
+            }
+        }
+        // Einträge anfügen
+        setApp = Set::difference(setNew, setOld);
+        enum = setApp.getEnumerator();
+        while (enum.moveNext())
+        {
+            company         = conpeek(enum.current(), 1);
+            allianceMaster  = conpeek(enum.current(), 2);
+            type            = conPeek(enum.current(), 3);
+            nDX_MasterAlliance = NDXMasterAlliance::find(allianceMaster, company, type);
+            if (!nDX_MasterAlliance)
+            {
+                nDX_MasterAlliance.AllianceMaster   = allianceMaster;
+                nDX_MasterAlliance.Company          = company;
+                nDX_MasterAlliance.Type             = type;
+                nDX_MasterAlliance.insert();
+            }
+        }
+
+        return nAnzMasters;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmlSalesPerDebitor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "l_lSalesPerDebitor">NDXSalesPerDebitor</param>
+    /// <returns>NDXSalesPerDebitor</returns>
+    NDXSalesPerDebitor parmlSalesPerDebitor(NDXSalesPerDebitor l_lSalesPerDebitor = lSalesPerDebitor)
+    {
+        lSalesPerDebitor = l_lSalesPerDebitor;
+
+        if (lSalesPerDebitor)
+        {
+            masterAlliance =  MasterAllianceAllDebitor;
+        }
+
+        return lSalesPerDebitor;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmMasterAllianceAllDebitor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC
+    /// </summary>
+    /// <returns>CustAccount</returns>
+    CustAccount parmMasterAllianceAllDebitor()
+    {
+        return MasterAllianceAllDebitor;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNDXTmpVerband</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.02.25
+    /// </summary>
+    /// <returns>NDXTmpVerband</returns>
+    public NDXTmpVerband parmNDXTmpVerband()
+    {
+        return NDXTmpVerband;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

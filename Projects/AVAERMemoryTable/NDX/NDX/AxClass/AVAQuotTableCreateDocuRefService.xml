@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAQuotTableCreateDocuRefService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extends SysOperationServiceBase
+/// </summary>
+class AVAQuotTableCreateDocuRefService extends SysOperationServiceBase
+{
+    Set                     setTCVTableIds = new Set(Types::String);
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// oricess method
+    /// </summary>
+    /// <param name = "_contract">AVAQuotTableCreateDocuRefContract</param>
+    public void process(AVAQuotTableCreateDocuRefContract _contract)
+    {
+        RecordSortedList        records;
+        boolean                 moreRecs;
+        SalesQuotationTable     salesQuotationTable;
+        SalesQuotationLine      salesQuotationLine;
+        DocuRef                 docuRef;
+       
+        boolean                 process;
+        
+       
+        RefRecId                curRecId;
+
+        if (_contract.parmRecords().len() > 0)
+        {
+            records = _contract.parmRecords();
+            moreRecs = records.first(salesQuotationTable);
+            while (moreRecs)
+            {
+                process = true;
+                select firstonly RecId from docuRef where docuRef.AVAAutoTCVId
+                                            && docuRef.RefTableId == tableNum(SalesQuotationLine)
+                    join salesQuotationLine where salesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+                    && docuRef.RefRecId == salesQuotationLine.RecId;
+                if (docuRef.RecId)
+                {
+                    if (Box::yesNo("@NDX:NXABoxDeleteTCVAuto", DialogButton::No) == DialogButton::Yes)
+                    {
+                        process = true;
+                    }
+                    else
+                    {
+                        process = false;
+                    }
+                }
+
+                if (process)
+                {
+                    delete_from docuRef where docuRef.AVAAutoTCVId
+                                                            && docuRef.RefTableId == tableNum(SalesQuotationLine)
+                                    exists join salesQuotationLine where salesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+                                    && docuRef.RefRecId == salesQuotationLine.RecId;
+                    
+                    while select salesQuotationLine order by KCS_QLLVPosition, KCS_QLInternalPosition where salesQuotationLine.QuotationId == salesQuotationTable.QuotationId 
+                    {
+                        if (salesQuotationLine.KCS_QLInternalPosition > 1)
+                        {
+                            curRecId = salesQuotationLine::AVAfindFirstInternalPosition(salesQuotationTable.QuotationId, salesQuotationLine.KCS_QLLVPosition).RecId;
+                        }
+                        else
+                        {
+                            curRecId = salesQuotationLine.RecId;
+                        }
+                        this.copyDocuRef(salesQuotationTable,salesQuotationLine,curRecId);
+
+                    }
+                      
+                }
+
+                moreRecs = records.next(salesQuotationTable);
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyDocuRef</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesQuotationTable">_salesQuotationTable</param>
+    /// <param name = "_salesQuotationLine">_salesQuotationLine</param>
+    /// <param name = "_curRecId">_curRecId</param>
+    public void copyDocuRef(SalesQuotationTable _salesQuotationTable, SalesQuotationLine      _salesQuotationLine, RecId  _curRecId)
+    {
+        AVATCVQuotationItems    tcvQuotItems;
+        DocuRef                 newDocuRef;
+        KCS_TCVTable            selectedTCVTable, tcvTableSort;
+
+        while select tcvQuotItems where tcvQuotItems.ItemId == _salesQuotationLine.ItemId
+            join tcvTableSort order by AVASortDesc desc
+                        where tcvTableSort.Id == tcvQuotItems.TCVTableId
+        {
+            if (!setTCVTableIds.in(tcvQuotItems.TCVTableId) )    //if not created yet
+            {
+                selectedTCVTable = KCS_TCVTable::find(tcvQuotItems.TCVTableId);
+                /// Creates a new note, based on the current template.
+                /// copied from Form AVATCVTable Button TCVCreateNoteCopy.clicked()
+                if(selectedTCVTable.UseHTMLEditor == NoYes::Yes && DocuType::find(KCS_TCVParameters::find().DocuTypeId).AVA_TCVUseHTMLEditor == NoYes::No)
+                {
+                    throw error("@TCV239");
+                }
+
+                newDocuRef.clear();
+                newDocuRef.initValue();
+                newDocuRef.RefCompanyId     = curExt();
+                newDocuRef.RefTableId       = _salesQuotationLine.TableId;
+                newDocuRef.RefRecId         = _curRecId;
+                newDocuRef.TypeId           = KCS_TCVParameters::docuType();
+                newDocuRef.KCS_TCVInitFromDocuType();
+                newDocuRef.KCS_TCVinitCopyTo();
+                newDocuRef.Name             = selectedTCVTable.Name;
+                newDocuRef.KCS_TCVGroupId   = selectedTCVTable.GroupId;
+                newDocuRef.AVAAutoTCVId     = selectedTCVTable.Id;
+                newDocuRef.AVAFormat        = selectedTCVTable.AVAFormat;
+                newDocuRef.AVASortDesc      = selectedTCVTable.AVASortDesc;
+
+                if (DocuType::find(newDocuRef.TypeId).AVA_TCVUseHTMLEditor == NoYes::Yes)
+                {
+                    newDocuRef.Notes = selectedTCVTable.TCVTableLanguage(_salesQuotationTable.LanguageId).Conserve;
+                }
+                else
+                {
+                    newDocuRef.Notes = System.Text.RegularExpressions.Regex::Replace(selectedTCVTable.TCVTableLanguage(_salesQuotationTable.LanguageId).Conserve, '<.*?>', '');
+                }
+
+                newDocuRef.insert();
+                setTCVTableIds.add(tcvQuotItems.TCVTableId);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

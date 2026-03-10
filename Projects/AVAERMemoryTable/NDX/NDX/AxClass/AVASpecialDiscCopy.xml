@@ -1,0 +1,337 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASpecialDiscCopy</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>AVASpecialDiscCopy</c> class is copies special discounts
+/// </summary>
+public class AVASpecialDiscCopy
+{
+    SalesLine           clsSalesLineFrom;
+    SalesLine           clsSalesLineTo;
+
+    CustInvoiceTrans    clsCustInvoiceTransFrom;
+    CustInvoiceTrans    clsCustInvoiceTransTo;
+
+    boolean             clsSalesLine2SalesLine;
+    boolean             clsSalesLine2CustInvoiceTrans;
+    
+    boolean             clsCustInvoiceTrans2SalesLine;
+    boolean             clsCustInvoiceTrans2CustInvoiceTrans;
+    
+    boolean             clsSpecialDiscsAlreadyExist;
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>copyFromTo</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>copyFromTo</c> method.
+    /// </summary>
+    /// <param name="_from">
+    ///     <c>Common</c> as type
+    /// </param>
+    /// <param name="_to">
+    ///     <c>Common</c> as type
+    /// </param>
+    /// <param name="_deleteExisting">
+    ///     <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean copyFromTo(  Common  _from, 
+                                Common  _to, 
+                                boolean _deleteExisting = false)
+    {
+        boolean retVal;
+
+        AVASpecialDiscSalesLine     locAVASpecialDiscSalesLine;
+        AVASpecialDiscInvoiceTrans  locAVASpecialDiscInvoiceTrans;
+
+        clsSpecialDiscsAlreadyExist = false;
+        
+        if(     _from.RecId 
+            &&  _to.RecId   )
+        {
+            ttsbegin;
+            switch ( _to.TableId)
+            {
+                case tableNum(SalesLine):
+                    clsSalesLineTo          = _to;
+                    if(_deleteExisting)
+                    {
+                        delete_from locAVASpecialDiscSalesLine 
+                        where locAVASpecialDiscSalesLine.InventTransId == clsSalesLineTo.InventTransId;
+                    }
+
+                    select firstonly RecId
+                    from    locAVASpecialDiscSalesLine
+                    where   locAVASpecialDiscSalesLine.InventTransId == clsSalesLineTo.InventTransId;
+                    if(locAVASpecialDiscSalesLine.RecId)
+                    {
+                        //AVASpecialDiscSalesLine::creatFromOrigSalesLine(clsSalesLineTo.InventTransIdReturn, clsSalesLineTo.InventTransId);
+                        clsSpecialDiscsAlreadyExist = true;
+                    }
+                    break;
+                
+                case tableNum(CustInvoiceTrans):
+                    clsCustInvoiceTransTo   = _to;
+                    if(_deleteExisting)
+                    {
+                        delete_from locAVASpecialDiscInvoiceTrans
+                        where locAVASpecialDiscInvoiceTrans.CustInvoiceTransRefRecId == clsCustInvoiceTransTo.RecId;
+                    }
+                    select firstOnly RecId
+                    from    locAVASpecialDiscInvoiceTrans
+                    where   locAVASpecialDiscInvoiceTrans.CustInvoiceTransRefRecId == clsCustInvoiceTransTo.RecId;
+                    if(locAVASpecialDiscInvoiceTrans.RecId)
+                    {
+                        clsSpecialDiscsAlreadyExist = true;
+                    }
+                    break;
+            }
+            
+            switch ( _from.TableId)
+            {
+                case tableNum(SalesLine):
+                    clsSalesLineFrom        = _from;
+                    retVal                  = this.copyFromSalesLine(_to);
+                    break;
+                
+                case tableNum(CustInvoiceTrans):
+                    clsCustInvoiceTransFrom = _from;
+                    retVal                  = this.copyFromCustInvoiceTrans(_to);
+                    break;
+            }
+            ttscommit;
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyFromSalesLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>copyFromSalesLine</c> method.
+    /// </summary>
+    /// <param name="_to">
+    ///     <c>Common</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    internal boolean copyFromSalesLine(Common _to)
+    {
+        boolean retVal;
+
+        AVASpecialDiscSalesLine     locAVASpecialDiscSalesLineFrom;
+        InventTransId               locInventTransId;
+
+        AVASpecialDiscSalesLine     locAVASpecialDiscSalesLineTo;
+        AVASpecialDiscInvoiceTrans  locAVASpecialDiscInvoiceTransTo;
+
+        retVal              = true;
+        locInventTransId    = clsSalesLineFrom.InventTransId;
+
+        select firstonly locAVASpecialDiscSalesLineFrom
+        where locAVASpecialDiscSalesLineFrom.InventTransId == locInventTransId;
+        {
+            if(locAVASpecialDiscSalesLineFrom.RecId)
+            {
+                switch ( _to.TableId)
+                {
+                    case tableNum(SalesLine):
+                        locAVASpecialDiscSalesLineTo.clear();
+                        buf2Buf(locAVASpecialDiscSalesLineFrom, locAVASpecialDiscSalesLineTo);
+                        locAVASpecialDiscSalesLineTo.InventTransId  = clsSalesLineTo.InventTransId;
+                        locAVASpecialDiscSalesLineTo.insert();
+                        break;
+                
+                    case tableNum(CustInvoiceTrans):
+                        clsCustInvoiceTransTo   = _to;
+                        if(     locAVASpecialDiscSalesLineFrom.SpecialDiscountId1
+                            &&  locAVASpecialDiscSalesLineFrom.SpecialDiscountPct1  )
+                        {
+                            locAVASpecialDiscInvoiceTransTo.clear();
+                            locAVASpecialDiscInvoiceTransTo.initValue(  locAVASpecialDiscSalesLineFrom.SpecialDiscountId1,
+                                                                        locAVASpecialDiscSalesLineFrom.SpecialDiscountPct1,
+                                                                        clsCustInvoiceTransTo.LineAmount * locAVASpecialDiscSalesLineFrom.SpecialDiscountPct1 / 100);
+                            locAVASpecialDiscInvoiceTransTo.insert();
+                        }
+                        if(     locAVASpecialDiscSalesLineFrom.SpecialDiscountId2
+                            &&  locAVASpecialDiscSalesLineFrom.SpecialDiscountPct2  )
+                        {
+                            locAVASpecialDiscInvoiceTransTo.clear();
+                            locAVASpecialDiscInvoiceTransTo.initValue(  locAVASpecialDiscSalesLineFrom.SpecialDiscountId2,
+                                                                        locAVASpecialDiscSalesLineFrom.SpecialDiscountPct2,
+                                                                        clsCustInvoiceTransTo.LineAmount * locAVASpecialDiscSalesLineFrom.SpecialDiscountPct2 / 100);
+                            locAVASpecialDiscInvoiceTransTo.insert();
+                        }
+                        if(     locAVASpecialDiscSalesLineFrom.SpecialDiscountId3
+                            &&  locAVASpecialDiscSalesLineFrom.SpecialDiscountPct3  )
+                        {
+                            locAVASpecialDiscInvoiceTransTo.clear();
+                            locAVASpecialDiscInvoiceTransTo.initValue(  locAVASpecialDiscSalesLineFrom.SpecialDiscountId3,
+                                                                        locAVASpecialDiscSalesLineFrom.SpecialDiscountPct3,
+                                                                        clsCustInvoiceTransTo.LineAmount * locAVASpecialDiscSalesLineFrom.SpecialDiscountPct3 / 100);
+                            locAVASpecialDiscInvoiceTransTo.insert();
+                        }
+                        if(     locAVASpecialDiscSalesLineFrom.SpecialDiscountId4
+                            &&  locAVASpecialDiscSalesLineFrom.SpecialDiscountPct4  )
+                        {
+                            locAVASpecialDiscInvoiceTransTo.clear();
+                            locAVASpecialDiscInvoiceTransTo.initValue(  locAVASpecialDiscSalesLineFrom.SpecialDiscountId4,
+                                                                        locAVASpecialDiscSalesLineFrom.SpecialDiscountPct4,
+                                                                        clsCustInvoiceTransTo.LineAmount * locAVASpecialDiscSalesLineFrom.SpecialDiscountPct4 / 100);
+                            locAVASpecialDiscInvoiceTransTo.insert();
+                        }
+                        if(     locAVASpecialDiscSalesLineFrom.SpecialDiscountId5
+                            &&  locAVASpecialDiscSalesLineFrom.SpecialDiscountPct5  )
+                        {
+                            locAVASpecialDiscInvoiceTransTo.clear();
+                            locAVASpecialDiscInvoiceTransTo.initValue(  locAVASpecialDiscSalesLineFrom.SpecialDiscountId5,
+                                                                        locAVASpecialDiscSalesLineFrom.SpecialDiscountPct5,
+                                                                        clsCustInvoiceTransTo.LineAmount * locAVASpecialDiscSalesLineFrom.SpecialDiscountPct5 / 100);
+                            locAVASpecialDiscInvoiceTransTo.insert();
+                        }
+                        if(     locAVASpecialDiscSalesLineFrom.SpecialDiscountId6
+                            &&  locAVASpecialDiscSalesLineFrom.SpecialDiscountPct6  )
+                        {
+                            locAVASpecialDiscInvoiceTransTo.clear();
+                            locAVASpecialDiscInvoiceTransTo.initValue(  locAVASpecialDiscSalesLineFrom.SpecialDiscountId6,
+                                                                        locAVASpecialDiscSalesLineFrom.SpecialDiscountPct6,
+                                                                        clsCustInvoiceTransTo.LineAmount * locAVASpecialDiscSalesLineFrom.SpecialDiscountPct6 / 100);
+                            locAVASpecialDiscInvoiceTransTo.insert();
+                        }
+                        if(     locAVASpecialDiscSalesLineFrom.SpecialDiscountId7
+                            &&  locAVASpecialDiscSalesLineFrom.SpecialDiscountPct7  )
+                        {
+                            locAVASpecialDiscInvoiceTransTo.clear();
+                            locAVASpecialDiscInvoiceTransTo.initValue(  locAVASpecialDiscSalesLineFrom.SpecialDiscountId7,
+                                                                        locAVASpecialDiscSalesLineFrom.SpecialDiscountPct7,
+                                                                        clsCustInvoiceTransTo.LineAmount * locAVASpecialDiscSalesLineFrom.SpecialDiscountPct7 / 100);
+                            locAVASpecialDiscInvoiceTransTo.insert();
+                        }
+                        break;
+
+                    default:
+                        retVal = false;
+                }
+            }
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyFromCustInvoiceTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>copyFromCustInvoiceTrans</c> method.
+    /// </summary>
+    /// <param name="_to">
+    ///     <c>Common</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    internal boolean copyFromCustInvoiceTrans(Common _to)
+    {
+        boolean                     retVal;
+
+        AVASpecialDiscInvoiceTrans  locAVASpecialDiscInvoiceTransFrom;
+
+        AVASpecialDiscSalesLine     locAVASpecialDiscSalesLineTo;
+        int                         locAVASpecialDiscSalesLineToInsert;
+        AVASpecialDiscInvoiceTrans  locAVASpecialDiscInvoiceTransTo;
+
+        retVal  = true;
+
+        locAVASpecialDiscSalesLineTo.clear();
+
+        if(!clsSpecialDiscsAlreadyExist)
+        {
+            while select locAVASpecialDiscInvoiceTransFrom
+            where locAVASpecialDiscInvoiceTransFrom.CustInvoiceTransRefRecId == clsCustInvoiceTransFrom.RecId
+            {
+                if(locAVASpecialDiscInvoiceTransFrom.RecId)
+                {
+                    switch(_to.TableId)
+                    {
+                        case tableNum(SalesLine):
+                            if(     locAVASpecialDiscInvoiceTransFrom.SpecialDiscountId
+                                &&  locAVASpecialDiscInvoiceTransFrom.SpecialDiscPct    )
+                            {
+                                locAVASpecialDiscSalesLineToInsert++;
+                                if(locAVASpecialDiscSalesLineToInsert == 1)
+                                {
+                                    locAVASpecialDiscSalesLineTo.SpecialDiscountId1     = locAVASpecialDiscInvoiceTransFrom.SpecialDiscountId;
+                                    locAVASpecialDiscSalesLineTo.SpecialDiscountPct1    = locAVASpecialDiscInvoiceTransFrom.SpecialDiscPct;
+                                }
+                                if(locAVASpecialDiscSalesLineToInsert == 2)
+                                {
+                                    locAVASpecialDiscSalesLineTo.SpecialDiscountId2     = locAVASpecialDiscInvoiceTransFrom.SpecialDiscountId;
+                                    locAVASpecialDiscSalesLineTo.SpecialDiscountPct2    = locAVASpecialDiscInvoiceTransFrom.SpecialDiscPct;
+                                }
+                                if(locAVASpecialDiscSalesLineToInsert == 3)
+                                {
+                                    locAVASpecialDiscSalesLineTo.SpecialDiscountId3     = locAVASpecialDiscInvoiceTransFrom.SpecialDiscountId;
+                                    locAVASpecialDiscSalesLineTo.SpecialDiscountPct3    = locAVASpecialDiscInvoiceTransFrom.SpecialDiscPct;
+                                }
+                                if(locAVASpecialDiscSalesLineToInsert == 4)
+                                {
+                                    locAVASpecialDiscSalesLineTo.SpecialDiscountId4     = locAVASpecialDiscInvoiceTransFrom.SpecialDiscountId;
+                                    locAVASpecialDiscSalesLineTo.SpecialDiscountPct4    = locAVASpecialDiscInvoiceTransFrom.SpecialDiscPct;
+                                }
+                                if(locAVASpecialDiscSalesLineToInsert == 5)
+                                {
+                                    locAVASpecialDiscSalesLineTo.SpecialDiscountId5     = locAVASpecialDiscInvoiceTransFrom.SpecialDiscountId;
+                                    locAVASpecialDiscSalesLineTo.SpecialDiscountPct5    = locAVASpecialDiscInvoiceTransFrom.SpecialDiscPct;
+                                }
+                                if(locAVASpecialDiscSalesLineToInsert == 6)
+                                {
+                                    locAVASpecialDiscSalesLineTo.SpecialDiscountId6     = locAVASpecialDiscInvoiceTransFrom.SpecialDiscountId;
+                                    locAVASpecialDiscSalesLineTo.SpecialDiscountPct6    = locAVASpecialDiscInvoiceTransFrom.SpecialDiscPct;
+                                }
+                                if(locAVASpecialDiscSalesLineToInsert == 7)
+                                {
+                                    locAVASpecialDiscSalesLineTo.SpecialDiscountId7     = locAVASpecialDiscInvoiceTransFrom.SpecialDiscountId;
+                                    locAVASpecialDiscSalesLineTo.SpecialDiscountPct7    = locAVASpecialDiscInvoiceTransFrom.SpecialDiscPct;
+                                }
+                            }
+                            break;
+                
+                        case tableNum(CustInvoiceTrans):
+                            locAVASpecialDiscInvoiceTransTo.clear();
+                            locAVASpecialDiscInvoiceTransTo.SpecialDiscountId           = locAVASpecialDiscInvoiceTransFrom.SpecialDiscountId;
+                            locAVASpecialDiscInvoiceTransTo.SpecialDiscPct              = locAVASpecialDiscInvoiceTransFrom.SpecialDiscPct;
+                            locAVASpecialDiscInvoiceTransTo.SpecialDiscAmount           = clsCustInvoiceTransTo.LineAmount * locAVASpecialDiscInvoiceTransFrom.SpecialDiscPct / 100;
+                            locAVASpecialDiscInvoiceTransTo.insert();
+                            break;
+
+                        default:
+                            retVal = false;
+                    }
+                }
+            }
+        }
+        if(     _to.TableId == tableNum(SalesLine) 
+            &&  locAVASpecialDiscSalesLineToInsert  )
+        {
+            locAVASpecialDiscSalesLineTo.insert();
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

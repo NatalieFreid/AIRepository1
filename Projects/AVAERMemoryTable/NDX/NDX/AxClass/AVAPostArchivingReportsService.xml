@@ -1,0 +1,306 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPostArchivingReportsService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// N.Freidenberger TASK 12587 21.11.2024
+/// </summary>
+internal final class AVAPostArchivingReportsService  extends SysOperationServiceBase
+{
+    FromDate        fromDate;
+    ToDate          toDate;
+    AVADAIReport    avaDAIReport;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger TASK 12587 21.11.2024
+    /// </summary>
+    /// <param name = "_dataContract"></param>
+    public void process(AVAPostArchivingReportsContract _dataContract)
+    {
+        
+
+        fromDate  = _dataContract.parmFromDate();
+        toDate    = _dataContract.parmToDate();
+
+        while select avaDAIReport
+        {
+            switch (avaDAIReport.AckRefTableName)
+            {
+                case tableStr(CustConfirmJour) :
+                    this.postArchivingCustConfirmJour(avaDAIReport.AckRefTableFieldName);   
+                    break;
+                case tableStr(CustPackingSlipJour) :
+                    this.postArchivingCustPackingSlipJour(avaDAIReport.AckRefTableFieldName);
+                    break;
+                case tableStr(CustInvoiceJour):
+                    this.postArchivingCustInvoiceJour(avaDAIReport.AckRefTableFieldName);
+                    break;
+                case tableStr(CustQuotationConfirmJour) :
+                case tableStr(CustQuotationJour) :
+                    this.postArchivingCustQuotationConfirmJour(avaDAIReport.AckRefTableFieldName);
+                    break;
+                default :
+                    error(strFmt("@NDX:NXAPostArchivingTableMissed",avaDAIReport.AckRefTableName));
+                    break;
+            }
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postArchivingCustConfirmJour</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger TASK 12587 21.11.2024
+    /// </summary>
+    /// <param name = "_ackRefFieldName">_ackRefFieldName</param>
+    public void postArchivingCustConfirmJour(Str       _ackRefFieldName)
+    {
+        AVADAIReportExportTable         avaDAIReportExportTable;
+        CustConfirmJour                 CustConfirmJour;
+        FieldId                         refFieldId = fieldName2Id(tableNum(CustConfirmJour),_ackRefFieldName);
+        SalesConfirmJournalPrint        custConfirmJournalPrint = SalesConfirmJournalPrint::construct();
+        SRSPrintDestinationSettings     srsPrintDestinationSetting; // = new SRSPrintDestinationSettings();
+      //  srsPrintDestinationSetting.printMediumType(SRSPrintMediumType::File);
+      //  Set                             confirmJourSet = new Set(Types::Record);
+
+       // SrsReportDataContract       locreportContract = this.parmReportContract();
+       // SRSPrintDestinationSettings printerSettings = locreportContract.parmPrintSettings();
+    
+        
+
+       
+     //   custConfirmJournalPrint.parmPrinterSettingsFormLetter(srsPrintDestinationSetting.pack());
+
+        while select custConfirmJour
+            where  custConfirmJour.ConfirmDate >= fromDate
+               &&  (CustConfirmJour.ConfirmDate <= toDate || toDate == dateNull())
+            notexists join avaDAIReportExportTable
+                where CustConfirmJour.(refFieldId) == avaDAIReportExportTable.RefNum
+        {
+            
+            Args        args = new Args();
+            args.record(custConfirmJour);
+
+            custConfirmJournalPrint = SalesConfirmJournalPrint::construct();
+            custConfirmJournalPrint.parmPrintFormletter(NoYes::Yes);
+            custConfirmJournalPrint.parmUsePrintManagement(false);
+           
+
+            TradeDocumentReportController formLetterController = SalesConfirmController::construct();
+
+            formLetterController.parmArgs(args);
+
+            formLetterController.parmReportName(PrintMgmtDocType::construct(PrintMgmtDocumentType::SalesOrderConfirmation).getDefaultReportFormat());
+            formLetterController.parmAVAPrintInMemory(true);
+            formLetterController.parmAVAreportRecord(custConfirmJour);
+
+            formLetterController.parmShowDialog(false);
+            formLetterController.parmDialogCaption("@SYS22766");
+            SrsReportDataContract  reportContract = formLetterController.parmReportContract();
+            
+            srsPrintDestinationSetting  =  reportContract.parmPrintSettings();   
+            srsPrintDestinationSetting.printMediumType(SRSPrintMediumType::File);
+            srsPrintDestinationSetting.fileFormat(SRSReportFileFormat::PDF);
+            srsPrintDestinationSetting.fileName(strfmt("%1",custConfirmJour.ConfirmId));
+
+
+            custConfirmJournalPrint.parmPrinterSettingsFormLetter(srsPrintDestinationSetting.pack());
+
+            args.caller(custConfirmJournalPrint);
+            args.parmEnumType(enumNum(PrintCopyOriginal));
+            args.parmEnum(PrintCopyOriginal::OriginalPrint);
+      
+
+          // formLetterController.parmDefaultCopyPrintJobSettings(srsPrintDestinationSetting);
+           // formLetterController.srsPrintDestinationSetting(srsPrintDestinationSetting);
+         //   reportContract.parmPrintSettings(srsPrintDestinationSetting);
+
+            formLetterController.startOperation();
+        }
+
+ 
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postArchivingCustPackingSlipJour</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger TASK 12587 21.11.2024
+    /// </summary>
+    /// <param name = "_ackRefFieldName">_ackRefFieldName</param>
+    public void postArchivingCustPackingSlipJour(Str       _ackRefFieldName)
+    {
+        AVADAIReportExportTable         avaDAIReportExportTable;
+        CustPackingSlipJour             custPackingSlipJour;
+        FieldId                         refFieldId = fieldName2Id(tableNum(CustPackingSlipJour),_ackRefFieldName);
+        SalesPackingSlipJournalPrint    salesPackingSlipJournalPrint; 
+        SRSPrintDestinationSettings     srsPrintDestinationSetting;
+     
+
+        while select custPackingSlipJour
+            where  custPackingSlipJour.DeliveryDate >= fromDate
+               &&  (custPackingSlipJour.DeliveryDate <= toDate || toDate == dateNull())
+            notexists join avaDAIReportExportTable
+                where custPackingSlipJour.(refFieldId) == avaDAIReportExportTable.RefNum
+        {
+            Args        args = new Args();
+            args.record(custPackingSlipJour);
+
+            salesPackingSlipJournalPrint = SalesPackingSlipJournalPrint::construct();
+            salesPackingSlipJournalPrint.parmPrintFormletter(NoYes::Yes);
+            salesPackingSlipJournalPrint.parmUsePrintManagement(false);
+           
+
+            TradeDocumentReportController formLetterController = SalesPackingSlipController::construct();
+
+            formLetterController.parmArgs(args);
+
+            formLetterController.parmReportName(PrintMgmtDocType::construct(PrintMgmtDocumentType::SalesOrderPackingSlip).getDefaultReportFormat());
+            formLetterController.parmAVAPrintInMemory(true);
+            formLetterController.parmAVAreportRecord(custPackingSlipJour);
+
+            formLetterController.parmShowDialog(false);
+            formLetterController.parmDialogCaption("@SYS22766");
+            SrsReportDataContract  reportContract = formLetterController.parmReportContract();
+            
+            srsPrintDestinationSetting  =  reportContract.parmPrintSettings();
+            srsPrintDestinationSetting.printMediumType(SRSPrintMediumType::File);
+            srsPrintDestinationSetting.fileFormat(SRSReportFileFormat::PDF);
+            srsPrintDestinationSetting.fileName(strfmt("%1",custPackingSlipJour.PackingSlipId));
+
+
+            salesPackingSlipJournalPrint.parmPrinterSettingsFormLetter(srsPrintDestinationSetting.pack());
+
+            args.caller(salesPackingSlipJournalPrint);
+            args.parmEnumType(enumNum(PrintCopyOriginal));
+            args.parmEnum(PrintCopyOriginal::OriginalPrint);
+      
+
+            // formLetterController.parmDefaultCopyPrintJobSettings(srsPrintDestinationSetting);
+            // formLetterController.srsPrintDestinationSetting(srsPrintDestinationSetting);
+            //   reportContract.parmPrintSettings(srsPrintDestinationSetting);
+
+            formLetterController.startOperation();
+
+
+        }
+       
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postArchivingCustInvoiceJour</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger TASK 12587 21.11.2024
+    /// </summary>
+    /// <param name = "_ackRefFieldName">_ackRefFieldName</param>
+    public void postArchivingCustInvoiceJour(Str       _ackRefFieldName)
+    {
+        AVADAIReportExportTable         avaDAIReportExportTable;
+        CustInvoiceJour                 custInvoiceJour;
+        FieldId                         refFieldId = fieldName2Id(tableNum(CustInvoiceJour),_ackRefFieldName);
+        SalesInvoiceJournalPrint        salesInvoiceJournalPrint;
+        SRSPrintDestinationSettings     srsPrintDestinationSetting;
+
+        while select custInvoiceJour
+            where  custInvoiceJour.InvoiceDate >= fromDate
+               &&  (custInvoiceJour.InvoiceDate <= toDate || toDate == dateNull())
+            notexists join avaDAIReportExportTable
+                where custInvoiceJour.(refFieldId) == avaDAIReportExportTable.RefNum
+        {
+
+            Args        args = new Args();
+            args.record(custInvoiceJour);
+
+            salesInvoiceJournalPrint = SalesInvoiceJournalPrint::construct();
+            salesInvoiceJournalPrint.parmPrintFormletter(NoYes::Yes);
+            salesInvoiceJournalPrint.parmUsePrintManagement(false);
+           
+
+            GiroPrintMgmtFormLetterController formLetterController = SalesInvoiceController::construct();
+
+            formLetterController.parmArgs(args);
+
+            formLetterController.parmReportName(PrintMgmtDocType::construct(PrintMgmtDocumentType::SalesOrderInvoice).getDefaultReportFormat());
+            formLetterController.parmAVAPrintInMemory(true);
+            formLetterController.parmAVAreportRecord(custInvoiceJour);
+
+            formLetterController.parmShowDialog(false);
+            formLetterController.parmDialogCaption("@SYS22766");
+            SrsReportDataContract  reportContract = formLetterController.parmReportContract();
+            
+            srsPrintDestinationSetting  =  reportContract.parmPrintSettings();
+            srsPrintDestinationSetting.printMediumType(SRSPrintMediumType::File);
+            srsPrintDestinationSetting.fileFormat(SRSReportFileFormat::PDF);
+            srsPrintDestinationSetting.fileName(strfmt("%1",custInvoiceJour.InvoiceId));
+
+
+            salesInvoiceJournalPrint.parmPrinterSettingsFormLetter(srsPrintDestinationSetting.pack());
+
+            args.caller(salesInvoiceJournalPrint);
+            args.parmEnumType(enumNum(PrintCopyOriginal));
+            args.parmEnum(PrintCopyOriginal::OriginalPrint);
+      
+
+            // formLetterController.parmDefaultCopyPrintJobSettings(srsPrintDestinationSetting);
+            // formLetterController.srsPrintDestinationSetting(srsPrintDestinationSetting);
+            //   reportContract.parmPrintSettings(srsPrintDestinationSetting);
+
+            formLetterController.startOperation();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postArchivingCustQuotationConfirmJour</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger TASK 12587 21.11.2024
+    /// </summary>
+    /// <param name = "_ackRefFieldName">_ackRefFieldName</param>
+    public void postArchivingCustQuotationConfirmJour(Str       _ackRefFieldName)
+    {
+        AVADAIReportExportTable         avaDAIReportExportTable;
+        CustQuotationJour               custQuotationjour;
+        FieldId                         refFieldId = fieldName2Id(tableNum(CustQuotationjour),_ackRefFieldName);
+        Args                            args;
+        MenuFunction                    menuFunction;
+
+        while select custQuotationjour
+            where  custQuotationjour.QuotationDate >= fromDate
+               &&  (custQuotationjour.QuotationDate <= toDate || toDate == dateNull())
+            notexists join avaDAIReportExportTable
+                where custQuotationjour.(refFieldId) == avaDAIReportExportTable.RefNum
+        {
+            args = new Args();
+            args.record(custQuotationjour);
+            args.parmEnum(PrintCopyOriginal::OriginalPrint);
+            args.parmEnumType(enumNum(PrintCopyOriginal));
+
+
+            AVASalesQuotationController_PrintInMemory::main(args);
+
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

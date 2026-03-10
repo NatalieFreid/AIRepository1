@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVARUMWeightProcessManager</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Process WMS functionality from WeightIn Form
+/// </summary>
+public class AVARUMWeightProcessManager
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createAndOpenReceiptJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates a receipt journal (header and line) and opens the journal in edit mode
+    /// </summary>
+    /// <param name = "_caller">Caller from</param>
+    /// <param name = "_AVARUMWeightInHistory">Weight record</param>
+    static public void createAndOpenReceiptJournal(Object _caller, AVARUMWeightInHistory _AVARUMWeightInHistory)
+    {     
+        WMSJournalTable wmsJournalTable;
+        InventDim           inventDim;
+
+        WMSJournalNameId wmsJournalNameId = WMSParameters::find().ReceptionJournalNameId;
+        wmsJournalTable.initFromWMSJournalName(WMSJournalName::find(wmsJournalNameId));
+        wmsJournalTable.InventTransType = InventTransType::Purch;
+        wmsJournalTable.InventDimId     = InventDim::findOrCreate(inventDim).InventDimId;  //AllBlank
+
+        if (!wmsJournalTable.JournalId)
+        {   //@analogus to wmsJournalTable.insert():
+            wmsJournalTable.JournalId = JournalTableData::newTable(wmsJournalTable).nextJournalId();
+        }
+
+        if (wmsJournalTable.validateWrite())
+        {
+            wmsJournalTable.insert();
+        }
+        else
+        {
+            throw error("@SYS104318");
+        }
+
+        Args args=new Args();
+
+        MenuFunction mf=new MenuFunction(menuItemDisplayStr(AVARUMWMSJournalReceptionWeighing), MenuItemType::Display);
+        args.caller(_caller);
+
+        args.parm(wmsJournalTable.journalId+';'+int642Str(_AVARUMWeightInHistory.recId));  // journalId;Recid
+
+        mf.run(args);
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processOutgoing</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Processes outgoing after weighing: tries to reserve and do a WHS release for thie sales line
+    /// </summary>
+    /// <param name = "_caller">Caller from</param>
+    /// <param name = "_AVARUMWeightInHistory">Weight record</param>
+    static public void processOutgoing(Object _caller, AVARUMWeightInHistory _AVARUMWeightInHistory)
+    {
+        SalesLine locSalesLine=SalesLine::findRecId(_AVARUMWeightInHistory.OriginRefRecId);
+        if (!locSalesLine)
+        {
+            throw error ("@SYS83964");
+        }        
+        Qty remainSalesPhysical, remainInventPhysical, origQty=locSalesLine.RemainInventPhysical;
+        remainInventPhysical=-1*_AVARUMWeightInHistory.Value;
+
+        if (remainInventPhysical>locSalesLine.RemainInventPhysical)
+        {   // OvereDlv: increase  RemainQty
+            remainSalesPhysical = EcoResProductUnitConverter::convertGivenUnitSymbolsForReleasedProduct(locSalesLine.ItemId,
+                            locSalesLine.InventDimId,
+                            remainInventPhysical,
+                            locSalesLine.inventTable().inventUnitId(),
+                            locSalesLine.SalesUnit,
+                            NoYes::Yes);  // round absolute
+            ttsbegin;
+            locSalesLine.selectForUpdate(true);
+            SalesUpdateRemain salesUpdateRemain = SalesUpdateRemain::construct();
+            boolean updated = salesUpdateRemain.updateDeliverRemainder(
+                locSalesLine,
+                remainSalesPhysical,
+                remainInventPhysical,
+                0);
+            if (updated)
+            {
+                // Increase in LoadLine
+                WHSLoadLine locWHSLoadLine;
+
+                select firstonly forupdate locWHSLoadLine
+                where locWHSLoadLine.InventTransId==locSalesLine.InventTransId;
+                if (locWHSLoadLine.Qty==origQty)
+                {
+                    locWHSLoadLine.Qty=remainInventPhysical;
+                    locWHSLoadLine.update();
+                }
+            }
+            else
+            {
+                throw error("@AVARUM:AVARUMWeightProcessManagerMsg1");
+            }
+            ttscommit;
+        }
+
+        //Check if we can reserve whole quantity
+        ttsbegin;
+        InventUpd_Reservation::updateReserveBuffer(locSalesLine, -1*remainInventPhysical);
+        
+        InventTransIdSum inventTransIdSum;
+        InventTransOrigin locInventTransOrigin=InventTransOrigin::findByInventTransId(locSalesLine.InventTransId);
+        inventTransIdSum = InventTransIdSum::newTransOriginId(locInventTransOrigin.RecId);
+        Qty reservedAfter=-inventTransIdSum.reserved();
+        InventUpd_Reservation::updateReserveBuffer(locSalesLine, reservedAfter);  // release again
+        ttscommit;
+        
+        if (reservedAfter<remainInventPhysical)
+        {   // Check: add Bom Journal to get reservable quantity to proceed            
+            DialogButton dlgrc=Box::okCancel(strfmt("@AVARUM:AVARUMWeightProcessManagerLbl1", remainInventPhysical, reservedAfter),
+                DialogButton::Cancel, "@SYS7120");
+            if (dlgrc==DialogButton::Cancel)
+            {   
+                return;  // stop processing            
+            }
+            // create bom Journal
+            AVARUMWeightProcessManager::increaseQtyViaJournal(locSalesLine, remainInventPhysical-reservedAfter);
+        }
+        
+        ttsbegin;
+        locSalesLine.reread();
+        locSalesLine.selectForUpdate(true);
+        locSalesLine.Reservation=ItemReservation::Automatic;
+        locSalesLine.update();
+        ttscommit;
+
+        // Relase for WHS
+        AVARUMWHSWarehouseRelease_SalesLine::salesReleaseLine_AVA(locSalesLine);
+
+        int i=0;
+        i=1;  //debug
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>increaseQtyViaJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Create a bom journal to create missing quantity on stock for poceeding WHS process
+    /// </summary>
+    /// <param name = "locSalesLine">The salesLine</param>
+    /// <param name = "_neededInventQty">The quantity needed</param>
+    static public void increaseQtyViaJournal(SalesLine locSalesLine, Qty _neededInventQty)
+    {
+        InventJournalTable  locInventJournalTable;
+        journalTableData    journalTableData;
+        journalTransData    journalTransData;
+        LineNum             lineNum=1;
+
+        ttsbegin;
+        journalTableData                        = JournalTableData::newTable(locInventJournalTable);
+        locInventJournalTable.JournalId      = journalTableData.nextJournalId();
+        locInventJournalTable.JournalType    = InventJournalType::BOM;
+        locInventJournalTable.JournalNameId  = journalTableData.journalStatic().standardJournalNameId(enum2int(locInventJournalTable.JournalType));
+        locInventJournalTable.initFromInventJournalName(InventJournalName::find(locInventJournalTable.JournalNameId));
+        locInventJournalTable.insert();
+
+        inventJournalTrans inventJournalTrans;
+
+        inventJournalTrans.clear();
+        inventJournalTrans.initFromInventJournalTable(locInventJournalTable);
+        inventJournalTrans.initFromInventTable(locSalesLine.inventTable());
+        inventJournalTrans.inventDimId=locSalesLine.inventDimId;
+
+        inventJournalTrans.bomLine          = NoYes::No;
+        inventJournalTrans.LineNum          = lineNum;
+        inventJournalTrans.qty              = _neededInventQty;
+        inventJournalTrans.modifyInventJournalTransUnitQty();
+
+        journalTransData  = journalTableData.journalStatic().newJournalTransData(inventJournalTrans,journalTableData);
+
+        if (locInventJournalTable.VoucherDraw == JournalVoucherDraw::Entering)
+        {
+            journalTransData.initVoucher('',false);
+        }        
+
+        //journalTransData.insert();
+        journalTransData.addTotal(false,false);
+        inventJournalTrans.insert();
+        ttscommit;
+
+        AVARUMWeightProcessManager::registerForJournalLine(inventJournalTrans);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>registerForJournalLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Register the whole quantity for a journal line; WMSLocation will be searched by where is already stocked quantity
+    /// </summary>
+    /// <param name = "_InventJournalTrans">Journal line</param>
+    static public void registerForJournalLine(InventJournalTrans _InventJournalTrans)
+    {        
+        InventMovement                  movement;                
+        inventDim                       inventDim;
+        InventDimParm                   inventDimParm;
+        InventUpd_Registered            registered;                
+        InventSum                       locInventSum;
+        WMSLocationId                   wMSLocationId;
+
+        inventDim = InventDim::find(_InventJournalTrans.InventDimId);
+        // search LP where already is PhysicalInvent
+        select firstonly PhysicalInvent, RecId, WMSLocationId from locInventSum
+            where locInventSum.ItemId==_InventJournalTrans.ItemId
+            && locInventSum.Closed==false              
+            && locInventSum.PhysicalInvent>0
+            && locInventSum.WMSLocationId!=''
+            && locInventSum.InventSiteId==inventDim.InventSiteId
+            && locInventSum.InventLocationId==inventDim.InventLocationId
+            && locInventSum.ConfigId==inventDim.ConfigId
+            //not: && locInventSum.inventBatchId==inventDim.inventBatchId
+            && locInventSum.InventColorId==inventDim.InventColorId
+            && locInventSum.InventSizeId==inventDim.InventSizeId
+            && locInventSum.InventStyleId==inventDim.InventStyleId
+            && locInventSum.InventStatusId==inventDim.InventStatusId;
+            //not:&& locInventSum.inventSerialId==inventDim.inventSerialId;
+
+        if (!locInventSum.WMSLocationId)
+        {
+            throw error("@AVARUM:AVARUMWeightProcessManagerMsg2");
+        }
+        ttsbegin;
+        // Register all the quantity on wMSLocationId
+        wMSLocationId=locInventSum.WMSLocationId;
+        movement = InventMovement::construct(_InventJournalTrans);
+        inventDim = InventDim::find(_InventJournalTrans.InventDimId);
+        inventdim.wMSLocationId=wMSLocationId; //'SILO-01';
+        inventDimParm.initPhysicalDimensionsFromInventDim(InventDimGroupSetup::newItemId(_InventJournalTrans.itemId), inventdim);
+
+        registered = InventUpd_Registered::newParameters(movement,inventDim,inventDimParm,inventDim,inventDimParm, _InventJournalTrans.Qty);
+        registered.updateNow();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

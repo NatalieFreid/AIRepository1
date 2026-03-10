@@ -1,0 +1,253 @@
+﻿# AVARUMCashInvoice - Quick Reference Guide
+
+## 🎯 Quick Start
+
+### Running the Report
+1. Navigate to: **Cash Sales > Reports > Cash Invoice**
+2. Click the lookup button next to "Cash Voucher"
+3. Select a cash voucher from the list
+4. Click **OK**
+5. Report will generate and display
+
+---
+
+## 📦 Object Summary
+
+| Object Type | Object Name | Purpose |
+|------------|-------------|---------|
+| Table (TempDB) | AVARUMCashInvoiceTmpHeader | Header data storage |
+| Table (TempDB) | AVARUMCashInvoiceTmpLines | Line data storage |
+| Class | AVARUMCashInvoiceContract | Report parameter contract |
+| Class | AVARUMCashInvoiceUIBuilder | Dialog customization |
+| Class | AVARUMCashInvoiceDP | Data provider |
+| Report | AVARUMCashInvoice | Report metadata |
+| RDL | AVARUMCashInvoice.Report.rdl | Report design |
+| Menu Item | AVARUMCashInvoice | Report launcher |
+
+---
+
+## 🔍 Key Methods
+
+### AVARUMCashInvoiceDP
+
+```xpp
+public void processReport()
+// Main entry point - orchestrates data population
+
+private void populateHeaderData()
+// Populates header temp table with:
+// - Cash voucher data from AVARUMCashSalesCashVoucher
+// - Company info from CompanyInfo, LogisticsPostalAddress, etc.
+
+private void populateLinesData()
+// Populates lines temp table from:
+// - SalesLine (filtered by AVARUMCashVoucher)
+// - InventTable, EcoResProduct, EcoResProductTranslation
+```
+
+### AVARUMCashInvoiceUIBuilder
+
+```xpp
+public void build()
+// Gets reference to dialog field
+
+public void postBuild()
+// Registers lookup override
+
+private void lookupAVARUMCashVoucher(FormStringControl _control)
+// Provides custom lookup using SysTableLookup
+```
+
+---
+
+## 🗃️ Data Sources
+
+### Source Tables
+- **AVARUMCashSalesCashVoucher** - Cash voucher header
+- **SalesLine** - Sales line items (filtered by AVARUMCashVoucher)
+- **InventTable** - Item master
+- **EcoResProduct** - Product master
+- **EcoResProductTranslation** - Localized product names
+- **CompanyInfo** - Company data
+- **LogisticsPostalAddress** - Address data
+- **LogisticsElectronicAddress** - Phone data
+
+### Temporary Tables
+- **AVARUMCashInvoiceTmpHeader** - Report header dataset
+- **AVARUMCashInvoiceTmpLines** - Report lines dataset
+
+---
+
+## 📊 Report Layout
+
+```
+┌─────────────────────────────────────────────┐
+│ Company Name                                │
+│ Company Address                             │
+│ Phone: XXX-XXX-XXXX                        │
+│ Tax No: XXXXXXXXXX                         │
+├─────────────────────────────────────────────┤
+│           CASH INVOICE                      │
+├─────────────────────────────────────────────┤
+│ Voucher No: XXXXX     Desk: YYYY           │
+├─────────────────────────────────────────────┤
+│ Item  | Item Name    | Qty  | Unit | Amount│
+├───────┼──────────────┼──────┼──────┼────────┤
+│ ITM01 | Product 1    | 10.00│ EA   │ 100.00│
+│ ITM02 | Product 2    | 5.00 │ EA   │  50.00│
+├───────┼──────────────┼──────┼──────┼────────┤
+│ Total:                | 15.00│      │ 150.00│
+└─────────────────────────────────────────────┘
+                          Net Amount:   150.00
+                          VAT:           30.00
+                          ╔═══════════════════╗
+                          ║ Gross Amount: 180.00 ║
+                          ╚═══════════════════╝
+─────────────────────────────────────────────
+Printed: 01/15/2024      Page 1 of 1
+```
+
+---
+
+## 🔧 Common Customizations
+
+### Add a Field to Header
+
+**Step 1**: Add to temp table
+```xml
+<!-- In AVARUMCashInvoiceTmpHeader.xml -->
+<AxTableField xmlns="" i:type="AxTableFieldString">
+    <Name>CustomField</Name>
+    <ExtendedDataType>YourEDT</ExtendedDataType>
+</AxTableField>
+```
+
+**Step 2**: Populate in DP
+```xpp
+// In AVARUMCashInvoiceDP.populateHeaderData()
+tmpHeader.CustomField = cashSalesVoucher.CustomField;
+```
+
+**Step 3**: Add to report dataset
+```xml
+<!-- In AVARUMCashInvoice.xml -->
+<AxReportDataSetField>
+    <Name>CustomField</Name>
+    <Alias>AVARUMCashInvoiceTmpHeader.CustomField</Alias>
+    <Caption>@YourLabel</Caption>
+</AxReportDataSetField>
+```
+
+**Step 4**: Add to RDL design
+- Open RDL in Visual Studio
+- Add textbox bound to =Fields!CustomField.Value
+
+### Filter Lines by Criteria
+
+```xpp
+// In AVARUMCashInvoiceDP.populateLinesData()
+while select salesLine
+    where salesLine.AVARUMCashVoucher == cashVoucher
+       && salesLine.ItemId != ''  // Add your filter
+       && salesLine.SalesQty > 0  // Add your filter
+    // ... rest of query
+```
+
+---
+
+## 🐛 Quick Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Report not in menu | Check menu item deployment |
+| Lookup empty | Verify AVARUMCashSalesCashVoucher has data |
+| No lines shown | Check SalesLine.AVARUMCashVoucher is populated |
+| Company info blank | Verify CompanyInfo and addresses exist |
+| Build errors | Check all EDT references exist |
+
+---
+
+## 📋 File Locations
+
+All files under: `AVARubinMuehle/AVARubinMuehle/`
+
+```
+AxTable/
+  ├── AVARUMCashInvoiceTmpHeader.xml
+  └── AVARUMCashInvoiceTmpLines.xml
+
+AxClass/
+  ├── AVARUMCashInvoiceContract.xml
+  ├── AVARUMCashInvoiceUIBuilder.xml
+  └── AVARUMCashInvoiceDP.xml
+
+AxReport/
+  └── AVARUMCashInvoice.xml
+
+AxMenuItemOutput/
+  └── AVARUMCashInvoice.xml
+
+../Reports/
+  └── AVARUMCashInvoice.Report.rdl
+```
+
+---
+
+## ⚡ Performance Tips
+
+1. **Index AVARUMCashVoucher** on SalesLine for faster filtering
+2. **Cache company info** if generating multiple reports
+3. **Limit date range** when querying historical data
+4. **Use exists joins** instead of inner joins where appropriate
+5. **Batch processing** for multiple vouchers
+
+---
+
+## 🔐 Security
+
+### Privileges Required
+- Read access to:
+  - AVARUMCashSalesCashVoucher
+  - SalesLine
+  - InventTable
+  - CompanyInfo
+  - Logistics* tables
+- Execute access to:
+  - AVARUMCashInvoice (menu item)
+  - AVARUMCashInvoiceDP (class)
+
+### Adding to Menu
+```xpp
+// Add to your module's menu
+// Navigate to: YourMenu > References > Menu Items > Output
+// Add: AVARUMCashInvoice
+```
+
+---
+
+## 📞 Developer Notes
+
+- **Language**: Report supports localized product names via EcoResProductTranslation
+- **Currency**: Uses system currency for amounts
+- **Format**: Decimal formatting uses N2 (2 decimal places)
+- **Date**: Print date uses short date format
+- **Session**: Temp tables scoped to report session
+
+---
+
+## ✅ Pre-Deployment Checklist
+
+- [ ] All labels defined in @AVARUM label file
+- [ ] Build successful (no errors)
+- [ ] Database synchronized
+- [ ] Test data exists:
+  - [ ] AVARUMCashSalesCashVoucher record
+  - [ ] SalesLine records with AVARUMCashVoucher
+  - [ ] Company info populated
+- [ ] Security configured
+- [ ] Report tested end-to-end
+
+---
+
+**Version**: 1.0  
+**Status**: Production Ready ✅

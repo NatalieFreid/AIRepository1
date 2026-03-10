@@ -1,0 +1,851 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXQuotationStatus</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// NDXQuotationStatus class
+/// </summary>
+public class NDXQuotationStatus
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>addRangeProductGroupStatusChange</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// add ProductGroupID ranges
+    /// </summary>
+    /// <param name = "_qbds">datasource</param>
+    static void addRangeProductGroupStatusChange(QueryBuildDataSource _qbds)
+    {
+        NDXMEProductGroupStatusChange nDX_ME_ProductGroupStatusChange;
+        int fNum;
+        
+        fNum = fieldnum(SalesQuotationTable, KCS_KBVProductGroupID);
+
+        while select nDX_ME_ProductGroupStatusChange
+        {
+            _qbds.addRange(fNum).value(KCS_DirProductGroup::findByRecId(nDX_ME_ProductGroupStatusChange.KCS_DirProductGroupRefRecId).KCS_DirProductGroupID);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAllCheckStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// get Set of Status
+    /// </summary>
+    /// <param name = "_priority">priority</param>
+    /// <param name = "_getFromStatus">from status</param>
+    /// <param name = "_getToStatus">to status</param>
+    /// <returns>a set of status ids</returns>
+    static Set getAllCheckStatus(NDX_Priority _priority = 0, boolean _getFromStatus = true, boolean _getToStatus = true)
+    {
+        NDXMEQuotationStatusChange    nDX_ME_QuotationStatusChange;
+        Set set = new Set(Types::String);
+        Query   q;
+        QueryRun    qr;
+        QueryBuildDataSource    qbds;
+
+        // get all "von Status"
+        if (_getFromStatus)
+        {
+            q = new Query();
+
+            qbds = q.addDataSource(tablenum(NDXMEQuotationStatusChange));
+            if (_priority)
+            {
+                qbds.addRange(fieldnum(NDXMEQuotationStatusChange, Priority)).value(QueryValue(_priority));
+            }
+            qbds.addRange(fieldnum(NDXMEQuotationStatusChange, KCS_QuotationStatusFromRefRecId)).value(SysQuery::valueNot(0));
+            qbds.addGroupByField(fieldnum(NDXMEQuotationStatusChange, KCS_QuotationStatusFromRefRecId));
+
+            qr = new QueryRun(q);
+            while (qr.next())
+            {
+                nDX_ME_QuotationStatusChange = qr.get(tablenum(NDXMEQuotationStatusChange));
+                set.add(KCS_QuotationStatus::findByRecId(nDX_ME_QuotationStatusChange.KCS_QuotationStatusFromRefRecId).KCS_StatusId);
+            }
+        }
+
+        // get all "nach Status"
+        if (_getToStatus)
+        {
+            q = new Query();
+
+            qbds = q.addDataSource(tablenum(NDXMEQuotationStatusChange));
+            qbds.addRange(fieldnum(NDXMEQuotationStatusChange, KCS_QuotationStatusToRefRecId)).value(SysQuery::valueNot(0));
+            qbds.addGroupByField(fieldnum(NDXMEQuotationStatusChange, KCS_QuotationStatusToRefRecId));
+
+            qr = new QueryRun(q);
+            while (qr.next())
+            {
+                nDX_ME_QuotationStatusChange = qr.get(tablenum(NDXMEQuotationStatusChange));
+                set.add(KCS_QuotationStatus::findByRecId(nDX_ME_QuotationStatusChange.KCS_QuotationStatusToRefRecId).KCS_StatusId );
+            }
+        }
+
+        //removing empty entries
+        set.remove('');
+        return set;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAllCheckStatusRange</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// add range of status id set
+    /// </summary>
+    /// <param name = "_qbds">data source</param>
+    /// <param name = "_fieldid">field id</param>
+    /// <param name = "_priority">priority</param>
+    static void getAllCheckStatusRange(QueryBuildDataSource _qbds, fieldId _fieldid, NDX_Priority _priority = 0)
+    {
+        Set set = new Set(Types::String);
+        SetEnumerator  en;
+        
+        set = NDXQuotationStatus::getAllCheckStatus(_priority);
+        en = set.getEnumerator();
+        while (en.moveNext())
+        {
+            _qbds.addRange(_fieldid).value(QueryValue(en.current()));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getQSalesQuotation2Check</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets query for check
+    /// </summary>
+    /// <param name = "nDX_ME_DataFromExcelTableRecId">nDX_ME_DataFromExcelTableRecId recId</param>
+    /// <param name = "_salesQuotationRecId">salesQuotationRecId</param>
+    /// <returns>query</returns>
+    static Query getQSalesQuotation2Check(recId nDX_ME_DataFromExcelTableRecId, RecId _salesQuotationRecId = 0)
+    {
+        Query   q = new Query();
+        QueryBuildDataSource    qbds1, qbds2;
+        
+        qbds1 = q.addDataSource(tablenum(NDXMESumPerQuotation));
+        qbds1.addRange(fieldnum(NDXMESumPerQuotation, RefRecId_NDX_ME_DataFromExcelTable)).value(QueryValue(nDX_ME_DataFromExcelTableRecId));
+        if (_salesQuotationRecId)
+        {
+            qbds1.addRange(fieldnum(NDXMESumPerQuotation, SalesQuotationTableRefRecId)).value(queryValue(_salesQuotationRecId));
+        }
+
+        qbds2 = qbds1.addDataSource(tablenum(SalesQuotationTable));
+        qbds2.relations(true);
+        qbds2.fetchMode(QueryFetchMode::One2One);
+
+        NDXQuotationStatus::getAllCheckStatusRange(qbds2, fieldnum(SalesQuotationTable, KCS_StatusId));
+
+        return q;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getQAltSalesQuotations</Name>
+				<Source><![CDATA[
+    static Query getQAltSalesQuotations(SalesQuotationTable _salesQuotationTable)
+    {
+        Query   q = new Query();
+        QueryBuildDataSource    qbds;
+        
+        q.allowCrossCompany(true);
+        qbds = q.addDataSource(tablenum(SalesQuotationTable));
+        qbds.addRange(fieldnum(SalesQuotationTable, KCS_KBVBuildingProjectID)).value(_salesQuotationTable.KCS_KBVBuildingProjectID);
+        qbds.addRange(fieldnum(SalesQuotationTable, QuotationId)).value(SysQuery::valueNot(_salesQuotationTable.QuotationId));
+        
+        NDXQuotationStatus::addRangeProductGroupStatusChange(qbds);
+
+        return q;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkStatusId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Check Status ID
+    /// </summary>
+    /// <param name = "_nDX_ME_DataFromExcelTableRecId">_nDX_ME_DataFromExcelTableRecId</param>
+    /// <param name = "_salesQuotationRecId">_salesQuotationRecId</param>
+    static void checkStatusId(recId _nDX_ME_DataFromExcelTableRecId, RecId _salesQuotationRecId = 0)
+    {
+        NDXMESumPerQuotation                nDX_ME_SumPerQuotation;
+        NDXMESumPerQuotation                nDX_ME_SumPerQuotation_Grp;
+        
+        NDXMEQuotationStatusChanged         nDX_ME_QuotationStatusChanged;
+        
+        SalesQuotationTable                 salesQuotationTable;
+        SalesQuotationTable                 salesQuotationTableAlt;
+        SalesQuotationTable                 salesQuotationTable_Grp;
+        
+        NDXMEQuotationStatusChange          nDX_ME_QuotationStatusChange_Grp;
+        NDXMEQuotationStatusChangeFilter    nDX_ME_QuotationStatusChangeFilter;
+
+        KCS_QuotationStatus                 kCS_QuotationStatus;
+        KCS_QuotationStatus                 kCS_QuotationStatus_alt;
+        
+        NDXSignature    signature;
+        
+        Query   q;
+        QueryBuildDataSource    qbds1, qbds2;
+        QueryRun    qr, qr2;
+        
+        utcdatetime dateTimeEvalued = dateTimeUtil::utcNow();
+        boolean lDeleteFirst;
+        boolean lDebugInfo = false;
+        boolean lContinue;
+        boolean lSumPerQuotationChanged;
+        Counter anzAngChange1, anzAngChange2;
+        str infoTxt;
+        Set setStatus2Change = new Set(Types::String);
+        Set setStatusChanged = new Set(Types::String);
+        boolean lBaseQuoationInInfoLog;
+        boolean lBaseQuoationPrinted;
+
+        // *** Angebote und zugehörige Angebote sammeln ***
+        // generate "Angebote zum BV"
+        signature = NDXHelperCommon::Signature();
+        qr = new QueryRun(NDXQuotationStatus::getQSalesQuotation2Check(_nDX_ME_DataFromExcelTableRecId, _salesQuotationRecId));
+        
+        while (qr.next())
+        {
+            ttsbegin;
+            nDX_ME_SumPerQuotation  = qr.get(tablenum(NDXMESumPerQuotation));
+            salesQuotationTable     = qr.get(tablenum(SalesQuotationTable));
+            nDX_ME_SumPerQuotation.selectForUpdate(true);
+            
+            if (nDX_ME_SumPerQuotation.Checked == NoYes::No)
+            {
+                nDX_ME_SumPerQuotation.Checked = NoYes::Yes;
+            }
+            if (!nDX_ME_SumPerQuotation.DecisionDateOrigSaved)
+            {
+                nDX_ME_SumPerQuotation.DecisionDateOrig = salesQuotationTable.KCS_DecisionDate;
+            }
+            if (!nDX_ME_SumPerQuotation.StatusIdOrigSaved)
+            {
+                nDX_ME_SumPerQuotation.StatusIdOrigRefRecId = KCS_QuotationStatus::find(salesQuotationTable.KCS_StatusId).RecId;
+            }
+            
+            if (!nDX_ME_SumPerQuotation.SalesQuotationStatusOrigSaved)
+            {
+                nDX_ME_SumPerQuotation.SalesQuotationStatusOrig = salesQuotationTable.QuotationStatus;
+            }
+            
+            if (!nDX_ME_SumPerQuotation.StatusIdNewSaved)
+            {
+                nDX_ME_SumPerQuotation.StatusIdNewRefRecId   = 0;
+                nDX_ME_SumPerQuotation.DecisionDate  = DateNull();
+                nDX_ME_SumPerQuotation.SalesQuotationStatusNew  = salesQuotationTable.QuotationStatus;
+            }
+
+            nDX_ME_SumPerQuotation.update();
+
+            // dem Angebot zugehörige Angebote des BV's (von definierten Produktgruppen)
+            qr2 = new QueryRun(NDXQuotationStatus::getQAltSalesQuotations(salesQuotationTable));
+            
+            while (qr2.next())
+            {
+                salesQuotationTableAlt = qr2.get(tablenum(SalesQuotationTable));
+                changecompany(salesQuotationTableAlt.dataAreaId)
+                {
+                    nDX_ME_QuotationStatusChanged = null;
+                    nDX_ME_QuotationStatusChanged = NDXMEQuotationStatusChanged::find(salesQuotationTable.RecId, salesQuotationTableAlt.RecId, true);
+                    if (!nDX_ME_QuotationStatusChanged)
+                    {
+                        nDX_ME_QuotationStatusChanged.SalesQuotationTableRefRecId       = salesQuotationTable.RecId;
+                        nDX_ME_QuotationStatusChanged.SalesQuotationTableOldRefRecId    = salesQuotationTableAlt.RecId;
+                    }
+                    if (!nDX_ME_QuotationStatusChanged.DecisionDateOrigSaved)
+                    {
+                        nDX_ME_QuotationStatusChanged.DecisionDateOrig      = salesQuotationTableAlt.KCS_DecisionDate;
+                    }
+                    if (!nDX_ME_QuotationStatusChanged.StatusIdOrigSaved)
+                    {
+                        nDX_ME_QuotationStatusChanged.StatusIdOrigRefRecId  =  KCS_QuotationStatus::find(salesQuotationTableAlt.KCS_StatusId).RecId;
+                    }
+                    
+                    if (!nDX_ME_QuotationStatusChanged.SalesQuotationStatusOrigSaved)
+                    {
+                        nDX_ME_QuotationStatusChanged.SalesQuotationStatusOrig = salesQuotationTableAlt.QuotationStatus;
+                    }
+                    
+                    if (!nDX_ME_QuotationStatusChanged.StatusIdNewSaved)
+                    {
+                        nDX_ME_QuotationStatusChanged.StatusIdNewRefRecId   = 0;
+                        nDX_ME_QuotationStatusChanged.DecisionDate  = DateNull();
+                        nDX_ME_QuotationStatusChanged.SalesQuotationStatusNew  = salesQuotationTableAlt.QuotationStatus;
+                    }
+                    nDX_ME_QuotationStatusChanged.NDXMESumPerQuotationRefRecId = nDX_ME_SumPerQuotation.RecId;
+                    nDX_ME_QuotationStatusChanged.write();
+                }
+
+                NDXRecId::findOrCreate(signature, nDX_ME_QuotationStatusChanged.RecId);
+            }
+            ttscommit;
+        }
+
+        NDXRecId::deleteAllfromSignature(signature);
+
+        // *** Angebotsstatus untersuchen ***
+        // Statusuntersuchung aller ermittelten Angebote (inkl. zugehöriger Angebote) die zuvor ermittelt wurden
+        q = new Query();
+        qbds1 = q.addDataSource(tablenum(NDXMESumPerQuotation));
+        qbds1.update(true);
+        if (_salesQuotationRecId)
+        {
+            qbds1.addRange(fieldnum(NDXMESumPerQuotation, SalesQuotationTableRefRecId)).value(queryValue(_salesQuotationRecId));
+        }
+        qbds1.addRange(fieldnum(NDXMESumPerQuotation, RefRecId_NDX_ME_DataFromExcelTable)).value(QueryValue(_nDX_ME_DataFromExcelTableRecId));
+        qbds1.addRange(fieldnum(NDXMESumPerQuotation, Checked)).value(QueryValue(NoYes::Yes));
+        qbds2 = qbds1.addDataSource(tablenum(SalesQuotationTable));
+        
+        qbds2.addLink(fieldnum(NDXMESumPerQuotation, SalesQuotationTableRefRecId), fieldnum(SalesQuotationTable, RecId));
+
+        qbds2.fetchMode(QueryFetchMode::One2One);
+        qr = new QueryRun(q);
+        while (qr.next())
+        {
+            lSumPerQuotationChanged = false;
+            nDX_ME_SumPerQuotation_Grp = qr.get(tablenum(NDXMESumPerQuotation));
+            salesQuotationTable_Grp = qr.get(tablenum(SalesQuotationTable));
+            while select    nDX_ME_QuotationStatusChange_Grp
+                group by    Priority, KCS_QuotationStatusToRefRecId
+                order by    Priority
+            {
+                setStatus2Change = NDXQuotationStatus::getAllCheckStatus(nDX_ME_QuotationStatusChange_Grp.Priority, true, false);
+                setStatusChanged = NDXQuotationStatus::getAllCheckStatus(nDX_ME_QuotationStatusChange_Grp.Priority, false, true);
+
+                // ist das Kennzeichen des Angebots ein umzusetzendes Kennzeichen?
+                q = new Query();
+                qbds1 = q.addDataSource(tablenum(NDXMESumPerQuotation));
+                qbds1.addRange(fieldnum(NDXMESumPerQuotation, SalesQuotationTableRefRecId)).value(QueryValue(nDX_ME_SumPerQuotation_Grp.SalesQuotationTableRefRecId));
+                qbds2 = qbds1.addDataSource(tablenum(SalesQuotationTable));
+                qbds2.addLink(fieldnum(NDXMESumPerQuotation, SalesQuotationTableRefRecId), fieldnum(SalesQuotationTable, RecId));
+                qbds2.fetchMode(QueryFetchMode::One2One);
+                NDXQuotationStatus::getAllCheckStatusRange(qbds2, fieldnum(SalesQuotationTable, KCS_StatusId), nDX_ME_QuotationStatusChange_Grp.Priority);
+                qr2 = new QueryRun(q);
+                lContinue = true;
+
+                while (qr2.next())
+                {
+                    nDX_ME_SumPerQuotation  = qr2.get(tablenum(NDXMESumPerQuotation));
+                    salesQuotationTable     = qr2.get(tablenum(SalesQuotationTable));
+                    if (nDX_ME_SumPerQuotation.StatusIdNewSaved && setStatusChanged.in(salesQuotationTable.KCS_StatusId)
+                    || setStatus2Change.in(salesQuotationTable.KCS_StatusId))
+                    {
+                        lContinue = false;
+                        break;
+                    }
+                }
+
+                if (lContinue)
+                {
+                    continue;
+                }
+
+                // Untersuchung der zugehörigen Angebote
+                select firstOnly nDX_ME_QuotationStatusChangeFilter
+                    where nDX_ME_QuotationStatusChangeFilter.NDXMEQuotationStatusChangeRefRecId == nDX_ME_QuotationStatusChange_Grp.KCS_QuotationStatusToRefRecId;
+                if (nDX_ME_QuotationStatusChangeFilter)
+                {
+                    q = new Query();
+                    qbds1 = q.addDataSource(tablenum(NDXMEQuotationStatusChanged));
+                    qbds1.addRange(fieldnum(NDXMEQuotationStatusChanged, SalesQuotationTableOldRefRecId)).value(QueryValue(nDX_ME_SumPerQuotation_Grp.SalesQuotationTableRefRecId));
+                    
+                    qbds2 = qbds1.addDataSource(tablenum(SalesQuotationTable));
+                    qbds2.relations(true);
+                    qbds2.fetchMode(QueryFetchMode::One2One);
+                    qbds2.addRange(fieldnum(SalesQuotationTable, KCS_KBVProductGroupID)).value(salesQuotationTable_Grp.KCS_KBVProductGroupID);
+
+                    while select nDX_ME_QuotationStatusChangeFilter
+                        where    nDX_ME_QuotationStatusChangeFilter.NDXMEQuotationStatusChangeRefRecId == nDX_ME_QuotationStatusChange_Grp.KCS_QuotationStatusToRefRecId
+                    {
+                        qbds2.addRange(fieldnum(salesQuotationTable, KCS_StatusId)).value(QueryValue(KCS_QuotationStatus::findByRecId(nDX_ME_QuotationStatusChangeFilter.KCS_QuotationStatusFilterRefRecId).KCS_StatusId));
+                    }
+                    qr2 = new QueryRun(q);
+                    if (!qr2.next())
+                    {
+                        continue;
+                    }
+                }
+                // alle Voraussetzungen erfüllt, um den Status umzusetzen
+                ttsbegin;
+                // Status des Angebots umsetzen
+                select firstonly forUpdate nDX_ME_SumPerQuotation
+                    where   nDX_ME_SumPerQuotation.RefRecId_NDX_ME_DataFromExcelTable == _nDX_ME_DataFromExcelTableRecId
+                        &&  nDX_ME_SumPerQuotation.SalesQuotationTableRefRecId == nDX_ME_SumPerQuotation_Grp.SalesQuotationTableRefRecId;
+
+                salesQuotationTable = null;
+                kCS_QuotationStatus = null;
+
+                if (nDX_ME_SumPerQuotation_Grp.SalesQuotationTableRefRecId)
+                {
+                    salesQuotationTable = null;
+                    salesQuotationTable = SalesQuotationTable::findRec(nDX_ME_SumPerQuotation_Grp.SalesQuotationTableRefRecId, true);
+                }
+
+                if (salesQuotationTable.KCS_StatusId)
+                {
+                    kCS_QuotationStatus = KCS_QuotationStatus::findByRecId(nDX_ME_QuotationStatusChange_Grp.KCS_QuotationStatusToRefRecId);
+                }
+
+                if (lDebugInfo)
+                {
+                    // Angebot: [%1] Status alt: [%2] Status neu: [%3]
+                    debug::printDebug(strfmt("@NDX:NDXQuotationStatusChangedInfo11", salesQuotationTable.QuotationId, salesQuotationTable.KCS_StatusId, kCS_QuotationStatus.KCS_StatusId));
+                }
+                lSumPerQuotationChanged = true;
+
+                if (lDeleteFirst)
+                {
+                    nDX_ME_SumPerQuotation.StatusIdNewRefRecId = 0;
+                }
+
+                if (salesQuotationTable.KCS_StatusId != kCS_QuotationStatus.KCS_StatusId)
+                {
+                    nDX_ME_SumPerQuotation.StatusIdNewRefRecId  = kCS_QuotationStatus.RecId;
+                    nDX_ME_SumPerQuotation.SalesQuotationStatusNew  = kCS_QuotationStatus.KCS_SalesQuotationStatus;
+                    nDX_ME_SumPerQuotation.DecisionDate = DateTimeUtil::date(dateTimeEvalued);
+                    ++anzAngChange1;
+                }
+                else if (nDX_ME_SumPerQuotation.StatusIdNewRefRecId)
+                {
+                    nDX_ME_SumPerQuotation.StatusIdNewRefRecId = 0;
+                }
+
+                if (!nDX_ME_SumPerQuotation.DecisionDateOrigSaved)
+                {
+                    nDX_ME_SumPerQuotation.DecisionDateOrig = salesQuotationTable.KCS_DecisionDate;
+                }
+
+                if (!nDX_ME_SumPerQuotation.SalesQuotationStatusOrigSaved)
+                {
+                    nDX_ME_SumPerQuotation.SalesQuotationStatusOrig = salesQuotationTable.QuotationStatus;
+                }
+
+                if (!nDX_ME_SumPerQuotation.StatusIdOrigSaved)
+                {
+                    nDX_ME_SumPerQuotation.StatusIdOrigRefRecId = KCS_QuotationStatus::find(salesQuotationTable.KCS_StatusId).RecId;
+                }
+
+                nDX_ME_SumPerQuotation.StatusIdNewEvalueted = dateTimeEvalued;
+                nDX_ME_SumPerQuotation.update();
+
+                // ggf. Status der Folgeangebote umsetzen
+                if (kCS_QuotationStatus.KCS_AltStatusId)
+                {
+                    kCS_QuotationStatus_alt = kCS_QuotationStatus::find(kCS_QuotationStatus.KCS_AltStatusId);
+                    q = new Query();
+                    qbds1 = q.addDataSource(tablenum(NDXMEQuotationStatusChanged));
+                    qbds1.addRange(fieldnum(NDXMEQuotationStatusChanged, SalesQuotationTableRefRecId)).value(QueryValue(nDX_ME_SumPerQuotation_Grp.SalesQuotationTableRefRecId));
+                    qbds1.update(true);
+
+                    qbds2 = qbds1.addDataSource(tablenum(SalesQuotationTable));
+                    qbds2.addRange(fieldnum(SalesQuotationTable, KCS_KBVProductGroupID)).value(salesQuotationTable.KCS_KBVProductGroupID);
+                    qbds2.relations(true);
+                    qbds2.fetchMode(QueryFetchMode::One2One);
+                    qr2 = new QueryRun(q);
+                    while (qr2.next())
+                    {
+                        salesQuotationTable = qr2.get(tablenum(SalesQuotationTable));
+                        nDX_ME_QuotationStatusChanged = qr2.get(tablenum(NDXMEQuotationStatusChanged));
+
+                        if (lDebugInfo)
+                        {
+                            // Folge-Angebot: [%1] Status alt: [%2] Status neu: [%3]
+                            debug::printDebug(strfmt("@NDX:NDXQuotationStatusChangedInfo12", salesQuotationTable.QuotationId, salesQuotationTable.KCS_StatusId, kCS_QuotationStatus.KCS_AltStatusId));
+                        }
+
+                        if (lDeleteFirst)
+                        {
+                            nDX_ME_QuotationStatusChanged.StatusIdNewRefRecId = 0;
+                        }
+
+                        if (salesQuotationTable.KCS_StatusId != kCS_QuotationStatus.KCS_AltStatusId)
+                        {
+                            nDX_ME_QuotationStatusChanged.StatusIdNewRefRecId = KCS_QuotationStatus::find(kCS_QuotationStatus.KCS_AltStatusId).RecId;
+                            nDX_ME_QuotationStatusChanged.SalesQuotationStatusNew   = kCS_QuotationStatus_alt.KCS_SalesQuotationStatus;
+                            nDX_ME_QuotationStatusChanged.DecisionDate          = DateTimeUtil::date(dateTimeEvalued);
+                            ++anzAngChange2;
+                        }
+                        else if (nDX_ME_QuotationStatusChanged.StatusIdNewRefRecId)
+                        {
+                            nDX_ME_QuotationStatusChanged.StatusIdNewRefRecId = 0;
+                        }
+
+                        if (!nDX_ME_QuotationStatusChanged.DecisionDateOrigSaved)
+                        {
+                            nDX_ME_QuotationStatusChanged.DecisionDateOrig = salesQuotationTable.KCS_DecisionDate;
+                        }
+
+                        if (!nDX_ME_QuotationStatusChanged.StatusIdOrigSaved)
+                        {
+                            nDX_ME_QuotationStatusChanged.StatusIdOrigRefRecId = KCS_QuotationStatus::find(salesQuotationTable.KCS_StatusId).RecId;
+                        }
+
+                        if (!nDX_ME_QuotationStatusChanged.SalesQuotationStatusOrigSaved)
+                        {
+                            nDX_ME_QuotationStatusChanged.SalesQuotationStatusOrig   = salesQuotationTable.QuotationStatus;
+                        }
+
+                        nDX_ME_QuotationStatusChanged.StatusIdNewEvalueted    = dateTimeEvalued;
+                        nDX_ME_QuotationStatusChanged.update();
+                    }
+                }
+                ttscommit;
+                break;
+            }
+            if (!lSumPerQuotationChanged)
+            {
+                ttsbegin;
+                if (nDX_ME_SumPerQuotation_Grp.StatusIdNewRefRecId || nDX_ME_SumPerQuotation_Grp.DecisionDate)
+                {
+                    nDX_ME_SumPerQuotation_Grp.StatusIdNewRefRecId = 0;
+                    nDX_ME_SumPerQuotation_Grp.DecisionDate = DateNull();
+                    nDX_ME_SumPerQuotation_Grp.update();
+                }
+                q = new Query();
+                qbds1 = q.addDataSource(tablenum(NDXMEQuotationStatusChanged));
+                qbds1.addRange(fieldnum(NDXMEQuotationStatusChanged, SalesQuotationTableRefRecId)).value(QueryValue(nDX_ME_SumPerQuotation_Grp.SalesQuotationTableRefRecId));
+                qbds1.update(true);
+                qr2 = new QueryRun(q);
+                while (qr2.next())
+                {
+                    nDX_ME_QuotationStatusChanged = qr2.get(tablenum(NDXMEQuotationStatusChanged));
+                    if (nDX_ME_QuotationStatusChanged.StatusIdNewRefRecId || nDX_ME_QuotationStatusChanged.DecisionDate)
+                    {
+                        nDX_ME_QuotationStatusChanged.StatusIdNewRefRecId = 0;
+                        nDX_ME_QuotationStatusChanged.SalesQuotationStatusNew   = SalesQuotationStatus::Created;
+                        nDX_ME_QuotationStatusChanged.DecisionDate  = DateNull();
+                        nDX_ME_QuotationStatusChanged.update();
+                    }
+                }
+                ttscommit;
+            }
+        }
+
+        // *** Angebotsstatus neu setzen ***
+        if (anzAngChange1 || anzAngChange2)
+        {
+            // Es wurden [%1] Angebote und [%2] Folgeangebote ermittelt,\nbei denen der Angebotsstatus zu ändern ist.\nSoll diese Änderung jetzt durchgeführt werden?\n(Ansonsten werden nur die ermittelten Änderungen angezeigt)
+            infoTxt = strFmtLB(strfmt("@NDX:NDXQuotationStatusChangedInfo1", anzAngChange1, anzAngChange2));
+            if (box::yesNo(infoTxt, DialogButton::No) == DialogButton::Yes)
+            {
+                anzAngChange1 = 0;
+                anzAngChange2 = 0;
+                ttsbegin;
+                q = new Query();
+                qbds1 = q.addDataSource(tablenum(NDXMESumPerQuotation));
+                if (_salesQuotationRecId)
+                {
+                    qbds1.addRange(fieldnum(NDXMESumPerQuotation, SalesQuotationTableRefRecId)).value(queryValue(_salesQuotationRecId));
+                }
+                qbds1.addRange(fieldnum(NDXMESumPerQuotation, RefRecId_NDX_ME_DataFromExcelTable)).value(QueryValue(_nDX_ME_DataFromExcelTableRecId));
+                qbds1.addRange(fieldnum(NDXMESumPerQuotation, Checked)).value(QueryValue(NoYes::Yes));
+                qbds2 = qbds1.addDataSource(tablenum(SalesQuotationTable));
+                qbds2.update(true);
+                qbds2.relations(true);
+                qr = new QueryRun(q);
+                while (qr.next())
+                {
+                    nDX_ME_SumPerQuotation = qr.get(tablenum(NDXMESumPerQuotation));
+                    salesQuotationTable    = qr.get(tablenum(SalesQuotationTable));
+            
+                    lBaseQuoationInInfoLog = false;
+                    if (nDX_ME_SumPerQuotation.StatusIdNewRefRecId)
+                    {
+                        nDX_ME_SumPerQuotation.selectForUpdate(true);
+
+                        ++anzAngChange1;
+                        // %1.) Angebot: [%2.%3] Status alt: [%4] neu: [%5]
+                        info(strfmt("@NDX:NDXQuotationStatusChange13", anzAngChange1, salesQuotationTable.dataAreaId, salesQuotationTable.QuotationId, salesQuotationTable.KCS_StatusId, KCS_QuotationStatus::findByRecId(nDX_ME_SumPerQuotation.StatusIdNewRefRecId).KCS_StatusId));
+
+                        lBaseQuoationInInfoLog = true;
+                        nDX_ME_SumPerQuotation.StatusIdOrigRefRecId     = KCS_QuotationStatus::find(salesQuotationTable.KCS_StatusId).RecId;
+                        nDX_ME_SumPerQuotation.StatusIdOrigSaved        = dateTimeEvalued;
+                        nDX_ME_SumPerQuotation.DecisionDateOrig         = salesQuotationTable.KCS_DecisionDate;
+                        nDX_ME_SumPerQuotation.DecisionDateOrigSaved    = dateTimeEvalued;
+
+                        nDX_ME_SumPerQuotation.StatusIdRefRecId         = nDX_ME_SumPerQuotation.StatusIdNewRefRecId;
+                        nDX_ME_SumPerQuotation.StatusIdNewSaved         = dateTimeEvalued;
+
+                        nDX_ME_SumPerQuotation.SalesQuotationStatusOrig         = salesQuotationTable.QuotationStatus;
+                        nDX_ME_SumPerQuotation.SalesQuotationStatusOrigSaved    = dateTimeEvalued;
+                        nDX_ME_SumPerQuotation.update();
+
+                        salesQuotationTable.KCS_StatusId                = KCS_QuotationStatus::findByRecId(nDX_ME_SumPerQuotation.StatusIdNewRefRecId).KCS_StatusId;
+                        salesQuotationTable.KCS_DecisionDate            = nDX_ME_SumPerQuotation.DecisionDate;
+                        salesQuotationTable.QuotationStatus             = nDX_ME_SumPerQuotation.SalesQuotationStatusNew;
+                        salesQuotationTable.update();
+                    }
+                    lBaseQuoationPrinted = false;
+                    while select forUpdate nDX_ME_QuotationStatusChanged
+                        where nDX_ME_QuotationStatusChanged.SalesQuotationTableRefRecId == nDX_ME_SumPerQuotation.SalesQuotationTableRefRecId
+                            && nDX_ME_QuotationStatusChanged.StatusIdNewRefRecId
+                        join forUpdate salesQuotationTableAlt
+                            where salesQuotationTableAlt.RecId == nDX_ME_QuotationStatusChanged.SalesQuotationTableOldRefRecId
+                            &&  salesQuotationTableAlt.KCS_KBVProductGroupID == salesQuotationTable.KCS_KBVProductGroupID
+                    {
+                        nDX_ME_QuotationStatusChanged.selectForUpdate(true);
+
+                        ++anzAngChange2;
+                        if (!lBaseQuoationInInfoLog && !lBaseQuoationPrinted)
+                        {
+                            // --.) Angebot: [%1.%2] Status: [%3] [ohne Änderung]
+                            info(strfmt("@NDX:NDXQuotationStatusChangedInfo2", salesQuotationTable.dataAreaId, salesQuotationTable.QuotationId, salesQuotationTable.KCS_StatusId));
+                            lBaseQuoationPrinted = true;
+                        }
+                        // %1.%2.) Folge-Angebot: [%3.%4] Status alt: [%5] neu: [%6]
+                        info(strfmt("@NDX:NDXQuotationStatusChangedInfo3", lBaseQuoationInInfoLog ? int2str(anzAngChange1) : '--', anzAngChange2
+                        , salesQuotationTableAlt.dataAreaId, salesQuotationTableAlt.QuotationId
+                            , salesQuotationTableAlt.KCS_StatusId, KCS_QuotationStatus::findByRecId(nDX_ME_QuotationStatusChanged.StatusIdNewRefRecId).KCS_StatusId));
+
+                        nDX_ME_QuotationStatusChanged.StatusIdOrigRefRecId = KCS_QuotationStatus::find(salesQuotationTableAlt.KCS_StatusId).RecId;
+                        nDX_ME_QuotationStatusChanged.StatusIdOrigSaved         = dateTimeEvalued;
+                        nDX_ME_QuotationStatusChanged.DecisionDateOrig          = salesQuotationTableAlt.KCS_DecisionDate;
+                        nDX_ME_QuotationStatusChanged.DecisionDateOrigSaved     = dateTimeEvalued;
+                        nDX_ME_QuotationStatusChanged.StatusIdRefRecId          = nDX_ME_QuotationStatusChanged.StatusIdNewRefRecId;
+                        nDX_ME_QuotationStatusChanged.StatusIdNewSaved          = dateTimeEvalued;
+                        nDX_ME_QuotationStatusChanged.SalesQuotationStatusOrig      = salesQuotationTableAlt.QuotationStatus;
+                        nDX_ME_QuotationStatusChanged.SalesQuotationStatusOrigSaved = dateTimeEvalued;
+
+                        nDX_ME_QuotationStatusChanged.update();
+
+                        salesQuotationTableAlt.KCS_StatusId             = KCS_QuotationStatus::findByRecId(nDX_ME_QuotationStatusChanged.StatusIdNewRefRecId).KCS_StatusId;
+                        salesQuotationTableAlt.QuotationStatus          = nDX_ME_QuotationStatusChanged.SalesQuotationStatusNew;
+                        salesQuotationTableAlt.KCS_DecisionDate         = nDX_ME_QuotationStatusChanged.DecisionDate;
+                        salesQuotationTableAlt.update();
+                    }
+                }
+                ttscommit;
+            }
+        }
+        else
+        {
+            info("@NDX:NDXQuotationStatusChangedInfo4");           // Alle untersuchten Angebote besitzen den korrekten Status!
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>restoreStatusId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Restore the last Status
+    /// </summary>
+    /// <param name = "_nDX_ME_DataFromExcelTableRecId">_nDX_ME_DataFromExcelTableRecId</param>
+    /// <param name = "_salesQuotationRecId">_salesQuotationRecId</param>
+    static void restoreStatusId(recId _nDX_ME_DataFromExcelTableRecId, RecId _salesQuotationRecId = 0)
+    {
+        NDXMESumPerQuotation              nDX_ME_SumPerQuotation;
+        NDXMEQuotationStatusChanged       nDX_ME_QuotationStatusChanged;
+        SalesQuotationTable                 salesQuotationTable;
+        Query   q1, q2;
+        QueryRun    qr1, qr2;
+        QueryBuildDataSource    qbdsA1, qbdsA2;
+        QueryBuildDataSource    qbdsB1, qbdsB2;
+        Counter anz1, anz2, anzStatusChanged;
+        str strInfo1, strInfo2;
+        ;
+        q1 = new Query();
+        qbdsA1 = q1.addDataSource(tablenum(NDXMESumPerQuotation));
+        qbdsA1.update(true);
+        if (_salesQuotationRecId)
+        {
+            qbdsA1.addRange(fieldnum(NDXMESumPerQuotation, SalesQuotationTableRefRecId)).value(queryValue(_salesQuotationRecId));
+        }
+        qbdsA1.addRange(fieldnum(NDXMESumPerQuotation, RefRecId_NDX_ME_DataFromExcelTable)).value(QueryValue(_nDX_ME_DataFromExcelTableRecId));
+        qbdsA1.addRange(fieldnum(NDXMESumPerQuotation, Checked)).value(QueryValue(NoYes::Yes));
+        qbdsA2 = qbdsA1.addDataSource(tablenum(SalesQuotationTable));
+        qbdsA2.update(true);
+        qbdsA2.relations(true);
+        qr1 = new QueryRun(q1);
+        while (qr1.next())
+        {
+            ++anz1;
+            nDX_ME_SumPerQuotation = qr1.get(tablenum(NDXMESumPerQuotation));
+            salesQuotationTable = qr1.get(tablenum(SalesQuotationTable));
+            strInfo1 = strfmt('%1.) %2 ', anz1, salesQuotationTable.QuotationId);
+            strInfo2 = '';
+            if ((salesQuotationTable.KCS_StatusId != KCS_QuotationStatus::findByRecId(nDX_ME_SumPerQuotation.StatusIdOrigRefRecId).KCS_StatusId && nDX_ME_SumPerQuotation.StatusIdOrigSaved)   ||
+                (salesQuotationTable.KCS_DecisionDate != nDX_ME_SumPerQuotation.DecisionDateOrig && nDX_ME_SumPerQuotation.DecisionDateOrigSaved))
+            {
+                ++anzStatusChanged;
+                if (salesQuotationTable.KCS_StatusId != KCS_QuotationStatus::findByRecId(nDX_ME_SumPerQuotation.StatusIdOrigRefRecId).KCS_StatusId && nDX_ME_SumPerQuotation.StatusIdOrigSaved)
+                {
+                    strInfo2 += strfmt("@NDX:NDXQuotationStatusChangedInfo5", salesQuotationTable.KCS_StatusId, KCS_QuotationStatus::findByRecId(nDX_ME_SumPerQuotation.StatusIdOrigRefRecId).KCS_StatusId);      // (Status akt. [%1] neu [%2])
+                    salesQuotationTable.KCS_StatusId = KCS_QuotationStatus::findByRecId(nDX_ME_SumPerQuotation.StatusIdOrigRefRecId).KCS_StatusId;
+                }
+                if (salesQuotationTable.KCS_DecisionDate != nDX_ME_SumPerQuotation.DecisionDateOrig && nDX_ME_SumPerQuotation.DecisionDateOrigSaved)
+                {
+                    strInfo2 += strfmt("@NDX:NDXQuotationStatusChangedInfo6", salesQuotationTable.KCS_DecisionDate, nDX_ME_SumPerQuotation.DecisionDateOrig);  // (Entscheidungsdatum akt. [%1] neu [%2])
+                    salesQuotationTable.KCS_DecisionDate = nDX_ME_SumPerQuotation.DecisionDateOrig;
+                }
+                if (salesQuotationTable.QuotationStatus != nDX_ME_SumPerQuotation.SalesQuotationStatusOrig && nDX_ME_SumPerQuotation.SalesQuotationStatusOrigSaved)
+                {
+                    strInfo2 += strfmt("@NDX:NDXQuotationStatusChangedInfo7", salesQuotationTable.QuotationStatus, nDX_ME_SumPerQuotation.SalesQuotationStatusOrig);  // ((Angebotstatus  akt. [%1] neu [%2])
+                    salesQuotationTable.QuotationStatus = nDX_ME_SumPerQuotation.SalesQuotationStatusOrig;
+                }
+                ttsbegin;
+                if (salesQuotationTable.validateWrite())
+                {
+                    salesQuotationTable.update(false);
+                }
+                nDX_ME_SumPerQuotation.StatusIdNewRefRecId = 0;
+                nDX_ME_SumPerQuotation.DecisionDate = DateNull();
+                if (nDX_ME_SumPerQuotation.validateWrite())
+                {
+                    nDX_ME_SumPerQuotation.update();
+                }
+                ttscommit;
+            }
+            if (strInfo2)
+            {
+                Warning(strfmt('%1 %2', strInfo1, strInfo2));
+            }
+            else
+            {
+                info(strfmt('%1 %2', strInfo1, "@NDX:NDXRestoreNotNeeded"));        // (keine Rücksetzung erforderlich)
+            }
+
+            q2 = new Query();
+            qbdsB1 = q2.addDataSource(tablenum(NDXMEQuotationStatusChanged));
+            qbdsB1.update(true);
+            qbdsB1.addRange(fieldnum(NDXMEQuotationStatusChanged, SalesQuotationTableRefRecId)).value(QueryValue(nDX_ME_SumPerQuotation.SalesQuotationTableRefRecId));
+            qbdsB1.addRange(fieldnum(NDXMEQuotationStatusChanged, StatusIdOrigRefRecId)).value(SysQuery::valueNotEmptyString());
+            qbdsB2 = qbdsB1.addDataSource(tablenum(SalesQuotationTable));
+            qbdsB2.update(true);
+            qbdsB2.relations(true);
+            qr2 = new QueryRun(q2);
+            anz2 = 0;
+            while (qr2.next())
+            {
+                ++anz2;
+                nDX_ME_QuotationStatusChanged = qr2.get(tablenum(NDXMEQuotationStatusChanged));
+                salesQuotationTable = qr2.get(tablenum(SalesQuotationTable));
+                strInfo1 = strfmt('%1.%2.) %3 ', anz1, anz2, salesQuotationTable.QuotationId);
+                strInfo2 = '';
+                if ((salesQuotationTable.KCS_StatusId != KCS_QuotationStatus::findByRecId(nDX_ME_QuotationStatusChanged.StatusIdOrigRefRecId).KCS_StatusId && nDX_ME_QuotationStatusChanged.StatusIdOrigSaved) ||
+                (salesQuotationTable.KCS_DecisionDate != nDX_ME_QuotationStatusChanged.DecisionDateOrig && nDX_ME_QuotationStatusChanged.DecisionDateOrigSaved))
+                {
+                    ++anzStatusChanged;
+                    if (salesQuotationTable.KCS_StatusId != KCS_QuotationStatus::findByRecId(nDX_ME_QuotationStatusChanged.StatusIdOrigRefRecId).KCS_StatusId && nDX_ME_QuotationStatusChanged.StatusIdOrigSaved)
+                    {
+                        strInfo2 += strfmt("@NDX:NDXQuotationStatusChangedInfo5", salesQuotationTable.KCS_StatusId, KCS_QuotationStatus::findByRecId(nDX_ME_QuotationStatusChanged.StatusIdOrigRefRecId).KCS_StatusId);       // (Status akt. [%1] neu [%2])
+                        salesQuotationTable.KCS_StatusId = KCS_QuotationStatus::findByRecId(nDX_ME_QuotationStatusChanged.StatusIdOrigRefRecId).KCS_StatusId;
+                    }
+                    if (salesQuotationTable.KCS_DecisionDate != nDX_ME_QuotationStatusChanged.DecisionDateOrig && nDX_ME_QuotationStatusChanged.DecisionDateOrigSaved)
+                    {
+                        strInfo2 += strfmt("@NDX:NDXQuotationStatusChangedInfo6", salesQuotationTable.KCS_DecisionDate, nDX_ME_QuotationStatusChanged.DecisionDateOrig);   // (Entscheidungsdatum akt. [%1] neu [%2])
+                        salesQuotationTable.KCS_DecisionDate = nDX_ME_QuotationStatusChanged.DecisionDateOrig;
+                    }
+                    if (salesQuotationTable.QuotationStatus != nDX_ME_QuotationStatusChanged.SalesQuotationStatusOrig && nDX_ME_QuotationStatusChanged.SalesQuotationStatusOrigSaved)
+                    {
+                        strInfo2 += strfmt("@NDX:NDXQuotationStatusChangedInfo7", salesQuotationTable.QuotationStatus, nDX_ME_QuotationStatusChanged.SalesQuotationStatusOrig);  // ((Angebotstatus  akt. [%1] neu [%2])
+                        salesQuotationTable.QuotationStatus = nDX_ME_QuotationStatusChanged.SalesQuotationStatusOrig;
+                    }
+                    ttsbegin;
+                    if (salesQuotationTable.validateWrite())
+                    {
+                        salesQuotationTable.update(false);
+                    }
+                    nDX_ME_QuotationStatusChanged.StatusIdNewRefRecId  = 0;
+                    nDX_ME_QuotationStatusChanged.DecisionDate = DateNull();
+                    if (nDX_ME_QuotationStatusChanged.validateWrite())
+                    {
+                        nDX_ME_QuotationStatusChanged.update();
+                    }
+                    ttscommit;
+                }
+                if (strInfo2)
+                {
+                    Warning(strfmt('%1 %2', strInfo1, strInfo2));
+                }
+                else
+                {
+                    info(strfmt('%1 %2', strInfo1, "@NDX:NDXQuotationStatusChangedInfo8"));        // (keine Rücksetzung erforderlich)
+                }
+            }
+        }
+        if (anzStatusChanged)
+        {
+            Warning(strfmt("@NDX:NDXQuotationStatusChangedInfo9", anzStatusChanged));      // Bei insgesamt [%1] Angeboten wurde der Status zurückgesetzt.
+        }
+        else
+        {
+            info("@NDX:NDXQuotationStatusChangedInfo10");       // Bei keinem Angebot wurde der Angebots-Status geändert.
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    static public void main(Args _args)
+    {
+        NDXMESumPerQuotation lNDXMESumPerQuotation;
+        DialogButton dialogButton;
+        if(_args != null && _args.record() != null)
+        {
+            switch(_args.menuItemName())
+            {
+                case  menuItemActionStr(NDXMEQuotationStatusCheckStatus):
+                    if(_args.dataset() == tablenum(NDXMESumPerQuotation))
+                    {
+                        lNDXMESumPerQuotation = _args.record();
+                        dialogButton = box::yesNoCancel(strfmt("@NDX:NDXMECheckOnlySalesQuotation",  SalesQuotationTable::findRec(lNDXMESumPerQuotation.SalesQuotationTableRefRecId).QuotationId), DialogButton::Cancel);
+                        
+                        if(dialogButton == DialogButton::Yes)    //Prüfung nur für Angebot [%1]?
+                        {
+                            NDXQuotationStatus::checkStatusId(lNDXMESumPerQuotation.RefRecId_NDX_ME_DataFromExcelTable, lNDXMESumPerQuotation.SalesQuotationTableRefRecId);
+                        }
+                        else if(dialogButton == DialogButton::No)
+                        {
+                            NDXQuotationStatus::checkStatusId(lNDXMESumPerQuotation.RefRecId_NDX_ME_DataFromExcelTable);
+                        }
+                    }
+                   
+                    break;
+                case  menuItemActionStr(NDXMEQuotationStatusRestoreStatus):
+                    if(_args.dataset() == tablenum(NDXMESumPerQuotation))
+                    {
+                        lNDXMESumPerQuotation = _args.record();
+                        dialogButton = box::yesNoCancel(strfmt("@NDX:NDXMERestoreOnlySalesQuotation",  SalesQuotationTable::findRec(lNDXMESumPerQuotation.SalesQuotationTableRefRecId).QuotationId), DialogButton::Cancel);
+
+                        if (dialogButton == DialogButton::Yes)    //Prüfung nur für Angebot [%1]?
+                        {
+                            NDXQuotationStatus::restoreStatusId(lNDXMESumPerQuotation.RefRecId_NDX_ME_DataFromExcelTable, lNDXMESumPerQuotation.SalesQuotationTableRefRecId);
+                        }
+                        else if(dialogButton == DialogButton::No)
+                        {
+                            NDXQuotationStatus::restoreStatusId(lNDXMESumPerQuotation.RefRecId_NDX_ME_DataFromExcelTable);
+                        }
+                    }
+                    break;
+               
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

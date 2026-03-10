@@ -1,0 +1,510 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAAgreementConfirmationDPCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of class AgreementConfirmationDP
+/// </summary>
+[ExtensionOf(classStr(AgreementConfirmationDP))]
+final public class AVAAgreementConfirmationDPCls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initializeAgreementHeaderTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Intializes a <c>AgreementHeaderTmp</c> record.
+    /// </summary>
+    /// <returns>
+    /// The initialized <c>AgreementHeaderTmp</c> record.
+    /// </returns>
+    protected AgreementHeaderTmp initializeAgreementHeaderTmp()
+    {
+        AgreementHeaderTmp agreementHeaderTmpRecord = next initializeAgreementHeaderTmp();
+
+        if(moduleSalesPurch == ModuleSalesPurch::Sales
+            && proforma == NoYes::No)
+        {
+            SalesAgreementHeaderHistory avaSalesAgreementHeaderHistory = SalesAgreementHeaderHistory::avaFindRecId(recId);
+            agreementHeaderTmpRecord.AVACustVendAC = avaSalesAgreementHeaderHistory.CustAccount;
+            agreementHeaderTmpRecord.AVACustVendACExt = avaSalesAgreementHeaderHistory.custTable().OurAccountNum;
+          
+        }
+        else if(moduleSalesPurch == ModuleSalesPurch::Sales)
+        {
+            SalesAgreementHeader avaSalesAgreementHeader = SalesAgreementHeader::find(recId);
+            agreementHeaderTmpRecord.AVACustVendAC = avaSalesAgreementHeader.CustAccount;
+            agreementHeaderTmpRecord.AVACustVendACExt = avaSalesAgreementHeader.custTable().OurAccountNum;
+        }
+        else if(moduleSalesPurch == ModuleSalesPurch::Purch
+            && proforma == NoYes::No)
+        {
+            PurchAgreementHeaderHistory avaPurchAgreementHeaderHistory = PurchAgreementHeaderHistory::avaFindRecId(recId);
+            agreementHeaderTmpRecord.AVACustVendAC = avaPurchAgreementHeaderHistory.VendAccount;
+            agreementHeaderTmpRecord.AVACustVendACExt = avaPurchAgreementHeaderHistory.vendTable().YourAccountNum;
+        }
+        else if(moduleSalesPurch == ModuleSalesPurch::Purch)
+        {
+            PurchAgreementHeader avaPurchAgreementHeader = PurchAgreementHeader::find(recId);
+            agreementHeaderTmpRecord.AVACustVendAC = avaPurchAgreementHeader.VendAccount;
+            agreementHeaderTmpRecord.AVACustVendACExt = avaPurchAgreementHeader.vendTable().YourAccountNum;
+        }
+
+        return agreementHeaderTmpRecord;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setAgreementHeaderTmpFromMaps</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Fills the <c>AgreementHeaderTmp</c> table with the data from the specified
+    ///    <c>AgreementHeaderMap</c> and <c>AgreementHeaderDefaultMap</c> map buffers.
+    /// </summary>
+    /// <param name="_agreementHeaderTmp">
+    ///    The table to fill with the data.
+    /// </param>
+    /// <param name="_agreementHeaderMap">
+    ///    The map with the data to be copied to the <c>AgreementHeaderTmp</c> buffer.
+    /// </param>
+    /// <param name="_agreementHeaderDefaultMap">
+    ///    The map with the data to be copied to the <c>AgreementHeaderTmp</c> buffer.
+    /// </param>
+    protected void setAgreementHeaderTmpFromMaps(AgreementHeaderTmp        _agreementHeaderTmp,
+                                                 AgreementHeaderMap        _agreementHeaderMap,
+                                                 AgreementHeaderDefaultMap _agreementHeaderDefaultMap)
+    {
+        next setAgreementHeaderTmpFromMaps(_agreementHeaderTmp, _agreementHeaderMap, _agreementHeaderDefaultMap);
+
+        DirPartyTable avaDirParty = DirPartyTable::findRec(_agreementHeaderMap.Originator);  
+
+        if(proforma)
+        {
+            AgreementHeaderDefault       avaAgreementHeaderDefault;
+
+            select firstonly avaAgreementHeaderDefault
+                where avaAgreementHeaderDefault.AgreementHeader == RecId;
+
+            if(showPayment)
+            {
+                _agreementHeaderTmp.PaymentTerms = avaAgreementHeaderDefault.PaymentTerms;
+            }
+
+            _agreementHeaderTmp.AVAEmail    = avaAgreementHeaderDefault.AVAEMail;
+        }
+        else
+        {
+            AgreementHeaderDefaultHistory       avaAgreementHeaderDefaultHistory;
+
+            select firstonly avaAgreementHeaderDefaultHistory
+                where avaAgreementHeaderDefaultHistory.AgreementHeaderHistory == RecId;
+
+            if(showPayment)
+            {
+                _agreementHeaderTmp.PaymentTerms = avaAgreementHeaderDefaultHistory.PaymentTerms;
+            }
+
+            _agreementHeaderTmp.AVAEmail    = avaAgreementHeaderDefaultHistory.AVAEmail;
+        }
+    
+        _agreementHeaderTmp.AVAAgreementHeaderRecId = recId;
+        _agreementHeaderTmp.AVAIsProForma           = proforma;
+        _agreementHeaderTmp.AVAOriginatorPhone      = avaDirParty.primaryPhone() + '-' + avaDirParty.avaPrimaryPhoneExtension();
+        _agreementHeaderTmp.AVAOriginatorEmail      = avaDirParty.primaryEmail();
+        _agreementHeaderTmp.AVAFormLetterRemarks    = FormLetterRemarks::find(_agreementHeaderMap.Language, FormTextType::AVAPurchAgreement).Txt;
+        _agreementHeaderTmp.AVAFormLetterRemarks2   = FormLetterRemarks::find(_agreementHeaderMap.Language, FormTextType::AVAPurchAgreement2).Txt;
+
+
+        if ((docuOnAgreement == DocuOnFormular::All) || (docuOnAgreement == DocuOnFormular::Head))
+        {
+            _agreementHeaderTmp.Notes = Docu::concatDocuRefNotes(DocuRefSearch::KCS_TCVnewTypeAndRestrictAndNotePosition(
+                                                                                this.getAgreementHeaderTableAVATCV(_agreementHeaderMap),
+                                                                                docuTypeAgreement,
+                                                                                DocuRestriction::External,
+                                                                                AVATCVNotePosition::Bottom));
+                    
+            _agreementHeaderTmp.AVATCVTopNotes = Docu::concatDocuRefNotes(DocuRefSearch::KCS_TCVnewTypeAndRestrictAndNotePosition(
+                                                                                this.getAgreementHeaderTableAVATCV(_agreementHeaderMap),
+                                                                                docuTypeAgreement,
+                                                                                DocuRestriction::External,
+                                                                                AVATCVNotePosition::Top));
+                
+            _agreementHeaderTmp.AVATCVBottomNotes   = Docu::concatDocuRefNotes(DocuRefSearch::KCS_TCVnewTypeAndRestrictAndNotePosition(
+                                                                                this.getAgreementHeaderTableAVATCV(_agreementHeaderMap),
+                                                                                docuTypeAgreement,
+                                                                                DocuRestriction::External,
+                                                                                AVATCVNotePosition::Bottom));
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setAgreementLineTmpFromMap</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Fills the <c>AgreementLineTmp</c> table with the data from the <c>InventDim</c> table and the
+    ///    <c>AgreementLineMap</c> map buffer.
+    /// </summary>
+    /// <param name="_agreementLineTmp">
+    ///    The table to fill with the data.
+    /// </param>
+    /// <param name="_inventDim">
+    ///    The table with the data to be copied to the <c>AgreementLineTmp</c> table buffer.
+    /// </param>
+    /// <param name="_agreementLineMap">
+    ///    The map with the data to be copied to the <c>AgreementLineTmp</c> table buffer.
+    /// </param>
+    /// <param name="_languageId">
+    ///    The language for this agreement.
+    /// </param>
+    protected void setAgreementLineTmpFromMap(AgreementLineTmp _agreementLineTmp,
+                                              InventDim        _inventDim,
+                                              AgreementLineMap _agreementLineMap,
+                                              LanguageId       _languageId)
+    {
+        #xppTexts
+        InventTable avaInventTable = InventTable::find(_agreementLineMap.ItemId);
+        EcoResProductTranslation avaProductTranslation = EcoResProductTranslation::findByProductLanguage(avaInventTable.Product, _languageId);
+
+        next setAgreementLineTmpFromMap(_agreementLineTmp, _inventDim, _agreementLineMap, _languageId);
+
+        _agreementLineTmp.AVAInventLocationId   = _inventDim.InventLocationId;
+
+        if (_agreementLineMap.AgreementLineType == CommitmentType::ProductVolume
+            || _agreementLineMap.AgreementLineType == CommitmentType::ProductQuantity)
+        {
+            _agreementLineTmp.AVAItemDescription = InventTable::find(_agreementLineMap.ItemId).itemDescriptionOrName(_languageId);
+        }
+
+        if(avaProductTranslation)
+        {
+            str avaName;
+            if(avaProductTranslation.NDXProductName1)
+            {
+                avaName = avaProductTranslation.NDXProductName1;
+            }
+            if(avaProductTranslation.NDXProductName2)
+            {
+                avaName += #newLine + avaProductTranslation.NDXProductName2;
+            }
+
+            _agreementLineTmp.AVAItemName  = avaName;
+        }
+        else
+        {
+            _agreementLineTmp.AVAItemName = _agreementLineTmp.ItemName;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeQuantityCommitmentAgreementLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes a quantity commitment agreement line based on the specified parameters.
+    /// </summary>
+    /// <param name = "_parameters">An instance of <c>AgreementConfirmationDPLineCreationParameters</c>.</param>
+    protected void initializeQuantityCommitmentAgreementLine(AgreementConfirmationDPLineCreationParameters _parameters)
+    {
+        next initializeQuantityCommitmentAgreementLine(_parameters);
+
+        agreementLineTmp.AVAAgreementLineRecId = _parameters.agreementLineQuantityCommitment.RecId;
+        agreementLineTmp.CommitedAmount = _parameters.agreementLineQuantityCommitment.lineAmount();
+
+        [agreementLineTmp.AVAExternalItemNum, agreementLineTmp.AVAExternalItemDescription] = this.avaExtItemInformation(_parameters.agreementLineQuantityCommitment.ItemId, _parameters.agreementHeader.getModuleType(), PurchAgreementHeader::find(_parameters.agreementHeader.RecId).VendAccount);
+        [agreementLineTmp.AVATotalMarkupAmount, agreementLineTmp.AVAMarkupCodeList, agreementLineTmp.AVAMarkupValueList] = this.avaMarkUpValues(_parameters.agreementLineQuantityCommitment, _parameters.agreementHeader.Currency);
+
+        if (isConfigurationkeyEnabled(configurationKeyNum(AVATCV))
+            && (docuOnAgreement == DocuOnFormular::All) || (docuOnAgreement == DocuOnFormular::Line))
+        {
+            agreementLineTmp.AVATCVBottomNotes = Docu::concatDocuRefNotes(DocuRefSearch::KCS_TCVnewTypeAndRestrictAndNotePosition(
+                                                                                    _parameters.agreementLineDoc,
+                                                                                    docuTypeAgreement,
+                                                                                    DocuRestriction::External,
+                                                                                    AVATCVNotePosition::Bottom));
+            agreementLineTmp.AVATCVTopNotes = Docu::concatDocuRefNotes(DocuRefSearch::KCS_TCVnewTypeAndRestrictAndNotePosition(
+                                                                                    _parameters.agreementLineDoc,
+                                                                                    docuTypeAgreement,
+                                                                                    DocuRestriction::External,
+                                                                                    AVATCVNotePosition::Top));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeVolumeCommitmentAgreementLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes a volume commitment agreement line based on the specified parameters.
+    /// </summary>
+    /// <param name = "_parameters">An instance of <c>AgreementConfirmationDPLineCreationParameters</c>.</param>
+    protected void initializeVolumeCommitmentAgreementLine(AgreementConfirmationDPLineCreationParameters _parameters)
+    {
+        next initializeVolumeCommitmentAgreementLine(_parameters);
+
+        agreementLineTmp.AVAAgreementLineRecId = _parameters.agreementLineVolumeCommitment.RecId;
+
+        [agreementLineTmp.AVAExternalItemNum, agreementLineTmp.AVAExternalItemDescription] = this.avaExtItemInformation(_parameters.agreementLineVolumeCommitment.ItemId, _parameters.agreementHeader.getModuleType(), PurchAgreementHeader::find(_parameters.agreementHeader.RecId).VendAccount);
+        [agreementLineTmp.AVATotalMarkupAmount, agreementLineTmp.AVAMarkupCodeList, agreementLineTmp.AVAMarkupValueList] = this.avaMarkUpValues(_parameters.agreementLineVolumeCommitment, _parameters.agreementHeader.Currency);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeQuantityCommitmentHistoryAgreementLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes a quantity commitment history agreement line based on the specified parameters.
+    /// </summary>
+    /// <param name = "_parameters">An instance of <c>AgreementConfirmationDPLineHistoryCreationParameters</c>.</param>
+    protected void initializeQuantityCommitmentHistoryAgreementLine(AgreementConfirmationDPLineHistoryCreationParameters _parameters)
+    {
+        next initializeQuantityCommitmentHistoryAgreementLine(_parameters);
+
+        agreementLineTmp.AVAAgreementLineRecId = _parameters.agreementLineQuantityCommitmentHistory.RecId;
+        agreementLineTmp.CommitedAmount = _parameters.agreementLineQuantityCommitmentHistory.avaLineAmount();
+
+        AgreementHeaderHistory avaHeaderHistory = AgreementHeaderHistory::find(_parameters.agreementHeaderHistory.RecId);
+
+        [agreementLineTmp.AVAExternalItemNum, agreementLineTmp.AVAExternalItemDescription] = this.avaExtItemInformation(_parameters.agreementLineQuantityCommitmentHistory.ItemId, AgreementHeader::find(avaHeaderHistory.AgreementHeader).getModuleType(), PurchAgreementHeaderHistory::avaFindRecId(avaHeaderHistory.RecId).VendAccount);
+        [agreementLineTmp.AVATotalMarkupAmount, agreementLineTmp.AVAMarkupCodeList, agreementLineTmp.AVAMarkupValueList] = this.avaMarkUpValues(_parameters.agreementLineQuantityCommitmentHistory, _parameters.agreementHeaderHistory.Currency);
+
+        if (isConfigurationkeyEnabled(configurationKeyNum(AVATCV))
+            && (docuOnAgreement == DocuOnFormular::All) || (docuOnAgreement == DocuOnFormular::Line))
+        {
+            agreementLineTmp.AVATCVBottomNotes = Docu::concatDocuRefNotes(DocuRefSearch::KCS_TCVnewTypeAndRestrictAndNotePosition(
+                                                                                    _parameters.agreementLineHistoryDoc,
+                                                                                    docuTypeAgreement,
+                                                                                    DocuRestriction::External,
+                                                                                    AVATCVNotePosition::Bottom));
+            agreementLineTmp.AVATCVTopNotes = Docu::concatDocuRefNotes(DocuRefSearch::KCS_TCVnewTypeAndRestrictAndNotePosition(
+                                                                                    _parameters.agreementLineHistoryDoc,
+                                                                                    docuTypeAgreement,
+                                                                                    DocuRestriction::External,
+                                                                                    AVATCVNotePosition::Top));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeVolumeCommitmentHistoryAgreementLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes a volume commitment history agreement line based on the specified parameters.
+    /// </summary>
+    /// <param name = "_parameters">An instance of <c>AgreementConfirmationDPLineHistoryCreationParameters</c>.</param>
+    protected void initializeVolumeCommitmentHistoryAgreementLine(AgreementConfirmationDPLineHistoryCreationParameters _parameters)
+    {
+        next initializeVolumeCommitmentHistoryAgreementLine(_parameters);
+
+        AgreementHeaderHistory avaHeaderHistory = AgreementHeaderHistory::find(_parameters.agreementHeaderHistory.RecId);
+        
+        agreementLineTmp.AVAAgreementLineRecId = _parameters.agreementLineVolumeCommitmentHistory.RecId;
+
+        [agreementLineTmp.AVAExternalItemNum, agreementLineTmp.AVAExternalItemDescription] = this.avaExtItemInformation(_parameters.agreementLineVolumeCommitmentHistory.ItemId, AgreementHeader::find(avaHeaderHistory.AgreementHeader).getModuleType(), PurchAgreementHeaderHistory::avaFindRecId(avaHeaderHistory.RecId).VendAccount);
+        [agreementLineTmp.AVATotalMarkupAmount, agreementLineTmp.AVAMarkupCodeList, agreementLineTmp.AVAMarkupValueList] = this.avaMarkUpValues(_parameters.agreementLineVolumeCommitmentHistory, _parameters.agreementHeaderHistory.Currency);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaMarkupValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA <c>avaMarkupValues</c>
+    /// </summary>
+    /// <param name = "_common">depending on if its Proforma or not, quantity or volume: AgreementLineQuantityCommitment/History, AgreementLineVolumeCommitment/History, PurchAgreementHeader/History</param>
+    /// <param name = "_currencyCode">CurrencyCode</param>
+    /// <returns>container</returns>
+    public container avaMarkupValues(Common _common, CurrencyCode _currencyCode)
+    {
+        str avaMarkupCodeList, avaMarkupCodeValue;
+        ItemId avaItemId;
+        MarkupAmount avaTotalMarkupAmount;
+        MarkupTrans avaMarkupTrans;
+        MarkupAmount avaCalcAmount;
+        TableId avaTableId;
+        Qty avaQty = 0;
+        LineAmount avaLineAmount;
+
+        switch(_common.TableId)
+        {
+            case tableNum(AgreementLineQuantityCommitment):
+                AgreementLineQuantityCommitment avaALineQtyCom = _common as AgreementLineQuantityCommitment;
+                avaTableId = tableNum(AgreementLine);
+                avaLineAmount = avaALineQtyCom.lineAmount();
+                avaQty = avaALineQtyCom.CommitedQuantity;
+                avaItemId = avaALineQtyCom.ItemId;
+                break;
+
+            case tableNum(AgreementLineQuantityCommitmentHistory):
+                AgreementLineQuantityCommitmentHistory avaALineQtyComHistory = _common as AgreementLineQuantityCommitmentHistory;
+                AgreementLine avaAgreementLine = AgreementLine::find(_common.RecId);
+                avaTableId = tableNum(AgreementLineQuantityCommitmentHistory);
+                avaLineAmount = PriceDisc::price2Amount(avaALineQtyComHistory.PricePerUnit,
+                                                 avaALineQtyComHistory.PriceUnit,
+                                                 avaALineQtyComHistory.LineDiscountAmount,
+                                                 avaALineQtyComHistory.CommitedQuantity,
+                                                 avaALineQtyComHistory.CommitedQuantity,
+                                                 0,
+                                                 avaALineQtyComHistory.LineDiscountPercent,
+                                                 avaAgreementLine.agreementHeader().Currency,
+                                                 0);
+
+                avaQty = avaALineQtyComHistory.CommitedQuantity;
+                avaItemId = avaALineQtyComHistory.ItemId;
+                break;
+
+            case tableNum(AgreementLineVolumeCommitment):
+                AgreementLineVolumeCommitment avaLineVolCom = _common as AgreementLineVolumeCommitment;
+                avaTableId = tableNum(AgreementLine);
+                avaLineAmount = avaLineVolCom.CommitedAmount;
+                avaItemId = avaLineVolCom.ItemId;
+                break;
+
+            case tableNum(AgreementLineVolumeCommitmentHistory):
+                AgreementLineVolumeCommitmentHistory avaLineVolComHistory = _common as AgreementLineVolumeCommitmentHistory;
+                avaTableId = tableNum(AgreementLineVolumeCommitmentHistory);
+                avaLineAmount = avaLineVolComHistory.CommitedAmount;
+                avaItemId = avaLineVolComHistory.ItemId;
+                break;
+
+        }
+
+        while select avaMarkupTrans
+            where avaMarkupTrans.TransTableId == avaTableId
+            && avaMarkupTrans.TransRecId == _common.RecId
+        {
+            if(avaMarkupCodeList != ''
+                || avaMarkupCodeValue != '')
+            {
+                avaMarkupCodeList += '\n';
+                avaMarkupCodeValue += '\n';
+            }
+
+            avaCalcAmount = avaMarkupTrans.calcDistributionAmount(avaQty, avaLineAmount, DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+            avaTotalMarkupAmount += avaCalcAmount;
+            avaMarkupCodeList += avaMarkupTrans.MarkupCode + ': ' + avaMarkupTrans.Txt;
+
+            if(avaMarkupTrans.MarkupCategory == MarkupCategory::Fixed)
+            {                                                                                
+                avaMarkupCodeValue += strFmt('%1 %2', num2Str(avaCalcAmount, 1, 2, 2, 1), _currencyCode);
+            }
+            else if(avaMarkupTrans.MarkupCategory == MarkupCategory::Percent)
+            {
+                avaMarkupCodeValue += strFmt('%1 %', num2Str(avaMarkupTrans.Value, 1, 2, 2, 1));
+            }
+            else if(avaMarkupTrans.MarkupCategory == MarkupCategory::Pcs)
+            {
+                avaMarkupCodeValue += strFmt("@NDX:NXAPOPerPiece", num2Str(avaMarkupTrans.Value, 1, 2, 2, 1), _currencyCode, num2Str(this.avaGetMarkupPriceUnit(avaItemId, avaMarkupTrans.ModuleType), 1, 0, 2, 1));
+            }
+            else if(avaMarkupTrans.MarkupCategory == MarkupCategory::AVAMTZ)
+            {
+                //avaMarkupCodeValue += strFmt('%1 %2',  num2Str(avaCalcAmount, 1, 2, 2, 1), _currencyCode);
+                avaMarkupCodeValue += strFmt("@NDX:NXAPOPerPiece", num2Str(avaMarkupTrans.Value, 1, 2, 2, 1), _currencyCode, num2Str(avaMarkupTrans.AVACalcQty, 1, 0, 2, 1));
+            }
+            else
+            {
+                avaMarkupCodeValue += strFmt('%1 %2', num2Str(avaCalcAmount, 1, 2, 2, 1), _currencyCode);
+            }
+        }
+
+        return [avaTotalMarkupAmount, avaMarkupCodeList, avaMarkupCodeValue];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetMarkupPriceUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the priceUnit for an ItemId and its associated ModuleType
+    /// </summary>
+    /// <param name = "_itemId">_itemId</param>
+    /// <param name = "_moduleType">_moduleType</param>
+    /// <returns>PriceUnit</returns>
+    public PriceUnit avaGetMarkupPriceUnit(ItemId _itemId, MarkupModuleType _moduleType)
+    {
+        PriceUnit avaPriceUnit;
+        InventTable avaInventTable = InventTable::find(_itemId);
+
+        if(avaInventTable
+        && _moduleType == MarkupModuleType::Cust)
+        {
+            avaPriceUnit = avaInventTable.inventTableModuleSales().priceUnit();
+        }
+        else if(avaInventTable
+        && _moduleType == MarkupModuleType::Vend)
+        {
+            avaPriceUnit = avaInventTable.inventTableModulePurch().priceUnit();
+        }
+        else if(avaInventTable
+        && _moduleType == MarkupModuleType::Invent)
+        {
+            avaPriceUnit = avaInventTable.inventTableModuleInvent().priceUnit();
+        }
+
+        return avaPriceUnit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaExtItemInformation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns external item id and description
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_moduleSalesPurch">ModuleSalesPurch</param>
+    /// <param name = "_custVendAccount">CustVendAC</param>
+    /// <returns>container</returns>
+    public container avaExtItemInformation(ItemId _itemId, ModuleSalesPurch _moduleSalesPurch, CustVendAC _custVendAccount)
+    {
+        InventTable avaInventTable = InventTable::find(_itemId);
+        ExternalItemId avaExternalItemId;
+        ExternalItemFreeTxt avaExternalItemDescription;
+
+        if(_moduleSalesPurch == ModuleSalesPurch::Sales)
+        {
+            avaExternalItemId = avaInventTable.externalItemId(ModuleInventCustVend::Cust, _custVendAccount);
+            avaExternalItemDescription = avaInventTable.externalItemDescription(ModuleInventCustVend::Cust, _custVendAccount);
+        }
+        else if(_moduleSalesPurch == ModuleSalesPurch::Purch)
+        {
+            avaExternalItemId = avaInventTable.externalItemId(ModuleInventCustVend::Vend, _custVendAccount);
+            CustVendExternalItem avaCustVendExternalItem = CustVendExternalItem::findExternalItemId(ModuleInventPurchSalesVendCustGroup::Vend, _custVendAccount,avaExternalItemId);
+            
+            if(avaCustVendExternalItem.Description != ''
+                && avaCustVendExternalItem.ExternalItemTxt != '')
+            {
+                avaExternalItemDescription = avaCustVendExternalItem.Description + '\n' + avaCustVendExternalItem.ExternalItemTxt;
+            }
+            else if(avaCustVendExternalItem.ExternalItemTxt != '')
+            {
+                avaExternalItemDescription = avaCustVendExternalItem.ExternalItemTxt;
+            }
+            else if(avaCustVendExternalItem.Description != '')
+            {
+                avaExternalItemDescription = avaCustVendExternalItem.Description;
+            }
+        }
+
+        return [avaExternalItemId,avaExternalItemDescription];
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

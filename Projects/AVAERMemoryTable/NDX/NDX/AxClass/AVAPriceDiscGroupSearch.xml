@@ -1,0 +1,269 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPriceDiscGroupSearch</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+class AVAPriceDiscGroupSearch
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>findPriceDisc</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_priceType">priceType</param>
+    /// <param name = "_custPriceGroupId">custPriceGroupId</param>
+    /// <param name = "_smmBusRelGroupId">smmBusRelGroup</param>
+    /// <param name = "_itemId">itemId</param>
+    /// <param name = "_priceDate">priceDate</param>
+    /// <param name = "_currency">currency</param>
+    /// <returns>priceDiscTable</returns>
+    public static PriceDiscTable        findPriceDisc(PriceType            _priceType,
+                                                       PriceGroupId        _custPriceGroupId,
+                                                       PriceGroupId        _smmBusRelGroupId,
+                                                       ItemId              _itemId,
+                                                       TransDate           _priceDate,
+                                                       CurrencyCode        _currency)
+    {
+        PriceDiscTable                  priceDiscTable;
+        AVAPriceDiscGroupSearch         priceDiscGroupSearch = new AVAPriceDiscGroupSearch();
+        switch (_priceType)
+        {
+            case  PriceType::PriceSales :
+                priceDiscTable  = priceDiscGroupSearch.searchPrice(_custPriceGroupId,_itemId,_priceDate,_currency);
+                break;
+            case PriceType::LineDiscSales :
+                priceDiscTable= priceDiscGroupSearch.searchDisc(_custPriceGroupId,_smmBusRelGroupId,_itemId,_priceDate);
+                break;
+            default: 
+                break;
+
+        }
+
+        return priceDiscTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>searchDisc</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_custPriceGroupId">custPriceGroupId</param>
+    /// <param name = "_smmBusRelGroupId">smmBusRelGroup</param>
+    /// <param name = "_itemId">itemId</param>
+    /// <param name = "_priceDate">priceDate</param>
+    /// <returns>priceDiscTable</returns>
+    protected  PriceDiscTable searchDisc(PriceGroupId        _custPriceGroupId,
+                                           PriceGroupId        _smmBusRelGroupId,
+                                           ItemId              _itemId,
+                                           TransDate           _priceDate)
+    {
+        PriceGroupId                            priceDiscGroup;
+        //PriceDiscPartyCodeType                  accountCode = PriceDiscPartyCodeType::GroupId;
+        PriceDiscTable                          priceDiscTable;
+        PriceDiscProductCodeTypeOrderedList     priceDiscProductCodeTypeOrderedList = PriceDiscProductCodeTypeOrderedList::newFromOrder(SortOrder::Ascending);
+        List                                    priceDiscGroupList = this.createPriceGroupList(_custPriceGroupId,_smmBusRelGroupId);
+
+        PriceDiscProductCodeType    itemCode;
+        ItemRelation                itemRelation;
+
+
+        ListEnumerator  priceDiscGroupListEnumerator                   = priceDiscGroupList.getEnumerator();
+        ListEnumerator  priceDiscProductCodeTypeEnumerator   = priceDiscProductCodeTypeOrderedList.getEnumerator();
+        boolean         continueSearch = true;
+
+        while (priceDiscProductCodeTypeEnumerator.moveNext() && continueSearch)
+        {
+            itemCode  = priceDiscProductCodeTypeEnumerator.current();
+            itemRelation =  this.getLineDiscItemRelation(itemCode,_itemId);
+            priceDiscGroupListEnumerator.reset();
+            while (priceDiscGroupListEnumerator.moveNext  () && continueSearch)
+            {
+                priceDiscGroup = priceDiscGroupListEnumerator.current();
+
+                select firstonly priceDiscTable
+                    where priceDiscTable.ItemCode == itemCode
+                       && priceDiscTable.ItemRelation == itemRelation
+                       && ((priceDiscTable.AccountCode  == PriceDiscPartyCodeType::GroupId
+                       && priceDiscTable.AccountRelation == priceDiscGroup
+                       && priceDiscGroup != '')    ||
+                          (priceDiscTable.AccountCode == PriceDiscPartyCodeType ::All
+                       && priceDiscGroup == ''))
+                       && (priceDiscTable.Module       == ModuleInventCustVend::Cust     || priceDiscTable.Module       == ModuleInventCustVend::Invent)
+                       && priceDiscTable.FromDate <= _priceDate
+                       && (priceDiscTable.ToDate >= _priceDate || priceDiscTable.ToDate == dateNull())
+                       && priceDiscTable.relation == PriceType::LineDiscSales;
+
+                if (priceDiscTable.RecId)
+                {
+                    continueSearch = false;
+                }
+            }
+
+        }
+
+        return priceDiscTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>searchDiscCodeRelation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_accountCode">_accountCode</param>
+    /// <param name = "_accountRelation">_accountRelation</param>
+    /// <param name = "_itemCode">_itemCode</param>
+    /// <param name = "_itemRelation">_itemRelation</param>
+    /// <param name = "_priceDate">_priceDate</param>
+    /// <param name = "_relation">_relation</param>
+    /// <returns>PriceDiscTable</returns>
+    public static PriceDiscTable searchDiscCodeRelation(PriceDiscPartyCodeType        _accountCode,
+                                              PriceDiscAccountRelation      _accountRelation,
+                                              PriceDiscProductCodeType      _itemCode,
+                                              PriceDiscItemRelation         _itemRelation,
+                                              TransDate                     _priceDate,
+                                              PriceType                     _relation)
+    {
+        PriceDiscTable                          priceDiscTable;
+        select firstonly priceDiscTable
+            where priceDiscTable.ItemCode           == _itemCode
+                && priceDiscTable.ItemRelation      == _itemRelation
+                && priceDiscTable.AccountCode       == _accountCode
+                && priceDiscTable.AccountRelation   == _accountRelation
+                && (priceDiscTable.Module       == ModuleInventCustVend::Cust     || priceDiscTable.Module       == ModuleInventCustVend::Invent)
+                && priceDiscTable.FromDate <= _priceDate
+                && (priceDiscTable.ToDate >= _priceDate || priceDiscTable.ToDate == dateNull())
+                && priceDiscTable.relation == _relation;
+
+        return priceDiscTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>searchPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed FromAVA
+    /// </summary>
+    /// <param name = "_custPriceGroupId">custPriceGroupId</param>
+    /// <param name = "_itemId">itemId</param>
+    /// <param name = "_priceDate">priceDate</param>
+    /// <param name = "_currencyCode">currencyCode</param>
+    /// <returns>priceDiscTable</returns>
+    protected  PriceDiscTable searchPrice(    PriceGroupId        _custPriceGroupId,
+                                                ItemId              _itemId,
+                                                TransDate           _priceDate,
+                                                CurrencyCode        _currencyCode)
+    {
+        PriceGroupId                            priceDiscGroup;
+        PriceDiscPartyCodeType                  accountCode = PriceDiscPartyCodeType::GroupId;
+        PriceDiscTable                          priceDiscTable;
+
+        PriceDiscProductCodeType                itemCode = PriceDiscProductCodeType::Table;
+        ItemRelation                            itemRelation = _itemId;
+        CurrencyCode                            currency = _currencyCode;
+        CurrencyCode                            genericCurrency; 
+
+        priceDiscGroup = _custPriceGroupId;
+
+        boolean         continueSearch = true;
+
+
+        select firstonly priceDiscTable
+            where priceDiscTable.ItemCode == itemCode
+                && priceDiscTable.ItemRelation == itemRelation
+                && priceDiscTable.AccountCode  == accountCode
+                && priceDiscTable.AccountRelation == priceDiscGroup
+                && priceDiscTable.Module       == ModuleInventCustVend::Cust 
+                && priceDiscTable.Currency        == currency    
+                && priceDiscTable.FromDate <= _priceDate
+                && (priceDiscTable.ToDate >= _priceDate || priceDiscTable.ToDate == dateNull())
+                && priceDiscTable.relation == PriceType::PriceSales;
+
+        if (priceDiscTable.RecId)
+        {
+            continueSearch = false;
+        }
+
+        if (continueSearch)
+        {
+            genericCurrency =  SalesParameters::find().GenericCurrency;
+            if (currency != genericCurrency)
+            {
+                currency = genericCurrency;
+                select firstonly priceDiscTable
+                where priceDiscTable.ItemCode == itemCode
+                    && priceDiscTable.ItemRelation == itemRelation
+                    && priceDiscTable.AccountCode  == accountCode
+                    && priceDiscTable.AccountRelation == priceDiscGroup
+                    && priceDiscTable.Currency        == currency
+                    && priceDiscTable.Module       == ModuleInventCustVend::Cust
+                    && priceDiscTable.FromDate <= _priceDate
+                    && (priceDiscTable.ToDate >= _priceDate || priceDiscTable.ToDate == dateNull())
+                    && priceDiscTable.relation == PriceType::PriceSales;
+            }
+
+        }
+        
+           
+        return priceDiscTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getLineDiscItemRelation</Name>
+				<Source><![CDATA[
+    protected ItemRelation getLineDiscItemRelation(PriceDiscProductCodeType _itemCode, ItemId       _itemId)
+    {
+        switch (_itemCode)
+        {
+            case PriceDiscProductCodeType::Table:
+                return _itemId;
+            case PriceDiscProductCodeType::GroupId : 
+                return InventTableModule::find(_itemId,ModuleInventPurchSales::Sales).LineDisc;
+            case PriceDiscProductCodeType::All :
+                return '';
+        }
+        return '';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createPriceGroupList</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_custPriceGroupId">custPriceGroupId</param>
+    /// <param name = "_smmBusRelGroupId">smmBusRelGroupId</param>
+    /// <returns>List</returns>
+    protected List createPriceGroupList(PriceGroupId    _custPriceGroupId, PriceGroupId _smmBusRelGroupId)
+    {
+        List            priceGroupList = new List(Types::String);
+        priceGroupList.addEnd(_custPriceGroupId);
+        priceGroupList.addEnd(_smmBusRelGroupId);
+        priceGroupList.addEnd('');
+
+        return priceGroupList;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

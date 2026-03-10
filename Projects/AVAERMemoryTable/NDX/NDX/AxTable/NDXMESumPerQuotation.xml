@@ -1,0 +1,519 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXMESumPerQuotation</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class NDXMESumPerQuotation extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds a record by 
+    /// </summary>
+    /// <param name = "_refRecId_NDX_ME_DataFromExcelTable">NDX_ME_DataFromExcelTable rec id</param>
+    /// <param name = "_quotationId">_quotation Id</param>
+    /// <param name = "_update">for update</param>
+    /// <returns>NDXMESumPerQuotation record</returns>
+    static NDXMESumPerQuotation find(RefRecId _refRecId_NDX_ME_DataFromExcelTable, QuotationId _quotationId, boolean _update = false)
+    {
+        NDXMESumPerQuotation nDX_ME_SumPerQuotation;
+        SalesQuotationTable lSalesQuotationTable;
+        
+        nDX_ME_SumPerQuotation.selectForUpdate(_update);
+
+        if(_quotationId)
+        {
+            lSalesQuotationTable = SalesQuotationTable::find(_quotationId);
+        }
+
+        select firstonly nDX_ME_SumPerQuotation
+            where nDX_ME_SumPerQuotation.RefRecId_NDX_ME_DataFromExcelTable == _refRecId_NDX_ME_DataFromExcelTable
+                && nDX_ME_SumPerQuotation.SalesQuotationTableRefRecId == lSalesQuotationTable.RecId;
+
+        return nDX_ME_SumPerQuotation;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refreshFromExcelTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Refresh nDX_ME_SumPerQuotation records
+    /// </summary>
+    /// <param name = "_refRecIdExcelTable">NDXMEDataFromExcelTable record id</param>
+    static void refreshFromExcelTable(RefRecId _refRecIdExcelTable)
+    {
+        NDXMEDataFromExcelLine  nDX_ME_DataFromExcelLineGrp;
+        NDXMESumPerQuotation    nDX_ME_SumPerQuotation;
+        SalesQuotationTable     salesQuotationTable;
+        KCS_QuotationStatus     kCS_QuotationStatus;
+
+        Query                   q = new Query();
+        QueryBuildDataSource    qbds, qbds2, qbds3;
+        QueryRun                qr;
+        NDX_UpdatedUTC          updatedUTC = DateTimeUtil::utcNow();
+
+        qbds = q.addDataSource(tablenum(NDXMEDataFromExcelLine));
+        qbds.addRange(fieldnum(NDXMEDataFromExcelLine, RefRecIdNDXMEDataFromExcelTable)).value(QueryValue(_refRecIdExcelTable));
+        
+        qbds.addGroupByField(fieldnum(NDXMEDataFromExcelLine, QuotationId));
+        qbds.addSelectionField(fieldnum(NDXMEDataFromExcelLine, RecId), SelectionField::Count);
+        qbds.addSelectionField(fieldnum(NDXMEDataFromExcelLine, LineAmountBrutto), SelectionField::Sum);
+        qbds.addSelectionField(fieldnum(NDXMEDataFromExcelLine, LineAmountNetto), SelectionField::Sum);
+        qbds.addSelectionField(fieldnum(NDXMEDataFromExcelLine, PreisAngebotGesamt), SelectionField::Sum);
+        qbds.addSelectionField(fieldnum(NDXMEDataFromExcelLine, LineAmountDiff), SelectionField::Sum);
+
+        qbds2 = qbds.addDataSource(tablenum(SalesQuotationTable));
+        qbds2.relations(true);
+        qbds2.joinMode(JoinMode::OuterJoin);
+        qbds2.fetchMode(QueryFetchMode::One2One);
+        qbds2.addSelectionField(fieldnum(SalesQuotationTable, KCS_StatusId));
+        qbds2.addSelectionField(fieldnum(SalesQuotationTable, KCS_KBVSubject));
+        qbds2.addGroupByField(fieldnum(SalesQuotationTable, KCS_StatusId));
+        qbds2.addGroupByField(fieldnum(SalesQuotationTable, KCS_KBVSubject));
+
+        qbds3 = qbds2.addDataSource(tablenum(KCS_QuotationStatus));
+        qbds3.relations(true);
+        qbds3.joinMode(JoinMode::OuterJoin);
+        qbds3.fetchMode(QueryFetchMode::One2One);
+        qbds3.addGroupByField(fieldnum(KCS_QuotationStatus, KCS_StatusDescription));
+        qbds3.addSelectionField(fieldnum(KCS_QuotationStatus, KCS_StatusDescription));
+
+        // reset  counter AnzAngPos
+        ttsbegin;
+        update_recordset nDX_ME_SumPerQuotation
+            setting AnzAngPos = 0
+            where   nDX_ME_SumPerQuotation.RefRecId_NDX_ME_DataFromExcelTable == _refRecIdExcelTable;
+        ttscommit;
+
+        qr = new QueryRun(q);
+        while (qr.next())
+        {
+            nDX_ME_DataFromExcelLineGrp = qr.get(tablenum(NDXMEDataFromExcelLine));
+            salesQuotationTable         = qr.get(tablenum(SalesQuotationTable));
+            kCS_QuotationStatus         = qr.get(tablenum(KCS_QuotationStatus));
+
+            nDX_ME_SumPerQuotation = NDXMESumPerQuotation::find(_refRecIdExcelTable, nDX_ME_DataFromExcelLineGrp.QuotationId, true);
+                       
+            if (!nDX_ME_SumPerQuotation)
+            {
+                nDX_ME_SumPerQuotation.RefRecId_NDX_ME_DataFromExcelTable = _refRecIdExcelTable;
+                nDX_ME_SumPerQuotation.SalesQuotationTableRefRecId = SalesQuotationTable::find(nDX_ME_DataFromExcelLineGrp.QuotationId).RecId;
+            }
+            
+            nDX_ME_SumPerQuotation.AnzAngPos                += int642int(nDX_ME_DataFromExcelLineGrp.RecId);
+            nDX_ME_SumPerQuotation.LineAmountBrutto         = nDX_ME_DataFromExcelLineGrp.LineAmountBrutto;
+            nDX_ME_SumPerQuotation.LineAmountNetto          = nDX_ME_DataFromExcelLineGrp.LineAmountNetto;
+            nDX_ME_SumPerQuotation.Preis_Angebot_Gesamt     = nDX_ME_DataFromExcelLineGrp.PreisAngebotGesamt;
+            nDX_ME_SumPerQuotation.LineAmountDiff           = nDX_ME_DataFromExcelLineGrp.LineAmountDiff;
+            nDX_ME_SumPerQuotation.StatusIdRefRecId         = KCS_QuotationStatus::find(salesQuotationTable.KCS_StatusId).RecId;
+            nDX_ME_SumPerQuotation.KBVSubject               = salesQuotationTable.KCS_KBVSubject;
+            nDX_ME_SumPerQuotation.StatusDescription        = kCS_QuotationStatus.KCS_StatusDescription;
+            nDX_ME_SumPerQuotation.UpdatedUTC               = updatedUTC;
+            ttsbegin;
+            nDX_ME_SumPerQuotation.write();
+            ttscommit;
+        }
+
+        // ungültige Einträge löschen
+        delete_from nDX_ME_SumPerQuotation
+            where   nDX_ME_SumPerQuotation.RefRecId_NDX_ME_DataFromExcelTable == _refRecIdExcelTable
+                && nDX_ME_SumPerQuotation.UpdatedUTC != updatedUTC;
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NDXMESumPerQuotation_Dev</DeveloperDocumentation>
+	<Label>@NDX:NDXMESumPerQuotation</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>StatusIdNewRefRecId</TitleField1>
+	<AllowRowVersionChangeTracking>Yes</AllowRowVersionChangeTracking>
+	<ReplacementKey>QuotationIdIdx</ReplacementKey>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>RefRecId_NDX_ME_DataFromExcelTable</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesQuotationTableRefRecId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Checked</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>StatusIdNewRefRecId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DecisionDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DecisionDateOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>StatusIdOrigRefRecId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DecisionDateOrigSaved</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>StatusIdOrigSaved</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesQuotationStatusOrigSaved</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesQuotationStatusOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>StatusIdNewSaved</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesQuotationStatusNew</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>StatusIdNewEvalueted</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>StatusIdRefRecId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AnzAngPos</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>LineAmountBrutto</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>LineAmountNetto</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Preis_Angebot_Gesamt</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>LineAmountDiff</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KBVSubject</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>StatusDescription</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>UpdatedUTC</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>RefRecId_NDX_ME_DataFromExcelTable</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesQuotationTableRefRecId</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>ME</Name>
+			<Label>@NDX:NDXQuotationStatusChange</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>StatusIdNewRefRecId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>StatusIdOrigRefRecId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>StatusIdNewEvalueted</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DecisionDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DecisionDateOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesQuotationStatusNew</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesQuotationStatusOrig</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>RefRecId_NDX_ME_DataFromExcelTable</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>SalesQuotationTableRefRecId</Name>
+			<ExtendedDataType>NDXSalesQuotationTableRefRecId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Checked</Name>
+			<ExtendedDataType>NDXChecked</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>StatusIdNewRefRecId</Name>
+			<ExtendedDataType>NDXStatusIdNewRefRecId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>DecisionDate</Name>
+			<ExtendedDataType>NDXDecisionDate</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>DecisionDateOrig</Name>
+			<ExtendedDataType>NDXDecisionDateOrig</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>StatusIdOrigRefRecId</Name>
+			<ExtendedDataType>NDXStatusIdOrigRefRecId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>DecisionDateOrigSaved</Name>
+			<ExtendedDataType>NDXDecisionDateOrigSaved</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>StatusIdOrigSaved</Name>
+			<ExtendedDataType>NDXStatusIdOrigSaved</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>SalesQuotationStatusOrigSaved</Name>
+			<ExtendedDataType>NDXSalesQuotationStatusOrigSaved</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>SalesQuotationStatusOrig</Name>
+			<Label>@NDX:NDXSalesQuotationStatusOrig</Label>
+			<EnumType>SalesQuotationStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>StatusIdNewSaved</Name>
+			<ExtendedDataType>NDXStatusIdNewSaved</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>SalesQuotationStatusNew</Name>
+			<Label>@NDX:SalesQuotationStatusNew</Label>
+			<EnumType>SalesQuotationStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>StatusIdNewEvalueted</Name>
+			<ExtendedDataType>NDXStatusIdNewEvalueted</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>StatusIdRefRecId</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>AnzAngPos</Name>
+			<ExtendedDataType>NDXMEAnzAngPos</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>LineAmountBrutto</Name>
+			<ExtendedDataType>LineAmount</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXLineAmountBrutto</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>LineAmountNetto</Name>
+			<ExtendedDataType>LineAmount</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXLineAmountNetto</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>Preis_Angebot_Gesamt</Name>
+			<ExtendedDataType>NDXMEQuotationPriceTotal</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>LineAmountDiff</Name>
+			<ExtendedDataType>LineAmount</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>KBVSubject</Name>
+			<ExtendedDataType>KCS_KBVSubject</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>StatusDescription</Name>
+			<ExtendedDataType>Description</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>UpdatedUTC</Name>
+			<ExtendedDataType>NDX_UpdatedUTC</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>QuotationId</Name>
+			<ExtendedDataType>QuotationId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>QuotationIdIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>RefRecId_NDX_ME_DataFromExcelTable</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>SalesQuotationTableRefRecId</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>NDXMEDataFromExcelTableRelationForeignKey</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>NDXMEDataFromExcelTable</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>RefRecId_NDX_ME_DataFromExcelTable</Name>
+					<Field>RefRecId_NDX_ME_DataFromExcelTable</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>SalesQuotationTableRelationForeignKey</Name>
+			<Cardinality>ExactlyOne</Cardinality>
+			<RelatedTable>SalesQuotationTable</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>SalesQuotationTableRefRecId</Name>
+					<Field>SalesQuotationTableRefRecId</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>StatusIdNewRefRecIdRelationForeignKey</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<RelatedTable>KCS_QuotationStatus</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>StatusIdNewRefRecId</Name>
+					<Field>StatusIdNewRefRecId</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>StatusIdOrigRefRecIdRelationForeignKey</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<RelatedTable>KCS_QuotationStatus</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>StatusIdOrigRefRecId</Name>
+					<Field>StatusIdOrigRefRecId</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>StatusIdRefRecIdRelationForeignKey</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<RelatedTable>KCS_QuotationStatus</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>StatusIdRefRecId</Name>
+					<Field>StatusIdRefRecId</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

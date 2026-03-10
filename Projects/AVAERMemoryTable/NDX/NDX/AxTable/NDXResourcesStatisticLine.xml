@@ -1,0 +1,811 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXResourcesStatisticLine</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class NDXResourcesStatisticLine extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>dispJournalPos</Name>
+				<Source><![CDATA[
+    display NDXJournalPos dispJournalPos()
+    {
+        if (this.LineNum)
+        {
+            return int2str(real2int(this.LineNum));
+        }
+        else
+        {
+            return "";
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dispSecProdTimeAsMin</Name>
+				<Source><![CDATA[
+    display NDXTimeMinProdTime dispSecProdTimeAsMin()
+    {
+        return (int642int(this.TimeSec) / 60);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dispSecProdTimeRefAsMin</Name>
+				<Source><![CDATA[
+    display NDXTimeMinRefProdTime dispSecProdTimeRefAsMin()
+    {
+        return (int642int(this.TimeSecRef) / 60);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SumPerWrkCtr</Name>
+				<Source><![CDATA[
+    static void SumPerWrkCtr(Date _fromDate, Date _toDate, ResResourceType _resourceType)
+    {
+        NDXResourcesStatistic       nDX_ResourceStatistic;
+        NDXResourcesStatisticLine   nDX_ResourceStatisticLine;
+        NDXResourcesStatisticLine   nDX_ResourceStatisticLineSum;
+        JmgIpcActivity              jmgIpcActivity;
+
+        Query                   q, q2;
+        QueryRun                qr, qr2;
+        QueryBuildDataSource    qbds, qbds2;
+        QueryBuildFieldList     fields;
+        NDXBDEInterruption      disruption;
+        NDXCostUnit             nDX_CostUnit;
+        
+        // Summen je Produktionstag je Kostenstelle je Ressource bilden
+        q       = new Query();
+        qbds    = q.addDataSource(tablenum(NDXResourcesStatisticLine));
+        qbds.addRange(fieldnum(NDXResourcesStatisticLine, ProdDate)).value(queryValue(_fromDate) + '..' + queryValue(_toDate));
+        qbds.addRange(fieldnum(NDXResourcesStatisticLine, ResResourceType)).value(QueryValue(_resourceType));
+        qbds.orderMode(OrderMode::GroupBy);
+        qbds.addSortField(fieldnum(NDXResourcesStatisticLine, ProdDate));
+        
+        switch (_resourceType)
+        {
+            case ResResourceType::Personnel:   // Sortierung nach Produktionstag, Mitarbeiter, Kostenstelle
+                //TODO Test groupBy statt softField
+                qbds.addGroupByField(fieldnum(NDXResourcesStatisticLine, PersonnelNumber));
+                qbds.addGroupByField(FieldId2Ext(fieldnum(NDXResourcesStatisticLine, Dimension_WrkCtr), 2));       // Kostenstelle
+                break;
+            default                         :   // Sortierung nach Produktionstag, Kostenstelle, Ressource
+                qbds.addSortField(FieldId2Ext(fieldnum(NDXResourcesStatisticLine, Dimension_WrkCtr), 2));       // Kostenstelle
+                qbds.addSortField(fieldnum(NDXResourcesStatisticLine, WrkCtrId));
+                break;
+        }
+        qr      = new QueryRun(q);
+        while (qr.next())
+        {
+            nDX_ResourceStatisticLine = qr.get(tablenum(NDXResourcesStatisticLine));
+            
+            //ToDo:nDX_CostUnit = nDX_ResourceStatisticLine.Dimension_WrkCtr.getFieldValue("KostenStelle");
+
+            nDX_ResourceStatistic     = NDXResourcesStatistic::findOrCreate(nDX_ResourceStatisticLine.ProdDate, nDX_CostUnit,
+                                                                        nDX_ResourceStatisticLine.WrkCtrId,
+                                                                        nDX_ResourceStatisticLine.PersonnelNumber,
+                                                                        _resourceType,
+                                                                        true);
+
+
+            // Anzahl Sekunden je TransactionType
+            q2      = new Query();
+            qbds2   = q2.addDataSource(tablenum(NDXResourcesStatisticLine));
+            qbds2.addRange(fieldnum(NDXResourcesStatisticLine, ResResourceType)).value(QueryValue(_resourceType));
+            qbds2.addRange(fieldnum(NDXResourcesStatisticLine, ProdDate)).value(QueryValue(nDX_ResourceStatisticLine.ProdDate));
+            qbds2.addRange(FieldId2Ext(fieldnum(NDXResourcesStatisticLine, Dimension_WrkCtr), 2)).value(nDX_CostUnit ? nDX_CostUnit : SysQuery::valueEmptyString());
+            
+            if (_resourceType == ResResourceType::Machine)
+            {
+                qbds2.addRange(fieldnum(NDXResourcesStatisticLine, WrkCtrId)).value(nDX_ResourceStatisticLine.WrkCtrId ? nDX_ResourceStatisticLine.WrkCtrId : SysQuery::valueEmptyString());
+            }
+            else
+            {
+                qbds2.addRange(fieldnum(NDXResourcesStatisticLine, PersonnelNumber)).value(nDX_ResourceStatisticLine.PersonnelNumber ? nDX_ResourceStatisticLine.PersonnelNumber : SysQuery::valueEmptyString());
+            }
+
+            fields = qbds2.fields();
+            fields.addField(fieldnum(NDXResourcesStatisticLine, TimeSec), SelectionField::Sum);
+            fields.addField(fieldnum(NDXResourcesStatisticLine, TimeSecRef), SelectionField::Sum);
+            fields.addField(fieldnum(NDXResourcesStatisticLine, NetWeight), SelectionField::Sum);
+            qbds2.orderMode(OrderMode::GroupBy);
+            qbds2.addSortField(fieldnum(NDXResourcesStatisticLine, ProdDate));
+            if (_resourceType == ResResourceType::Machine)
+            {
+                qbds2.addSortField(fieldnum(NDXResourcesStatisticLine, WrkCtrId));
+            }
+            else
+            {
+                qbds2.addSortField(fieldnum(NDXResourcesStatisticLine, PersonnelNumber));
+            }
+
+            qbds2.addSortField(fieldnum(NDXResourcesStatisticLine, RouteJobType));
+
+            qr2 = new QueryRun(q2);
+            while (qr2.next())
+            {
+                nDX_ResourceStatisticLineSum = qr2.get(tablenum(NDXResourcesStatisticLine));
+
+                switch (nDX_ResourceStatisticLineSum.RouteJobType)
+                {
+                    case NDXRouteJobType::Process      :
+                        nDX_ResourceStatistic.SecProcessing     += nDX_ResourceStatisticLineSum.TimeSec;
+                        nDX_ResourceStatistic.SecProcessingRef  += nDX_ResourceStatisticLineSum.TimeSecRef;
+                        break;
+                    case NDXRouteJobType::Setup        :
+                        nDX_ResourceStatistic.SecSettings       += nDX_ResourceStatisticLineSum.TimeSec;
+                        nDX_ResourceStatistic.SecSettingsRef    += nDX_ResourceStatisticLineSum.TimeSecRef;
+                        break;
+                    case NDXRouteJobType::Interruption   :
+                        nDX_ResourceStatistic.SecDisruption     += nDX_ResourceStatisticLineSum.TimeSec;
+                        break;
+                    default                             :
+                        Warning(strfmt("@NDX:NDXResourcesStatisticInfo13", nDX_ResourceStatisticLineSum.RouteJobType));     // TransactionType [%1] wird noch nicht behandelt!
+                        break;
+                }
+                nDX_ResourceStatistic.SecTotal                  += nDX_ResourceStatisticLineSum.TimeSec;
+                nDX_ResourceStatistic.SecProdTimeRef            += nDX_ResourceStatisticLineSum.TimeSecRef;
+                nDX_ResourceStatistic.NetWeight                 += (nDX_ResourceStatisticLineSum.NetWeight); // KG-Anzeige
+            }
+
+            // Summenermittlung BDE / Journal
+            q2      = new Query();
+            qbds2   = q2.addDataSource(tablenum(NDXResourcesStatisticLine));
+            qbds2.addRange(fieldnum(NDXResourcesStatisticLine, ResResourceType)).value(QueryValue(_resourceType));
+            qbds2.addRange(fieldnum(NDXResourcesStatisticLine, ProdDate)).value(QueryValue(nDX_ResourceStatisticLine.ProdDate));
+            qbds2.addRange(FieldId2Ext(fieldnum(NDXResourcesStatisticLine, Dimension_WrkCtr), 2)).value(nDX_CostUnit ? nDX_CostUnit : SysQuery::valueEmptyString());
+            
+            if (_resourceType == ResResourceType::Machine)
+            {
+                qbds2.addRange(fieldnum(NDXResourcesStatisticLine, WrkCtrId)).value(nDX_ResourceStatisticLine.WrkCtrId ? nDX_ResourceStatisticLine.WrkCtrId : SysQuery::valueEmptyString());
+            }
+            else
+            {
+                qbds2.addRange(fieldnum(NDXResourcesStatisticLine, PersonnelNumber)).value(nDX_ResourceStatisticLine.PersonnelNumber ? nDX_ResourceStatisticLine.PersonnelNumber : SysQuery::valueEmptyString());
+            }
+
+            fields = qbds2.fields();
+            fields.addField(fieldnum(NDXResourcesStatisticLine, TimeSec), SelectionField::Sum);
+            fields.addField(fieldnum(NDXResourcesStatisticLine, TimeSecRef), SelectionField::Sum);
+            qbds2.orderMode(OrderMode::GroupBy);
+            qbds2.addSortField(fieldnum(NDXResourcesStatisticLine, ProdDate));
+            
+            if (_resourceType == ResResourceType::Machine)
+            {
+                qbds2.addSortField(fieldnum(NDXResourcesStatisticLine, WrkCtrId));
+            }
+            else
+            {
+                qbds2.addSortField(fieldnum(NDXResourcesStatisticLine, PersonnelNumber));
+            }
+
+            qbds2.addSortField(fieldnum(NDXResourcesStatisticLine, RouteJobType));
+            qbds2.addSortField(fieldnum(NDXResourcesStatisticLine, ProductionTimeType));
+
+            qr2 = new QueryRun(q2);
+            while (qr2.next())
+            {
+                nDX_ResourceStatisticLineSum = qr2.get(tablenum(NDXResourcesStatisticLine));
+
+                switch (nDX_ResourceStatisticLineSum.RouteJobType)
+                {
+                    case NDXRouteJobType::Process      :
+                    switch (nDX_ResourceStatisticLineSum.ProductionTimeType)
+                        {
+                            case NDXProductionTimeType::BDE                :
+                                nDX_ResourceStatistic.SecProcessingBDE     += nDX_ResourceStatisticLineSum.TimeSec;
+                                break;
+                            case NDXProductionTimeType::Journal            :
+                                nDX_ResourceStatistic.SecProcessingJournal += nDX_ResourceStatisticLineSum.TimeSec;
+                                break;
+                        }
+                        break;
+                    case NDXRouteJobType::Setup        :
+                    switch (nDX_ResourceStatisticLineSum.ProductionTimeType)
+                        {
+                            case NDXProductionTimeType::BDE                :
+                                nDX_ResourceStatistic.SecSettingsBDE       += nDX_ResourceStatisticLineSum.TimeSec;
+                                break;
+                            case NDXProductionTimeType::Journal            :
+                                nDX_ResourceStatistic.SecSettingsJournal   += nDX_ResourceStatisticLineSum.TimeSec;
+                                break;
+                        }
+                        break;
+                    case NDXRouteJobType::Interruption:
+                    switch (nDX_ResourceStatisticLineSum.ProductionTimeType)
+                        {
+                            case NDXProductionTimeType::BDE                :
+                                nDX_ResourceStatistic.SecDisruptionBDE     += nDX_ResourceStatisticLineSum.TimeSec;
+                                break;
+                            case NDXProductionTimeType::Journal            :
+                                nDX_ResourceStatistic.SecDisruptionJournal += nDX_ResourceStatisticLineSum.TimeSec;
+                                break;
+                        }
+                        break;
+                    default                             :
+                        Warning(strfmt("@NDX:NDXResourcesStatisticInfo13", nDX_ResourceStatisticLineSum.RouteJobType));     // TransactionType [%1] wird noch nicht behandelt!
+                        break;
+                }
+            }
+
+            // Summen je Unterbrechung
+            q2      = new Query();
+            qbds2   = q2.addDataSource(tablenum(NDXResourcesStatisticLine));
+            qbds2.addRange(fieldnum(NDXResourcesStatisticLine, ResResourceType)).value(QueryValue(_resourceType));              // 1.4: NDX/PAFFH/NDX_TASK1235003417/09.01.2013
+            qbds2.addRange(fieldnum(NDXResourcesStatisticLine, ProdDate)).value(QueryValue(nDX_ResourceStatisticLine.ProdDate));
+            
+            if (nDX_CostUnit)
+            {
+                qbds2.addRange(FieldId2Ext(fieldnum(NDXResourcesStatisticLine, Dimension_WrkCtr), 2)).value(nDX_CostUnit);
+            }
+            else
+            {
+                qbds2.addRange(FieldId2Ext(fieldnum(NDXResourcesStatisticLine, Dimension_WrkCtr), 2)).value(SysQuery::valueEmptyString());
+            }
+
+            if (_resourceType == ResResourceType::Machine)
+            {
+                qbds2.addRange(fieldnum(NDXResourcesStatisticLine, WrkCtrId)).value(nDX_ResourceStatisticLine.WrkCtrId ? nDX_ResourceStatisticLine.WrkCtrId : SysQuery::valueEmptyString());
+            }
+            else if (_resourceType == ResResourceType::Personnel && nDX_ResourceStatisticLine.PersonnelNumber)
+            {
+                qbds2.addRange(fieldnum(NDXResourcesStatisticLine, PersonnelNumber)).value( nDX_ResourceStatisticLine.PersonnelNumber ? nDX_ResourceStatisticLine.PersonnelNumber : SysQuery::valueEmptyString());
+            }
+
+            qbds2.orderMode(OrderMode::GroupBy);
+            qbds2.addGroupByField(fieldnum(NDXResourcesStatisticLine, ResResourceType));
+            qbds2.addGroupByField(fieldnum(NDXResourcesStatisticLine, ProdDate));
+            
+            if (_resourceType == ResResourceType::Machine)
+            {
+                qbds2.addGroupByField(fieldnum(NDXResourcesStatisticLine, WrkCtrId));
+            }
+            else
+            {
+                qbds2.addGroupByField(fieldnum(NDXResourcesStatisticLine, PersonnelNumber));
+            }
+
+            qbds2.addGroupByField(fieldnum(NDXResourcesStatisticLine, RouteJobType));
+            qbds2.addGroupByField(fieldnum(NDXResourcesStatisticLine, JobId));
+
+            fields = qbds2.fields();
+            fields.addField(fieldnum(NDXResourcesStatisticLine, TimeSec), SelectionField::Sum);
+            fields.addField(fieldnum(NDXResourcesStatisticLine, TimeSecRef), SelectionField::Sum);
+            fields.addField(fieldnum(NDXResourcesStatisticLine, JobId));
+
+            qr2 = new QueryRun(q2);
+            while (qr2.next())
+            {
+                nDX_ResourceStatisticLineSum    = qr2.get(tablenum(NDXResourcesStatisticLine));
+                jmgIpcActivity = JmgIpcActivity::FindJobId(nDX_ResourceStatisticLineSum.JobId);
+
+                if (jmgIpcActivity)
+                {
+                    disruption = str2enum(disruption, jmgIpcActivity.Category);
+
+                    switch (disruption)
+                    {
+                        case NDXBDEInterruption::U61  : nDX_ResourceStatistic.ProdSecU61    = nDX_ResourceStatisticLineSum.TimeSec; break;
+                        case NDXBDEInterruption::U62  : nDX_ResourceStatistic.ProdSecU62    = nDX_ResourceStatisticLineSum.TimeSec; break;
+                        case NDXBDEInterruption::U63  : nDX_ResourceStatistic.ProdSecU63    = nDX_ResourceStatisticLineSum.TimeSec; break;
+                        case NDXBDEInterruption::U64  : nDX_ResourceStatistic.ProdSecU64    = nDX_ResourceStatisticLineSum.TimeSec; break;
+                        case NDXBDEInterruption::U65  : nDX_ResourceStatistic.ProdSecU65    = nDX_ResourceStatisticLineSum.TimeSec; break;
+                        case NDXBDEInterruption::U66  : nDX_ResourceStatistic.ProdSecU66    = nDX_ResourceStatisticLineSum.TimeSec; break;
+                        case NDXBDEInterruption::U67  : nDX_ResourceStatistic.ProdSecU67    = nDX_ResourceStatisticLineSum.TimeSec; break;
+                        case NDXBDEInterruption::U68  : nDX_ResourceStatistic.ProdSecU68    = nDX_ResourceStatisticLineSum.TimeSec; break;
+                        case NDXBDEInterruption::U69  : nDX_ResourceStatistic.ProdSecU69    = nDX_ResourceStatisticLineSum.TimeSec; break;
+                        case NDXBDEInterruption::U70  : nDX_ResourceStatistic.ProdSecU70    = nDX_ResourceStatisticLineSum.TimeSec; break;
+                        case NDXBDEInterruption::GMK  : nDX_ResourceStatistic.ProdSecGMK    = nDX_ResourceStatisticLineSum.TimeSec; break;
+                        default : Warning(strfmt("@NDX:NDXResourcesStatisticInfo12", jmgIpcActivity.Category));   // Unterbrechungsgrund [%1] wird nicht berücksichtigt!
+                    }
+                }
+            }
+            ttsbegin;
+            if (nDX_ResourceStatistic.validateWrite())
+            {
+                nDX_ResourceStatistic.update();
+            }
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NDXResourceStatisticLine_Dev</DeveloperDocumentation>
+	<Label>@NDX:NDXResourceStatisticLine</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<AllowRowVersionChangeTracking>Yes</AllowRowVersionChangeTracking>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>ProdDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>WrkCtrId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SFCId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>TimeSec</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdDescription</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedGood</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>RouteJobType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JournalId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>LineNum</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>TimeSecRef</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdQtyGoodRef</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ResResourceType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PersonnelNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Worker</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ItemId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProductionTimeType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdJahr</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdMonat</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedError</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdRepErrorOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ItemName</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ItemName2</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ClockCycleTargetSum</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ClockCycleTarget</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ClockCycleActual</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>OutputActual</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>UnitOfMeasureRefRecId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ItemGroupId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>GoodsId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>GoodsDescription</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ReqSeriesID</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ResourceBaseType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>NetWeight</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>NetWeightPerUnitId</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>OverView</Name>
+			<Label>@SYS9039</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>ItemId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PersonnelNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Worker</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SFCId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JournalId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>dispJournalPos</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>RouteJobType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>dispSecProdTimeAsMin</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>dispSecProdTimeRefAsMin</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdDescription</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedGood</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdQtyGoodRef</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedError</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdRepErrorOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>NetWeight</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>ProdDate</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXProdDate</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>WrkCtrId</Name>
+			<ExtendedDataType>WrkCtrId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ProdId</Name>
+			<ExtendedDataType>ProdId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SFCId</Name>
+			<ExtendedDataType>AVANdxSFCId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>TimeSec</Name>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ProdDescription</Name>
+			<ExtendedDataType>NDXDescription100</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ProdReportedGood</Name>
+			<ExtendedDataType>ProdReportedGood</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>RouteJobType</Name>
+			<EnumType>NDXRouteJobType</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>JournalId</Name>
+			<ExtendedDataType>ProdJournalIdRoute</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>LineNum</Name>
+			<ExtendedDataType>LineNum</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXJournalPos</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>TimeSecRef</Name>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ProdQtyGoodRef</Name>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ResResourceType</Name>
+			<EnumType>ResResourceType</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>PersonnelNumber</Name>
+			<ExtendedDataType>HcmPersonnelNumberId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ItemId</Name>
+			<ExtendedDataType>ItemId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ProductionTimeType</Name>
+			<EnumType>NDXProductionTimeType</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>ProdJahr</Name>
+			<ExtendedDataType>Year</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>ProdMonat</Name>
+			<ExtendedDataType>Months</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ProdReportedError</Name>
+			<ExtendedDataType>ProdReportedError</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ProdRepErrorOrig</Name>
+			<ExtendedDataType>ProdReportedError</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXProdRepErrorOrig</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ItemName</Name>
+			<ExtendedDataType>ItemName</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ItemName2</Name>
+			<ExtendedDataType>NDXProductName2</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ClockCycleTargetSum</Name>
+			<HelpText>@NDX:NDXClockCycleTargetSum_Help</HelpText>
+			<Label>@NDX:NDXClockCycleTargetSum</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ClockCycleTarget</Name>
+			<HelpText>@NDX:NDXClockCycleTarget_Help</HelpText>
+			<Label>@NDX:NDXClockCycleTarget</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ClockCycleActual</Name>
+			<HelpText>@NDX:NDXClockCycleActual_Help</HelpText>
+			<Label>@NDX:NDXClockCycleActual</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>OutputActual</Name>
+			<HelpText>@NDX:NDXOutputActual_Help</HelpText>
+			<Label>@NDX:NDXOutputActual</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>UnitOfMeasureRefRecId</Name>
+			<ExtendedDataType>UnitOfMeasureRecId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ItemGroupId</Name>
+			<ExtendedDataType>ItemGroupId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>GoodsId</Name>
+			<ExtendedDataType>KCS_GoodsId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>GoodsDescription</Name>
+			<ExtendedDataType>KCS_GoodsDescription</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ReqSeriesID</Name>
+			<ExtendedDataType>NDXReqSeriesID</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ResourceBaseType</Name>
+			<EnumType>NDXResourceBaseType</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>NetWeight</Name>
+			<ExtendedDataType>ItemNetWeight</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>NetWeightPerUnitId</Name>
+			<ExtendedDataType>ItemNetWeight</ExtendedDataType>
+			<HelpText>@NDX:NDXNetWeightPerUnitId_Help</HelpText>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXNetWeightPerUnitId</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>JobId</Name>
+			<ExtendedDataType>AVASFCJmgJobId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>Dimension</Name>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>Dimension_WrkCtr</Name>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>Worker</Name>
+			<ExtendedDataType>ProdWorker</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes />
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>NDXResourcesStatistic</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>NDXResourcesStatistic</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>ProdDate</Name>
+					<Field>ProdDate</Field>
+					<RelatedField>ProdDate</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>WrkCtrId</Name>
+					<Field>WrkCtrId</Field>
+					<RelatedField>WrkCtrId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>DimensionAttributeValueSetRelation</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<RelatedTable>DimensionAttributeValueSet</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Dimension</Name>
+					<Field>Dimension</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>DimensionAttributeValueSetRelation2</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<RelatedTable>DimensionAttributeValueSet</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Dimension_WrkCtr</Name>
+					<Field>Dimension_WrkCtr</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HCMWorkerRelationForeignKey</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<RelatedTable>HCMWorker</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Worker</Name>
+					<Field>Worker</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

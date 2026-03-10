@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAProdStatisticsDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA
+/// </summary>
+[
+    SrsReportQueryAttribute(queryStr(AVAProdStatistics))
+]
+public class AVAProdStatisticsDP extends SRSReportDataProviderBase
+{
+    AVAProdStatisticsTmp    tmp;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getTmp</Name>
+				<Source><![CDATA[
+    [
+        SRSReportDataSetAttribute(tableStr(AVAProdStatisticsTmp))
+    ]
+    public AVAProdStatisticsTmp getTmp()
+    {
+        select * from tmp;
+        return tmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        QueryRun                queryRun;
+        InventTrans             inventTrans;
+        InventTable             inventTable;
+        Price                   NDXBruttoVKP;
+
+        queryRun = new QueryRun(this.parmQuery());
+
+        while (queryRun.next())
+        {
+            tmp.clear();
+
+            InventTrans = queryRun.get(tableNum(InventTrans));
+            inventTable = QueryRun.get(tableNum(InventTable));
+            tmp.ItemId  = inventTrans.ItemId;
+            tmp.ItemName = inventTrans.itemName();
+            tmp.Qty = inventTrans.Qty;
+            tmp.UnitOfMeasureSymbol = inventTable.inventTableModuleInvent().UnitId;
+            tmp.PurchPrice = inventTrans.CostAmountSettled;
+            if (!tmp.PurchPrice)
+            {
+                tmp.PurchPrice = inventTrans.CostAmountPosted;
+            }
+            if (!tmp.PurchPrice)
+            {
+                tmp.PurchPrice = inventTrans.CostAmountPhysical;
+            }
+            if (!tmp.PurchPrice)
+            {
+                tmp.PurchPrice = inventTable.costPcsPrice(inventTrans.inventDimId, inventTrans.inventDim(), inventTable.inventTableModuleInvent(), DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), false) * inventTrans.Qty;
+            }
+            //tmp.HK2 = inventTable.AVAGetHK2perQty(inventTrans.Qty);
+            tmp.HK2 = inventTrans.Qty * inventTable.NDX_GetHK2() / 1000;
+            NDXBruttoVKP    = inventTable.NDX_BruttoVKP();
+            tmp.SalesPrice = inventTrans.Qty * NDXBruttoVKP;
+            tmp.Factor  = tmp.HK2 ? tmp.SalesPrice / tmp.HK2 : 0;
+            //tmp.Weight  = InventTrans.Qty * InventTable.NetWeight / 1000;
+            tmp.Weight  = InventTrans.Qty * InventTable.NetWeight;
+            tmp.insert();
+
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

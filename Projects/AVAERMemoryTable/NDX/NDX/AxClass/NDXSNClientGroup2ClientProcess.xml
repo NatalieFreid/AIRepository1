@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXSNClientGroup2ClientProcess</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///  Class to help import data SNClientGroup2Client from ax2009
+/// </summary>
+internal final class NDXSNClientGroup2ClientProcess extends NDXTransferToD365 implements NDXTransferToD365Interface
+{
+    NDXSNClientGroup2Client lNDXSNClientGroup2Client;
+    NDXSNClientGroup lNDXSNClientGroup;
+    NDXSNAllianceClients lNDXSNAllianceClients;
+
+    Niedax.AX.TableRecordModels.NDXSNClientGroup2Client ndxClientGroup2ClientModel;
+    Niedax.AX.TableRecordModels.NDXSNClientGroup ndxSNClientGroupModel;
+    Niedax.AX.TableRecordModels.NDXSNAllianceClients ndxSNAllianceClientsModel;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>writeNDXSNClientGroup2Client</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// writes markupAutoTable to database
+    /// </summary>
+    /// <param name = "_record">markupAutoTable object</param>
+    private void writeNDXSNClientGroup2Client(Niedax.AX.TableRecordModels.TableRecord _record)
+    {
+        System.Exception ex;
+        NDXCompany ndxCompany;
+        NDXCompanyBE ndxCompanyBE;
+        str message = '';
+        ndxClientGroup2ClientModel = _record;
+
+        response.Message = strFmt("@NDX:NDXSNAPITransferInfo", ndxClientGroup2ClientModel.D365TableName
+                        , ndxClientGroup2ClientModel.ToString()
+                        , this.environment);
+
+        ndxSNAllianceClientsModel = ndxClientGroup2ClientModel.Client;
+        ndxSNClientGroupModel = ndxClientGroup2ClientModel.ClientGroup;
+
+        if(_record.IsAX2009)
+        {
+            str symbol = enum2Symbol(enumNum(NDXCompany), ndxSNClientGroupModel.Companys);
+            ndxCompany = ndxSNClientGroupModel.Companys;
+            ndxCompanyBE = symbol2Enum(enumNum(NDXCompanyBE), symbol);
+
+            ndxSNAllianceClientsModel.IsAX2009 = _record.IsAX2009;
+            ndxSNAllianceClientsModel.Companys = ndxCompanyBE;
+
+            ndxSNClientGroupModel.IsAX2009 = _record.IsAX2009;
+            ndxSNClientGroupModel.Companys = ndxCompanyBE;
+        }
+
+        lNDXSNAllianceClients = NDXSNAllianceClients::findPartyTOS(ndxSNAllianceClientsModel.DirPartyNumber, ndxSNAllianceClientsModel.Companys, ndxSNAllianceClientsModel.TOSId, true);
+
+        try
+        {
+            if(!lNDXSNAllianceClients)
+            {
+                message = strFmt("@NDX:NDXSNAPITransferInfo1",  this.environment, ndxSNAllianceClientsModel.ToString());
+                throw Error(message);
+            }
+
+            lNDXSNClientGroup = NDXSNClientGroup::find(ndxSNClientGroupModel.TOSId, ndxSNClientGroupModel.Companys, ndxSNClientGroupModel.ClientGroupName, true);
+
+            if(!lNDXSNClientGroup)
+            {
+                ttsbegin;
+                lNDXSNClientGroup.TOSId = ndxSNClientGroupModel.TOSId;
+
+                lNDXSNClientGroup.Companys = ndxSNClientGroupModel.Companys;
+                lNDXSNClientGroup.ClientGroupName = ndxSNClientGroupModel.ClientGroupName;
+                lNDXSNClientGroup.ClientGroupName2 = ndxSNClientGroupModel.ClientGroupName2;
+                lNDXSNClientGroup.ClientGroupNameMap = ndxSNClientGroupModel.ClientGroupNameMap;
+
+                lNDXSNClientGroup.write();
+                ttscommit;
+            }
+
+            lNDXSNClientGroup2Client = NDXSNClientGroup2Client::find(lNDXSNClientGroup.RecId, lNDXSNAllianceClients.RecId, true);
+
+            ttsbegin;
+            lNDXSNClientGroup2Client.RefRecId_Client = lNDXSNAllianceClients.RecId;
+            lNDXSNClientGroup2Client.RefRecId_ClientGroup = lNDXSNClientGroup.RecId;
+
+            lNDXSNClientGroup2Client.write();
+            ttscommit;
+        
+            if(lNDXSNClientGroup2Client)
+            {
+                response.Success = true;
+                message = strFmt("@NDX:NDXSNAPITransferInfo2", ndxSNAllianceClientsModel.ToString(),  ndxSNClientGroupModel.ToString(), this.environment);
+                response.RecId = lNDXSNClientGroup2Client.RecId;
+            }
+        }
+        catch(ex)
+        {
+            message = message + "-" + ex.Message;
+            response.RecId = 0;
+        }
+
+        response.Message = message;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>writeRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates or creates corresponding record
+    /// </summary>
+    /// <param name = "_record">record instance</param>
+    /// <returns>Response</returns>
+    public Niedax.D365.API.Models.D365_APIResponse writeRecord(Niedax.AX.TableRecordModels.TableRecord _record)
+    {
+        switch(tableName2Id(_record.D365TableName))
+        {
+            case tableNum(NDXSNClientGroup2Client):
+                this.writeNDXSNClientGroup2Client(_record);
+                break;
+        }
+
+        return response;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

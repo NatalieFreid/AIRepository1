@@ -1,0 +1,975 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASFCFeedback</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class AVASFCFeedback extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>showEVType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>Description</returns>
+    display Description showEVType()
+    {
+        return JmgJobTable::find(this.JmgJobId).Description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showProdUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>UnitOfMeasureSymbol</returns>
+    display UnitOfMeasureSymbol showProdUnit()
+    {
+        ProdTable         prodTable = ProdTable::find(this.ProdId);
+        return prodTable.inventTable().inventUnitId();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createClockinClockout</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    static void createClockinClockout(AVANdxSFCId _kcs_NdxSFCId)
+    {
+        AVASFCFeedback kcs_SFCFeedbackClockIn;
+        AVASFCFeedback kcs_SFCFeedbackClockOut;
+        AVASFCFeedback kcs_SFCFeedback;
+        JmgJobTable     jmgJobTable;
+        boolean         overlapping;
+        ProdRoute       prodRoute;
+        JmgDateTime   clockinTime, clockoutTime;
+        ;
+
+        while select * from kcs_SFCFeedback where kcs_SFCFeedback.NdxSFCId == _kcs_NdxSFCId
+        {
+            if (clockinTime > kcs_SFCFeedback.JmgDateTime || !clockinTime)
+            {
+                clockinTime = kcs_SFCFeedback.JmgDateTime;
+            }
+            if (clockoutTime < kcs_SFCFeedback.JmgDateTime || !clockoutTime)
+            {
+                clockoutTime = kcs_SFCFeedback.JmgDateTime;
+            }
+        }
+
+        select firstonly1 * from kcs_SFCFeedback where kcs_SFCFeedback.NdxSFCId == _kcs_NdxSFCId;
+
+        if (kcs_SFCFeedback.RecId)
+        {
+            // ClockIn
+            jmgJobTable = JmgJobTable::find(jmgIpcActivity::findSignInJobId());
+            if (jmgJobTable)
+            {
+                kcs_SFCFeedbackClockIn.clear();
+                kcs_SFCFeedbackClockIn.InventSiteId         = kcs_SFCFeedback.InventSiteId;
+                kcs_SFCFeedbackClockIn.ProdId               = kcs_SFCFeedback.ProdId;
+                kcs_SFCFeedbackClockIn.JmgJobId             = jmgJobTable.JobId;
+                kcs_SFCFeedbackClockIn.JmgDate              = kcs_SFCFeedback.JmgDate;
+                
+                kcs_SFCFeedbackClockIn.Worker               = kcs_SFCFeedback.Worker;
+                
+                kcs_SFCFeedbackClockIn.JmgTermRegType       = JmgTermRegType::ClockIn;
+                kcs_SFCFeedbackClockIn.NdxSFCId             = kcs_SFCFeedback.NdxSFCId;
+                kcs_SFCFeedbackClockIn.JmgDateTime          = clockinTime;
+                kcs_SFCFeedbackClockIn.insert();
+            }
+
+            // ClockOut
+            jmgJobTable.clear();
+            jmgJobTable = JmgJobTable::find(JmgIpcActivity::findSignOutJobId());
+            if (jmgJobTable)
+            {
+                kcs_SFCFeedbackClockOut.clear();
+                kcs_SFCFeedbackClockOut.InventSiteId        = kcs_SFCFeedback.InventSiteId;
+                kcs_SFCFeedbackClockOut.ProdId              = kcs_SFCFeedback.ProdId;
+                kcs_SFCFeedbackClockOut.JmgJobId            = jmgJobTable.JobId;
+                kcs_SFCFeedbackClockOut.JmgDate             = kcs_SFCFeedback.JmgDate;
+                kcs_SFCFeedbackClockOut.Worker              = kcs_SFCFeedback.Worker;
+                kcs_SFCFeedbackClockOut.JmgTermRegType      = JmgTermRegType::ClockOut;
+                kcs_SFCFeedbackClockOut.NdxSFCId            = kcs_SFCFeedback.NdxSFCId;
+                kcs_SFCFeedbackClockOut.JmgDateTime         = clockoutTime;
+                kcs_SFCFeedbackClockOut.insert();
+            }
+
+            AVASFCFeedback::setNewLineNums(kcs_SFCFeedbackClockOut.NdxSFCId);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setNewLineNums</Name>
+				<Source><![CDATA[
+    static void setNewLineNums(AVANdxSFCId _kcs_NdxSFCId, boolean _onlyCheckMinuteDiff = false)
+    {
+        #define.SecPerMin(60)
+        AVASFCFeedback kcs_SFCFeedback;
+        LineNum         lineNum;
+        AVASFCFeedback kcs_SFCFeedbackLast;
+        boolean lDiff = false;
+        int64 secDiff;
+        int diffCounter = 0;
+
+        ttsbegin;
+        while select forUpdate * from kcs_SFCFeedback order by JmgDateTime, JmgTermRegType
+            where kcs_SFCFeedback.NdxSFCId == _kcs_NdxSFCId
+        {
+            lineNum++;
+            kcs_SFCFeedback.LineNum = LineNum;
+            
+            if (kcs_SFCFeedbackLast)
+            {
+                secDiff = DateTimeUtil::getDifference(kcs_SFCFeedback.JmgDateTime, kcs_SFCFeedbackLast.JmgDateTime);
+                
+                lDiff = (kcs_SFCFeedback.SecondsDiffPosting - secDiff) != 0;
+                kcs_SFCFeedback.SecondsDiffPosting = secDiff;
+                
+                if (lDiff)
+                {
+                    ++diffCounter;
+                }
+            }
+            
+            kcs_SFCFeedbackLast = kcs_SFCFeedback.data();
+            
+            if (!lDiff && _onlyCheckMinuteDiff)
+            {
+                continue;
+            }
+            kcs_SFCFeedback.doupdate();
+
+        }
+        ttscommit;
+        
+        if (_onlyCheckMinuteDiff)
+        {
+            info(strfmt("@NDX:NDXMinDiffBDE", diffCounter, _kcs_NdxSFCId));     // Anzahl der geänderten Minuten-Differenzen: [ %1 ] zur NDX-BDE-Nr. [ %2 ]
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmBDETransactionType</Name>
+				<Source><![CDATA[
+    public Set parmBDETransactionType()
+    {
+        AVASFCFeedback         kCS_SFCFeedback;
+        Query                   q;
+        QueryBuildDataSource    qbds;
+        QueryRun                qr;
+        Set                     set = new Set(Types::Enum);
+        
+        q      = new Query();
+        qbds   = q.addDataSource(tablenum(AVASFCFeedback));
+        qbds.addRange(fieldnum(AVASFCFeedback, NdxSFCId)).value(this.NdxSFCId);        // BDE-Nr.
+        qbds.orderMode(OrderMode::GroupBy);
+        qbds.addSortField(fieldnum(AVASFCFeedback, TransactionType));                          // Transaktionstyp
+        qr = new QueryRun(q);
+        while (qr.next())
+        {
+            kCS_SFCFeedback = qr.get(tablenum(AVASFCFeedback));
+            set.add(kCS_SFCFeedback.TransactionType);
+        }
+        return set;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmProdRepAmount</Name>
+				<Source><![CDATA[
+    public ProdReportedGood parmProdRepAmount(boolean _withError = true, boolean _withOrig = true)
+    {
+        ProdReportedGood        prodRepAmount;
+        ;
+        prodRepAmount = abs(this.ProdReportedGood);
+        if (_withError)
+        {
+            prodRepAmount += abs(this.ProdReportedError);
+        }
+        
+        if (_withOrig)
+        {
+            prodRepAmount += abs(this.ProdRepGoodOrig);
+            if (_withError)
+            {
+                prodRepAmount += abs(this.ProdRepErrorOrig);
+            }
+        }
+        return prodRepAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getOprIdFromProdRouteTrans</Name>
+				<Source><![CDATA[
+    RouteOprId getOprIdFromProdRouteTrans()
+    {
+        ProdRouteTrans      prodRouteTrans;
+        
+        if (this.ProdId && this.JmgJobId)
+        {
+            // selbst wenn meherere DS zur gleichen JobId vorhanden sind,
+            // handelt es sich um den gleichen Arbeitsgang
+            select firstOnly prodRouteTrans
+                where   prodRouteTrans.TransRefId   == this.ProdId
+                    && prodRouteTrans.TransRefType == ProdTransRefType::Production
+                    &&  prodRouteTrans.JobId    == this.JmgJobId;
+                    
+
+        }
+        return prodRouteTrans.OprId;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NXAMDEMessages</DeveloperDocumentation>
+	<Label>@NDX:NXAMDEMessages</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>NdxSFCId</TitleField1>
+	<TitleField2>Prodid</TitleField2>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>InventSiteId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgJobId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>WrkCtrId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EmplIdOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgTermRegType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedGood</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedError</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CapacityValue</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Posted</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Deactivated</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Edited</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Manual</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>NdxSFCId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>TransactionType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgGroupCalcId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgDateTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CostCategory</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgJobIdAbs</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JobPilote</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdQtyStUp</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>LineNum</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>RefRecJobStart</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InventLocationId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedGoodOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedErrorOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>BDECorrectionPosting</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Worker</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PersonnelNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ResourceOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CostCentreOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgJobIdOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgJobDescription</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>TimeOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DefaultDimension</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>NDXTRUMPFPDATableRefRecId</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Overview</Name>
+			<Label>@SYS34991</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>InventSiteId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgJobId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>WrkCtrId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EmplIdOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgTermRegType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedGood</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedError</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CapacityValue</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Posted</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Deactivated</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Edited</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Manual</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>NdxSFCId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>TransactionType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgGroupCalcId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgDateTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CostCategory</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgJobIdAbs</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JobPilote</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdQtyStUp</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>LineNum</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>RefRecJobStart</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InventLocationId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedGoodOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedErrorOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>BDECorrectionPosting</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>TimeOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Worker</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PersonnelNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ResourceOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CostCentreOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgJobIdOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgJobDescription</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DefaultDimension</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>NDX_TRUMPF_PDA</Name>
+			<Label>@NDXTrumpf:NDXTRUMPFPDATable</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>LineNum</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>NdxSFCId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgJobId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>WrkCtrId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>TransactionType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EmplIdOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgTermRegType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgDateTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InventLocationId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedGood</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedError</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CostCentreOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DefaultDimension</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>ResourcesSatistic</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>NdxSFCId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>LineNum</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgJobId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgTermRegType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>TransactionType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedGood</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedError</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>WrkCtrId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>RegDateTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Worker</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CapacityValue</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Posted</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Deactivated</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Edited</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Manual</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgGroupCalcId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CostCategory</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JmgJobIdAbs</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JobPilote</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdQtyStUp</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>RefRecJobStart</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DefaultDimension</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InventSiteId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InventLocationId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdRepErrorOrig</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdRepGoodOrig</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>InventSiteId</Name>
+			<ExtendedDataType>InventSiteId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ProdId</Name>
+			<ExtendedDataType>AVAProdId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>JmgJobId</Name>
+			<ExtendedDataType>JmgJobId</ExtendedDataType>
+			<Label>@NDX:NXAJobId</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>WrkCtrId</Name>
+			<ExtendedDataType>WrkCtrId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>JmgDate</Name>
+			<ExtendedDataType>AVAJmgDate</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>EmplIdOrig</Name>
+			<ExtendedDataType>AVAJmgEmplId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>JmgTermRegType</Name>
+			<EnumType>JmgTermRegType</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ProdReportedGood</Name>
+			<ExtendedDataType>ProdReportedGood</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ProdReportedError</Name>
+			<ExtendedDataType>ProdReportedError</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>CapacityValue</Name>
+			<ExtendedDataType>CapacityValue</ExtendedDataType>
+			<Label>@NDX:NXAHubNumber</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Posted</Name>
+			<ExtendedDataType>Posted</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Deactivated</Name>
+			<ExtendedDataType>AVADeactivated</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Edited</Name>
+			<ExtendedDataType>AVAEdited</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Manual</Name>
+			<ExtendedDataType>AVAManual</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>NdxSFCId</Name>
+			<ExtendedDataType>AVANdxSFCId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>TransactionType</Name>
+			<EnumType>AVASFCTransactionType</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>JmgGroupCalcId</Name>
+			<ExtendedDataType>JmgGroupCalcId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>JmgDateTime</Name>
+			<ExtendedDataType>JmgDateTime</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CostCategory</Name>
+			<ExtendedDataType>ProjCategoryId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>JmgJobIdAbs</Name>
+			<ExtendedDataType>AVAJmgJobIdAbs</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>JobPilote</Name>
+			<ExtendedDataType>AVAJobPilote</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ProdQtyStUp</Name>
+			<ExtendedDataType>ProdQtyStUp</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>LineNum</Name>
+			<ExtendedDataType>LineNum</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>RefRecJobStart</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>InventLocationId</Name>
+			<ExtendedDataType>InventLocationId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ProdReportedGoodOrig</Name>
+			<ExtendedDataType>ProdReportedGood</ExtendedDataType>
+			<Label>@NDX:NXAGoodQtyOrig</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ProdReportedErrorOrig</Name>
+			<ExtendedDataType>ProdReportedError</ExtendedDataType>
+			<Label>@NDX:NXAErrorQtyOrig</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>BDECorrectionPosting</Name>
+			<ExtendedDataType>AVABDECorrectionPosting</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>Worker</Name>
+			<ExtendedDataType>JmgWorkerRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>PersonnelNumber</Name>
+			<ExtendedDataType>HcmPersonnelNumberId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ResourceOrig</Name>
+			<ExtendedDataType>AVASFCWrkCtr</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CostCentreOrig</Name>
+			<ExtendedDataType>AVASFCCostCentre</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>JmgJobIdOrig</Name>
+			<ExtendedDataType>AVASFCJmgJobId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>JmgJobDescription</Name>
+			<ExtendedDataType>Description</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>TimeOrig</Name>
+			<ExtendedDataType>Minutes</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>DefaultDimension</Name>
+			<ExtendedDataType>InventSiteLinkedDimensionValueSet</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>NDXTRUMPFPDATableRefRecId</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>SecondsDiffPosting</Name>
+			<ExtendedDataType>NDXSecondsDiffPosting</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ProdRepErrorOrig</Name>
+			<ExtendedDataType>ProdReportedError</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXProdRepErrorOrig</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ProdRepGoodOrig</Name>
+			<ExtendedDataType>ProdReportedError</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXProdRepGoodOrig</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>RegDateTime</Name>
+			<ExtendedDataType>JmgDateTime</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes />
+	<Mappings />
+	<Relations>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HcmWorker</Name>
+			<Cardinality>ExactlyOne</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HcmWorker</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Worker</Name>
+					<SourceEDT>JmgWorkerRecId</SourceEDT>
+					<Field>Worker</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>InventLocation</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<RelatedTable>InventLocation</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>InventLocationId</Name>
+					<SourceEDT>InventLocationId</SourceEDT>
+					<Field>InventLocationId</Field>
+					<RelatedField>InventLocationId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>InventSite</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<RelatedTable>InventSite</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>InventSIteId</Name>
+					<SourceEDT>InventSiteId</SourceEDT>
+					<Field>InventSIteId</Field>
+					<RelatedField>SiteId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>JmgGroupCalcId</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<RelatedTable>JmgGroupCalc</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>JmgGroupCalcId</Name>
+					<SourceEDT>JmgGroupCalcId</SourceEDT>
+					<Field>JmgGroupCalcId</Field>
+					<RelatedField>GroupId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>ProjCategoryId</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<RelatedTable>ProjCategory</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>CostCategory</Name>
+					<SourceEDT>ProjCategoryId</SourceEDT>
+					<Field>CostCategory</Field>
+					<RelatedField>CategoryId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>NDX_TRU_PDATableRelationForeignKey</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>NDXTRUMPFPDATable</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>NDXTRUMPFPDATableRefRecId</Name>
+					<Field>NDXTRUMPFPDATableRefRecId</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

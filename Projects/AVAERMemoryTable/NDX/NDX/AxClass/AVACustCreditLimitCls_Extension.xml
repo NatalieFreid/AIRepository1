@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACustCreditLimitCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA
+/// </summary>
+[ExtensionOf(classStr(CustCreditLimit))]
+internal final class AVACustCreditLimitCls_Extension
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>calculateBalanceEstimate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <returns>netBalance if parameter AVAFCMCalcBalance = net, else standard</returns>
+    protected AmountMST calculateBalanceEstimate()
+    {
+        AmountMST balance;
+        MarkupTrans markupTrans;
+        SalesLine   locSalesLine;
+        SalesTable  locSalesTable;
+        Amount      markupAmount;
+        CurrencyExchangeHelper curCurrencyExchangeHelper;
+
+        var queryRun = new QueryRun(this.initQuery());
+        //durch initQuery werden nur Aufträge berücksichtigt, die nicht fakturiert sind. Wird zu einem fakturierten Auftrag eine Position nacherfasst, ist diese nicht im Saldo berücksichtigt
+        while (queryRun.next())
+        {
+            if (queryRun.changed(tablenum(SalesTable)))
+            {
+                locSalesTable = queryRun.get(tablenum(SalesTable));
+                while select markupTrans where markupTrans.TransTableId == tableNum(SalesTable) && markupTrans.TransRecId == locSalesTable.RecId
+                {
+                    markupAmount = Markup::calcTrans(markupTrans, 0, 0);
+                    if (markupTrans.CurrencyCode != locsalesTable.CurrencyCode)
+                    {
+                        //curCurrencyExchangeHelper = CurrencyExchangeHelper::newExchangeDate(Ledger::primaryLedger(CompanyInfo::findDataArea(markupTrans.company()).RecId), systemDateGet());
+                        curCurrencyExchangeHelper = CurrencyExchangeHelper::newExchangeDate(Ledger::primaryLedger(CompanyInfo::findDataArea(markupTrans.company()).RecId), DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+                        markupAmount = curCurrencyExchangeHelper.calculateAccountingToTransaction(locsalesTable.CurrencyCode, markupAmount, true);
+                    }
+                    balance += markupAmount;
+                }
+                while select locsalesline where locSalesLine.SalesId == locSalesTable.SalesId
+                {
+                    while select markupTrans
+                        where markupTrans.TransTableId  == locsalesLine.TableId
+                            && markupTrans.TransRecId    == locsalesLine.RecId
+                    {
+                        markupAmount = Markup::calcTrans(markupTrans, locsalesLine.SalesQty, locsalesLine.LineAmount);
+                        if (markupTrans.CurrencyCode != locsalesTable.CurrencyCode)
+                        {
+                            // To automatically conver amount Markup::calcMarkupAmount can be used
+                            //curCurrencyExchangeHelper = CurrencyExchangeHelper::newExchangeDate(Ledger::primaryLedger(CompanyInfo::findDataArea(markupTrans.company()).RecId), systemDateGet());
+                            curCurrencyExchangeHelper = CurrencyExchangeHelper::newExchangeDate(Ledger::primaryLedger(CompanyInfo::findDataArea(markupTrans.company()).RecId), DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+                            markupAmount = curCurrencyExchangeHelper.calculateAccountingToTransaction(locsalesTable.CurrencyCode, markupAmount, true);
+                        }
+                        balance += markupAmount;
+                    }
+                }
+            }
+        }
+        queryRun.reset();
+
+        if (custParameters::find().AVAFCMCalcBalance == AVAFCMCalcBalance::Net)
+        {
+            queryRun.query().dataSourceTable(tableNum(SalesTable)).fields().addField(fieldNum(SalesTable, AVAFPLNetEstimate), SelectionField::Sum);
+            while (queryRun.next())
+            {
+                if (queryRun.changed(tablenum(SalesTable)))
+                {
+                    SalesTable localSalesTable = queryRun.get(tablenum(SalesTable));
+                    balance += localSalesTable.AVAFPLNetEstimate;
+                }
+            }
+        }
+        else
+        {
+            queryRun.query().dataSourceTable(tablenum(SalesTable)).fields().addField(fieldnum(SalesTable, Estimate), SelectionField::Sum);
+            while (queryRun.next())
+            {
+                if (queryRun.changed(tablenum(SalesTable)))
+                {
+                    SalesTable localSalesTable = queryRun.get(tablenum(SalesTable));
+                    balance += localSalesTable.Estimate;
+                }
+            }
+        }
+
+        return balance;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>balanceInvoiced</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_balanceInvoiced">AmountMST</param>
+    /// <returns>AmountMST</returns>
+    AmountMST balanceInvoiced(AmountMST _balanceInvoiced)
+    {
+        AmountMST   ret;
+
+        ret = next balanceInvoiced(_balanceInvoiced);
+        //ret = AVAFCMGroupTable::getInvoicedAmountWithoutTaxesByCustTable(this.custTable());
+        ret = AVAFCMGroupTable::getInvoicedAmountWithoutTaxesWithMarkupsByCustTable(this.custTable());
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calculateBalance</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_salesUpdate">SalesUpdate</param>
+    /// <returns>AmountMST</returns>
+    protected AmountMST calculateBalance(SalesUpdate _salesUpdate)
+    {
+        AmountMST balance;
+
+        var queryRun = new QueryRun(this.initQuery());
+        while (queryRun.next())
+        {
+            if (queryRun.changed(tablenum(SalesTable)))
+            {
+                SalesTable localSalesTable = queryRun.get(tablenum(SalesTable));
+                SalesTotals localSalesTotals = SalesTotals::construct(localSalesTable, _salesUpdate);
+                if (_salesUpdate == SalesUpdate::PackingSlip)
+                {
+                    balance += CurrencyExchangeHelper::mstAmount(this.AVAgetSalesTotalAmount(localSalesTotals, localSalesTable), localSalesTable.CurrencyCode);
+                }
+                else
+                {
+                    balance += CurrencyExchangeHelper::mstAmount(this.getSalesTotalAmount(localSalesTotals, localSalesTable), localSalesTable.CurrencyCode);
+                }
+            }
+        }
+
+        return balance;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAgetSalesTotalAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_salesTotals">SalesTotals</param>
+    /// <param name = "_salesTable">SalesTable</param>
+    /// <returns>AmountCur</returns>
+    AmountCur AVAgetSalesTotalAmount(SalesTotals _salesTotals, SalesTable _salesTable)
+    {
+        //AmountCur totalAmount = _salesTotals.totalAmount() - _salesTotals.totalTaxAmount();
+        AmountCur totalAmount = _salesTotals.totalAmount();
+        if (totalAmount)
+        {
+            totalAmount = totalAmount - _salesTotals.totalTaxAmount();
+        }
+        //wenn nur Zuschläge berechnet
+        if (totalAmount == _salesTotals.totalMarkup())
+        {
+            totalAmount = 0;            
+        }
+
+        return totalAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>balanceTotals</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN 2024/04/24    AVA_011422_NetAmountEstimated
+    /// </summary>
+    /// <returns>balance+Markup</returns>
+    AmountMST balanceTotals()
+    {
+        AmountMST   locBalanceTotals;
+        locBalanceTotals = next balanceTotals();
+      /*  SalesTotals salesTotals = this.salesTotals();
+
+        salesTotals.prepareMarkupAmountCalculation();
+        salesTotals.calc();
+
+        locBalanceTotals = locBalanceTotals + salesTotals.totalMarkup();       */
+
+        return locBalanceTotals;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkGivenBalances</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_balance">AmountMst</param>
+    /// <param name = "_orderBalance">AmountMst</param>
+    /// <returns>boolean</returns>
+    protected boolean checkGivenBalances(AmountMST _balance, AmountMST _orderBalance)
+    {
+        AmountMST       orderBalanceWithMarkup = _orderBalance +  this.salesTotals().totalMarkup();
+        boolean ret = next checkGivenBalances(_balance,orderBalanceWithMarkup);
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADAIImportAckRunContoller</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Controller for posting imported ack files 
+/// </summary>
+class AVADAIImportAckRunContoller extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>post</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Make references, bindings and DocuRef.
+    /// </summary>
+    public void post()
+    {
+        #OCCRetryCount
+        AVADAIAcknowledgementImport     importSelect, importUpdate;
+        AVADAIImportSerializer          serializer;
+        AVADAIImportId                  _avaImportId;
+        
+        importSelect = this.getNextImportRecord();
+            
+        while (importSelect)
+        {
+            try
+            {
+                ttsbegin;
+
+                importUpdate = AVADAIAcknowledgementImport::find(importSelect.RecId, true);
+                SysPluginMetadataCollection metadataCollection = new SysPluginMetadataCollection();
+                metadataCollection.SetManagedValue(enumStr(AVADAIAcknowledgementImportType), importUpdate.ImportType);
+                serializer  = SysPluginFactory::Instance('Dynamics.AX.Application', classStr(AVADAIImportSerializer), metadataCollection);
+                
+                _avaImportId = importUpdate.ImportId;
+
+                serializer.initAcknowledgment(importUpdate);
+
+                if (serializer.processImportRecord(importUpdate) && _avaImportId && !AVADAIAcknowledgementImport::ImportIdCount(_avaImportId,importUpdate.ServerId))
+                {
+                    importUpdate.Posted = true;
+                }
+                else
+                {
+                    importUpdate.Error = true;
+                    //Duplicate or empty importId throw error
+                    importUpdate.ErrorMsg = strFmt("@AVADAI:DuplicateImportId", importUpdate.ImportId); 
+                }
+
+                importUpdate.update();
+
+                ttscommit;
+            }
+            catch (Exception::Deadlock)
+            {
+                retry;
+            }
+            catch
+            {
+                ttsbegin;
+
+                importUpdate            = AVADAIAcknowledgementImport::find(importSelect.RecId, true);
+                importUpdate.Posted     = false;
+                importUpdate.Error      = true;
+                importUpdate.ErrorMsg   = serializer.getErrorTxt();
+
+                importUpdate.update();
+
+                ttscommit;
+            }
+
+            importSelect = this.getNextImportRecord();
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getNextImportRecord</Name>
+				<Source><![CDATA[
+     /// <summary>
+    /// Set form configuration.
+    /// </summary>
+    /// <returns>A <c>AVADAIAcknowledgementImport</c> object.</returns>"
+
+    private AVADAIAcknowledgementImport getNextImportRecord()
+    {
+        AVADAIAcknowledgementImport     importSelect;
+        AVADAIParameters                parameters;
+        AVADAIServer                    dmsServer;
+
+        importSelect.disableCache(true);
+
+        select firstonly crosscompany importSelect
+            where !importSelect.Posted
+                && !importSelect.Error
+            exists join dmsServer
+                where dmsServer.ServerId        == importSelect.ServerId
+                    && dmsServer.ImportActive   == NoYes::Yes
+            exists join parameters
+                where parameters.DataAreaId     == importSelect.Company
+                    && parameters.Enabled       == NoYes::Yes;
+
+        if (!importSelect)
+        {
+            select firstonly crosscompany importSelect
+                where !importSelect.Posted
+                    && !importSelect.Error
+                exists join dmsServer
+                    where dmsServer.ServerId        == importSelect.ServerId
+                        && dmsServer.ImportActive   == NoYes::Yes
+                        && !importSelect.Company;
+        }
+
+        return importSelect;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

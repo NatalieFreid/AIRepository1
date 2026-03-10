@@ -1,0 +1,373 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesQuotationCurrencyChange</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+class AVASalesQuotationCurrencyChange extends RunBaseBatch
+{
+    CurrencyCode                newCurrency;
+    CurrencyCode                oldCurrency;
+    NDXExchangeRateDate         exchangeRateDate;
+
+    // Dialog fields
+    DialogField                 dlgNewCurrency;
+    DialogField                 dlgExchangeRateDate;
+    SalesQuotationTable         salesQuotationTable;
+    boolean                     onlyExchDate;
+    percent                     oldExchRate;
+
+    
+
+    #define.CurrentVersion(1)
+    #localmacro.CurrentList
+        newCurrency,
+        exchangeRateDate
+    #endmacro
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>canGoBatchJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Indicates whether the class is shown in the list of <c>Journal</c> types.
+    /// </summary>
+    /// <returns>
+    ///    true if the class is shown in the list of <c>Journal</c> types; otherwise, false.
+    /// </returns>
+    /// <remarks>
+    ///    A class that can be used in a batch journal is a class where the same parameters can be used
+    ///    repeatedly. The dialog box can be shown and the parameters can be changed, but parameters of some
+    ///    classes might build on data that is only valid for a short time. Running a class two times with the
+    ///    same parameters is not always possible. If the <c>RunBaseBatch.canGoBatch</c> method is false, this
+    ///    method will not have any effect.
+    /// </remarks>
+    public boolean canGoBatchJournal()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSalesQuotationTable</Name>
+				<Source><![CDATA[
+    public SalesQuotationTable     parmSalesQuotationTable(SalesQuotationTable         _salesQuotationTable = SalesQuotationTable)
+    {
+        salesQuotationTable = _salesQuotationTable;
+        return salesQuotationTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Returns a class that contains the methods that are described by the <c>RunBaseDialogable</c>
+    ///    interface.
+    /// </summary>
+    /// <returns>
+    ///    A class that contains the methods that are described by the <c>RunBaseDialogable</c> interface.
+    /// </returns>
+    /// <remarks>
+    ///    A dialog box can be either built by using the <c>Dialog</c> class or by using a class that is
+    ///    created in the Application Object Tree (AOT).
+    /// </remarks>
+    public Object dialog()
+    {
+        DialogRunbase       dialog = super();
+        ;
+        dlgNewCurrency      = dialog.addFieldValue(extendedTypeStr(CurrencyCode),salesQuotationTable.CurrencyCode);
+
+        dlgExchangeRateDate = dialog.addFieldValue(extendedTypeStr(NDXExchangeRateDate),salesQuotationTable.AVAExchangeRateDate);
+
+        return dialog;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialogPostRun</Name>
+				<Source><![CDATA[
+    public void dialogPostRun(DialogRunbase dialog)
+    {
+        ;
+        super(dialog);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFromDialog</Name>
+				<Source><![CDATA[
+    public boolean getFromDialog()
+    {
+        ;
+        newCurrency              = dlgNewCurrency.value();
+        exchangeRateDate         = dlgExchangeRateDate.value();
+
+        return super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public boolean init()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    protected void new()
+    {
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    public container pack()
+    {
+        return [#CurrentVersion,#CurrentList];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Contains the code that does the actual job of the class.
+    /// </summary>
+    public void run()
+    {
+        #OCCRetryCount
+        CurrencyCode                           genericCurrency;
+        ExchangeRateCalculation                priceExchRate, limitPriceExchRate;
+        AVASalesParameters                     avaSalesParameters = AVASalesParameters::find();
+        SalesParameters                        salesParameters    = SalesParameters::find();
+        boolean                                ret = true;
+        
+       
+        onlyExchDate = false;
+        genericCurrency = SalesParameters::find().GenericCurrency;
+        if (newCurrency == salesQuotationTable.CurrencyCode)
+        {
+            onlyExchDate = true;
+            oldExchRate  = salesQuotationTable.AVAExchangeRate;
+        }
+
+        if (newCurrency != salesQuotationTable.CurrencyCode && newCurrency != genericCurrency &&  salesQuotationTable.CurrencyCode != genericCurrency)
+        {
+            error("@NDX:NXACurrencyChangeNotAllowed" );
+            ret = false;
+        }
+        oldCurrency = salesQuotationTable.CurrencyCode;
+        
+        priceExchRate   = ExchangeRateCalculation::newExchangeDate(salesParameters.ExchangeRateType,!onlyExchDate ? oldCurrency : genericCurrency,newCurrency,exchangeRateDate);
+        limitPriceExchRate = ExchangeRateCalculation::newExchangeDate(avaSalesParameters.LimitPriceExchRateType,!onlyExchDate ? oldCurrency : genericCurrency,newCurrency,exchangeRateDate);
+        
+        if(priceExchRate.getExchangeRate1() == 0) 
+        {
+            ret = ret && checkFailed(strFmt("@NDX:NXAQuotationNoCurrencyExchange",newCurrency,ExchangeRateType::find(salesParameters.ExchangeRateType).Name));
+        }
+        if (limitPriceExchRate.getExchangeRate1() == 0)
+        {
+            ret = ret && checkFailed(strFmt("@NDX:NXAQuotationNoCurrencyExchange",newCurrency,ExchangeRateType::find(avaSalesParameters.LimitPriceExchRateType).Name));
+        }
+
+        try
+        {
+            if (ret)
+            {
+                salesQuotationTable.CurrencyCode            = newCurrency;
+                salesQuotationTable.AVAExchangeRateDate     = exchangeRateDate;
+                salesQuotationTable.AVAExchangeRate         = priceExchRate.getExchangeRate1();
+                salesQuotationTable.KCS_LimitPriceExchRate  = limitPriceExchRate.getExchangeRate1();
+    
+                salesQuotationTable.KCS_RefQuotationId = '';
+                ttsbegin;
+                salesQuotationTable.selectForUpdate(true);
+                salesQuotationTable.doUpdate();
+                ttscommit;
+
+                this.updateSalesQuotationLine();
+    
+                /*FormDataSource  salesQuotationTable_ds = FormDataUtil::getFormDataSource(salesQuotationTable); 
+                if (salesQuotationTable_ds != null)
+                {
+                    salesQuotationTable_ds.executeQuery();
+                }*/
+
+            }
+        }
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateSalesQuotationLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// update prices in salesQuotationLine table
+    /// </summary>
+    public void updateSalesQuotationLine()
+    {
+        SalesQuotationLine      salesQuotationLine;
+
+        while select  salesQuotationLine
+            where salesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+        {
+            salesQuotationLine.KCS_CalcMark = '';
+            if (onlyExchDate)
+            {
+                salesQuotationLine.SalesPrice  = oldExchRate != 0 && salesQuotationTable.AVAExchangeRate ?  ((salesQuotationLine.SalesPrice * salesQuotationTable.AVAExchangeRate) / oldExchRate) : salesQuotationLine.SalesPrice;
+            }
+            else
+            {
+                salesQuotationLine.SalesPrice =  salesQuotationTable.AVAExchangeRate != 0 ? (salesQuotationLine.SalesPrice * salesQuotationTable.AVAExchangeRate /  100 ) :
+                                             CurrencyExchangeHelper::curAmount2CurAmount(salesQuotationLine.SalesPrice,oldCurrency,salesQuotationTable.CurrencyCode);
+            }
+            salesQuotationLine.CurrencyCode = newCurrency;
+            salesQuotationLine.AVApriceCalculation();
+            salesQuotationLine.LineAmount = salesQuotationLine.calcLineAmountForced();
+            salesQuotationLine.avaUpdateHK2();
+            ttsbegin;
+            salesQuotationLine.selectForUpdate(true);
+            salesQuotationLine.doUpdate();
+            ttscommit;
+        }
+
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runsImpersonated</Name>
+				<Source><![CDATA[
+    public boolean runsImpersonated()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    public boolean unpack(container packedClass)
+    {
+        Version version = RunBase::getVersion(packedClass);
+        ;
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version,#CurrentList] = packedClass;
+                break;
+            default:
+                return false;
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    static AVASalesQuotationCurrencyChange construct()
+    {
+        return new AVASalesQuotationCurrencyChange();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  Here goes a description of the class
+    /// </summary>
+    /// <returns>description</returns>
+    static ClassDescription description()
+    {
+        return "@NDX:NXACurrencyChange";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    static void main(Args args)
+    {
+        AVASalesQuotationCurrencyChange    AVASalesQuotationCurrencyChange;
+        SalesQuotationTable                salesQuotationTable;
+        ;
+        AVASalesQuotationCurrencyChange = AVASalesQuotationCurrencyChange::construct();
+
+        if(args.dataset() == tableNum(SalesQuotationTable))
+        {
+            salesQuotationTable = args.record();    
+        }
+        if(salesQuotationTable.RecId)
+        {
+            AVASalesQuotationCurrencyChange.parmSalesQuotationTable(salesQuotationTable);
+            if (AVASalesQuotationCurrencyChange.prompt())
+            {
+                AVASalesQuotationCurrencyChange.runOperation();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    protected boolean canRunInNewSession()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

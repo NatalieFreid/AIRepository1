@@ -1,0 +1,433 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXVerband</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// NDXVerband class
+/// </summary>
+public final class NDXVerband
+{
+    CustAccount                 custAccount;
+   
+    public CustAccount          masterAlliance;
+    boolean                     lMasterAllianceChanged;
+
+    List                        masterAllianceList;
+    List                        mastersList;
+    List                        childrenList;
+    List                        childrenMaster;
+
+    boolean                     gotChildrenFromMaster;
+    boolean                     gotCSFromMaster;
+    NDXTmpVerband               nDXTmpVerband;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmNDXTmpVerband</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.02.25
+    /// </summary>
+    /// <returns>NDXTmpVerband</returns>
+    public NDXTmpVerband parmNDXTmpVerband()
+    {
+        return NDXTmpVerband;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCustAccount</Name>
+				<Source><![CDATA[
+    public CustAccount parmCustAccount(CustAccount _custAccount = custAccount)
+    {
+        custAccount = _custAccount;
+        return custAccount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// new
+    /// </summary>
+    /// <param name = "_custAccount">customer account number</param>
+    private void new(custAccount _custAccount = '')
+    {
+        custAccount = _custAccount;
+        masterAllianceList = new List(Types::String);
+        mastersList     = new List(Types::String);
+        childrenList     = new List(Types::String);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>constructor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Constructor
+    /// </summary>
+    /// <param name = "_custAccount">customer account</param>
+    /// <returns>NDXVerband object</returns>
+    public static NDXVerband constructor(CustAccount _custAccount = '')
+    {
+        return new NDXVerband(_custAccount);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMasterTOSId</Name>
+				<Source><![CDATA[
+    public AVATOSId getMasterTOSId(KCS_TOSTable _KCSTOSTable)
+    {   
+        AVATOSId lAVATOSId;
+        KCS_TOSTable lKCS_TOSTable;
+
+        lAVATOSId = _KCSTOSTable.TosId;
+        masterAllianceList.addEnd(_KCSTOSTable.TosId);
+
+        if(_KCSTOSTable && _KCSTOSTable.ParentTosId != '')
+        {
+            select firstonly lKCS_TOSTable
+                where lKCS_TOSTable.TosId == _KCSTOSTable.ParentTosId;
+
+            lAVATOSId = this.getMasterTOSId(lKCS_TOSTable);
+        }
+
+        return lAVATOSId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMaster</Name>
+				<Source><![CDATA[
+    public container getMaster(CustAccount _custAccount = custAccount, CompanyId _companyId = curext())
+    {
+        CustTable               custTableBOSAlliance;
+        CustTable               custTable;
+        AVATOSId                lmasterAlliance;
+
+        custAccount             = _custAccount;
+        masterAllianceList   = new List(Types::String);
+
+        changecompany(_companyId)
+        {
+            custTable               = null;
+            custTableBOSAlliance    = null;
+            KCS_TOSTable lKCS_TOSTable;
+
+            custTableBOSAlliance    = CustTable::find(custAccount);
+            
+            if (custTableBOSAlliance && custTableBOSAlliance.KCS_TOSId)
+            {
+                select firstonly lKCS_TOSTable
+                    where lKCS_TOSTable.TosId == custTableBOSAlliance.KCS_TOSId;
+
+                lmasterAlliance = this.getMasterTOSId(lKCS_TOSTable);
+            }
+            else
+            {
+                select firstonly lKCS_TOSTable
+                    where lKCS_TOSTable.TosId == custAccount;
+
+                lmasterAlliance = this.getMasterTOSId(lKCS_TOSTable);
+            }
+        }
+
+        lMasterAllianceChanged  = (masterAlliance != lmasterAlliance);
+        masterAlliance          = lmasterAlliance;
+        return [masterAlliance];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChildrenFromMaster</Name>
+				<Source><![CDATA[
+    public container getChildrenFromMaster(CustAccount _masterAlliance = masterAlliance, container conCompany = [curext()])
+    {
+        return list2Con(this.getChildrenListFromMaster(_masterAlliance, conCompany));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChildrenListFromMaster</Name>
+				<Source><![CDATA[
+    public List getChildrenListFromMaster(CustAccount _masterAlliance = masterAlliance, container conCompany = [curext()])
+    {
+        CustTable                   custTableBOSAlliance;
+        CustTable                   custTable, custTable2;
+
+        masterAlliance              = _masterAlliance;
+       
+        int                         j;
+        CompanyId                   companyId;
+
+        KCS_TOSTable lKCS_TOSTable;
+        KCS_TOSTableCustTmp lKCS_TOSTableCustTmp;
+
+        if (!gotChildrenFromMaster)
+        {
+            for (j = 1; j <= conlen(conCompany); j++)
+            {
+                companyId = conpeek(conCompany, j);
+               
+                mastersList     = new List(Types::String);
+                childrenList    = new List(Types::String);
+                childrenMaster  = new List(Types::String);
+
+                changecompany(companyId)
+                {
+                    custTable   = null;
+                    custTable2  = null;
+                    custTableBOSAlliance = CustTable::find(masterAlliance);
+
+                    //If Master not exists look for master
+                    if (!masterAlliance)
+                    {
+                        this.getMaster();
+                    }
+
+                    //If master still does not exist then leave
+                    if (!masterAlliance)
+                    {
+                        return childrenList;
+                    }
+                   
+                    lKCS_TOSTable = KCS_TOSTable::findChild(companyId, masterAlliance);
+
+                    if(lKCS_TOSTable)
+                    {
+                        lKCS_TOSTableCustTmp = lKCS_TOSTable.buildTOSTableCustTmp();
+                    }
+
+                    while select lKCS_TOSTableCustTmp
+                    {
+                        childrenList.addEnd(lKCS_TOSTableCustTmp.CustAccount);
+                    }
+                }
+            }
+            gotChildrenFromMaster = true;
+        }
+        return childrenList;
+   
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDebitorsFromMaster</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// get debitors under the allience
+    /// </summary>
+    /// <param name = "_masterAlliance">allience</param>
+    /// <param name = "_conCompany">company</param>
+    /// <returns>set of debitors</returns>
+    public Set getDebitorsFromMaster(CustAccount _masterAlliance, container _conCompany = [curext()])
+    {
+        CustTable                   custTable;
+        Set debitorSet = new Set(Types::Record);
+
+        int                         j;
+        CompanyId                   companyId;
+
+        KCS_TOSTable lKCS_TOSTable;
+        KCS_TOSTableCustTmp lKCS_TOSTableCustTmp;
+
+        for (j = 1; j <= conlen(_conCompany); j++)
+        {
+            companyId = conpeek(_conCompany, j);
+
+            changecompany(companyId)
+            {
+                custTable.clear();
+                lKCS_TOSTable.clear();
+
+                lKCS_TOSTable = KCS_TOSTable::findChild(companyId, _masterAlliance);
+
+                if(lKCS_TOSTable)
+                {
+                    lKCS_TOSTableCustTmp = lKCS_TOSTable.buildTOSTableCustTmp();
+                }
+
+                while select lKCS_TOSTableCustTmp
+                {
+                    custTable = CustTable::find(lKCS_TOSTableCustTmp.CustAccount);
+
+                    if(custTable)
+                    {
+                        //debitorSet.add(custTable.AccountNum);
+                        debitorSet.add(custTable);
+                    }
+                }
+            }
+            gotChildrenFromMaster = true;
+        }
+
+        return debitorSet;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAllDebitorsFromMaster</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets all debitors from alliance also the debitors of child alliances
+    /// </summary>
+    /// <param name = "_masterAlliance">alliance</param>
+    /// <param name = "_conCompany">company</param>
+    /// <returns>set of debitors</returns>
+    public Set getAllDebitorsFromMaster(CustAccount _masterAlliance, container _conCompany = [curext()])
+    {
+        CustTable custTable;
+        KCS_TOSTable lKCS_TOSTable;
+        AccountNum accountNum ='';
+
+        Set debitorSet = new Set(Types::Record);
+        Set childDebitorSet = new Set(Types::Record);
+        SetEnumerator childDebitorSetEnumerator;
+        
+        this.gotChildrenFromMaster = false;
+        debitorSet = this.getDebitorsFromMaster(_masterAlliance, _conCompany);
+
+        while select crosscompany: _conCompany lKCS_TOSTable
+            where lKCS_TOSTable.ParentTosId == _masterAlliance
+        {
+            childDebitorSet = this.getAllDebitorsFromMaster(lKCS_TOSTable.TosId, _conCompany);
+            childDebitorSetEnumerator = childDebitorSet.getEnumerator();
+
+            while(childDebitorSetEnumerator.moveNext())
+            {
+                custTable  = childDebitorSetEnumerator.current();
+                accountNum = custTable.AccountNum;
+                if(custTable.avaIsPartofTOSId(_masterAlliance))
+                {
+                    debitorSet.add(custTable);
+                }
+            }
+        
+        }
+
+        return debitorSet;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyChildrenSetToList</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// copies list to set
+    /// </summary>
+    /// <param name = "_childrenSet">set of cust table </param>
+    /// <returns>list</returns>
+    public List copyChildrenSetToList(Set _childrenSet)
+    {
+        SetEnumerator childrenSetEnumerator;
+        CustTable custTable;
+        childrenList = new List(Types::String);
+
+
+        if(_childrenSet != null)
+        {
+            childrenSetEnumerator = _childrenSet.getEnumerator();
+            while(childrenSetEnumerator.moveNext())
+            {
+                custTable = childrenSetEnumerator.current();
+                childrenList.addEnd(custTable.AccountNum);
+            }
+        }
+    
+        return childrenList; 
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCSFromMaster</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Ermittlung der Zentrallager zu einem Verband
+    /// last modified: PaffH 05.02.25
+    /// </summary>
+    /// <param name = "_conFirmen">Container mit den Zentrallagern</param>
+    /// <param name = "_threadControl">thread conrol</param>
+    /// <param name = "_storeCopyFrom">copy from store</param>
+    /// <remarks>
+    /// Vorherm müssen die Childs in conChildsData ermittelt worden sein!
+    /// </remarks>
+    void getCSFromMaster(container _conFirmen = [NDXHelperCommon::CompanyId2NDXCompany(curext())], NDXTmpUmsatzClassThreadControl _threadControl = null, NDXCentralStoreId _storeCopyFrom = '')
+    {
+        NDX_CentralStore nDX_CentralStore;
+        int                     nAnz = 0;
+        custAccount             lcustAccount;
+        container               conDataArea;
+        str                     text;
+        ListEnumerator          childrenListEnumerator;
+        container conFirmen = _conFirmen;
+        NDXUmsSignature umsSignature;
+
+        if (!gotCSFromMaster)
+        {
+            if (!conFirmen)
+            {
+                conFirmen = [NDXHelperCommon::CompanyId2NDXCompany(curext())];
+            }
+
+            delete_from nDXTmpVerband
+                where nDXTmpVerband.UmsSignature == curuserid();
+
+            conDataArea = NDXHelperCommon::NDXCompanys2CompanyIdImpCon(conFirmen);
+            childrenListEnumerator = childrenList.getEnumerator();
+            while(childrenListEnumerator.moveNext())
+            {
+                lcustAccount = childrenListEnumerator.current();
+                
+                while select crosscompany:conDataArea  nDX_CentralStore
+                    where nDX_CentralStore.CentralStoreId == lcustAccount
+                        && nDX_CentralStore.Deaktiv == NoYes::No
+                {
+                    if (nDX_CentralStore && nDX_CentralStore.CentralStoreId != _StoreCopyFrom)
+                    {
+                        ttsbegin;
+                        nDXTmpVerband = NDXTmpVerband::find(nDXTmpVerband, umsSignature, nDX_CentralStore.dataAreaId, nDX_CentralStore.CentralStoreId, true);
+                        nDXTmpVerband.UmsSignature     = curuserid();
+                        nDXTmpVerband.CentralStoreId   = nDX_CentralStore.CentralStoreId;
+                        nDXTmpVerband.Company          = nDX_CentralStore.dataAreaId;
+                        
+                        if (nDXTmpVerband.validateWrite())
+                        {
+                            nDXTmpVerband.write();
+                        }
+                        ttscommit;
+                        ++nAnz;
+                        
+                        if (_threadControl && (nAnz mod 10 == 0))
+                        {
+                            text = strfmt("@NDX:NDXCentralWarehouseNumber", DateTimeUtil::second(DateTimeUtil::utcNow()), nAnz, nDX_CentralStore.CentralStoreId); // [%1] Zentrallager: Nr. [%2] [%3]
+                            NDXTmpUmsatzClassThreadControl::setInfoStatic(_threadControl, text, true);
+                        }
+                    }
+                }
+            }
+            gotCSFromMaster = true;
+        }
+        return;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

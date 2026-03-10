@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPurchLineTypeCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extends class PurchLineType
+/// </summary>
+[ExtensionOf(classStr(PurchLineType))]
+final class AVAPurchLineTypeCls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initFromAgreementLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// extends method initFromAgreementLine
+    /// </summary>
+    /// <param name = "_agreementLine">AgreementLine</param>
+    public void initFromAgreementLine(AgreementLine _agreementLine)
+    {
+        next initFromAgreementLine(_agreementLine);
+
+        UnitOfMeasureSymbol agreementLine_UnitId = _agreementLine.inventTable().purchUnitId();
+        UnitOfMeasureSymbol purchLine_UnitId = purchLine.inventTable().purchUnitId();
+            
+        if(agreementLine_UnitId != purchLine_UnitId)
+        {
+            purchLine.PurchPrice = EcoResProductUnitConverter::convertGivenUnitSymbolsForReleasedProduct(purchLine.ItemId, purchLine.InventDimId, AgreementLineQuantityCommitment::find(_agreementLine.RecId).PricePerUnit, purchLine_UnitId, agreementLine_UnitId);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromPurchTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// extends method initFromPurchTable
+    /// </summary>
+    /// <param name = "_purchTable">PurchTable</param>
+    /// <param name = "_ignoreInventDim">boolean</param>
+    void initFromPurchTable(PurchTable  _purchTable, boolean _ignoreInventDim)
+    {
+        next initFromPurchTable(_purchTable, _ignoreInventDim);
+
+        purchLine.AVAOrderConfirmation = _purchTable.AVAOrderConfirmation;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initPurchQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extends method initPurchQty
+    /// </summary>
+    void initPurchQty()
+    {
+        next initPurchQty();
+
+        /*
+        if(purchLine.PurchQty != 0)
+        {
+            //purchLine.AVAPurchRemainPercentage  = roundDownDec(purchLine.RemainPurchPhysical / purchLine.PurchQty * 100, 2);
+        }
+        else
+        {
+            purchLine.AVAPurchRemainPercentage  = 0.0;
+        }
+        */
+        purchLine.avaCalcPurchRemainPercentage(false);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>inserted</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// extension method for inserted
+    /// </summary>
+    public void inserted()
+    {
+        InventTable     avaInventTable;
+
+        next inserted();
+
+        if ((this.parmPurchLine().ItemRefType == InventRefType::ProdLine
+                || this.parmPurchLine().ItemRefType == InventRefType::Production)
+            && this.parmPurchLine().InventRefId)
+        {
+            avaInventTable = ProdTable::find(this.parmPurchLine().InventRefId).inventTable();
+    
+            Docu::KCS_TCVmoduleCopy(avaInventTable, this.parmPurchLine(), AVATCVModule::Purch);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    public boolean validateWrite()
+    {
+        DimensionAttributeValueSetStorage dimStorage;
+        const str costCenter = 'Kostenstellen';
+        str costCenterValue;
+ 
+        boolean ok = next validateWrite();
+        if (purchLine.inventTable().itemGroup().AVACostCenterPurchLine)
+        {
+            dimStorage = DimensionAttributeValueSetStorage::find(purchLine.DefaultDimension);
+            costCenterValue = dimStorage.getDisplayValueByDimensionAttribute(DimensionAttribute::findByName(costCenter).RecId);
+            if (!costCenterValue)
+            {
+                ok = checkFailed("@NDX:NXACostCenterPurchLineErr");
+            }
+        }
+
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

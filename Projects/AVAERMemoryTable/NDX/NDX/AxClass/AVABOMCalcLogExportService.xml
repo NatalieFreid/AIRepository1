@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVABOMCalcLogExportService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+internal final class AVABOMCalcLogExportService   extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+     /// <summary>
+     /// designed from AVA
+     /// </summary>
+    /// <param name = "_contract">_contract</param>
+    public void process(AVABOMCalcLogExportContract             _contract)
+    {
+        FromDate            calcInfoFromDate;
+        CostingVersionId    calcInfoVersionId;
+        Filename            fileName;
+
+        InventItemPriceSim  inventItemPrice;
+        BOMCalcTrans        bomCalcTrans;
+        Counter             i;
+        int                 len;
+        container           c, entry1,entry2,record;
+        int                 val1, val2;
+        str                 str1, str2, str3;
+        AVABOMCalcLogExportErrorCodes   errorCodes;
+
+        calcInfoFromDate  = _contract.parmCalcInfoFromDate();
+        calcInfoVersionId = _contract.parmCalcInfoVersion();
+        fileName          = _contract.parmFilename();
+
+        CommaStreamIo       calcInfoCommaStream = CommaStreamIo::constructForWrite();
+        calcInfoCommaStream.inFieldDelimiter(',');
+       
+        while select bomCalcTrans
+            where bomCalcTrans.Infolog != conNull()
+            join inventItemPrice
+                where    bomCalcTrans.PriceCalcId  == inventItemPrice.PriceCalcId
+                    && inventItemPrice.VersionId == calcInfoVersionId
+                    && inventItemPrice.fromDate == calcInfoFromDate
+                    //&& inventItemPrice
+        {
+            if(bomCalcTrans.Infolog)
+            {
+                c = bomCalcTrans.Infolog;
+                len = conlen(c);
+
+                // Must have at least one element
+                if(len != 0 &&
+                !(  typeof(conpeek(c, 1)) != Types::Container ||
+                conlen(conpeek(c, 1)) != 1 ||
+                typeof(conpeek(conpeek(c, 1), 1)) != Types::Integer))
+                {
+                       
+                    i++;
+                    // Get the current entry
+                    Entry1 = conpeek(c, 1);
+                    Entry2 = conpeek(c, 2);
+
+                    // Extract the first 2 values in the entry
+                    val1 = conpeek(Entry1, 1);
+                    str1 = conpeek(Entry1, 2);
+                    val2 = conpeek(Entry2, 1);
+                    str2 = conpeek(Entry2, 2);
+                    str2 = strReplace(str2, '\t', ';');
+                    str2 = strReplace(str2, 'Herstellkostenkalkulation', '');
+                    str2 = strReplace(str2, 'Stückliste wird berechnet', '');
+                    str2 = strReplace(str2, ';;;', ';');
+                    str2 = strReplace(str2, ';;', ';');
+                    str2 = strReplace(str2, ';;', ';');
+                    str3 = "@NDX:NDXEmptyEntry";
+
+                    while select errorCodes
+                    {
+                        if (strContains(str2,errorCodes.AVALogErrorCode))
+                        {
+                            str3 = errorCodes.ErrorMessage;
+                            continue;                        
+                        }
+                    }
+                    
+                    //record = [val1, val2, str1, InventItemPRice.ItemId, BOMCalcTrans.Level, BOMCalcTrans.Resource, str2, inventitemPrice.VersionId, inventitemPrice.FromDate];
+                    record = [val1, val2, str1, InventItemPRice.ItemId, BOMCalcTrans.Level, BOMCalcTrans.Resource, str2, str3, inventitemPrice.VersionId, inventitemPrice.FromDate];
+                    calcInfoCommaStream.writeExp(record);
+                }
+            }
+
+        }
+
+        System.IO.Stream stream = calcInfoCommaStream.getStream();
+        stream.Position = 0;
+        System.IO.StreamReader reader = new System.IO.StreamReader(stream);
+        str csvFileContent = reader.ReadToEnd();
+        File::SendStringAsFileToUser(csvFileContent,  filename + '.csv');
+        info(strFmt("@NDX:NXABOMCalcLogExportInfo",i));
+  
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

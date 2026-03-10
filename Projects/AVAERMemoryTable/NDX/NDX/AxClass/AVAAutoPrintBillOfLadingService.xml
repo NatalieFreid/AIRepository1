@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAAutoPrintBillOfLadingService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Auto process and print for bill of lading
+/// </summary>
+class AVAAutoPrintBillOfLadingService
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>autoPrint</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Execute thecomplete process
+    /// </summary>
+    /// <param name = "_contract"> Data contract</param>
+    public void autoPrint(AVAAutoPrintBillOfLadingContract _contract)
+    {
+        Query           query;
+        QueryRun        queryRun;
+        WHSLoadTable    loadTable;
+
+        query       = _contract.getQuery();
+        queryRun    = new QueryRun(query)       ;
+
+        while (queryRun.next())
+        {
+            loadTable =  queryRun.get(tableNum(WHSLoadTable));
+
+            ttsbegin;
+            this.peUpdateToPrint(loadTable);
+            this.printBOLForAllLoad(loadTable);
+            this.updateLoadTable(loadTable);
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>peUpdateToPrint</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Pre process for reprinting
+    /// </summary>
+    /// <param name = "_loadTable"> WHSLoadTable record </param>
+    protected void peUpdateToPrint(WHSLoadTable _loadTable)
+    {
+        WHSShipmentTable    shipmentTable;
+        WHSLoadLine         loadLine;
+
+        while select BillOfLadingId from shipmentTable
+            where shipmentTable.LoadId == _loadTable.LoadId
+               && shipmentTable.BillOfLadingId
+            exists join loadLine
+                where shipmentTable.ShipmentId == loadLine.ShipmentId
+        {
+            this.cleanUpWHSBillOfLadingId(shipmentTable.BillOfLadingId);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>cleanUpWHSBillOfLadingId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// delte the data for a WHSBillOfLadingId
+    /// </summary>
+    /// <param name = "_billOfLadingId">WHSBillOfLadingId</param>
+    protected void cleanUpWHSBillOfLadingId(WHSBillOfLadingId _billOfLadingId)
+    {
+        WHSBillOfLading billOfLading;
+
+        billOfLading = WHSBillOfLading::find(_billOfLadingId, true);
+
+        if (billOfLading)
+        {
+            billOfLading.delete();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>printBOLForAllLoad</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Execute the printing for WHSLoadTable
+    /// </summary>
+    /// <param name = "_loadTable">WHSLoadTable record</param>
+    protected void printBOLForAllLoad(WHSLoadTable _loadTable)
+    {
+        List loadIdList = new List(Types::String);
+
+        loadIdList.addEnd(_loadTable.LoadId);
+
+        WHSShipConfirm::printBOLForAllLoads(loadIdList);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateLoadTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Update the WHSLoadTable after executting the printing
+    /// </summary>
+    /// <param name = "_loadTable">WHSLoadTable record</param>
+    protected void updateLoadTable(WHSLoadTable _loadTable)
+    {
+        _loadTable.selectForUpdate(true);
+        _loadTable.AVAPrinted   = NoYes::Yes;
+        _loadTable.AVAPrintedOn = DateTimeUtil::utcNow();
+        _loadTable.update();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

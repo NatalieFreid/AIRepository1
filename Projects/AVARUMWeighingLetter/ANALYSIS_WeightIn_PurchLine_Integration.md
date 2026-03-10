@@ -1,0 +1,473 @@
+# ?? Analysis: How Purchase Lines Appear in AVARUMWeightIn Form
+
+## ?? Overview
+This document explains the complete architecture and logic flow for displaying **Purchase Lines** in the **AVARUMWeightIn** weighing form in the AVARubinMuehle D365FO model.
+
+---
+
+## ??? Architecture Components
+
+### 1. **Form: AVARUMWeightIn**
+- **Type:** Dual-mode form (Sales & Purchase)
+- **Location:** `AxForm\AVARUMWeightIn.xml`
+- **Data Sources:**
+  - `SalesLine` - Sales order lines
+  - `PurchLine` - Purchase order lines  
+  - `AVARUMWeightInHistory` - Weighing history records
+
+### 2. **Menu Items (Entry Points)**
+
+#### **AVARUMWeightInPurch** (Display Menu Item)
+```xml
+<Name>AVARUMWeightInPurch</Name>
+<Label>@AVARUM:WeightInPurch</Label>
+<Object>AVARUMWeightIn</Object>
+```
+- Opens the `AVARUMWeightIn` form in **Purchase mode**
+- Called from Purchase Order related forms/menus
+
+#### **AVARUMWeightInSales** (Display Menu Item)
+```xml
+<Name>AVARUMWeightInSales</Name>
+<Label>@AVARUM:WeightInSales</Label>
+<Object>AVARUMWeightIn</Object>
+```
+- Opens the `AVARUMWeightIn` form in **Sales mode**
+- Called from Sales Order related forms/menus
+
+---
+
+## ?? Logic Flow: How Purchase Lines Appear
+
+### **Step 1: Form Initialization**
+
+When the form is opened via the `AVARUMWeightInPurch` menu item, the form's `init()` method is called:
+
+```xpp
+public void init()
+{
+    AVARUMWeightInParameters weightInParameters;
+    MenuItemName menuItemCallerName;
+    
+    super();
+    
+    weightInParameters = AVARUMWeightInParameters::find();
+    menuItemCallerName = this.args().menuItemName();
+    
+    switch (menuItemCallerName)
+    {
+        case menuItemDisplayStr(AVARUMWeightInSales):
+            weightInOriginId = AVARUMWeightInOrigin::Sales;
+            // Handle load filter if called from WHSLoadTable
+            if (this.args().record() && this.args().record().TableId==tableNum(WHSLoadTable))
+            {
+                this.addLoadFilter(this.args().record());
+            }
+            break;
+            
+        case menuItemDisplayStr(AVARUMWeightInPurch):
+            weightInOriginId = AVARUMWeightInOrigin::Purch;  // ?? KEY: Sets Purchase mode
+            // Handle load filter if called from WHSLoadTable
+            if (this.args().record() && this.args().record().TableId==tableNum(WHSLoadTable))
+            {
+                this.addLoadFilter(this.args().record());
+            }
+            break;
+    }
+    
+    // Apply filters and initialize data sources
+    this.applyFilter();
+}
+```
+
+**Key Points:**
+- The `menuItemCallerName` is detected
+- If called via `AVARUMWeightInPurch`, the global variable `weightInOriginId` is set to `AVARUMWeightInOrigin::Purch`
+- This flag controls which data source is active throughout the form's lifecycle
+
+---
+
+### **Step 2: PurchLine Data Source Initialization**
+
+The `PurchLine` data source has its own `init()` method that adds filters:
+
+```xpp
+// PurchLine DataSource.init()
+public void init()
+{
+    QueryBuildDataSource qbdsPurchLine;
+    QueryBuildDataSource queryBuildDataSourceInventTable;
+    
+    super();
+    
+    qbdsPurchLine = this.query().dataSourceTable(tableNum(PurchLine));
+    
+    // ?? FILTER 1: Only lines with remaining quantity
+    qbdsPurchLine.addRange(fieldNum(PurchLine, RemainPurchPhysical))
+        .value(Global::queryValue('>0'));
+    
+    // ?? FILTER 2: Only standard purchase orders (not item requirements, etc.)
+    qbdsPurchLine.addRange(fieldNum(PurchLine, PurchaseType))
+        .value(Global::queryValue(PurchaseType::Purch));
+    
+    // ?? SORT: Most recent confirmed delivery date first
+    qbdsPurchLine.addSortField(fieldNum(PurchLine, ConfirmedDlv), SortOrder::Descending);
+    
+    // ?? JOIN: Only items marked for purchase weighing
+    queryBuildDataSourceInventTable = qbdsPurchLine.addDataSource(tablenum(InventTable));
+    queryBuildDataSourceInventTable.addRange(fieldNum(InventTable, AVARUMWeighPurch))
+        .value(Global::queryValue(NoYes::Yes));
+    queryBuildDataSourceInventTable.relations(true);
+    queryBuildDataSourceInventTable.joinMode(JoinMode::ExistsJoin);
+}
+```
+
+**Critical Filter:**
+```xpp
+InventTable.AVARUMWeighPurch == NoYes::Yes
+```
+This is the **master switch** that determines which items can be weighed on purchase orders.
+
+---
+
+### **Step 3: Query Execution Based on Origin**
+
+When `executeQuery()` is called, the form branches based on `weightInOriginId`:
+
+```xpp
+private void executeForm()
+{
+    switch (weightInOriginId)
+    {
+        case AVARUMWeightInOrigin::Sales:
+            SalesLine_ds.executeQuery();  // Query sales lines
+            break;
+            
+        case AVARUMWeightInOrigin::Purch:
+            PurchLine_ds.executeQuery();  // ?? Query purchase lines
+            break;
+    }
+}
+```
+
+---
+
+### **Step 4: UI Visibility Control**
+
+The form has two tab pages that are shown/hidden based on `weightInOriginId`:
+
+```xml
+<!-- Purchase Lines Tab -->
+<AxFormTabPageControl>
+    <Name>VendorOrderTabPage</Name>
+    <AutoDeclaration>Yes</AutoDeclaration>
+    <DataSource>PurchLine</DataSource>
+    <FastTabExpanded>Always</FastTabExpanded>
+    <Pattern>ToolbarList</Pattern>
+    <!-- Grid showing purchase lines -->
+    <Controls>
+        <AxFormGridControl>
+            <Name>VendorOrderGrid</Name>
+            <DataSource>PurchLine</DataSource>
+            <Fields>
+                <PurchLine_PurchId/>
+                <PurchLine_CreatedDateTime/>
+                <PurchLine_ConfirmedDlv/>
+                <PurchLine_VendAccount/>
+                <PurchLine_VendorName/>
+                <PurchLine_ItemId/>
+                <PurchLine_ItemName/>
+                <PurchLine_QtyOrdered/>
+                <PurchLine_RemainPurchPhysical/>
+                <PurchLine_AVARUMdisplayFirstLoadId/>
+            </Fields>
+        </AxFormGridControl>
+    </Controls>
+</AxFormTabPageControl>
+
+<!-- Sales Lines Tab -->
+<AxFormTabPageControl>
+    <Name>CustomerOrderTabPage</Name>
+    <AutoDeclaration>Yes</AutoDeclaration>
+    <DataSource>SalesLine</DataSource>
+    <FastTabExpanded>Always</FastTabExpanded>
+    <!-- Grid showing sales lines -->
+</AxFormTabPageControl>
+```
+
+The visibility is controlled programmatically (likely in form design or via code).
+
+---
+
+### **Step 5: Weighing History Integration**
+
+The `AVARUMWeightInHistory` data source links to the selected purchase line:
+
+```xpp
+// AVARUMWeightInHistory DataSource.executeQuery()
+public void executeQuery()
+{
+    QueryBuildDataSource qbdsMWeightInHistory;
+    AVARUMWeightInOrigin origin;
+    RefRecId originRefRecId;
+    
+    qbdsMWeightInHistory = this.query().dataSourceTable(tableNum(AVARUMWeightInHistory));
+    
+    switch (weightInOriginId)
+    {
+        case AVARUMWeightInOrigin::Sales:
+            origin = AVARUMWeightInOrigin::Sales;
+            originRefRecId = SalesLine_ds.cursor().RecId;
+            break;
+            
+        case AVARUMWeightInOrigin::Purch:
+            origin = AVARUMWeightInOrigin::Purch;
+            originRefRecId = PurchLine_ds.cursor().RecId;  // ?? Link to selected PurchLine
+            break;
+    }
+    
+    // Add filters to show weighing history for selected line
+    qbdsMWeightInHistory.findRange(fieldNum(AVARUMWeightInHistory, OriginId))
+        .value(queryValue(origin));
+    qbdsMWeightInHistory.findRange(fieldNum(AVARUMWeightInHistory, OriginRefRecId))
+        .value(queryValue(originRefRecId));
+    
+    super();
+}
+```
+
+---
+
+### **Step 6: Advanced Filtering (Load-Based)**
+
+If the form is called from a `WHSLoadTable` record (Warehouse Load), additional filtering is applied:
+
+```xpp
+private void addLoadFilter(WHSLoadTable _WHSLoadTable)
+{
+    if (weightInOriginId == AVARUMWeightInOrigin::Purch)
+    {
+        QueryBuildDataSource qbds = PurchLine_ds.query().dataSourceTable(tableNum(PurchLine));
+        QueryBuildDataSource qbdsLoadLine = qbds.addDataSource(tableNum(WHSLoadLine));
+        
+        qbdsLoadLine.joinMode(JoinMode::ExistsJoin);
+        qbdsLoadLine.addLink(fieldNum(PurchLine, InventTransId), 
+                            fieldNum(WHSLoadLine, InventTransId));
+        qbdsLoadLine.addRange(fieldNum(WHSLoadLine, LoadId))
+            .value(queryValue(_WHSLoadTable.LoadId));
+    }
+    // Similar logic for Sales
+}
+```
+
+This shows **only purchase lines associated with a specific warehouse load**.
+
+---
+
+## ?? Data Flow Diagram
+
+```
+???????????????????????????????????????????????????????????????????
+?  User Opens: AVARUMWeightInPurch Menu Item                      ?
+???????????????????????????????????????????????????????????????????
+                         ?
+                         ?
+???????????????????????????????????????????????????????????????????
+?  Form.init()                                                     ?
+?  - Detect menuItemName = "AVARUMWeightInPurch"                  ?
+?  - Set: weightInOriginId = AVARUMWeightInOrigin::Purch          ?
+?  - Call: applyFilter()                                           ?
+???????????????????????????????????????????????????????????????????
+                         ?
+                         ?
+???????????????????????????????????????????????????????????????????
+?  PurchLine_ds.init()                                             ?
+?  - Add Range: RemainPurchPhysical > 0                           ?
+?  - Add Range: PurchaseType = Purch                              ?
+?  - Add Join: InventTable WHERE AVARUMWeighPurch = Yes           ?
+?  - Add Sort: ConfirmedDlv DESC                                  ?
+???????????????????????????????????????????????????????????????????
+                         ?
+                         ?
+???????????????????????????????????????????????????????????????????
+?  applyFilter()                                                   ?
+?  - Add exists/not exists joins to AVARUMWeightInHistory         ?
+?  - Filter based on SecondWeightingOpenCb checkbox               ?
+???????????????????????????????????????????????????????????????????
+                         ?
+                         ?
+???????????????????????????????????????????????????????????????????
+?  PurchLine_ds.executeQuery()                                    ?
+?  - Execute SQL query with all filters                           ?
+?  - Return matching PurchLine records                            ?
+???????????????????????????????????????????????????????????????????
+                         ?
+                         ?
+???????????????????????????????????????????????????????????????????
+?  UI Display: VendorOrderTabPage                                 ?
+?  - Grid shows filtered purchase lines                           ?
+?  - User can select a line                                       ?
+???????????????????????????????????????????????????????????????????
+                         ?
+                         ?
+???????????????????????????????????????????????????????????????????
+?  User Selects Purchase Line                                     ?
+?  - AVARUMWeightInHistory_ds.executeQuery() is triggered         ?
+?  - Weighing history for selected line is loaded                 ?
+?  - WeightInTabPage is enabled for weighing operations           ?
+???????????????????????????????????????????????????????????????????
+```
+
+---
+
+## ?? Key Configuration Points
+
+### **1. Item Master Configuration**
+For a purchase line to appear in the weighing form, the item **must** have:
+```
+InventTable.AVARUMWeighPurch = Yes
+```
+
+### **2. Purchase Line Requirements**
+- `PurchLine.RemainPurchPhysical > 0` (has remaining quantity)
+- `PurchLine.PurchaseType = PurchaseType::Purch` (standard purchase order)
+
+### **3. Parameters Configuration**
+- `AVARUMWeightInParameters.ScaleType != AVARUMWeightInScaleType::None`
+  (Scale must be configured)
+
+---
+
+## ??? How to Enable Purchase Lines for Weighing
+
+### **Option 1: Enable at Item Level**
+1. Navigate to: **Product information management > Products > Released products**
+2. Select the item
+3. Find the field: **AVARUMWeighPurch** (likely on a custom tab)
+4. Set to: **Yes**
+
+### **Option 2: Bulk Update via Code**
+```xpp
+static void enablePurchWeighingForItems(Args _args)
+{
+    InventTable inventTable;
+    
+    ttsbegin;
+    
+    while select forUpdate inventTable
+        where inventTable.ItemId like 'RAW*'  // Example: all raw materials
+    {
+        inventTable.AVARUMWeighPurch = NoYes::Yes;
+        inventTable.update();
+    }
+    
+    ttscommit;
+    
+    info("Items updated for purchase weighing");
+}
+```
+
+### **Option 3: Data Entity Import**
+Use the `InventTable` data entity to import/update via Excel or DMF.
+
+---
+
+## ?? Troubleshooting: Why Purchase Lines Don't Appear
+
+### **Issue 1: No Lines Visible**
+**Cause:** Item not marked for purchase weighing
+**Solution:** Check `InventTable.AVARUMWeighPurch = Yes`
+
+### **Issue 2: Some Lines Missing**
+**Causes:**
+- `RemainPurchPhysical = 0` (fully received)
+- `PurchaseType != Purch` (e.g., Item requirement, Quotation)
+**Solution:** Check purchase line status and type
+
+### **Issue 3: Lines Appear But Tab Is Hidden**
+**Cause:** Called via wrong menu item or `weightInOriginId` not set
+**Solution:** Ensure form is opened via `AVARUMWeightInPurch` menu item
+
+### **Issue 4: Weighing Tab Disabled**
+**Causes:**
+- No line selected
+- `AVARUMWeightInParameters.ScaleType == None`
+**Solution:** 
+1. Select a purchase line
+2. Configure scale type in parameters
+
+---
+
+## ?? Code Snippet: Check If Line Is Weighable
+
+```xpp
+public static boolean isPurchLineWeighable(PurchLine _purchLine)
+{
+    InventTable inventTable;
+    boolean weighable = false;
+    
+    if (_purchLine.RemainPurchPhysical > 0 
+        && _purchLine.PurchaseType == PurchaseType::Purch)
+    {
+        inventTable = InventTable::find(_purchLine.ItemId);
+        weighable = inventTable.AVARUMWeighPurch == NoYes::Yes;
+    }
+    
+    return weighable;
+}
+```
+
+---
+
+## ?? Form Structure Summary
+
+```
+AVARUMWeightIn Form
+??? Data Sources
+?   ??? SalesLine (active when weightInOriginId = Sales)
+?   ??? PurchLine (active when weightInOriginId = Purch) ?
+?   ??? AVARUMWeightInHistory (linked to selected line)
+?
+??? Tab Pages
+?   ??? FilterTabPage (search/filter controls)
+?   ??? CustomerOrderTabPage (SalesLine grid) - hidden in Purch mode
+?   ??? VendorOrderTabPage (PurchLine grid) - visible in Purch mode ?
+?   ??? WeightInTabPage (weighing operations)
+?
+??? Action Pane
+    ??? Refresh
+    ??? Print
+    ??? Move
+    ??? Delete
+```
+
+---
+
+## ?? Related Objects
+
+| Object Type | Name | Purpose |
+|-------------|------|---------|
+| Form | AVARUMWeightIn | Main weighing form |
+| Table | PurchLine | Purchase order lines |
+| Table | AVARUMWeightInHistory | Weighing history |
+| Table | AVARUMWeightInParameters | Configuration |
+| Table | InventTable | Item master (AVARUMWeighPurch field) |
+| Enum | AVARUMWeightInOrigin | Sales/Purch discriminator |
+| Enum | AVARUMWeightInStep | First/Second/Amount steps |
+| Menu Item | AVARUMWeightInPurch | Purchase entry point |
+| Menu Item | AVARUMWeightInSales | Sales entry point |
+
+---
+
+## ? Summary
+
+**Purchase lines appear in the AVARUMWeightIn form through:**
+
+1. **Entry via menu item:** `AVARUMWeightInPurch` sets `weightInOriginId = Purch`
+2. **Item configuration:** `InventTable.AVARUMWeighPurch = Yes`
+3. **Line filtering:** Only lines with `RemainPurchPhysical > 0` and `PurchaseType = Purch`
+4. **Query execution:** `PurchLine_ds.executeQuery()` runs when in Purchase mode
+5. **UI display:** `VendorOrderTabPage` shows the filtered purchase lines
+6. **Weighing integration:** Selected line links to `AVARUMWeightInHistory` records
+
+The form is **dual-mode** (Sales/Purchase) with a single codebase that branches based on the `weightInOriginId` variable, which is set during initialization based on the calling menu item.

@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXPALabelMaintainEventContractInteraction</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 05.01.22
+/// </summary>
+public class NDXPALabelMaintainEventContractInteraction
+    extends NDXBusinessEventContractInteraction
+{
+    boolean dataFromNDXPAWithLabelInfo;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    protected void new()
+    {
+        super();
+        dataFromNDXPAWithLabelInfo = true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    public static NDXPALabelMaintainEventContractInteraction construct()
+    {
+        return new NDXPALabelMaintainEventContractInteraction();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmDataFromNDXPAWithLabelInfo</Name>
+				<Source><![CDATA[
+    public boolean parmDataFromNDXPAWithLabelInfo(boolean _dataFromNDXPAWithLabelInfo = dataFromNDXPAWithLabelInfo)
+    {
+        dataFromNDXPAWithLabelInfo = _dataFromNDXPAWithLabelInfo;
+        return dataFromNDXPAWithLabelInfo;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>newFromNDXPAWithLabelInfo</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.01.22
+    /// fill contract with data from NDXPAWithLabelInfo
+    /// </summary>
+    /// <returns>contract NDXPALabelMaintainEventContract</returns>
+    NDXPALabelMaintainContract newFromNDXPAWithLabelInfo()
+    {
+        NDXPALabelMaintainContract contract = new NDXPALabelMaintainContract();
+        this.initializeContract(contract);
+        this.populateContract(contract);
+        
+        NDXHistoryLogProdIdentMaintainContract::construct(2).saveAsSuccess(strFmt("@NDX:NDXBusinessEventPALabelMaintainNumberOfLabel", contract.ParmValidPAWithLabels().elements()));
+        return contract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 06.06.23
+    /// </summary>
+    /// <param name = "_contract">NDXPALabelMaintainContract</param>
+    void initializeContract(NDXBusinessEventContract _contract)
+    {
+        super(_contract);
+        NDXPALabelMaintainContract contract = _contract as NDXPALabelMaintainContract;
+        contract.ParmDeleteNotValidInDatabase(true);
+        contract.ParmGetDataFromDatabase(true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 06.06.23
+    /// </summary>
+    /// <param name = "_contract">NDXPALabelMaintainContract</param>
+    protected void populateContract(NDXPALabelMaintainContract _contract)
+    {
+        NDXPAWithLabelInfo nDXPAWithLabelInfo;
+        NDXProdIdentControlPanel nDXProdIdentControlPanel;
+        ProdTable prodTable;
+        ProdStatus prodStatusLabelErase = NDXProdIdentParameters::find().ProdStatusLabelErase;
+        NDXPALabelMaintainDetailsContract detailsContract;
+        List listContracts = new List(Types::Class);
+
+        Query q = new Query();
+        QueryRun qr;
+        if (dataFromNDXPAWithLabelInfo)
+        {
+            QueryBuildDataSource qbdsNDXPAWithLabelInfo = q.addDatasource(tableNum(NDXPAWithLabelInfo));
+            QueryBuildDataSource qbdsProdTable = qbdsNDXPAWithLabelInfo.addDataSource(tableNum(ProdTable));
+            qbdsProdTable.relations(true);
+            qr = new QueryRun(q);
+            while (qr.next())
+            {
+                nDXPAWithLabelInfo = qr.get(tableNum(NDXPAWithLabelInfo));
+                prodTable = qr.get(tableNum(ProdTable));
+                detailsContract = new NDXPALabelMaintainDetailsContract();
+                detailsContract.ParmProdId(prodTable.ProdId);
+                listContracts.addEnd(detailsContract);
+            }
+        }
+        else        // populate data from NDXProdIdentControlPanel
+        {
+            QueryBuildDataSource qbdsNDXProdIdentControlPanel = q.addDataSource(tableNum(NDXProdIdentControlPanel));
+            qr = new QueryRun(q);
+            while (qr.next())
+            {
+                nDXProdIdentControlPanel = qr.get(tableNum(NDXProdIdentControlPanel));
+                detailsContract = new NDXPALabelMaintainDetailsContract();
+                detailsContract.ParmProdLabelId(nDXProdIdentControlPanel.ProdLabelId);
+                prodTable = ProdTable::find(nDXProdIdentControlPanel.ProdId);
+                if (prodTable)
+                {
+                    detailsContract.ParmProdId(prodTable.ProdId);
+                    if (prodTable.status().isAfterOrEqualTo(prodStatusLabelErase))
+                    {
+                        detailsContract.ParmdeleteLabelRecord(true);
+                    }
+                }
+                listContracts.addEnd(detailsContract);
+            }
+        }
+        _contract.ParmValidPAWithLabels(listContracts);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

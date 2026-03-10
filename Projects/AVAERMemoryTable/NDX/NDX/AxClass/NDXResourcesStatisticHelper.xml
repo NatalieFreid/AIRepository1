@@ -1,0 +1,628 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXResourcesStatisticHelper</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Resource statistic helper
+/// </summary>
+public final class NDXResourcesStatisticHelper
+{
+    Date                fromDate, toDate;
+    boolean             dayInTimeValue;
+    boolean             showUTimes;                            
+    boolean             showTimeInSec;
+    boolean             showTimeInMin;                         
+    boolean             showTimeInStd;                         
+    boolean             showTimeAsStr;                         
+
+    Object              caller;
+    str                 callername;
+    ResResourceType     resourceType;                           
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    protected void new(ResResourceType _resourceType)
+    {
+        resourceType = _resourceType;
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillFromKCS_SFCFeedback</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// fill with data from KCS_SFCFeedback table
+    /// </summary>
+    /// <param name = "_fromDate">from date</param>
+    /// <param name = "_toDate">to date</param>
+    public void fillFromKCS_SFCFeedback(Date _fromDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), Date _toDate = DateNull())
+    {
+        const int checkSec = 60;
+        
+        AVASFCFeedback                  kCS_SFCFeedbackGrpBDE, kCS_SFCFeedbackGrpEVNR;
+        AVASFCFeedback                  kCS_SFCFeedbackStart, kCS_SFCFeedbackEnd;
+        JmgJobTable                     jmgJobTable;
+        
+        HcmWorker                       hcmWorker;
+        
+        ProdRoute                       prodRoute;
+        ProdRouteJob                    prodRouteJob;
+        ProdTable                       prodTable;
+        ProdTableJour                   prodTableJour;
+        
+        NDXProdTable                    nDX_ProdTable;
+        NDXResourcesStatisticLine       nDX_ResourceStatisticLine;
+        NDXResourcesStatisticLine       nDX_ResourceStatisticLineTmp;
+        NDXResourcesStatisticLine       nDX_ResourceStatisticLineGrpTmp;
+        
+        NDXResourcesStatisticLine_2     nDX_ResourceStatisticLine_2;
+        NDXResourcesStatisticLine_2     nDX_ResourceStatisticLine_2Tmp;
+        NDXResourcesStatisticLine_2     nDX_ResourceStatisticLine_2GrpTmp;
+        
+        NDXResourcesStatisticLineMap    nDX_ResourceStatisticLineMap;
+        Set                             setTransactionType;
+        Map                             mapTransActionType;
+
+        Query                   q, q2;
+        QueryRun                qr, qr2;
+        QueryBuildDataSource    qbds, qbds2;
+        QueryBuildRange         qbr;
+        int                     i;
+        str                     qString;
+        boolean                 lCheckTmp;
+        DimensionAttributeValueSet lDimensionAttributeValueSet;
+
+
+        if (!prmisdefault(_fromDate))
+        {
+            fromDate = _fromDate;
+        }
+        
+        if (!prmisdefault(_toDate))
+        {
+            toDate = _toDate;
+        }
+
+        if (!_toDate)
+        {
+            toDate = fromDate;
+        }
+
+
+        info(strfmt("@NDX:NDXResourcesStatisticInfo8", NDXHelperCommon::seconds2Str(), fromDate, toDate, resourceType ));          // [%1] Start: Aufbereitung der BDE-Daten für die Ressourcen-Statistik [%4] im Zeitraum [%2 - %3]
+        info(strfmt("@NDX:NDXResourcesStatisticInfo10", NDXHelperCommon::seconds2Str()));                                           // [%1] Löschen der Altdaten
+
+        // Löschen der Altdaten
+        for (i=1; i <= 2; i++)
+        {
+            if (i == 1)
+            {
+                nDX_ResourceStatisticLineMap    = nDX_ResourceStatisticLine;
+            }
+            else
+            {
+                nDX_ResourceStatisticLineMap    = nDX_ResourceStatisticLine_2;
+            }
+
+            delete_from nDX_ResourceStatisticLineMap
+                where   nDX_ResourceStatisticLineMap.ResResourceType == resourceType
+                    &&  nDX_ResourceStatisticLineMap.ProdDate      >= fromDate
+                    &&  nDX_ResourceStatisticLineMap.ProdDate      <= toDate;
+        }
+
+        ttsbegin;
+        while select forUpdate * from nDX_ProdTable
+            where   nDX_ProdTable.ResResourceType           == resourceType
+                &&  nDX_ProdTable.ProdDate                  >= fromDate
+                &&  nDX_ProdTable.ProdDate                  <= toDate
+                &&  nDX_ProdTable.FoundInKCS_SFCFeedback    == NoYes::Yes
+        {
+            nDX_ProdTable.clearBDE();
+            nDX_ProdTable.update();
+        }
+        ttscommit;
+
+        nDX_ResourceStatisticLineTmp.setTmp();
+        nDX_ResourceStatisticLine_2Tmp.setTmp();
+        nDX_ResourceStatisticLine_2GrpTmp.setTmp();
+        nDX_ResourceStatisticLineGrpTmp.setTmp();
+
+        info(strfmt("@NDX:NDXResourcesStatisticInfo2", NDXHelperCommon::seconds2Str()));                                           // [%1] BDE-Daten sammeln
+        
+        //BDE's im Zeitraum sammeln
+        NDXResourcesStatisticBDEJour::fill(NDXJournalBDE::BDE, fromDate, toDate);
+
+        // Einzelpositionswerte sammeln
+        q       = new Query();
+        qbds    = q.addDataSource(tablenum(AVASFCFeedback));
+        qbr     = qbds.addRange(fieldnum(AVASFCFeedback, RecId));
+
+        qString = strfmt('(((%1.%2 >= %3) && (%1.%2 <= %4)) && (%1.%5 == %6) && (%1.%14 == %15) && (((%1.%7 != %8) || (%1.%11 != %8) || (%1.%12 != %8) || (%1.%13 != %8)) || (%1.%9 == %10)))',
+                qbds.name(),                                        /*1*/
+                fieldstr(AVASFCFeedback, JmgDate),                  /*2*/
+                date2StrXpp(fromDate),                              /*3 - von Jmg-Datum*/
+                date2StrXpp(toDate),                                /*4 - bis Jmg-Datum*/
+                fieldstr(AVASFCFeedback, Deactivated),              /*5*/
+                enum2int(NoYes::No),                                /*6 - nicht deaktiviert*/
+                fieldstr(AVASFCFeedback, ProdReportedGood),         /*7 */
+                0,                                                  /*8 - produzierte Menge <> 0*/
+                fieldstr(AVASFCFeedback, TransactionType ),         /*9*/
+                enum2int(AVASFCTransactionType::JobSetup),          /*10 - oder Transactiontype == Einstellung*/
+                fieldstr(AVASFCFeedback, ProdReportedError),        /*11*/
+                fieldstr(AVASFCFeedback, ProdRepGoodOrig),          /*12*/
+                fieldstr(AVASFCFeedback, ProdRepErrorOrig),         /*13*/
+                fieldstr(AVASFCFeedback, Posted),                   /*14*/
+                enum2int(NoYes::Yes)                                /*15 - gebucht*/
+                );
+
+        qbr.value(qString);
+        qbds.orderMode(OrderMode::GroupBy);
+        qbds.addSortField(fieldnum(AVASFCFeedback, JmgDate));
+        qbds.addSortField(fieldnum(AVASFCFeedback, ProdId));
+        qbds.addSortField(fieldnum(AVASFCFeedback, NdxSFCId));             // BDE-Nummer
+        qbds.addSelectionField(fieldnum(AVASFCFeedback, ProdReportedGood), SelectionField::Sum);
+        qbds.addSelectionField(fieldnum(AVASFCFeedback, ProdReportedError), SelectionField::Sum);
+        qbds.addSelectionField(fieldnum(AVASFCFeedback, ProdRepGoodOrig), SelectionField::Sum);
+        qbds.addSelectionField(fieldnum(AVASFCFeedback, ProdRepErrorOrig), SelectionField::Sum);
+
+        qr = new QueryRun(q);
+
+        while (qr.next())       // Gruppierung: BDE-Nummer
+        {
+            kCS_SFCFeedbackGrpBDE   = qr.get(tablenum(AVASFCFeedback));
+            setTransactionType      = kCS_SFCFeedbackGrpBDE.parmBDETransactionType();
+
+            mapTransActionType      = new Map(Types::Enum, Types::Real);
+            delete_from nDX_ResourceStatisticLineTmp;
+            delete_from nDX_ResourceStatisticLine_2Tmp;
+            delete_from nDX_ResourceStatisticLineGrpTmp;
+            delete_from nDX_ResourceStatisticLine_2GrpTmp;
+            lCheckTmp  = false;
+
+            q2      = new Query();
+            qbds2   = q2.addDataSource(tablenum(AVASFCFeedback));
+            qbds2.addRange(fieldnum(AVASFCFeedback, ProdId)).value(kCS_SFCFeedbackGrpBDE.ProdId);
+            qbds2.addRange(fieldnum(AVASFCFeedback, NdxSFCId)).value(kCS_SFCFeedbackGrpBDE.NdxSFCId);
+            qbds2.orderMode(OrderMode::GroupBy);
+            qbds2.addSortField(fieldnum(AVASFCFeedback, ProdId));
+            qbds2.addSortField(fieldnum(AVASFCFeedback, NdxSFCId));
+            qbds2.addSortField(fieldnum(AVASFCFeedback, JmgJobId));
+
+
+            qr2 = new QueryRun(q2);
+            while (qr2.next())          // Gruppierung: Einzelvorgänge einer BDE
+            {
+                kCS_SFCFeedbackGrpEVNR = qr2.get(tablenum(AVASFCFeedback));
+                nDX_ResourceStatisticLineTmp.clear();
+                
+                // Job-Start
+                select firstonly kCS_SFCFeedbackStart
+                where   kCS_SFCFeedbackStart.ProdId         == kCS_SFCFeedbackGrpEVNR.ProdId
+                    &&  kCS_SFCFeedbackStart.NdxSFCId       == kCS_SFCFeedbackGrpEVNR.NdxSFCId
+                    &&  kCS_SFCFeedbackStart.JmgJobId       == kCS_SFCFeedbackGrpEVNR.JmgJobId
+                    &&  kCS_SFCFeedbackStart.JmgTermRegType == JmgTermRegType::JobStart;
+                
+                // Job-Ende
+                select firstonly kCS_SFCFeedbackEnd
+                where   kCS_SFCFeedbackEnd.ProdId         == kCS_SFCFeedbackGrpEVNR.ProdId
+                    &&  kCS_SFCFeedbackEnd.NdxSFCId       == kCS_SFCFeedbackGrpEVNR.NdxSFCId
+                    &&  kCS_SFCFeedbackEnd.JmgJobId       == kCS_SFCFeedbackGrpEVNR.JmgJobId
+                    &&  kCS_SFCFeedbackEnd.JmgTermRegType == JmgTermRegType::JobStop;
+                
+                if (kCS_SFCFeedbackStart.TransactionType == AVASFCTransactionType::JobSetup && !kCS_SFCFeedbackEnd)
+                {
+                    info(strfmt("@NDX:NDXResourcesStatisticInfo3", kCS_SFCFeedbackStart.ProdId));          // Prod-Id [%1] Typ Setting (ohne Ende)
+                }
+
+                if (kCS_SFCFeedbackStart && kCS_SFCFeedbackEnd)
+                {
+                    jmgJobTable     = JmgJobTable::find(kCS_SFCFeedbackEnd.JmgJobId);
+                    prodRouteJob    = ProdRouteJob::findJobId(kCS_SFCFeedbackGrpEVNR.JmgJobId);
+                    prodTable       = ProdTable::find(kCS_SFCFeedbackStart.ProdId, false);
+                    prodRoute       = ProdRoute::find(kCS_SFCFeedbackGrpEVNR.ProdId, prodRouteJob.OprNum, prodRouteJob.OprPriority);
+                    
+                    select firstOnly prodTableJour
+                        where prodTableJour.ProdId == kCS_SFCFeedbackStart.ProdId
+                            && prodTableJour.ItemId;
+
+                    ttsbegin;
+                    
+                    // Falls in der BDE-Gruppe Mengen produziert wurden: Ressourcenstatistik
+                    // Falls in der BDE-Gruppe NUR Einstellung: Zusatzwerte
+                    
+                    if (kCS_SFCFeedbackGrpBDE.parmProdRepAmount())
+                    {
+                        nDX_ResourceStatisticLineMap = nDX_ResourceStatisticLine;
+                    }
+                    else if (setTransactionType.in(AVASFCTransactionType::JobSetup) && setTransactionType.elements() == 1)        // nur Einstellungen
+                    {
+                        nDX_ResourceStatisticLineMap = nDX_ResourceStatisticLine;
+                    }
+                    else
+                    {
+                        lCheckTmp                    = true;
+                        nDX_ResourceStatisticLineMap = nDX_ResourceStatisticLineTmp;        // temp. speichern für spätere Auswertung
+                    }
+
+                    nDX_ResourceStatisticLineMap.clear();
+                    nDX_ResourceStatisticLineMap.ResResourceType       = resourceType;
+                    nDX_ResourceStatisticLineMap.ProdId                = kCS_SFCFeedbackGrpEVNR.ProdId;
+                    nDX_ResourceStatisticLineMap.SFCId                 = kCS_SFCFeedbackGrpEVNR.NdxSFCId;
+                    nDX_ResourceStatisticLineMap.JobId                 = kCS_SFCFeedbackGrpEVNR.JmgJobId;
+                    nDX_ResourceStatisticLineMap.ProdDate              = kCS_SFCFeedbackGrpBDE.JmgDate;
+                    nDX_ResourceStatisticLineMap.WrkCtrId              = kCS_SFCFeedbackEnd.WrkCtrId;
+                    nDX_ResourceStatisticLineMap.PersonnelNumber       = kCS_SFCFeedbackEnd.PersonnelNumber;
+                    
+                    nDX_ResourceStatisticLineMap.Dimension = kCS_SFCFeedbackEnd.DefaultDimension;
+
+                    switch (kCS_SFCFeedbackEnd.TransactionType)
+                    {
+                        case AVASFCTransactionType::Interruption01:
+                        case AVASFCTransactionType::Interruption02:
+                        case AVASFCTransactionType::Interruption03:
+                        case AVASFCTransactionType::Interruption04:
+                        case AVASFCTransactionType::Interruption05:
+                        case AVASFCTransactionType::Interruption06:
+                        case AVASFCTransactionType::Interruption07:
+                        case AVASFCTransactionType::Interruption08:
+                        case AVASFCTransactionType::Interruption09:
+                        case AVASFCTransactionType::Interruption10:
+                        case AVASFCTransactionType::Interruption11:
+                        case AVASFCTransactionType::Interruption12:
+                        case AVASFCTransactionType::Interruption13:
+                        case AVASFCTransactionType::Interruption14:
+                        case AVASFCTransactionType::Interruption15:
+                        case AVASFCTransactionType::Interruption16:
+                        case AVASFCTransactionType::Interruption17:
+                        case AVASFCTransactionType::Interruption18:
+                        case AVASFCTransactionType::Interruption19:
+                        case AVASFCTransactionType::Interruption20:
+                            nDX_ResourceStatisticLineMap.RouteJobType  = NDXRouteJobType::Interruption;
+                            break;
+                        case AVASFCTransactionType::JobProcessing    :
+                            nDX_ResourceStatisticLineMap.RouteJobType  = NDXRouteJobType::Process;
+                            break;
+                        case AVASFCTransactionType::JobSetup      :
+                            nDX_ResourceStatisticLineMap.RouteJobType  = NDXRouteJobType::Setup;
+                            break;
+                    }
+                    
+                    nDX_ResourceStatisticLineMap.ProdReportedGood      = kCS_SFCFeedbackEnd.ProdReportedGood;
+                    nDX_ResourceStatisticLineMap.ProdDescription       = jmgJobTable.Description;
+                    
+                    if (!nDX_ResourceStatisticLineMap.ProdDescription)
+                    {
+                        nDX_ResourceStatisticLineMap.ProdDescription   = RouteOprTable::find(kCS_SFCFeedbackEnd.getOprIdFromProdRouteTrans()).Name;
+                    }
+                    
+                    nDX_ResourceStatisticLineMap.ProdReportedError     = kCS_SFCFeedbackEnd.ProdReportedError;
+                    nDX_ResourceStatisticLineMap.ProdRepErrorOrig      = kCS_SFCFeedbackEnd.ProdRepErrorOrig;
+
+                    nDX_ResourceStatisticLineMap.TimeSec               = DateTimeUtil::getDifference(kCS_SFCFeedbackEnd.RegDateTime, kCS_SFCFeedbackStart.RegDateTime);
+                   
+                    nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::timevalueFromBDE();  // Sollzeitermittlung
+
+                    nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::initFromWrkCtrTable();
+                    nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::initFromProdTableJour(prodTableJour);
+                    
+                    if (!nDX_ResourceStatisticLineMap.ItemId)
+                    {
+                        nDX_ResourceStatisticLineMap.ItemId = prodTable.ItemId;
+                    }
+                    nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::initFromInventTable();
+
+                    if (resourceType == ResResourceType::Personnel && nDX_ResourceStatisticLineMap.PersonnelNumber)
+                    {
+                        // Versuch, die Kostenstelle über den Mitarbeiter zu ermitteln
+                        hcmWorker = HcmWorker::findByPersonnelNumber(nDX_ResourceStatisticLineMap.PersonnelNumber);
+                        
+                        if (hcmWorker && DimensionAttributeValueSet::getDimensionValueFieldId('KostenstellenValue') > 0)
+                        {     
+                            lDimensionAttributeValueSet = hcmWorker.findDimensionAttributeValueSet();
+                        }
+
+                        nDX_ResourceStatisticLineMap.Dimension_WrkCtr = lDimensionAttributeValueSet.RecId;
+                    }
+
+                    nDX_ResourceStatisticLineMap.ProductionTimeType = NDXProductionTimeType::BDE;
+                    
+                    // Monat und Jahr aus Produktionsdatum extrahieren
+                    nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::modifiedField(fieldnum(NDXResourcesStatisticLine, ProdDate));
+
+                    nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::setClockCycleValues();
+
+                    if (nDX_ResourceStatisticLineMap.TableId == tablenum(NDXResourcesStatisticLine))
+                    {
+                        nDX_ResourceStatisticLineMap.ResourceBaseType = NDXResourceBaseType::BDE;
+                    }
+                    else
+                    {
+                        nDX_ResourceStatisticLineMap.ResourceBaseType = NDXResourceBaseType::BDE_Settings;
+                    }
+
+                    nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::setWeight();
+
+                    nDX_ResourceStatisticLineMap.insert();
+                    ttscommit;
+
+                    // Informationen zum Produktionsauftrag sammeln
+                    nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::updateProdTable(NoYes::Yes, resourceType);                 // 1.2: NDX/PAFFH/NDX_TASK1235003153/28.11.2011
+
+                    // Zeitwert je RouteJobType sammeln
+                    if (lCheckTmp)
+                    {
+                        nDX_ResourceStatisticLineGrpTmp.clear();
+                        select nDX_ResourceStatisticLineGrpTmp
+                            where   nDX_ResourceStatisticLineGrpTmp.RouteJobType == nDX_ResourceStatisticLineMap.RouteJobType;
+
+                        if (!nDX_ResourceStatisticLineGrpTmp)
+                        {
+                            buf2Buf(nDX_ResourceStatisticLineMap, nDX_ResourceStatisticLineGrpTmp);
+                            nDX_ResourceStatisticLineGrpTmp.TimeSec     = 0;
+                            nDX_ResourceStatisticLineGrpTmp.insert();
+                        }
+                        nDX_ResourceStatisticLineGrpTmp.TimeSec += nDX_ResourceStatisticLineMap.TimeSec;
+                        nDX_ResourceStatisticLineGrpTmp.update();
+                    }
+                }
+            }
+
+            // Untersuchung der temp. Daten
+            if (lCheckTmp)
+            {
+                // Existiert ein Einzelvorgang vom Typ: Process
+                select nDX_ResourceStatisticLineGrpTmp
+                    where nDX_ResourceStatisticLineGrpTmp.RouteJobType == NDXRouteJobType::Process;
+    
+                if (nDX_ResourceStatisticLineGrpTmp && nDX_ResourceStatisticLineGrpTmp.TimeSec <= CheckSec)
+                {
+                    // Einzelvorgang mit einem Zeitwert <= 60 Sekunden existiert
+                    // daher: Einzelvorgang vom Typ: Einstellung lokalisieren und in Zusatzwerte speichern
+                    select      nDX_ResourceStatisticLineTmp
+                        where   nDX_ResourceStatisticLineTmp.RouteJobType == NDXRouteJobType::Setup;
+                    if (nDX_ResourceStatisticLineTmp)
+                    {
+                        buf2Buf(nDX_ResourceStatisticLineTmp, nDX_ResourceStatisticLine);
+                        nDX_ResourceStatisticLineMap = nDX_ResourceStatisticLine;
+                        nDX_ResourceStatisticLineMap.insert();
+                    }
+                }
+            }
+
+        }
+        info(strfmt("@NDX:NDXResourcesStatisticInfo4", NDXHelperCommon::seconds2Str()));       // [%1] Daten aufsummieren
+
+        // Summen je Produktionstag je Ressource bilden
+        NDXResourcesStatisticLine::SumPerWrkCtr(fromDate, toDate, resourceType);
+        info(strfmt("@NDX:NDXResourcesStatisticInfo5", NDXHelperCommon::seconds2Str()));                                               // [%1] Ende: Aufbereitung der BDE-Daten für die Ressourcen-Statistik
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillFromProdJournalRoute</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// fill data from ProdJournalRoute table
+    /// </summary>
+    /// <param name = "_fromDate">from date</param>
+    /// <param name = "_toDate">to date</param>
+    public void fillFromProdJournalRoute(Date _fromDate = systemdateget(), Date _toDate = DateNull())
+    {
+        NDXProdTable                    nDX_ProdTable;
+        ProdJournalRoute                prodJournalRoute, prodJournalRoute3;
+        ProdTable                       prodTable;
+        NDXResourcesStatisticLine       nDX_ResourceStatisticLine;
+        NDXResourcesStatisticLine_2     nDX_ResourceStatisticLine_2;
+        NDXResourcesStatisticLineMap    nDX_ResourceStatisticLineMap;
+        AVASFCFeedback                  kCS_SFCFeedback;
+        boolean                         lDebugInfo = false;
+        ProdJobId                       jobId;
+
+        Query                   q, q3;
+        QueryRun                qr, qr3;
+        QueryBuildDataSource    qbds, qbds2, qbds3;
+        ;
+
+        if (!prmisdefault(_fromDate))
+        {
+            fromDate    = _fromDate;
+        }
+
+        if (!prmisdefault(_toDate))
+        {
+            toDate      = _toDate;
+        }
+        
+        if (!_toDate)
+        {
+            toDate = fromDate;
+        }
+
+        info(strfmt("@NDX:NDXResourcesStatisticInfo7", NDXHelperCommon::seconds2Str(), fromDate, toDate, resourceType ));     // '[%1] Start: Aufbereitung der Journal-Daten für die Ressourcen-Statistik [%4] im Zeitraum [%2 - %3]'
+        info(strfmt("@NDX:NDXResourcesStatisticInfo10", NDXHelperCommon::seconds2Str()));                                      // '[%1] Löschen der Altdaten'
+
+        // Löschen der Altdaten
+        ttsbegin;
+        while select forUpdate * from nDX_ProdTable
+            where   nDX_ProdTable.ResResourceType == resourceType
+                &&  nDX_ProdTable.ProdDate                  >= fromDate
+                &&  nDX_ProdTable.ProdDate                  <= toDate
+                &&  nDX_ProdTable.FoundInProdJournalTable   == NoYes::Yes
+        {
+            nDX_ProdTable.clearJournal();
+            nDX_ProdTable.update();
+        }
+        ttscommit;
+
+        //Journale im Zeitraum sammeln
+        NDXResourcesStatisticBDEJour::fill(NDXJournalBDE::Journal, fromDate, toDate);
+
+        info(strfmt("@NDX:NDXResourcesStatisticInfo11", NDXHelperCommon::seconds2Str()));                           // '[%1] Journal-Daten sammeln'
+        q       = new Query();
+        qbds    = q.addDataSource(tablenum(ProdJournalRoute));
+        qbds.addRange(fieldnum(ProdJournalRoute, TransDate)).value(queryValue(fromDate) + '..' + queryValue(toDate));
+        qbds.addRange(fieldnum(ProdJournalRoute, OprPriority)).value(queryValue(RouteOprPriority::Primary));
+        qbds.addRange(fieldnum(ProdJournalRoute, QtyGood)).value(SysQuery::valueNot(0));    // 1.4: NDX/PAFFH/NDX_TASK1235003227/10.02.2012
+
+        // Verbindung zur ProdTable
+        qbds2   = qbds.addDataSource(tablenum(ProdTable));
+        qbds2.joinMode(JoinMode::InnerJoin);
+        qbds2.fetchMode(QueryFetchMode::One2One);
+        qbds2.relations(true);
+        
+        if (lDebugInfo)
+        {
+            Debug::printDebug(NDXHelperQuery::QueryInfo(q));
+        }
+
+        qr = new QueryRun(q);
+
+        while (qr.next())
+        {
+            prodJournalRoute    = qr.get(tablenum(ProdJournalRoute));
+            prodTable           = qr.get(tablenum(prodTable));
+
+            jobId   = prodJournalRoute.JobId;
+            if (!jobId)
+            {
+                jobId = prodJournalRoute.JobId;
+            }
+
+            // Wurde der PA über BDE gemeldet? Wenn ja, nicht berücksichtigen
+            select firstOnly    recId
+            from            kCS_SFCFeedback
+                where       kCS_SFCFeedback.JmgJobId == jobId;
+
+            if (kCS_SFCFeedback.RecId)
+            continue;
+
+            ttsbegin;
+            nDX_ResourceStatisticLineMap = NDXResourcesStatisticLineMap::find(resourceType,
+                                                                    prodJournalRoute.TransDate,
+                                                                    prodJournalRoute.WrkCtrId,
+                                                                    prodJournalRoute.Worker,
+                                                                    prodJournalRoute.ProdId,
+                                                                    jobId,
+                                                                    '',
+                                                                    tablenum(NDXResourcesStatisticLine),
+                                                                    prodJournalRoute.JournalId,
+                                                                    prodJournalRoute.LineNum,
+                                                                    true);
+            if (!nDX_ResourceStatisticLineMap)
+            {
+                nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::initFromProdJournalRoute(prodJournalRoute);
+            }
+
+            nDX_ResourceStatisticLineMap.ResResourceType = resourceType;
+            nDX_ResourceStatisticLineMap.Dimension = prodJournalRoute.DefaultDimension; 
+            nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::timevalueFromProdJournalRoute(prodJournalRoute);      // Sollzeiten speichern
+            nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::initFromWrkCtrTable();
+            nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::initFromProdTable(prodTable);
+            nDX_ResourceStatisticLineMap.ProductionTimeType = nDX_ResourceStatisticLine.JobId ? NDXProductionTimeType::JournalWithBDERef : NDXProductionTimeType::Journal;
+
+            nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::initFromInventTable();
+            // Monat und Jahr aus Produktionsdatum extrahieren
+            nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::modifiedField(fieldnum(NDXResourcesStatisticLineMap, ProdDate));
+            nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::setClockCycleValues();
+            nDX_ResourceStatisticLineMap.ResourceBaseType = NDXResourceBaseType::Journal;
+            nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::setWeight();
+
+            if (nDX_ResourceStatisticLineMap.validateWrite())
+            {
+                nDX_ResourceStatisticLineMap.write();
+            }
+            ttscommit;
+
+            // Informationen zum Produktionsauftrag sammeln
+            nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::updateProdTable(NoYes::No, resourceType);
+
+            // Prüfung: Existieren noch weitere zu berücksichtigenden Positionen
+            q3      = new Query();
+            qbds3   = q3.addDataSource(tablenum(ProdJournalRoute));
+            qbds3.addRange(fieldnum(prodJournalRoute, JournalId)).value(prodJournalRoute.JournalId);
+            qbds3.addRange(fieldnum(prodJournalRoute, LineNum)).value(SysQuery::valueNot(prodJournalRoute.LineNum));
+            qbds3.addRange(fieldnum(ProdJournalRoute, OprPriority)).value(QueryValue(RouteOprPriority::Primary));
+            qbds3.addRange(fieldnum(ProdJournalRoute, QtyGood)).value(QueryValue(0));
+            qr3 = new QueryRun(q3);
+            while (qr3.next())
+            {
+                prodJournalRoute3 = qr3.get(tablenum(ProdJournalRoute));
+                nDX_ResourceStatisticLineMap = NDXResourcesStatisticLineMap::find(resourceType,
+                                                                        prodJournalRoute3.TransDate,
+                                                                        prodJournalRoute3.WrkCtrId,
+                                                                        prodJournalRoute3.Worker,
+                                                                        prodJournalRoute3.ProdId,
+                                                                        jobId,
+                                                                        '',
+                                                                        tablenum(NDXResourcesStatisticLine_2),
+                                                                        prodJournalRoute3.JournalId,
+                                                                        prodJournalRoute3.LineNum,
+                                                                        true);
+
+                if (!nDX_ResourceStatisticLineMap)
+                {
+                    nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::initFromProdJournalRoute(prodJournalRoute3);
+                }
+
+                nDX_ResourceStatisticLineMap.ResResourceType= resourceType;
+                nDX_ResourceStatisticLineMap.Dimension   = prodJournalRoute3.DefaultDimension;
+                nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::timevalueFromProdJournalRoute(prodJournalRoute3);      // Sollzeiten speichern
+                nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::initFromWrkCtrTable();
+                nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::initFromProdTable(prodTable);
+                nDX_ResourceStatisticLineMap.ProductionTimeType = nDX_ResourceStatisticLine_2.JobId ? NDXProductionTimeType::JournalWithBDERef : NDXProductionTimeType::Journal;
+
+                nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::initFromInventTable();
+                // Monat und Jahr aus Produktionsdatum extrahieren
+                nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::modifiedField(fieldnum(NDXResourcesStatisticLine_2, ProdDate));
+                nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::setClockCycleValues();
+                nDX_ResourceStatisticLineMap.ResourceBaseType = NDXResourceBaseType::Journal_Other;
+                nDX_ResourceStatisticLineMap.NDXResourcesStatisticLineMap::setWeight();
+
+                ttsbegin;
+                if (nDX_ResourceStatisticLineMap.validateWrite())
+                {
+                    nDX_ResourceStatisticLineMap.write();
+                }
+                ttscommit;
+            }
+        }
+
+        info(strfmt("@NDX:NDXResourcesStatisticInfo4", NDXHelperCommon::seconds2Str()));                       // '[%1] Daten aufsummieren'
+        
+        // Summen je Produktionstag je Ressource bilden
+        NDXResourcesStatisticLine::SumPerWrkCtr(fromDate, toDate, resourceType);
+        info(strfmt("@NDX:NDXResourcesStatisticInfo6", NDXHelperCommon::seconds2Str()));                       // '[%1] Ende: Aufbereitung der Journal-Daten für die Ressourcen-Statistik'
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// constructor
+    /// </summary>
+    /// <param name = "_resourceType"></param>
+    /// <returns></returns>
+    public static NDXResourcesStatisticHelper construct(ResResourceType _resourceType = ResResourceType::Machine)
+    {
+        NDXResourcesStatisticHelper     nDX_ResourceStatisticHelper;
+        nDX_ResourceStatisticHelper = new NDXResourcesStatisticHelper(_resourceType);
+
+        return nDX_ResourceStatisticHelper;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

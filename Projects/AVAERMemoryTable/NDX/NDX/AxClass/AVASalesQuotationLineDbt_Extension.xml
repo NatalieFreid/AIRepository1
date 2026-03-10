@@ -1,0 +1,1484 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesQuotationLineDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(tableStr(SalesQuotationLine))]
+final class AVASalesQuotationLineDbt_Extension
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of modifiedField method
+    /// </summary>
+    /// <param name = "_fieldId">FieldId</param>
+    /// <param name = "_userInput">boolean</param>
+    public void modifiedField(FieldId _fieldId, boolean _userInput)
+    {
+        next modifiedField(_fieldId, _userInput);
+
+        switch(_fieldId)
+        {
+            case fieldNum(SalesQuotationLine, KCS_PriceDate):
+            case fieldNum(SalesQuotationLine, PriceUnit) :
+                this.avaUpdateHK2();
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateFieldsCustAccountChanged</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// updates relevant SalesLine fields - intended to be called after a CustAccountNum change in the header
+    /// </summary>
+    public void avaUpdateFieldsCustAccountChanged()
+    {
+        this.AVApriceCalculation();
+        this.avaUpdateHK2();
+        this.initFromCustExternalItemDescription();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateHK2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// method to update HK values and related fields
+    /// </summary>
+    public void avaUpdateHK2()
+    {
+        this.KCS_HK2                = this.AVAgetHK2SalesUnit(); 
+        this.AVAHKQuotCurrency      = this.AVAcalcHKQuotCurrency();
+        this.KCS_LimitPrice         = this.AVAcalcLimitPrice();
+        this.KCS_LimitPricePuffer   = this.AVAcalcLimitPricePuffer();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVApriceCalculation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_calcSalesPrice">_calcSalesPrice</param>
+    /// <param name = "_calcPriceDiscount">_calcPriceDiscount</param>
+    /// <param name = "_netPG1Price">_netPG1Price</param>
+    /// <param name = "_netPG2Price">_netPG2Price</param>
+    /// <param name = "_calcMasterPrice">_calcMasterPrice</param>
+    public void AVApriceCalculation(boolean      _calcSalesPrice = true,
+                                    boolean      _calcPriceDiscount = true,
+                                    boolean      _netPG1Price = true,
+                                    boolean      _netPG2Price = true,
+                                    boolean      _calcMasterPrice = true)
+    {
+        SalesQuotationTable     salesQuotationTable = this.salesQuotationTable();
+        SalesPrice              masterSalesPrice;
+        PriceDiscTable          priceDiscTable;
+        SalesQuotationLine      existedQuotLineItem;
+        #define.M('M')
+
+        if (_calcSalesPrice)
+        {
+            priceDiscTable =  AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,
+                                                                      salesQuotationTable.PriceGroupId,
+                                                                      salesQuotationTable.KCS_ChainLineDiscCode,
+                                                                      this.itemId,
+                                                                      this.KCS_PriceDate != dateNull() ? this.KCS_PriceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                      salesQuotationTable.CurrencyCode);
+
+            this.KCS_LPSalesPrice = salesQuotationTable.CurrencyCode == priceDiscTable.Currency ? priceDiscTable.Amount : 
+                                                                        salesQuotationTable.AVAExchangeRate != 0 ? (priceDiscTable.Amount *salesQuotationTable.AVAExchangeRate  ) /  100 :
+                                                                        CurrencyExchangeHelper::amount(priceDiscTable.Amount,priceDiscTable.Currency);
+            
+        }
+        if (_calcPriceDiscount)
+        {
+            this.AVALPPriceDiscount = AVAPriceDiscGroupSearch::findPriceDisc(PriceType::LineDiscSales,
+                                                                      salesQuotationTable.LineDisc,
+                                                                      salesQuotationTable.KCS_ChainLineDiscCode, //ToDo : Positionsrabattgruppe Kette aus dem Auftragskopf
+                                                                      this.itemId,
+                                                                      this.KCS_PriceDate != dateNull() ? this.KCS_PriceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                      salesQuotationTable.CurrencyCode).Percent1;
+        }
+
+        this.AVALPDiscountedPrice =  this.KCS_LPSalesPrice * (1 -   this.AVALPPriceDiscount/100);
+        if(_netPG1Price)
+        {
+            priceDiscTable =   AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,
+                                                                      salesQuotationTable.AVANetPG1,
+                                                                      salesQuotationTable.KCS_ChainLineDiscCode,
+                                                                      this.itemId,
+                                                                      this.KCS_PriceDate != dateNull() ? this.KCS_PriceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                      salesQuotationTable.CurrencyCode);
+
+            this.AVANetPG1Price = salesQuotationTable.CurrencyCode == priceDiscTable.Currency ? priceDiscTable.Amount :
+                                                                        salesQuotationTable.AVAExchangeRate != 0 ? (priceDiscTable.Amount *salesQuotationTable.AVAExchangeRate  ) / 100  :
+                                                                        CurrencyExchangeHelper::amount(priceDiscTable.Amount,priceDiscTable.Currency);
+        }
+        if(_netPG2Price)
+        {
+            priceDiscTable = AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,
+                                                                      salesQuotationTable.AVANetPG2,
+                                                                      '',
+                                                                      this.itemId,
+                                                                      this.KCS_PriceDate != dateNull() ? this.KCS_PriceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                      salesQuotationTable.CurrencyCode);
+
+            this.AVANetPG2Price = salesQuotationTable.CurrencyCode == priceDiscTable.Currency ? priceDiscTable.Amount :
+                                                                        salesQuotationTable.AVAExchangeRate != 0 ? (priceDiscTable.Amount *salesQuotationTable.AVAExchangeRate  ) / 100  :
+                                                                        CurrencyExchangeHelper::amount(priceDiscTable.Amount,priceDiscTable.Currency);
+        }
+       
+
+        this.AVABestPrice = this.AVALPDiscountedPrice;
+        this.AVABestPrice = this.AVANetPG1Price > 0 ? (this.AVABestPrice > 0  ? min( this.AVABestPrice, this.AVANetPG1Price) : this.AVANetPG1Price) :   this.AVABestPrice;
+        this.AVABestPrice = this.AVANetPG2Price > 0 ? (this.AVABestPrice > 0  ? min( this.AVABestPrice, this.AVANetPG2Price) : this.AVANetPG2Price) :   this.AVABestPrice;
+
+        if(_calcMasterPrice && this.SalesPrice == 0)
+        {
+            masterSalesPrice = this.AVAGetMasterSalesPrice();
+            this.AVAMasterPrice = masterSalesPrice;
+            this.KCS_CalcMark = (masterSalesPrice != 0 && masterSalesPrice <= this.AVABestPrice) ?  #M : '';
+            if (masterSalesPrice != 0 && (masterSalesPrice <= this.AVABestPrice || this.AVABestPrice == 0))
+            {
+                this.SalesPrice   =  masterSalesPrice;
+            }
+        }
+        
+        if (this.SalesPrice == 0 && this.KCS_CalcMark != 'M')
+        {
+            select  firstonly SalesPrice, RecId, QuotationId from  existedQuotLineItem
+                where existedQuotLineItem.QuotationId == this.QuotationId
+                   && existedQuotLineItem.ItemId      == this.itemId
+                   && existedQuotLineItem.RecId       != this.RecId;
+            if (existedQuotLineItem.RecId)
+            {
+                this.SalesPrice = existedQuotLineItem.SalesPrice;
+            }
+            else
+            {
+                this.SalesPrice = this.AVABestPrice;     
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAGetMasterSalesPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>SalesPrice</returns>
+    public SalesPrice AVAGetMasterSalesPrice()
+    {
+        SalesPrice              masterSalesPrice = 0;
+        SalesQuotationTable     salesQuotationTable  = this.salesQuotationTable();
+        SalesQuotationTable     refSalesQuotationTable;
+        SalesQuotationLine      refSalesQuotationLine;
+        InventDim               inventDim = this.inventDim();
+        InventDim               refInventDim;
+
+        if (salesQuotationTable.KCS_RefQuotationId != '')
+        {
+            select firstonly SalesPrice from refSalesQuotationLine
+                where refSalesQuotationLine.QuotationId == salesQuotationTable.KCS_RefQuotationId
+                   && refSalesQuotationLine.ItemId      == this.ItemId
+                        join refInventDim
+                            where refInventDim.inventDimId   == refSalesQuotationLine.InventDimId
+                               && refInventDim.configId      == inventDim.configId
+                               && refInventDim.InventColorId == inventDim.InventColorId
+                               && refInventDim.InventSizeId  == inventDim.InventSizeId;
+
+            masterSalesPrice = refSalesQuotationLine.SalesPrice;
+            if (masterSalesPrice != 0)
+            {
+                refSalesQuotationTable = salesQuotationTable::find(salesQuotationTable.KCS_RefQuotationId);
+                if (salesQuotationTable.CurrencyCode != refSalesQuotationTable.CurrencyCode)
+                {
+                    CurrencyExchangeHelper  currencyExchangeHelper = CurrencyExchangeHelper::newExchangeDate(Ledger::current(),DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+                    masterSalesPrice =  currencyExchangeHelper.calculateCurrencyToCurrency(salesQuotationTable.CurrencyCode, refSalesQuotationTable.CurrencyCode,masterSalesPrice,true);
+
+                }
+            }
+        }
+
+        return masterSalesPrice;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromTmpFrmVirtual</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_tmpFrmVirtual">_tmpFrmVirtual</param>
+    protected void initFromTmpFrmVirtual(TmpFrmVirtual _tmpFrmVirtual)
+    {
+        next initFromTmpFrmVirtual(_tmpFrmVirtual);
+       //
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showMasterPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesQuotationLine">_salesQuotationLine</param>
+    /// <returns>SalesPrice</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public static display SalesPrice showMasterPrice(SalesQuotationLine _salesQuotationLine)
+    {
+        return  _salesQuotationLine.AVAGetMasterSalesPrice();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showDocText</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// display method showing if documents exist for record
+    /// </summary>
+    /// <param name = "_this">SalesQuotationLine</param>
+    /// <returns>'T' if documents exist and 'o' if not</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public static display AVAshowDocText showDocText(SalesQuotationLine _this)
+    {
+        #DEFINE.DocExists('T')
+        #DEFINE.DocNotExists('o')
+
+        if ((select firstonly docuRef
+            where docuRef.RefCompanyId  == _this.DataAreaId
+                && docuRef.RefTableId   == _this.TableId
+                && docuRef.RefRecId     == _this.RecId).RecId)
+        {
+            return #DocExists;
+        }
+
+        return #DocNotExists;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAsetQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_span">boolean</param>
+    void AVAsetQty(boolean _span = false)
+    {
+        SalesQuotationLine      updLine;
+        //SalesQuotationTable     sqt;
+        DiscPct             discPct;
+        Amount              amount;
+        PriceUnit           priceUnit;
+        Qty                 qty;
+
+        if (!_span)
+        {
+            if (this.KCS_QLInternalPosition == 1)
+            {
+                while select forupdate updLine 
+                                           where updLine.QuotationId == this.QuotationId
+                                              && updLine.KCS_QLLVPosition == this.KCS_QLLVPosition
+                                              && updLine.KCS_QLInternalPosition > 1
+                                              && updLine.KCS_Span
+                {
+                    updLine.SalesQty        = this.SalesQty / updLine.KCS_Span;
+                    if ((updLine.ProjTransType == QuotationProjTransType::None) ||
+                    (updLine.ProjTransType == QuotationProjTransType::Item))
+                    {
+                        updLine.salesPurchLineInterface().resetPriceAgreement();
+                        updLine.initSalesQty();
+                        updLine.setPriceDisc(updLine.inventDim());
+                        updLine.calcPackingUnitQty(updLine.inventDim());
+                        InventMovement::bufferSetTransQtyUnit(updLine);
+                        updLine.setInventDeliverNow();
+                    }
+                    ttsbegin;
+                    updLine.update();
+                    ttscommit;
+                }
+            }
+            else if (this.KCS_QLInternalPosition > 1 && this.SalesQty)
+            {
+                this.KCS_Span   = SalesQuotationLine::AVAfindFirstInternalPosition(this.QuotationId,this.KCS_QLLVPosition).SalesQty / this.SalesQty;
+                /*if (this.RecId)
+                {
+                    this.doUpdate();
+                }*/
+                if ((this.ProjTransType == QuotationProjTransType::None) ||
+                (this.ProjTransType == QuotationProjTransType::Item))
+                {
+                    this.salesPurchLineInterface().resetPriceAgreement();
+                    this.initSalesQty();
+                    this.setPriceDisc(this.inventDim());
+                    this.calcPackingUnitQty(this.inventDim());
+                    InventMovement::bufferSetTransQtyUnit(this);
+                    this.setInventDeliverNow();
+                }
+            }
+        }
+        else
+        {
+            if (this.KCS_QLInternalPosition > 1 && this.KCS_Span)
+            {
+                this.SalesQty               = SalesQuotationLine::AVAfindFirstInternalPosition(this.QuotationId,this.KCS_QLLVPosition).SalesQty / this.KCS_Span;
+                if ((this.ProjTransType == QuotationProjTransType::None) ||
+                (this.ProjTransType == QuotationProjTransType::Item))
+                {
+                    this.salesPurchLineInterface().resetPriceAgreement();
+                    this.initSalesQty();
+                    this.setPriceDisc(this.InventDim());
+                    this.calcPackingUnitQty(this.inventDim());
+                    InventMovement::bufferSetTransQtyUnit(this);
+                    this.setInventDeliverNow();
+                }
+            }
+        }
+
+        discPct = this.salesQuotationTable().DiscPercent;
+        amount = (select sum(LineAmount) from SalesQuotationLine
+                        where SalesQuotationLine.QuotationId == this.QuotationId
+                           && SalesQuotationLine.KCS_QLLVPosition  == this.KCS_QLLVPosition
+                           && SalesQuotationLine.RecId != this.RecId).LineAmount;
+        amount = amount + this.LineAmount;
+
+        if (discPct)
+        {
+            amount  = amount - amount * discPct / 100;
+        }
+        updLine.clear();
+        updLine     = SalesQuotationLine::AVAfindFirstInternalPosition(this.QuotationId, this.KCS_QLLVPosition);
+        qty         = updLine.SalesQty ? updLine.SalesQty : 1;
+        priceUnit   = updLine.PriceUnit ? updLine.PriceUnit : 1;
+
+        amount = decRound((amount / qty), 2);
+        amount = amount * qty;
+        this.KCS_QLLVPrice  = amount / qty * priceUnit;
+        this.KCS_QLLVAmount = this.KCS_QLLVPrice * qty / priceUnit;     
+
+        SalesQuotationTable::AVASetQuotNotPosted(this.QuotationId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAfindFirstInternalPosition</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_quotationId">QuotationIdBase</param>
+    /// <param name = "_lVPosition">KCS_QLLVPosition</param>
+    /// <returns>SalesQuotationLine</returns>
+    static SalesQuotationLine  AVAfindFirstInternalPosition(QuotationIdBase   _quotationId, KCS_QLLVPosition _lVPosition)
+    {
+        SalesQuotationLine      salesQuotationLine;
+
+        select firstonly salesQuotationLine where salesQuotationLine.QuotationId                == _quotationId      &&
+                                                  salesQuotationLine.KCS_QLLVPosition           == _lVPosition   &&
+                                                   salesQuotationLine.KCS_QLInternalPosition    == 1;
+        return salesQuotationLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVASetLVPrices</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_salesQuotationLine">SalesQuotationLine</param>
+    /// <param name = "_updateCurLine">boolean</param>
+    void AVASetLVPrices(SalesQuotationLine _salesQuotationLine, boolean _updateCurLine = true)
+    {
+        SalesQuotationLine  updLine;
+        Amount              amount;
+        PriceUnit           priceUnit;
+        Qty                 qty;
+        DiscPct             discPct;
+
+        if (_salesQuotationLine.KCS_QLInternalPosition)     // nur wenn Mitglied einer Stützweitengruppe
+        {
+            discPct = _salesQuotationLine.salesQuotationTable().DiscPercent;
+
+            if (!_salesQuotationLine.KCS_CRMIsAlternativeLine)
+            {
+                amount = (select sum(LineAmount) from SalesQuotationLine
+                        where SalesQuotationLine.QuotationId == _salesQuotationLine.QuotationId
+                            && SalesQuotationLine.KCS_QLLVPosition  == _salesQuotationLine.KCS_QLLVPosition
+                            && SalesQuotationLine.RecId             != _salesQuotationLine.RecId).LineAmount;
+
+                amount = amount + _salesQuotationLine.LineAmount;
+            }
+            else
+            {
+                while select updLine where updLine.QuotationId == _salesQuotationLine.QuotationId
+                                    && updLine.KCS_QLLVPosition == _salesQuotationLine.KCS_QLLVPosition
+                {
+                    if (updLine.LineAmount)
+                    {
+                        amount += updLine.LineAmount;
+                    }
+                    else
+                    {
+                        amount += updLine.SalesPrice * updLine.SalesQty / (updLine.PriceUnit ? updLine.PriceUnit : 1);
+                    }
+                }
+            }
+
+            if (discPct)
+            {
+                amount  = amount - amount * discPct / 100;
+            }
+
+            updLine.clear();
+            updLine     = SalesQuotationLine::AVAfindFirstInternalPosition(_salesQuotationLine.QuotationId,_salesQuotationLine.KCS_QLLVPosition);
+            if (updLine.RecId   == _salesQuotationLine.RecId)
+            {
+                qty         = _salesQuotationLine.SalesQty ? _salesQuotationLine.SalesQty : 1;
+                priceUnit   = _salesQuotationLine.PriceUnit ? _salesQuotationLine.PriceUnit : 1;
+            }
+            else
+            {
+                qty         = updLine.SalesQty ? updLine.SalesQty : 1;
+                priceUnit   = updLine.PriceUnit ? updLine.PriceUnit : 1;
+            }
+
+            //--> KCS/RIPSK/LU_TASK1235001785/25.10.2010
+            amount = decRound((amount / qty), 2);
+            amount = amount * qty;
+            //<-- KCS/RIPSK/LU_TASK1235001785/25.10.2010
+
+            updLine.clear();
+            while select forupdate updLine
+        where   updLine.QuotationId         == _salesQuotationLine.QuotationId
+            &&  updLine.KCS_QLLVPosition    == _salesQuotationLine.KCS_QLLVPosition
+            && updLine.RecId != _salesQuotationLine.RecId
+            {
+                updLine.KCS_QLLVPrice  = amount / qty * priceUnit;
+                updLine.KCS_QLLVAmount = updLine.KCS_QLLVPrice * qty / priceUnit;
+                ttsbegin;
+                updLine.doUpdate();
+                ttscommit;
+            }
+            if (_updateCurLine)
+            {
+                _salesQuotationLine.KCS_QLLVPrice = amount / qty * priceUnit;
+                _salesQuotationLine.KCS_QLLVAmount = amount;
+            }
+        }
+        SalesQuotationTable::AVASetQuotNotPosted(_salesQuotationLine.QuotationId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromInventTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_inventTable">InventTable</param>
+    public void initFromInventTable(InventTable _inventTable)
+    {
+        KCS_PriceDate locKCS_PriceDate;
+        
+        next initFromInventTable(_inventTable);
+
+        if (!this.KCS_GAEBOZ)
+        {
+            this.SalesQty = 0;
+        }
+        else
+        {
+            if (!KCS_GAEBPos::existOZ(this.salesQuotationTable().KCS_GAEBImportID, this.KCS_GAEBOZ))
+            {
+                this.SalesQty = 0;
+            }
+        }
+        
+        locKCS_PriceDate = this.AVAPriceDate();
+
+        this.AVAPriceSurchargeCode = _inventTable.avaGetPriceSurchargeCode();
+
+        if(this.AVAPriceSurchargeCode)
+        {
+            if(this.KCS_PriceDate == dateNull())
+            {
+                this.AVAPriceSurchargePercentage    = _inventTable.avaGetPriceSurchargePercentage(this.AVAPriceSurchargeCode);
+            }
+            else
+            {
+                this.avaSetSurchargeValues();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetSurchargeValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaSetSurchargeValues</c> method.
+    /// </summary>
+   public void avaSetSurchargeValues()
+    {
+        if(this.AVAPriceSurchargeCode)
+        {
+            if(this.KCS_PriceDate == dateNull())
+            {
+                this.AVAPriceSurchargePercentage    = AVAPriceSurchargeValues::find(this.AVAPriceSurchargeCode).Percentage;
+            }
+            else
+            {
+                this.AVAPriceSurchargePercentage    = AVAPriceSurchargeValues::findAtDate(this.AVAPriceSurchargeCode, this.KCS_PriceDate).Percentage;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setDeliveryDateControlType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_inventDimId">_inventDimId</param>
+    /// <param name = "_salesQuotationTable">_salesQuotationTable</param>
+    public void setDeliveryDateControlType(InventDimId _inventDimId, SalesQuotationTable _salesQuotationTable)
+    {
+        next setDeliveryDateControlType(_inventDimId,_salesQuotationTable);
+        this.DeliveryDateControlType = AVASalesParameters::find().SalesQuotationNoDlvDateControl == NoYes::Yes ?  SalesDeliveryDateControlType::None : this.DeliveryDateControlType;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAgetHK2SalesUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// KCS_getHK2SalesUnit from AX2009
+    /// </summary>
+    /// <returns>KCS_HK2</returns>
+    display KCS_HK2 AVAgetHK2SalesUnit()
+    {
+        /*PriceUnit   priceUnit = UnitConvert::qty((this.PriceUnit ? this.PriceUnit : 1),
+                                               this.SalesUnit, this.inventTable().inventUnitId(), this.ItemId);*/
+        PriceUnit                       priceUnit;
+        InventTable                     locInventTable = this.inventTable();
+        TransDate                       transDate = this.KCS_PriceDate != dateNull() ? this.KCS_PriceDate : DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());        
+        if(locInventTable.inventItemSetupSupplyType().DefaultOrderType == ReqPOType::Production) 
+        {
+            return locInventTable.inventTableModuleSales().NDX_showHK2current(transDate) * this.PriceUnit / 1000;
+        }
+        else
+        {
+            if(locInventTable.inventUnitId() != this.SalesUnit)
+            {
+                UnitOfMeasureConverter_Product  unitConverter;
+                unitConverter = UnitOfMeasureConverter_Product::construct();
+                unitConverter.parmProduct(InventTable::find(this.ItemId).Product);
+                unitConverter.parmFromUnitOfMeasure(UnitOfMeasure::unitOfMeasureIdBySymbol(this.SalesUnit));
+                unitConverter.parmToUnitOfMeasure(UnitOfMeasure::unitOfMeasureIdBySymbol(locInventTable.inventUnitId()));
+                unitConverter.parmRoundAbsoluteValue(NoYes::Yes);
+                unitConverter.parmApplyRounding(NoYes::Yes);
+                priceUnit = unitConverter.convertValue(this.PriceUnit ? this.PriceUnit : 1);
+            }
+            else
+            {
+                priceUnit = this.PriceUnit ? this.PriceUnit : 1;
+            }
+
+            //return this.AVAgetHK2perQty(priceUnit) * priceUnit;
+            if(AVASalesParameters::find().HKFromSupportTable)
+            {
+                return this.AVAgetNDGHK2perQty();
+            }
+            else
+            {
+                return this.AVAgetHK2perQty(priceUnit); // priceUnit already gets multiplied in deeper function InventTable.KCS_GetHV1perQty(...)
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAgetHK2perQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// KCS_getHK2perQty from AX2009
+    /// </summary>
+    /// <param name = "_qty">Qta</param>
+    /// <returns>KCS_HK2</returns>
+    display KCS_HK2 AVAgetHK2perQty(Qty _qty=1)
+    {
+        InventTable     locinventTable = this.inventTable();
+        InventTableModule inventTablePurch =  locinventTable.inventTableModulePurch();
+        AmountMST         hk2PerPriceUnit; 
+        //return this.inventTable().AVAGetHK2perQty(_qty, this.InventDimId, this.AVAPriceDate(), true, true);
+        //Qty    purchUnitQty = UnitOfMeasureConverter::convert(1000,UnitOfMeasure::findBySymbol(this.SalesUnit).RecId,UnitOfMeasure::findBySymbol(inventTablePurch.UnitId).RecId,NoYes::No,locinventTable.Product);
+        Qty    purchUnitQty = UnitOfMeasureConverter::convert(inventTablePurch.PriceUnit,UnitOfMeasure::findBySymbol(inventTablePurch.UnitId).RecId,UnitOfMeasure::findBySymbol(this.SalesUnit).RecId,NoYes::No,locinventTable.Product);
+        hk2PerPriceUnit =    locinventTable.AVAGetHK2perQty(1, this.InventDimId, this.AVAPriceDate(), true, true);
+        //return locinventTable.AVAGetHK2perQty((purchUnitQty * _qty)/1000, this.InventDimId, this.AVAPriceDate(), true, true) / inventTablePurch.PriceUnit;
+        return _qty *   hk2PerPriceUnit / purchUnitQty  ;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAgetNDGHK2perQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// display method that calculates HK2 based on the table AVAHK2NDG
+    /// </summary>
+    /// <returns>KCS_HK2</returns>
+    display KCS_HK2 AVAgetNDGHK2perQty()
+    {
+        AVAHK2p1000 avaHK2per1000 = AVAHK2NDG::getHK2p1000(this.ItemId);
+
+        return avaHK2per1000 / 1000;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAPriceDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// KCS_PriceDate from AX2009
+    /// </summary>
+    /// <returns>KCS_PriceDate</returns>
+    KCS_PriceDate AVAPriceDate()
+    {
+        if (this.KCS_PriceDate)
+        {
+            return this.KCS_PriceDate;
+        }
+
+        if (this.salesQuotationTable().KCS_PriceDate)
+        {
+            return this.salesQuotationTable().KCS_PriceDate;
+        }
+
+        return DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcalcHKQuotCurrency</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE calc AVAHKQuotCurrency
+    /// </summary>
+    /// <returns>AVAHKQuotCurrency</returns>
+    AVAHKQuotCurrency   AVAcalcHKQuotCurrency()
+    {
+        AVAHKQuotCurrency ret;
+
+        if (this.KCS_NotCalculated)
+        {   
+            ret = this.KCS_SonderHK;
+        }
+        else
+        {
+            ret = this.KCS_HK2;
+        }
+        
+        //ret = CurrencyExchangeHelper::amountCur2MST(ret, this.CurrencyCode); 
+
+        if (this.salesQuotationTable().KCS_LimitPriceExchRate > 0)
+        {
+            ret = ret * this.salesQuotationTable().KCS_LimitPriceExchRate / 100;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAgetLimitFactor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE copied from SalesQuotationTable.KCS_getFactor and modified
+    /// </summary>
+    /// <param name = "groupName">KCS_GroupNameBase</param>
+    /// <param name = "itemId">ItemId</param>
+    /// <returns>KCS_LimitFactorUnitFactor</returns>
+    KCS_LimitFactorUnitFactor AVAgetLimitFactor(KCS_GroupNameBase groupName, ItemId itemId)
+    {
+        InventTable         inventTable;
+        KCS_LimitFactors    kcs_LimitFactors;
+
+        // Artikelsuche
+        select firstonly UnitFactor from kcs_LimitFactors where kcs_LimitFactors.ItemRelation == itemId &&
+                                                            kcs_LimitFactors.GroupName == groupName &&
+                                                            kcs_LimitFactors.ItemCode == 0;
+        if (kcs_LimitFactors.UnitFactor)
+        {
+            return kcs_LimitFactors.UnitFactor;
+        }
+
+        // Gruppensuche
+        select firstonly KCS_GoodsID from inventTable where inventTable.ItemId == itemId;
+        select firstonly UnitFactor from kcs_LimitFactors where kcs_LimitFactors.ItemRelation == inventTable.KCS_GoodsID &&
+                                                            kcs_LimitFactors.GroupName == groupName &&
+                                                            kcs_LimitFactors.ItemCode == 1;
+        if (kcs_LimitFactors.UnitFactor)
+        {
+            return kcs_LimitFactors.UnitFactor;
+        }
+
+        // Globalfaktor
+        select firstonly UnitFactor from kcs_LimitFactors where kcs_LimitFactors.GroupName == groupName &&
+                                                            kcs_LimitFactors.ItemCode == 2;
+
+        return kcs_LimitFactors.UnitFactor;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcalcLimitUnitFactor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE calc AVALimitUnitFactor
+    /// </summary>
+    /// <returns>KCS_LimitFactorUnitFactor</returns>
+    KCS_LimitFactorUnitFactor AVAcalcLimitUnitFactor()
+    {
+        KCS_LimitFactorUnitFactor   ret;
+        SalesQuotationTable         salesQuotationTable;
+
+        salesQuotationTable = this.salesQuotationTable();
+        ret = this.AVAgetLimitFactor(salesQuotationTable.KCS_LimitGroupName, this.ItemId);
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcalcLimitPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_specialDiscQuotation">_specialDiscQuotation</param>
+    /// <returns>_specialDiscQuotation</returns>
+    KCS_LimitPrice AVAcalcLimitPrice(AVASpecialDiscQuotation        _specialDiscQuotation = null)
+    {
+        KCS_LimitPrice              ret;
+        AVASpecialDiscQuotation     specialDiscQuotation;
+        real                        factorSD1, factorSD2, factorSD3, factorMaxBonus;
+        SalesQuotationTable         salesQuotationTable = this.salesQuotationTable();
+
+        if (_specialDiscQuotation != null)
+        {
+            specialDiscQuotation = _specialDiscQuotation;    
+        }
+        else
+        {
+            specialDiscQuotation = AVASpecialDiscQuotation::find(this.QuotationId);
+        }
+
+        if (specialDiscQuotation)
+        {
+            factorSD1 = specialDiscQuotation.SpecialDiscountPct1 ? (1-(specialDiscQuotation.SpecialDiscountPct1/100)) : 1;
+            factorSD2 = specialDiscQuotation.SpecialDiscountPct2 ? (1-(specialDiscQuotation.SpecialDiscountPct2/100)) : 1;
+            factorSD3 = specialDiscQuotation.SpecialDiscountPct3 ? (1-(specialDiscQuotation.SpecialDiscountPct3/100)) : 1;
+        }
+        factorMaxBonus = salesQuotationTable.KCS_MaxBonusAmount ? (1-(salesQuotationTable.KCS_MaxBonusAmount/100)) : 1;
+
+        if (!this.AVAHKQuotCurrency)
+        {
+            this.AVAHKQuotCurrency = this.AVAcalcHKQuotCurrency();
+        }
+        if (!this.KCS_LimitUnitFactor)
+        {
+            this.KCS_LimitUnitFactor      = this.AVAcalcLimitUnitFactor();
+        }
+        ret = this.AVAHKQuotCurrency * this.KCS_LimitUnitFactor / factorSD1 / factorSD2 / factorSD3 / factorMaxBonus;
+
+        //ret = CurrencyExchangeHelper::amount(ret, this.CurrencyCode);
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcalcLimitPricePuffer</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE calc KCS_LimitPricePuffer
+    /// </summary>
+    /// <returns>KCS_LimitPricePuffer</returns>
+    KCS_LimitPricePuffer AVAcalcLimitPricePuffer()
+    {
+        KCS_LimitPricePuffer    ret;
+        SalesPrice              salesPrice;
+
+
+        if (!this.KCS_LimitPrice || !this.SalesPrice)
+        {
+            return -999.99;
+        }
+
+        if (this.KCS_CalcSalesPrice)
+        {
+            salesPrice = this.AVAcalcDiscPercent() ? this.KCS_CalcSalesPrice - (this.AVAcalcDiscPercent() * (this.KCS_CalcSalesPrice / 100)) : this.KCS_CalcSalesPrice;
+            ret = salesPrice - this.KCS_LimitPrice;
+            ret = salesPrice ? (ret * 100) / salesPrice : 0;
+
+        }
+        else
+        {
+            salesPrice = this.discPercent() ? this.SalesPrice - (this.discPercent() * (this.SalesPrice / 100)) : this.SalesPrice;
+            ret = salesPrice - this.KCS_LimitPrice;
+            ret = salesPrice ? (ret * 100) / salesPrice : 0;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAHKQuotFactor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_salesQuotationLine">SalesQuotationLine</param>
+    /// <returns>AVAHKQuotFactor</returns>
+    public static display AVAHKQuotFactor AVAHKQuotFactor(SalesQuotationLine _salesQuotationLine)
+    {
+        AVAHKQuotFactor              ret;
+        AVASpecialDiscQuotation     specialDiscQuotation;
+        real                        factorSD1, factorSD2, factorSD3, factorMaxBonus;
+        SalesQuotationTable         salesQuotationTable = _salesQuotationLine.salesQuotationTable();
+
+        specialDiscQuotation = AVASpecialDiscQuotation::find(_salesQuotationLine.QuotationId);
+
+        if (specialDiscQuotation)
+        {
+            factorSD1 = specialDiscQuotation.SpecialDiscountPct1 ? (1-(specialDiscQuotation.SpecialDiscountPct1/100)) : 1;
+            factorSD2 = specialDiscQuotation.SpecialDiscountPct2 ? (1-(specialDiscQuotation.SpecialDiscountPct2/100)) : 1;
+            factorSD3 = specialDiscQuotation.SpecialDiscountPct3 ? (1-(specialDiscQuotation.SpecialDiscountPct3/100)) : 1;
+        }
+        factorMaxBonus = salesQuotationTable.KCS_MaxBonusAmount ? (1-salesQuotationTable.KCS_MaxBonusAmount/100) : 1;
+
+        ret = (_salesQuotationLine.SalesPrice * factorSD1 * factorSD2 * factorSD3 * factorMaxBonus) / (_salesQuotationLine.AVAHKQuotCurrency ? _salesQuotationLine.AVAHKQuotCurrency : 1);
+
+        return ret;
+
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVALPFactor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_salesQuotationLine">SalesQuotationLine</param>/// 
+    /// <returns>AVALPFactor</returns>
+    public static display AVALPFactor AVALPFactor(SalesQuotationLine _salesQuotationLine)
+    {
+        AVALPFactor ret;
+
+        ret = _salesQuotationLine.SalesPrice / (_salesQuotationLine.KCS_LPSalesPrice ? _salesQuotationLine.KCS_LPSalesPrice : 1);
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>existMultipleItem</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE from AX2009 KCS_ExistMultipleItem
+    /// </summary>
+    /// <param name = "_salesQuotationLine">SalesQuotationLine</param> 
+    /// <returns>boolean</returns> 
+    public static boolean existMultipleItem(SalesQuotationLine _salesQuotationLine)
+    {
+        SalesQuotationLine  salesQuotationLine;
+        InventTable         inventTable     = _salesQuotationLine.inventTable();
+        InventDim           inventDim       = _salesQuotationLine.inventDim();
+        InventDim           inventDimLocal;
+
+
+        select firstonly salesQuotationLine
+                index   QuotationItemIdx
+                where   salesQuotationLine.QuotationId      == _salesQuotationLine.QuotationId
+                &&      salesQuotationLine.ItemId           == _salesQuotationLine.ItemId
+                &&      salesQuotationLine.RecId            != _salesQuotationLine.RecId
+                #AVAInventDimJoinPrice(salesQuotationLine.InventDimId, inventDimLocal, inventDim, inventTable);
+
+        return salesQuotationLine.RecId != 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCountSimilarItems</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns the number of quotation lines with the same itemId
+    /// </summary>
+    /// <param name = "_quotationId">QuotationId</param>
+    /// <param name = "_itemId">ItemId</param>
+    /// <returns>int</returns>
+    public static int64 avaCountSimilarItems(QuotationId _quotationId, ItemId _itemId)
+    {
+        SalesQuotationLine  salesQuotationLine;
+
+        select count(RecId) from salesQuotationLine
+                index   QuotationItemIdx
+                where   salesQuotationLine.QuotationId      == _quotationId
+                &&      salesQuotationLine.ItemId           == _itemId;
+
+        return salesQuotationLine.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAupdateCalcFieldsQuotationLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE from AX2009 KCS_updateCalcFieldsQuotationLine
+    /// </summary>
+    /// <param name = "_salesQuotationLine">SalesQuotationLine</param>
+    /// <param name = "_calcMark">KCS_CalcMark</param>
+    void AVAupdateCalcFieldsQuotationLine(SalesQuotationLine _salesQuotationLine = this, KCS_CalcMark _calcMark = '')
+    {
+        SalesQuotationLine  localSalesQuotationLine;
+        amount              prevAmount;
+        InventTable         localInventTable = _salesQuotationLine.inventTable();   
+        InventDim           inventDimLocal, inventDim;  
+        //SalesQuotationTable sqt;
+
+        inventDim = _salesQuotationLine.inventDim();                                
+
+        while select forupdate localSalesQuotationLine
+                        index   QuotationItemIdx                                                
+        where   localSalesQuotationLine.QuotationId      == _salesQuotationLine.QuotationId
+                    &&      localSalesQuotationLine.ItemId           == _salesQuotationLine.ItemId
+                    &&      localSalesQuotationLine.RecId            != _salesQuotationLine.RecId
+                    #AVAInventDimJoinPrice(localSalesQuotationLine.InventDimId, inventDimLocal, inventDim, localInventTable)          
+        {
+            ttsbegin;
+            prevAmount                                         = localSalesQuotationLine.LineAmount;
+            localSalesQuotationLine.KCS_CalcLinePercent        = _salesQuotationLine.KCS_CalcLinePercent;
+            localSalesQuotationLine.KCS_CalcMultiLnPercent     = _salesQuotationLine.KCS_CalcMultiLnPercent;
+            localSalesQuotationLine.KCS_CalcSalesPrice         = _salesQuotationLine.KCS_CalcSalesPrice;
+            localSalesQuotationLine.KCS_CalcUseEndDisc         = _salesQuotationLine.KCS_CalcUseEndDisc;
+            localSalesQuotationLine.KCS_CalcUseLineDisc        = _salesQuotationLine.KCS_CalcUseLineDisc;
+            localSalesQuotationLine.KCS_CalcUseMultilineDisc   = _salesQuotationLine.KCS_CalcUseMultilineDisc;
+            localSalesQuotationLine.SalesPrice                 = _salesQuotationLine.SalesPrice;
+            localSalesQuotationLine.LineAmount                 = localSalesQuotationLine.calcLineAmountForced();
+            localSalesQuotationLine.KCS_calcMark               = _calcMark;
+            localSalesQuotationLine.KCS_MultipleItem           = 'X'; 
+            localSalesQuotationLine.KCS_LimitPrice             = localSalesQuotationLine.AVAcalcLimitPrice();
+            localSalesQuotationLine.KCS_LimitPricePuffer       = localSalesQuotationLine.AVAcalcLimitPricePuffer();
+            localSalesQuotationLine.AVASetCalcPDPPrice();
+
+            if (_salesQuotationLine.KCS_NotCalculated)
+            {
+                localSalesQuotationLine = this.AVAcopyNotCalcLines(_salesQuotationLine, localSalesQuotationLine);
+            }
+
+            localSalesQuotationLine.doUpdate();
+
+            ttscommit;
+        }
+        /*ttsbegin;
+        sqt = _salesQuotationLine.salesQuotationTable(true);
+        sqt.AVAPosted = NoYes::No;
+        sqt.AVAPostedEnum = AVAPostedEnum::NotPosted;
+        sqt.doUpdate();
+        ttscommit;*/
+        SalesQuotationTable::AVASetQuotNotPosted(_salesQuotationLine.QuotationId);
+
+        /*if (FormDataUtil::isFormDataSource(this))
+        {
+            FormDataUtil::getFormDataSource(this).research(true);
+        }*/
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcopyNotCalcLines</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE from AX2009 KCS_copyNotCalcLines
+    /// </summary>
+    /// <param name = "_fromSQL">SalesQuotationLine</param>
+    /// <param name = "_toSQL">SalesQuotationLine</param>
+    /// <returns>SalesQuotationLine</returns>
+    SalesQuotationLine AVAcopyNotCalcLines(SalesQuotationLine _fromSQL, SalesQuotationLine _toSQL = this)
+    {
+        _toSQL.KCS_SonderHK         = _fromSQL.KCS_SonderHK;
+        _toSQL.KCS_ModelNumber      = _fromSQL.KCS_ModelNumber;
+        _toSQL.Name                 = _fromSQL.Name;
+        _toSQL.NDXProductName1      = _fromSQL.NDXProductName1;
+        _toSQL.NDXProductName2      = _fromSQL.NDXProductName2;
+
+        _toSQL.KCS_LimitPrice             = _toSQL.AVAcalcLimitPrice();
+        _toSQL.KCS_LimitPricePuffer       = _toSQL.AVAcalcLimitPricePuffer();
+
+        return _toSQL;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcalcDiscPercent</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE from AX2009 KCS_calcDiscPercent
+    /// </summary>
+    /// <returns>DiscPct</returns>
+    DiscPct AVAcalcDiscPercent()
+    {
+        if (!this.KCS_CalcUseLineDisc)
+        {
+            this.KCS_CalcLinePercent = 0;
+        }
+
+        if (!this.KCS_CalcUseMultilineDisc)
+        {
+            this.KCS_CalcMultiLnPercent = 0;
+        }
+
+        return PriceDisc::discPercent(SalesParameters::find().Disc, this.KCS_calcLinePercent, this.KCS_calcMultiLnPercent);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVASetCalcPDPPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE from AX2009 KCS_SetCalcPDPPrice
+    /// </summary>
+    void AVASetCalcPDPPrice()
+    {
+        // Berechnen/Aktualisieren VRP KCS_CalcPDPrice
+        Percent p = this.AVAcalcDiscPercent()/100;
+
+        this.KCS_CalcPDPPrice = this.KCS_CalcSalesPrice * (1 - p);
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVALimitPriceBufferNegative</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// displays redDiamond when limitPuffer lower 0
+    /// </summary>
+    /// <returns>container</returns>
+    [SysClientCacheDataMethodAttribute(true)]                                     
+    server display container AVALimitPriceBufferNegative()
+    {
+        #resAppl
+        container avaImageContainer;
+
+        if (this.KCS_LimitPricePuffer < 0)
+        {
+            avaImageContainer = ImageReference::constructForSymbol(#RedDiamond).pack();
+        }
+
+        return avaImageContainer;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showDocTextImage</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// display method showing if documents exist for record
+    /// </summary>
+    /// <param name = "_this">SalesQuotationLine</param>
+    /// <returns>'T' if documents exist and 'o' if not</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public static display container showDocTextImage(SalesQuotationLine _this)
+    {
+        ImageReference  imageReference;
+        container       imageContainer;
+        #resAppl
+
+        if (_this.RecId && DocuRef::exist(_this.DataAreaId, _this.TableId, _this.RecId))
+        /*if ((select firstonly docuRef
+            where docuRef.RefCompanyId  == _this.DataAreaId
+                && docuRef.RefTableId   == _this.TableId
+                && docuRef.RefRecId     == _this.RecId).RecId) */
+        
+        {
+            imageReference = ImageReference::constructForSymbol(ImageReferenceSymbol::Attach);
+            return imageReference.pack();
+        }
+        else
+        {
+            return imageContainer;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAUpdateGAEBOZ</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void AVAUpdateGAEBOZ()
+    {
+        SalesQuotationLine  sql;
+        Qty                 GAEBQty;
+
+        if (this.KCS_QLInternalPosition && this.KCS_GAEBOZ)
+        {
+            GAEBQty = KCS_GAEBPos::find(this.SalesQuotationTable().KCS_GAEBImportID, this.KCS_GAEBOZ).ArtQty;
+
+            while select forupdate sql where sql.QuotationId == this.QuotationId
+                                          && sql.KCS_QLLVPosition == this.KCS_QLLVPosition
+                                          && sql.RecId != this.RecId
+            {
+                ttsbegin;
+                sql.KCS_GAEBOZ = this.KCS_GAEBOZ;
+                if (!sql.SalesQty)
+                {
+                    sql.SalesQty = GAEBQty;
+                    sql.salesQtyModified();
+                    sql.AVAsetQty();
+                }
+                sql.doUpdate();
+                ttscommit;
+            }
+        }
+        else if (this.KCS_QLInternalPosition && !this.KCS_GAEBOZ)
+        {
+            while select forupdate sql where sql.QuotationId == this.QuotationId
+                                          && sql.KCS_QLLVPosition == this.KCS_QLLVPosition
+                                          && sql.RecId != this.RecId
+            {
+                ttsbegin;
+                sql.KCS_GAEBOZ = this.KCS_GAEBOZ;
+                sql.doUpdate();
+                ttscommit;
+            }
+
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAsetAlternativeLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void AVAsetAlternativeLine()
+    {
+        SalesQuotationLine  sql;
+
+        if (this.KCS_QLLVPosition && this.KCS_QLInternalPosition)
+        {
+            while select forupdate sql where sql.QuotationId == this.QuotationId
+                                          && sql.KCS_QLLVPosition == this.KCS_QLLVPosition
+                                          && sql.RecId != this.RecId
+            {
+                ttsbegin;
+                sql.KCS_CRMIsAlternativeLine = this.KCS_CRMIsAlternativeLine;
+                if (sql.KCS_CRMIsAlternativeLine)
+                {
+                    sql.LineAmount = 0;
+                }
+                else
+                {
+                    sql.LineAmount = sql.calcLineAmountForced();
+                }
+                //sql.doUpdate();
+                sql.update();
+                ttscommit;
+            }
+            this.modifiedField(fieldNum(SalesQuotationLine, KCS_Span));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaItemUsageId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// desigend from AVA
+    /// </summary>
+    /// <returns>itemUsageId</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display KCS_ItemUsageId avaItemUsageId()
+    {
+        KCS_ItemUsageId  itemUsageId;
+
+        itemUsageId =  InventTable::find(this.ItemId).KCS_ItemUsageId;
+
+        return itemUsageId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    void  initValue()
+    {
+        next initValue();
+        this.DeliveryDateControlType   = AVASalesParameters::find().SalesQuotationNoDlvDateControl == NoYes::Yes ? SalesDeliveryDateControlType::None : this.DeliveryDateControlType;
+        //SalesDeliveryDateControlType     Test = this.DeliveryDateControlType;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromSalesQuotationTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesQuotationTable">_salesQuotationTable</param>
+    /// <param name = "_ignoreInventDim">_ignoreInventDim</param>
+    void  initFromSalesQuotationTable(SalesQuotationTable   _salesQuotationTable, boolean _ignoreInventDim)
+    {
+        next initFromSalesQuotationTable(_salesQuotationTable,_ignoreInventDim);
+        this.DeliveryDateControlType   = AVASalesParameters::find().SalesQuotationNoDlvDateControl == NoYes::Yes ? SalesDeliveryDateControlType::None : _salesQuotationTable.DeliveryDateControlType;
+        //SalesDeliveryDateControlType     Test = this.DeliveryDateControlType;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    void  insert(   boolean     _dropInvent,
+                    boolean     _findMarkup,
+                    Common      _childBuffer,
+                    boolean     _skipsalesQuotationTableUpdate)
+    {
+        if(SalesQuotationLine::avaCountSimilarItems(this.QuotationId, this.ItemId) >= 1)
+        {
+            //this.avaAddDuplicateMark();
+            this.KCS_MultipleItem = 'X';
+        }
+
+        //if (!AVASalesParameters::find().SalesQuotImportModus)
+        if (!SysUserInfo::find(curUserId()).AVADataImportUser)
+        {
+            this.avaUpdateHK2();
+        }
+        else
+        {
+            this.AVAHKQuotCurrency = this.AVAcalcHKQuotCurrency();
+        }
+
+        next insert(_dropInvent, _findMarkup, _childBuffer, _skipsalesQuotationTableUpdate);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaAddDuplicateMark</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Adds duplicate marks to lines with duplicate itemIds
+    /// </summary>
+    public void avaAddDuplicateMark()
+    {
+        SalesQuotationLine avaSalesQuotationLineLoc;
+
+        ttsbegin;
+
+        update_recordset avaSalesQuotationLineLoc
+            setting KCS_MultipleItem = 'X'
+            where avaSalesQuotationLineLoc.ItemId == this.itemId
+            //&& avaSalesQuotationLineLoc.QuotationId == this.quotationId;
+            && avasalesquotationlineloc.QuotationId == this.QuotationId
+            && avasalesquotationlineloc.RecId != this.RecId;
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaRemoveDuplicateMark</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Removes duplicate marks from lines with unique itemIds
+    /// </summary>
+    /// <param name = "_quotationId">QuotationId</param>
+    /// <param name = "_itemId">ItemId</param>
+    public static void avaRemoveDuplicateMark(QuotationId _quotationId, ItemId _itemId)
+    {
+        SalesQuotationLine avaSalesQuotationLineLoc;
+
+        ttsbegin;
+
+        update_recordset avaSalesQuotationLineLoc
+            setting KCS_MultipleItem = ''
+            where avaSalesQuotationLineLoc.ItemId == _itemId
+            && avaSalesQuotationLineLoc.QuotationId == _quotationId;
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getLastQLLPosition</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>KCS_QLLVPosition</returns>
+    public KCS_QLLVPosition getLastQLLPosition()
+    {
+
+        SalesQuotationLine      lastSalesQuotationLine;
+
+        select firstonly KCS_QLLVPosition from lastSalesQuotationLine
+            order by KCS_QLLVPosition DESC
+            where lastSalesQuotationLine.QuotationId == this.QuotationId;
+
+        return lastSalesQuotationLine.KCS_QLLVPosition;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildLineNumFromLVPos</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_010889_SQBuildLineNumFromLVPos
+    /// </summary>
+    /// <returns>LineNum</returns>
+    public LineNum buildLineNumFromLVPos()
+    {
+        LineNum                 ret;
+        KCS_QLLVPosition        lv = this.KCS_QLLVPosition;
+        KCS_QLInternalPosition  internalPos = this.KCS_QLInternalPosition;
+        int64                   lvInt;
+
+        internalPos = internalPos / 100;
+        //lv = subStr(strKeep(lv, '0123456789'), 1, 14);
+        //ret = str2Num(lv) + internalPos;
+        lv = strKeep(lv, '0123456789');
+        while (subStr(lv,1,1) == '0')
+        {
+            lv = subStr(lv, 2, strLen(lv));
+        }
+        lv = subStr(lv, 1, 18);
+
+        lvInt = str2Int64(lv);
+        if (lvInt > realMax())
+        {
+            lv = int642Str(lvInt);
+            lv = subStr(lv, 1, 15);
+            lvInt = str2Int64(lv);
+        }
+        ret = lvInt + internalPos;
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAMaxInternalPosition</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/05/06    AVA_013252_AltItemsWithSpan
+    /// </summary>
+    /// <param name = "_quotationId">QuotationIdBase</param>
+    /// <param name = "_lVPosition">KCS_QLLVPosition</param>
+    /// <returns>KCS_QLInternalPosition</returns>
+    static KCS_QLInternalPosition  AVAMaxInternalPosition(QuotationIdBase   _quotationId, KCS_QLLVPosition _lVPosition)
+    {
+        SalesQuotationLine      salesQuotationLine;
+
+        select maxof(KCS_QLInternalPosition) from salesQuotationLine where salesQuotationLine.QuotationId                == _quotationId      &&
+                                                  salesQuotationLine.KCS_QLLVPosition           == _lVPosition;
+        return salesQuotationLine.KCS_QLInternalPosition;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setInventDimIdFromInventDim</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/06/02  AVA_013382_FallbackInventLocation
+    /// </summary>
+    /// <param name = "_inventDim">InventDim</param>
+    public void setInventDimIdFromInventDim(InventDim _inventDim)
+    {
+        InventDim   inventDim;
+
+        inventDim = InventDim::findOrCreate(_inventDim);
+        if (inventDim.InventSiteId && !inventDim.InventLocationId)
+        {
+            inventDim.InventLocationId = InventSite::find(inventDim.InventSiteId).AVAInventLocationIdDefault;
+        }
+
+        next setInventDimIdFromInventDim(inventDim);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

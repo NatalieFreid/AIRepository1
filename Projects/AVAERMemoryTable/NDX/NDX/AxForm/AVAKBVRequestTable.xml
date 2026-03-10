@@ -1,0 +1,4171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>AVAKBVRequestTable</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class AVAKBVRequestTable extends FormRun implements NDXAVAKBVRequestTableFormRicoKalkI,
+SysIFilterConsumerForm, SysIFilterEventHandler
+{
+    Args                        frmArgs;
+
+    KCS_KBVBuildingProjectTable frmKCS_KBVBuildingProjectTable;
+    KCS_KBVRequestTable         frmKCS_KBVRequestTableToCopy;
+    KCS_KBVRequestTable         frmKCS_KBVRequestTableBase;
+
+    HcmWorkerRecId              frmHCMWorkerRecId;
+    Date                        frmToday;
+    DataAreaId                  frmDataAreaId;
+    DataAreaId                  frmDataAreaIdCopyTo;
+
+    AVASecondaryDataAreaIdBPRequests    frmAVASecondaryDataAreaIdBPRequests;
+
+    DialogField                 dialogHCMWorkerRecId;
+
+    DialogRunbase               dialogRunbase;
+    
+    AVASalesParameters          frmAVASalesParameters;
+    AVAForceSecondaryRequest    frmAVAForceSecondaryRequest;
+
+    HCMWorkerRecId              frmHCMWorkerRecIdCallerFilter;
+
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>registerDatasourceOnQueryingEvent</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 16.05.2024
+    /// </summary>
+    public void registerDatasourceOnQueryingEvent()
+    {
+        if (this.args().menuItemName() == menuItemDisplayStr(AVAKBVRequestTableMyOpenWorkerTileDisplay))
+        {
+            KCS_KBVRequestTable_DS.OnQueryExecuting +=eventhandler(this.parmFilterFormQueryEventHandler().applyFilter);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>onFilterChanged</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 16.05.2024
+    /// </summary>
+    public void onFilterChanged()
+    {
+        if (this.args().menuItemName() == menuItemDisplayStr(AVAKBVRequestTableMyOpenWorkerTileDisplay))
+        {
+            KCS_KBVRequestTable_DS.executeQuery();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>quickCreate_DirPartyEntity_InitValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Allows to define defaults on the main data source in the quick create form.
+    /// </summary>
+    /// <param name = "_dirPartyEntityDS">Main data source in the quick create form, will be mapped to ContactPerson table.</param>
+    public void quickCreate_DirPartyEntity_InitValue(FormDataSource _dirPartyEntityDS)
+    {
+        smmBusRelTable smmBusRelTable_loc = smmBusRelTable::findByParty(KCS_KBVInquirerOfTheRequest.DirPartyId);
+        ContactPerson _contactPerson = _dirPartyEntityDS.cursor();
+
+        _contactPerson.initFromArgsRecord(smmBusRelTable_loc);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addFilterPaneRanges</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>addFilterPaneRanges</c> method.
+    /// </summary>
+    public void addFilterPaneRanges()
+    {
+        QueryBuildDataSource kcs_KBVRequestTableQBDS;
+
+        kcs_KBVRequestTableQBDS = KCS_KBVRequestTable_DS.query().dataSourceName(KCS_KBVRequestTable_DS.name());
+        
+        SysQuery::findOrCreateRange(kcs_KBVRequestTableQBDS, fieldNum(KCS_KBVRequestTable, KCS_KBVRequestStatus));
+        SysQuery::findOrCreateRange(kcs_KBVRequestTableQBDS, fieldNum(KCS_KBVRequestTable, KCS_KBVSmmSalesUnitIndoor));
+        SysQuery::findOrCreateRange(kcs_KBVRequestTableQBDS, fieldNum(KCS_KBVRequestTable, AVAWorkerSalesTaker));
+        SysQuery::findOrCreateRange(kcs_KBVRequestTableQBDS, fieldNum(KCS_KBVRequestTable, KCS_KBVModifiedBy));
+
+        if(     frmArgs.menuitemName() == menuItemDisplayStr(AVAKBVRequestTableNotAssigned)
+            ||  frmArgs.menuitemName() == menuItemDisplayStr(AVAKBVRequestTableNotAssignedDueDisplay)
+            ||  frmArgs.menuitemName() == menuItemDisplayStr(AVAKBVRequestTableMyOpen))
+        {
+            kcs_KBVRequestTableQBDS.clearSortIndex();
+            kcs_KBVRequestTableQBDS.addSortField(fieldNum(KCS_KBVRequestTable, KCS_KBVDeliveryDate),    SortOrder::Ascending);
+            kcs_KBVRequestTableQBDS.addSortField(fieldNum(KCS_KBVRequestTable, KCS_KBVPriority),        SortOrder::Descending);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addCallerFilter</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>addCallerFilter</c> method.
+    /// </summary>
+    public void addCallerFilter()
+    {
+        FormRun             locFormRunCaller;
+
+        locFormRunCaller = frmArgs.caller();
+
+        if (formHasMethod(locFormRunCaller, literalStr(getHCMWorkerFilterValue)))
+        {
+            frmHCMWorkerRecIdCallerFilter = locFormRunCaller.getHCMWorkerFilterValue();
+        }
+        if (!frmHCMWorkerRecIdCallerFilter)
+        {
+            frmHCMWorkerRecIdCallerFilter = frmHCMWorkerRecId;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addSecondaryDataAreaInfomation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>addSecondaryDataAreaInfomation</c> method.
+    /// </summary>
+    public void addSecondaryDataAreaInfomation()
+    {
+        KCS_KBVRequestTable locKCS_KBVRequestTable;
+        //KCS_KBVRequestTable locKCS_KBVRequestTableCursor;
+
+        if(     frmArgs.menuitemName() == menuItemDisplayStr(AVAKBVRequestTableNotAssigned)
+            ||  frmArgs.menuitemName() == menuItemDisplayStr(AVAKBVRequestTableNotAssignedDueDisplay)
+            ||  frmArgs.menuitemName() == menuItemDisplayStr(AVAKBVRequestTableMyOpen)                  )
+        {
+            SecondaryDataAreaInformation.visible(true);
+        }
+        if(frmAVASecondaryDataAreaIdBPRequests)
+        {
+            SecondaryDataAreaId.text(frmAVASecondaryDataAreaIdBPRequests);
+            SecondaryKCS_KBVDeliveryDate.dateValue(dateNull());
+            
+            /*
+            locKCS_KBVRequestTableCursor = KCS_KBVRequestTable_DS.cursor();
+            if(locKCS_KBVRequestTableCursor.RecId)
+            {
+                changecompany(frmAVASecondaryDataAreaIdBPRequests)
+                {
+                    locKCS_KBVRequestTable = null;
+
+                    if(frmArgs.menuitemName() == menuItemDisplayStr(AVAKBVRequestTableNotAssigned))
+                    {
+                        select firstonly locKCS_KBVRequestTable
+                        order by locKCS_KBVRequestTable.KCS_KBVDeliveryDate
+                        where   locKCS_KBVRequestTable.KCS_KBVBuildingProjectID == locKCS_KBVRequestTableCursor.KCS_KBVBuildingProjectID
+                            &&  locKCS_KBVRequestTable.AVAWorkerSalesTaker      == 0
+                            &&  locKCS_KBVRequestTable.KCS_KBVRequestStatus     == KCS_KBVRequestStatus::Created;
+                    }
+                        
+                    if(frmArgs.menuitemName() == menuItemDisplayStr(AVAKBVRequestTableMyOpen))
+                    {
+                        select firstonly locKCS_KBVRequestTable
+                        order by locKCS_KBVRequestTable.KCS_KBVDeliveryDate
+                        where   locKCS_KBVRequestTable.KCS_KBVBuildingProjectID == locKCS_KBVRequestTableCursor.KCS_KBVBuildingProjectID
+                            &&  locKCS_KBVRequestTable.AVAWorkerSalesTaker      == frmHCMWorkerRecId
+                            &&  locKCS_KBVRequestTable.KCS_KBVRequestStatus     != KCS_KBVRequestStatus::Refused
+                            &&  locKCS_KBVRequestTable.KCS_KBVModifiedBy        == 0;
+                    }
+
+                    if(locKCS_KBVRequestTable.RecId)
+                    {
+                        SecondaryKCS_KBVDeliveryDate.dateValue(locKCS_KBVRequestTable.KCS_KBVDeliveryDate);
+                    }
+                }
+            }
+            */
+            changecompany(frmAVASecondaryDataAreaIdBPRequests)
+            {
+                locKCS_KBVRequestTable = null;
+
+                if(frmArgs.menuitemName() == menuItemDisplayStr(AVAKBVRequestTableMyOpen))
+                {
+                    select firstonly locKCS_KBVRequestTable
+                    order by locKCS_KBVRequestTable.KCS_KBVDeliveryDate
+                    where   locKCS_KBVRequestTable.AVAWorkerSalesTaker      == frmHCMWorkerRecId
+                        &&  locKCS_KBVRequestTable.KCS_KBVRequestStatus     != KCS_KBVRequestStatus::Refused
+                        &&  locKCS_KBVRequestTable.KCS_KBVRequestStatus     != KCS_KBVRequestStatus::Answered
+                        &&  locKCS_KBVRequestTable.KCS_KBVModifiedBy        == 0;
+                }
+                //if(frmArgs.menuitemName() == menuItemDisplayStr(AVAKBVRequestTableNotAssigned))
+                else // allways calc date even it is not shown but relevant for take over of open requests in secondary company
+                {
+                    select firstonly locKCS_KBVRequestTable
+                    order by locKCS_KBVRequestTable.KCS_KBVDeliveryDate
+                    where   locKCS_KBVRequestTable.AVAWorkerSalesTaker      == 0
+                        &&  locKCS_KBVRequestTable.KCS_KBVRequestStatus     != KCS_KBVRequestStatus::Refused;
+                }
+
+                if(locKCS_KBVRequestTable.RecId)
+                {
+                    SecondaryKCS_KBVDeliveryDate.dateValue(locKCS_KBVRequestTable.KCS_KBVDeliveryDate);
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>init</c> method.
+    /// </summary>
+    public void init()
+    {
+        super();
+
+        frmAVASalesParameters               = AVASalesParameters::find();
+        frmHCMWorkerRecId                   = HcmWorkerLookup::currentWorker();
+        frmToday                            = AVAKBVBuildingProjectHelper::getToday();
+        frmDataAreaId                       = CompanyInfo::find().DataArea; //curExt();
+        frmAVASecondaryDataAreaIdBPRequests = frmAVASalesParameters.SecondaryDataAreaIdBPRequests;
+        frmAVAForceSecondaryRequest         = frmAVASalesParameters.ForceSecondaryRequest;
+
+        this.addFilterPaneRanges();
+
+        this.addCallerFilter();
+
+        KCS_KBVRequestTableFilterFields_KCS_KBVRequestStatus.enabled(true);
+        KCS_KBVRequestTableFilterFields_KCS_KBVSmmSalesUnitIndoor.enabled(true);
+        KCS_KBVRequestTableFilterFields_AVAWorkerSalesTaker.enabled(true);
+        KCS_KBVRequestTableFilterFields_KCS_KBVModifiedBy.enabled(true);
+
+        if(     frmArgs.menuitemName() == menuItemDisplayStr(AVAKBVRequestTableNotAssigned)
+            ||  frmArgs.menuitemName() == menuItemDisplayStr(AVAKBVRequestTableNotAssignedDueDisplay)   )
+        {
+            KCS_KBVRequestTableFilterFields_KCS_KBVSmmSalesUnitIndoor.text(smmSalesUnit::avaGetSalesUnitCurrentWorkerIndoor().SalesUnitId);
+            KCS_KBVRequestTableFilterFields_KCS_KBVSmmSalesUnitIndoor.modified();
+        }
+
+        this.addSecondaryDataAreaInfomation();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setContactPersonNameRel</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>setContactPersonNameRel</c> method.
+    /// </summary>
+    /// <param name="_contactPersonId">
+    ///    <c>ContactPersonId</c> as type
+    /// </param>
+    void  setContactPersonNameRel(ContactPersonId _contactPersonId)
+    {
+        KCS_KBVInquirerOfTheRequest.ContactPersonId = _contactPersonId;
+       // KCS_KBVInquirerOfTheRequest.editContactPersonName_KCS_KBVRelationsToBV(true,KCS_KBVRelationsToBV, _ContactPersonId);
+        KCS_KBVInquirerOfTheRequest_ds.executeQuery();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>editContactPersonName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>editContactPersonName</c> method.
+    /// </summary>
+    /// <param name="_set">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <param name="_name">
+    ///    <c>ContactPersonName</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>ContactPersonName</c> as type
+    /// </returns>
+    edit ContactPersonName  editContactPersonName(boolean _set, ContactPersonName _name)
+    {
+        ContactPersonName                   retVal;
+
+        AVAKBVDirPartyContactPersonHelper   locAVAKBVDirPartyContactPersonHelper;
+
+        locAVAKBVDirPartyContactPersonHelper = new AVAKBVDirPartyContactPersonHelper();
+
+        locAVAKBVDirPartyContactPersonHelper.parmSet(_set);
+        locAVAKBVDirPartyContactPersonHelper.parmDataAreaId(frmDataAreaId);
+        locAVAKBVDirPartyContactPersonHelper.parmDirPartyId(GridKCS_KBVInquirerOfTheRequest_DirPartyId.value());
+        locAVAKBVDirPartyContactPersonHelper.parmDirPartyName('');
+        locAVAKBVDirPartyContactPersonHelper.parmContactPersonId(GridKCS_KBVInquirerOfTheRequest_ContactPersonId.valueStr());
+        locAVAKBVDirPartyContactPersonHelper.parmContactPersonName(_name);
+
+        retVal = locAVAKBVDirPartyContactPersonHelper.getEditContactPersonName();
+
+        GridKCS_KBVInquirerOfTheRequest_ContactPersonId.Text(locAVAKBVDirPartyContactPersonHelper.parmContactPersonId());
+        
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNDXKBVBuildingProject2RicoKalk</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 18.03.24
+    /// </summary>
+    /// <returns>NDXKBVBuildingProject2RicoKalk</returns>
+    public NDXKBVBuildingProject2RicoKalk parmNDXKBVBuildingProject2RicoKalk()
+    {
+        NDXKBVBuildingProject2RicoKalk nDXKBVBuildingProject2RicoKalk;
+        FormRun locFormRunCaller = frmArgs.caller();
+        if (locFormRunCaller is NDXKBVBuildingProjectTableFormRicoKalkI)
+        {
+            NDXKBVBuildingProjectTableFormRicoKalkI nDXKBVBuildingProjectTableFormRicoKalk = locFormRunCaller as NDXKBVBuildingProjectTableFormRicoKalkI;
+            nDXKBVBuildingProject2RicoKalk = nDXKBVBuildingProjectTableFormRicoKalk.parmNDXKBVBuildingProject2RicoKalk();
+        }
+        return nDXKBVBuildingProject2RicoKalk;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>close</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 24-07-2025
+    /// </summary>
+    public void close()
+    {
+        super();
+        if (this.args().caller() is FormRun)
+        {
+            FormRun  buildingProjectForm = this.args().caller();
+         
+            FormDataSource  buildingProjectDS = buildingProjectForm.dataSource('KCS_KBVBuildingProjectTable') ;
+            if (buildingProjectDS)
+            {
+                KCS_KBVBuildingProjectTable     buildingProjectTable;
+                buildingProjectTable.data(buildingProjectDS.cursor());
+                buildingProjectDS.refresh();
+                buildingProjectDS.research(true);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>KCS_KBVRequestTable</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>init</c> method.
+        /// </summary>
+        public void init()
+        {
+            Common                  locCommon;
+            
+            Query                   locQuery;
+            QueryBuildDataSource    locQbds;
+            QueryBuildDataSource    locQbdsBase;
+            QueryBuildRange         locQbr;
+            str                     queryCondition;
+
+            smmBusRelTable          locSmmBusRelTable;
+
+            if(element.args())
+            {
+                frmArgs = new Args();
+                frmArgs = element.args();
+
+                if(frmArgs.record())
+                {
+                    locCommon = frmArgs.record();
+
+                    switch(locCommon.TableId)
+                    {
+                        case Tablenum(KCS_KBVBuildingProjectTable):
+                            frmKCS_KBVBuildingProjectTable  = locCommon;
+                            break;
+
+                        case Tablenum(KCS_KBVRequestTable):
+                            frmKCS_KBVRequestTableToCopy    = locCommon;
+                            frmKCS_KBVBuildingProjectTable  = KCS_KBVBuildingProjectTable::find(frmKCS_KBVRequestTableToCopy.KCS_KBVBuildingProjectID);
+                            break;
+
+                        case Tablenum(smmBusRelTable):
+                            locSmmBusRelTable               = locCommon;
+                            break;
+                    }
+                }
+            
+            }
+
+            super();
+            
+            frmHCMWorkerRecId   = HcmWorkerLookup::currentWorker();
+            /*
+            this.queryBuildDataSource().sortClear();
+            this.queryBuildDataSource().addSortField(fieldNum(KCS_KBVRequestTable, KCS_KBVRequestID), SortOrder::Descending);
+            */
+            locQuery = this.query();
+
+            switch (frmArgs.menuitemName())
+            {
+                case menuItemDisplayStr(AVAKBVRequestTable):
+                    if(frmKCS_KBVBuildingProjectTable.KCS_KBVBuildingProjectID)
+                    {
+                        locQbr      = locQuery.dataSourceTable(tableNum(KCS_KBVRequestTable)).addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVRequestID));
+                        locQbr.value(queryValue(frmKCS_KBVRequestTableToCopy.KCS_KBVRequestID));
+                    }
+                    break;
+                
+                case menuItemDisplayStr(AVAKBVRequestTableBP):
+                    if(frmKCS_KBVBuildingProjectTable.KCS_KBVBuildingProjectID)
+                    {
+                        locQbr      = locQuery.dataSourceTable(tableNum(KCS_KBVRequestTable)).addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVBuildingProjectID));
+                        locQbr.value(queryValue(frmKCS_KBVBuildingProjectTable.KCS_KBVBuildingProjectID));
+                    }
+                    break;
+                /*
+                case menuItemDisplayStr(AVAKBVRequestTableAll):
+                    if(frmKCS_KBVBuildingProjectTable.KCS_KBVBuildingProjectID)
+                    {
+                        //locQbr      = locQuery.dataSourceTable(tableNum(KCS_KBVRequestTable)).addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVBuildingProjectID));
+                        //locQbr.value(queryValue(kcs_KBVBuildingProjectTable.KCS_KBVBuildingProjectID));
+                    }
+                    break;
+
+                case menuItemDisplayStr(AVAKBVRequestTableCopyToUC):
+                    if(frmKCS_KBVRequestTableToCopy.Recid)
+                    {
+                        //KCS_KBVRequestTable_DS.crossCompanyAutoQuery(false);
+                        //KCS_KBVRequestTable_DS.research();
+                        //KCS_KBVRequestTable.clear();
+                        //KCS_KBVRequestTable.initValueCopyToUC(kcs_KBVRequestTableToCopy, curExt());  //ToDo: replace curExt() with target UC
+                    }
+                    break;
+                */
+                case menuItemDisplayStr(AVAKBVRequestTableNotAssigned):
+                    locQbds = SysQuery::findOrCreateDataSource(locQuery, tableNum(KCS_KBVRequestTable));
+                    SysQuery::findOrCreateRange(locQbds, fieldNum (KCS_KBVRequestTable, AVAWorkerSalesTaker)).value(queryValue(0));
+                    SysQuery::findOrCreateRange(locQbds, fieldNum (KCS_KBVRequestTable, KCS_KBVRequestStatus)).value(queryValue(KCS_KBVRequestStatus::Created));
+                    /*if (element.args().callerName() == formStr(AVABuildingProjectsAndSalesQuotations))
+                    {
+                        SysQuery::findOrCreateRange(locQbds, fieldNum (KCS_KBVRequestTable, KCS_KBVDeliveryDate)).value(SysQueryRangeUtil::lessThanDate());
+                    }  */
+                    /*
+                    locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, AVAWorkerSalesTaker));
+                    locQbr.value(queryValue(0));
+                    locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVRequestStatus));
+                    locQbr.value(queryValue(KCS_KBVRequestStatus::Created));
+                    */
+                    break;
+                
+                case menuItemDisplayStr(AVAKBVRequestTableNotAssignedDueDisplay):
+                    locQbds = SysQuery::findOrCreateDataSource(locQuery, tableNum(KCS_KBVRequestTable));
+                    SysQuery::findOrCreateRange(locQbds, fieldNum (KCS_KBVRequestTable, AVAWorkerSalesTaker)).value(queryValue(0));
+                    SysQuery::findOrCreateRange(locQbds, fieldNum (KCS_KBVRequestTable, KCS_KBVRequestStatus)).value(queryValue(KCS_KBVRequestStatus::Created));
+                    SysQuery::findOrCreateRange(locQbds, fieldNum (KCS_KBVRequestTable, KCS_KBVDeliveryDate)).value(SysQueryRangeUtil::lessThanDate());
+                    /*
+                    locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, AVAWorkerSalesTaker));
+                    locQbr.value(queryValue(0));
+                    locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVRequestStatus));
+                    locQbr.value(queryValue(KCS_KBVRequestStatus::Created));
+                    locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVDeliveryDate));
+                    locQbr.value(SysQueryRangeUtil::lessThanDate());
+                    */
+                    break;
+                
+                case menuItemDisplayStr(AVAKBVRequestTableMyOpen):
+                    locQbds = SysQuery::findOrCreateDataSource(locQuery, tableNum(KCS_KBVRequestTable));
+                    /* creates or relation so no not()
+                    locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVRequestStatus));
+                    locQbr.value(SysQuery::valueNot(KCS_KBVRequestStatus::Refused));
+                    locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVRequestStatus));
+                    locQbr.value(SysQuery::valueNot(KCS_KBVRequestStatus::Answered));
+                    */
+                    locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVRequestStatus));
+                    locQbr.value(SysQuery::value(KCS_KBVRequestStatus::Created));
+                    locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVRequestStatus));
+                    locQbr.value(SysQuery::value(KCS_KBVRequestStatus::Assigned));
+                    locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVRequestStatus));
+                    locQbr.value(SysQuery::value(KCS_KBVRequestStatus::InProcess));
+                    locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, AVAWorkerSalesTaker));
+                    locQbr.value(queryValue(frmHCMWorkerRecId));
+                    //locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVModifiedBy));
+                    //locQbr.value(queryValue(0));
+                    break;
+                
+                case menuItemDisplayStr(AVAKBVRequestTableMyOpenTileDisplay):
+                case menuItemDisplayStr(AVAKBVRequestTableMyOpenWorkerTileDisplay):
+                    locQbds = SysQuery::findOrCreateDataSource(locQuery, tableNum(KCS_KBVRequestTable));
+                    //locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVRequestStatus));
+                    //locQbr.value(SysQuery::valueNot(KCS_KBVRequestStatus::Refused));
+                    //locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, AVAWorkerSalesTaker));
+                    //locQbr.value(queryValue(frmHCMWorkerRecIdCallerFilter));
+                    //locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVModifiedBy));
+                    //locQbr.value(queryValue(0));
+                    break;
+                
+                case menuItemDisplayStr(AVAKBVRequestTableMyClosed):
+                    queryCondition  = '(%1 != %2)';
+                    locQbds = SysQuery::findOrCreateDataSource(locQuery, tableNum(KCS_KBVRequestTable));
+                    locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, AVAWorkerSalesTaker));
+                    locQbr.value(queryValue(frmHCMWorkerRecId));
+                    locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVRequestStatus));
+                    locQbr.value(SysQuery::value(KCS_KBVRequestStatus::Answered));
+                    /*
+                    locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVModifiedBy));
+                    locQbr.value(   strFmt( queryCondition,
+                                    fieldStr (KCS_KBVRequestTable, KCS_KBVModifiedBy),
+                                    queryValue('0') )   );
+                    */
+                    //locQbr  = locQbds.addRange(fieldNum (KCS_KBVRequestTable, KCS_KBVModifiedBy));
+                    //locQbr.value(SysQuery::valueNot(0));
+                    break;
+
+                case menuItemDisplayStr(AVAKBVRequestTableSmmBusRelTable):
+                    if(locSmmBusRelTable.RecId)
+                    {
+                        locQbdsBase = locQuery.dataSourceTable(tableNum(KCS_KBVRequestTable));
+                        locQbds     = locQbdsBase.addDataSource(tableNum(AVABPInquirerRequestDirPartyIdView));
+                        locQbds.joinMode(JoinMode::ExistsJoin);
+                        locQbds.addLink(fieldNum (KCS_KBVRequestTable, KCS_KBVRequestID),
+                                        fieldNum (AVABPInquirerRequestDirPartyIdView, ID),
+                                        locQbdsBase.name()  );
+                        locQbr      = locQbds.addRange(fieldNum (AVABPInquirerRequestDirPartyIdView, DirPartyId));
+                        locQbr.value(queryValue(locSmmBusRelTable.Party));
+                        
+                        /*
+                        locQbds     = locQbdsBase.addDataSource(tableNum(KCS_KBVInquirerOfTheRequest));
+                        locQbds.joinMode(JoinMode::ExistsJoin);
+                        locQbds.addLink(fieldNum (KCS_KBVRequestTable, KCS_KBVRequestID),
+                                        fieldNum (KCS_KBVInquirerOfTheRequest, KCS_KBVRequestID),
+                                        locQbdsBase.name()  );
+                        locQbr      = locQbds.addRange(fieldNum (KCS_KBVInquirerOfTheRequest, DirPartyId));
+                        locQbr.value(queryValue(locSmmBusRelTable.Party));
+                        */
+                    }
+                    break;
+                
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>create</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>create</c> method.
+        /// </summary>
+        /// <param name="_append">
+        ///    <c>boolean</c> as type
+        /// </param>
+        public void create(boolean _append = false)
+        {
+            KCS_KBVRequestTable locKCS_KBVRequestTable;
+            
+            super(_append);
+
+            switch (frmArgs.menuitemName())
+            {
+                case menuItemDisplayStr(AVAKBVRequestTableCopyToUC):
+                    if(frmKCS_KBVRequestTableToCopy.Recid && frmDataAreaIdCopyTo != '')
+                    {
+                        changecompany(frmDataAreaIdCopyTo)
+                        {
+                            //locKCS_KBVRequestTable.selectforupdate(true);
+                            locKCS_KBVRequestTable.clear();
+                            locKCS_KBVRequestTable.initValue();
+                            locKCS_KBVRequestTable.initValueCopyToUC(frmKCS_KBVRequestTableToCopy, frmDataAreaIdCopyTo);
+                            locKCS_KBVRequestTable.insert();
+                        }
+
+                        //KCS_KBVRequestTable.clear();
+                        //KCS_KBVRequestTable.initValueCopyToUC(frmKCS_KBVRequestTableToCopy, frmDataAreaIdCopyTo);
+                    }
+                    break;
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>active</c> method.
+        /// </summary>
+        /// <returns>
+        ///    <c>int</c> as return value
+        /// </returns>
+        public int active()
+        {
+            int ret;
+        
+            ret = super();
+
+            if(KCS_KBVRequestTable.AVAWorkerSalesTaker != frmHCMWorkerRecId)
+            {
+                AVAKBVRequestIWillDoIt.enabled(true);
+                AVAKBVRequestIDoNotDo.enabled(false);
+            }
+            else
+            {
+                AVAKBVRequestIWillDoIt.enabled(false);
+                AVAKBVRequestIDoNotDo.enabled(true);
+            }
+
+            element.addSecondaryDataAreaInfomation();
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>editContactPersonName_KCS_KBVRequestTable</Name>
+						<Source><![CDATA[
+        edit ContactPersonName editContactPersonName_KCS_KBVRequestTable(   boolean             _set,
+                                                                            KCS_KBVRequestTable _record,
+                                                                            ContactPersonName   _name)
+        {
+            ContactPersonName   retVal;
+
+            if (_set)
+            {
+                AVAKBVDirPartyContactPersonHelper   locAVAKBVDirPartyContactPersonHelper;
+
+                locAVAKBVDirPartyContactPersonHelper = new AVAKBVDirPartyContactPersonHelper();
+
+                locAVAKBVDirPartyContactPersonHelper.parmSet(_set);
+                locAVAKBVDirPartyContactPersonHelper.parmDataAreaId(frmDataAreaId);
+                locAVAKBVDirPartyContactPersonHelper.parmDirPartyId(GridHeader_DirPartyId.value());
+                locAVAKBVDirPartyContactPersonHelper.parmDirPartyName('');
+                locAVAKBVDirPartyContactPersonHelper.parmContactPersonId(_name);
+                locAVAKBVDirPartyContactPersonHelper.parmContactPersonName(ContactPerson::find(_name).personName());
+
+                retVal = locAVAKBVDirPartyContactPersonHelper.getEditContactPersonName();
+                retVal = locAVAKBVDirPartyContactPersonHelper.getEditContactPersonNameModified();
+
+                GridHeader_DirPartyId.value(locAVAKBVDirPartyContactPersonHelper.parmDirPartyId());
+                GridHeader_ContactPersonId.Text(locAVAKBVDirPartyContactPersonHelper.parmContactPersonId());
+                GridHeader_editContactPersonName.text(locAVAKBVDirPartyContactPersonHelper.parmContactPersonName());
+                KCS_KBVRequestTable.DirPartyId      = locAVAKBVDirPartyContactPersonHelper.parmDirPartyId();
+                KCS_KBVRequestTable.ContactPersonId = locAVAKBVDirPartyContactPersonHelper.parmContactPersonId();
+                KCS_KBVSearchTable::setFromCommonField(KCS_KBVRequestTable.KCS_KBVBuildingProjectID,KCS_KBVRequestTable,fieldNum(KCS_KBVRequestTable,ContactPersonId));
+
+            }
+            else
+            {
+                retVal = ContactPerson::find(_record.ContactPersonId).personName();
+            }
+        
+            return retVal;
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>KCS_KBVInquirerOfTheRequest</Name>
+				<Methods>
+					<Method>
+						<Name>initValue</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>initValue</c> method.
+        /// </summary>
+        public void initValue()
+        {
+            super();
+
+            KCS_KBVInquirerOfTheRequest.KCS_KBVBuildingProjectID = KCS_KBVRequestTable::find(KCS_KBVInquirerOfTheRequest.KCS_KBVRequestID).KCS_KBVBuildingProjectID;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>create</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// AVA_010548
+        /// </summary>
+        /// <param name = "_append">boolean</param>
+        public void create(boolean _append = false)
+        {
+            super(_append);
+            GridKCS_KBVInquirerOfTheRequest_DirPartyId.setFocus();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>SalesQuotationTable</Name>
+				<Methods />
+				<Fields>
+					<Field>
+						<DataField>WorkerSalesTaker</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            /// <summary>
+            ///    AVA <c>modified</c> method.
+            /// </summary>
+            public void modified()
+            {
+                super();
+
+                KCS_KBVRequestTable_DS.refresh();
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+				</Fields>
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>AVAKBVCreateRequestTableNewReplacement</Name>
+				<Type>MenuFunctionButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>clicked</c> method.
+        /// </summary>
+        public void clicked()
+        {
+            super();
+            //executed right after super() causes automatic update of the data source in the create form. The create form will not be empty.
+            /*
+            KCS_KBVRequestTable_DS.executeQuery();
+            */
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>AVAKBVRequestTableCopyToUcByCode</Name>
+				<Type>MenuFunctionButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>clicked</c> method.
+        /// </summary>
+        public void clicked()
+        {
+            frmDataAreaIdCopyTo = AVAKBVBuildingProjectHelper::dialogGetDataAreaId();  //get DataAreaId from Dialog
+            
+            if(KCS_KBVRequestTable.KCS_KBVRequestId && frmDataAreaIdCopyTo)
+            {
+                KCS_KBVRequestTable::copyRequest(KCS_KBVRequestTable.KCS_KBVRequestId, KCS_KBVRequestTable.DataAreaId, frmDataAreaIdCopyTo);
+            }
+            frmDataAreaIdCopyTo = '';
+
+            //ToDo: remove crosscompany and research() and executeQuery();
+            KCS_KBVRequestTable_DS.crossCompanyAutoQuery(true);
+            //KCS_KBVRequestTable_DS.research();
+            changecompany(frmDataAreaIdCopyTo)
+            {
+                KCS_KBVRequestTable_DS.executeQuery();
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>AVAKBVRequestTableCopyToUc</Name>
+				<Type>MenuFunctionButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>clicked</c> method.
+        /// </summary>
+        public void clicked()
+        {
+            frmDataAreaIdCopyTo = AVAKBVBuildingProjectHelper::dialogGetDataAreaId();  //get DataAreaId from Dialog
+
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>AVAKBVTakeOverNextRequest</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>clicked</c> method.
+        /// </summary>
+        public void clicked()
+        {
+            KCS_KBVRequestTable locKCS_KBVRequestTable;
+            KCS_KBVDeliveryDate locKCS_KBVDeliveryDate;
+            str                 locTitleStr;
+            str                 locMessageStr;
+            boolean             locRequestInSecondayryDataAreaExist;
+
+            super();
+ 
+            if(     frmAVASecondaryDataAreaIdBPRequests != ''
+                &&  frmAVAForceSecondaryRequest         == NoYes::Yes   )
+            {
+                locKCS_KBVDeliveryDate = SecondaryKCS_KBVDeliveryDate.dateValue();
+                if(     locKCS_KBVDeliveryDate != dateNull() 
+                    &&  locKCS_KBVDeliveryDate <= frmToday  )
+                {
+                    locTitleStr     = strFmt("@NDX:NXATakeOverNextRequestInSecondDA", frmAVASecondaryDataAreaIdBPRequests);
+                    locMessageStr   = strFmt("@NDX:NXATakeOverNextRequestInSecondDAHelp", frmAVASecondaryDataAreaIdBPRequests, locKCS_KBVDeliveryDate);
+                    Box::info(locMessageStr, locTitleStr);
+                    locRequestInSecondayryDataAreaExist = true;
+                }
+            }
+            if(!locRequestInSecondayryDataAreaExist)
+            {
+                locKCS_KBVRequestTable = KCS_KBVRequestTable::getNextUnassignedRequest(frmHCMWorkerRecId);
+                if(locKCS_KBVRequestTable.RecId)
+                {
+                    /*
+                    // set filter to actual created request 
+                    //locsmmSalesUnit = smmSalesUnit::avaGetSalesUnitCurrentWorkerIndoor(frmHCMWorkerRecId, false);
+                    locsmmSalesUnit = smmSalesUnit::find(locKCS_KBVRequestTable.KCS_KBVSmmSalesUnitIndoor);
+                    if(locsmmSalesUnit.RecId)
+                    {
+                        KCS_KBVRequestTableFilterFields_KCS_KBVSmmSalesUnitIndoor.text(locsmmSalesUnit.SalesUnitId);
+                        KCS_KBVRequestTableFilterFields_KCS_KBVSmmSalesUnitIndoor.modified();
+                    }
+                    */
+                    if(!locKCS_KBVRequestTable.AVAWorkerSalesTaker && frmHCMWorkerRecId)
+                    {
+                        locKCS_KBVRequestTable.assignUnassignRequest(frmHCMWorkerRecId);
+                        locKCS_KBVRequestTable.assignUnassignRelatedRequests();
+                    }
+                    KCS_KBVRequestTable_DS.executeQuery();
+                }
+                else        
+                {
+                    locKCS_KBVRequestTable.assignUnassignRequestInfo();
+                }
+            }
+            
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>AVAKBVRequestIWillDoIt</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>clicked</c> method.
+        /// </summary>
+        public void clicked()
+        {
+            super();
+
+            KCS_KBVRequestTable.assignUnassignRequest(frmHCMWorkerRecId);
+            KCS_KBVRequestTable.assignUnassignRelatedRequests(frmHCMWorkerRecId);
+            KCS_KBVRequestTable_DS.executeQuery();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>AVAKBVRequestIDoNotDo</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>clicked</c> method.
+        /// </summary>
+        public void clicked()
+        {
+            AVAReason           locAVAReason;
+            
+            super();
+
+            locAVAReason = AVAKBVBuildingProjectHelper::dialogGetReason();
+
+            KCS_KBVRequestTable.assignUnassignRequest(0, locAVAReason);
+            KCS_KBVRequestTable.assignUnassignRelatedRequests(0, frmHCMWorkerRecId, locAVAReason);
+            KCS_KBVRequestTable_DS.executeQuery();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>AVAKBVRequestSetMultiple</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>clicked</c> method.
+        /// </summary>
+        public void clicked()
+        {
+            KCS_KBVRequestTable     locKCS_KBVRequestTable;
+            MultiSelectionHelper    helper;
+
+            HCMWorkerRecId          locHCMWorkerRecId;
+            smmSalesUnit            locsmmSalesUnit;
+
+            helper              = MultiSelectionHelper::construct();
+
+            locHCMWorkerRecId   = AVAKBVBuildingProjectHelper::dialogGetWorker();  //get Worker from Dialog
+
+            // check chosen worker
+            if(locHCMWorkerRecId)
+            {
+                locsmmSalesUnit = smmSalesUnit::avaGetSalesUnitCurrentWorkerIndoor(locHCMWorkerRecId, false, false);
+                if(!locsmmSalesUnit.RecId)
+                {
+                    error("@NDX:NXAChosenWorkerNotMemberOfIndoorSalesUnit");
+                    //locHCMWorkerRecId = 0;
+                    return;
+                }
+            }
+
+            super();
+            
+            helper.parmDatasource(KCS_KBVRequestTable_DS);
+            locKCS_KBVRequestTable = helper.getFirst();
+
+            if(locHCMWorkerRecId)
+            {
+                /*
+                for(locKCS_KBVRequestTable = KCS_KBVRequestTable_DS.getFirst(true) ? KCS_KBVRequestTable_DS.getFirst(true) : KCS_KBVRequestTable_DS.cursor();
+                    locKCS_KBVRequestTable;
+                    locKCS_KBVRequestTable = KCS_KBVRequestTable_DS.getNext())
+                */
+                while (locKCS_KBVRequestTable.RecId != 0)
+                {
+                    if(locKCS_KBVRequestTable.dataAreaId == curExt())
+                    {
+                        locKCS_KBVRequestTable.selectForUpdate(true);
+
+                        locKCS_KBVRequestTable.AVAWorkerSalesTaker      = locHCMWorkerRecId;
+                        locKCS_KBVRequestTable.AVAWorkerSalesTakerDate  = frmToday;
+                        if(locKCS_KBVRequestTable.KCS_KBVRequestStatus == KCS_KBVRequestStatus::Created)
+                        {
+                            locKCS_KBVRequestTable.KCS_KBVRequestStatus = KCS_KBVRequestStatus::Assigned;
+                        }
+                        
+                        ttsbegin;
+                        locKCS_KBVRequestTable.update();
+                        locKCS_KBVRequestTable.assignUnassignRelatedRequests(locHCMWorkerRecId);
+                        ttscommit;
+                    }
+                    locKCS_KBVRequestTable = helper.getNext();
+                }
+                KCS_KBVRequestTable_DS.research(true);
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>AVAKBVRequestRemoveMultiple</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>clicked</c> method.
+        /// </summary>
+        public void clicked()
+        {
+            AVAReason           locAVAReason;
+            
+            KCS_KBVRequestTable     locKCS_KBVRequestTable;
+            MultiSelectionHelper    helper;
+    
+            HCMWorkerRecId          locHCMWorkerRecId;
+    
+            helper              = MultiSelectionHelper::construct();
+    
+            super();
+
+            locAVAReason = AVAKBVBuildingProjectHelper::dialogGetReason();
+
+            helper.parmDatasource(KCS_KBVRequestTable_DS);
+            locKCS_KBVRequestTable = helper.getFirst();
+    
+            while (locKCS_KBVRequestTable.RecId != 0)
+            {
+                if(locKCS_KBVRequestTable.dataAreaId == curExt() && locKCS_KBVRequestTable.AVAWorkerSalesTaker)
+                {
+                    locHCMWorkerRecId = locKCS_KBVRequestTable.AVAWorkerSalesTaker;
+
+                    locKCS_KBVRequestTable.assignUnassignRequest(0, locAVAReason);
+                    //locKCS_KBVRequestTable.assignUnassignRelatedRequests(0, locHCMWorkerRecId, locAVAReason);
+                }
+                locKCS_KBVRequestTable = helper.getNext();
+            }
+            KCS_KBVRequestTable_DS.executeQuery();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>KCS_KBVRequestTableFilterFields_KCS_KBVRequestStatus</Name>
+				<Type>ComboBox</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>modified</c> method.
+        /// </summary>
+        /// <returns>
+        ///    <c>boolean</c> as return value
+        /// </returns>
+        public boolean modified()
+        {
+            boolean ret;
+
+            KCS_KBVRequestStatus    qValue;
+    
+            ret = super();
+    
+            qValue = this.selection();
+
+            if (qValue != 0)
+            {
+                SysQuery::findOrCreateRange(KCS_KBVRequestTable_DS.queryBuildDataSource(), fieldNum(KCS_KBVRequestTable, KCS_KBVRequestStatus)).value(queryValue(enum2Str(qValue)));
+            }
+            else
+            {
+                SysQuery::findOrCreateRange(KCS_KBVRequestTable_DS.queryBuildDataSource(), fieldNum(KCS_KBVRequestTable, KCS_KBVRequestStatus)).value(SysQueryRangeUtil::valueUnlimited());
+            }
+
+            KCS_KBVRequestTable_DS.executeQuery();
+            
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>KCS_KBVRequestTableFilterFields_KCS_KBVSmmSalesUnitIndoor</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>modified</c> method.
+        /// </summary>
+        /// <returns>
+        ///    <c>boolean</c> as return value
+        /// </returns>
+        public boolean modified()
+        {
+            boolean ret;
+
+            KCS_KBVSmmSalesUnitIndoor   qValue;
+    
+            ret = super();
+
+            qValue = this.valueStr();
+
+            if (qValue)
+            {
+                SysQuery::findOrCreateRange(KCS_KBVRequestTable_DS.queryBuildDataSource(), fieldNum(KCS_KBVRequestTable, KCS_KBVSmmSalesUnitIndoor)).value(queryValue(qValue));
+            }
+            else
+            {
+                SysQuery::findOrCreateRange(KCS_KBVRequestTable_DS.queryBuildDataSource(), fieldNum(KCS_KBVRequestTable, KCS_KBVSmmSalesUnitIndoor)).value(SysQueryRangeUtil::valueUnlimited());
+            }
+    
+            KCS_KBVRequestTable_DS.executeQuery();
+
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>KCS_KBVRequestTableFilterFields_AVAWorkerSalesTaker</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>modified</c> method.
+        /// </summary>
+        /// <returns>
+        ///    <c>boolean</c> as return value
+        /// </returns>
+        public boolean modified()
+        {
+            boolean ret;
+
+            int64   qValue;
+    
+            ret = super();
+
+            qValue = this.value();
+
+            if (qValue != 0)
+            {
+                SysQuery::findOrCreateRange(KCS_KBVRequestTable_DS.queryBuildDataSource(), fieldNum(KCS_KBVRequestTable, AVAWorkerSalesTaker)).value(queryValue(qValue));
+            }
+            else
+            {
+                SysQuery::findOrCreateRange(KCS_KBVRequestTable_DS.queryBuildDataSource(), fieldNum(KCS_KBVRequestTable, AVAWorkerSalesTaker)).value(SysQueryRangeUtil::valueUnlimited());
+            }
+    
+            KCS_KBVRequestTable_DS.executeQuery();
+
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>KCS_KBVRequestTableFilterFields_KCS_KBVModifiedBy</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>modified</c> method.
+        /// </summary>
+        /// <returns>
+        ///    <c>boolean</c> as return value
+        /// </returns>
+        public boolean modified()
+        {
+            boolean ret;
+
+            KCS_KBVModifiedBy   qValue;
+    
+            ret = super();
+
+            qValue = this.value();
+
+            if (qValue != 0)
+            {
+                SysQuery::findOrCreateRange(KCS_KBVRequestTable_DS.queryBuildDataSource(), fieldNum(KCS_KBVRequestTable, KCS_KBVModifiedBy)).value(queryValue(qValue));
+            }
+            else
+            {
+                SysQuery::findOrCreateRange(KCS_KBVRequestTable_DS.queryBuildDataSource(), fieldNum(KCS_KBVRequestTable, KCS_KBVModifiedBy)).value(SysQueryRangeUtil::valueUnlimited());
+            }
+    
+            KCS_KBVRequestTable_DS.executeQuery();
+
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>GridHeader_DirPartyId</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>modified</c> method.
+        /// </summary>
+        /// <returns>
+        ///    <c>boolean</c> as return value
+        /// </returns>
+        public boolean modified()
+        {
+            boolean ret;
+            
+            ret = super();
+
+            if(!AVAKBVDirPartyContactPersonHelper::checkContactPersonOnDirPartyId(GridHeader_DirPartyId.value(), GridHeader_ContactPersonId.valueStr()))
+            {
+                GridHeader_ContactPersonId.text('');
+                GridHeader_editContactPersonName.text('');
+            }
+
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>lookupReference</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>lookupReference</c> method.
+        /// </summary>
+        /// <returns>
+        ///    <c>Common</c> as return value
+        /// </returns>
+        public Common lookupReference()
+        {
+            Common ret;
+        
+            //ret = AVAKBVDirPartyContactPersonHelper::lookupDirPartyBusRel(this, null);
+            ret = AVAKBVDirPartyContactPersonHelper::lookupDirPartyCustAndOrOther(this, null, true, true);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>GridHeader_editContactPersonName</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>jumpRef</c> method.
+        /// </summary>
+        public void jumpRef()
+        {
+            GridHeader_ContactPersonId.jumpRef();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>lookup</c> method.
+        /// </summary>
+        void lookup()
+        {
+            ContactPerson::lookupDirContactPerson(  GridHeader_ContactPersonId,
+                                                    GridHeader_DirPartyId.value(),
+                                                    this,
+                                                    GridHeader_ContactPersonId.valueStr());
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>SalesQuotationTableDelete</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        public void clicked()
+        {
+            super();
+            KCS_KBVRequestTable_DS.research(true);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>RelationNewContact</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>clicked</c> method.
+        /// </summary>
+        public void clicked()
+        {
+            smmBusRelTable  smmBusRelTable;
+            Args            locArgs;
+            Args            locArgsService;
+            MenuFunction    menuFunction;
+
+            super();
+
+            locArgs             = new Args();
+
+            changecompany(frmDataAreaId)
+            {
+                smmBusRelTable  = smmBusRelTable::findByParty(KCS_KBVInquirerOfTheRequest.DirPartyId);
+                locArgs.record(smmBusRelTable);
+                locArgs.caller(this.formRun());
+                locArgs.parmObject(this);
+
+                // adHoc generation of missing contacts
+                if(smmBusRelTable.RecId)
+                {
+                    locArgsService = locArgs;
+                    locArgsService.menuItemType(MenuItemType::Action);
+                    locArgsService.menuItemName(menuItemActionStr(AVACreateContactPersonBasedOnGABBusRel));
+                    AVACreateContactPersonBasedOnGABController::main(locArgsService);
+                }
+
+                menuFunction    = new MenuFunction(menuitemDisplayStr(ContactPersonNewQuickCreate), MenuItemType::Display);
+
+                if (menuFunction && menuFunction.checkAccessRights())
+                {
+                    menuFunction.run(locArgs);
+                }
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>GridKCS_KBVInquirerOfTheRequest_DirPartyId</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>modified</c> method.
+        /// </summary>
+        /// <returns>
+        ///     <c>boolean</c> as type
+        /// </returns>
+        public boolean modified()
+        {
+            boolean         ret;
+            smmBusRelTable  checkSmmBusRelTable;
+            
+            ret = super();
+            /*
+            if(!GridKCS_KBVInquirerOfTheRequest_DirPartyId.value())
+            {
+                GridKCS_KBVInquirerOfTheRequest_ContactPersonId.text('');
+                GridKCS_KBVInquirerOfTheRequest_editContactPersonName.text('');
+                //element.editContactPersonName1(true, '');
+                GridKCS_KBVInquirerOfTheRequest_editContactPersonName.update();
+                return ret;
+            }
+
+            checkSmmBusRelTable = smmBusRelTable::findByParty(GridKCS_KBVInquirerOfTheRequest_DirPartyId.value());
+            if (!checkSmmBusRelTable.RecId && GridKCS_KBVInquirerOfTheRequest_DirPartyId.value() != 0)
+            {
+                KCS_KBVRequestTable.createSmmBusRelTableForCompany(GridKCS_KBVInquirerOfTheRequest_DirPartyId.value());
+            }
+    
+            if(!AVAKBVDirPartyContactPersonHelper::checkContactPersonOnDirPartyId(GridKCS_KBVInquirerOfTheRequest_DirPartyId.value(), GridKCS_KBVInquirerOfTheRequest_ContactPersonId.valueStr()))
+            {
+                GridKCS_KBVInquirerOfTheRequest_ContactPersonId.text('');
+                GridKCS_KBVInquirerOfTheRequest_editContactPersonName.text('');
+            }
+            */
+            if(!AVAKBVDirPartyContactPersonHelper::checkContactPersonOnDirPartyId(GridKCS_KBVInquirerOfTheRequest_DirPartyId.value(), GridKCS_KBVInquirerOfTheRequest_ContactPersonId.valueStr()))
+            {
+                GridKCS_KBVInquirerOfTheRequest_ContactPersonId.text('');
+                GridKCS_KBVInquirerOfTheRequest_editContactPersonName.text('');
+            }
+
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>lookupReference</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///     AVA <c>lookupReference</c> method.
+        /// </summary>
+        /// <returns>
+        ///     <c>Common</c> as type
+        /// </returns>
+        public Common lookupReference()
+        {
+            Common ret;
+
+            //ret = AVAKBVDirPartyContactPersonHelper::lookupDirPartyBusRel(this, null);
+            ret = AVAKBVDirPartyContactPersonHelper::lookupDirPartyCustAndOrOther(this, null, true, true);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>GridKCS_KBVInquirerOfTheRequest_editContactPersonName</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>jumpRef</c> method.
+        /// </summary>
+        public void jumpRef()
+        {
+            GridKCS_KBVInquirerOfTheRequest_ContactPersonId.jumpRef();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>lookup</c> method.
+        /// </summary>
+        void lookup()
+        {
+            ContactPerson::lookupDirContactPerson(  GridKCS_KBVInquirerOfTheRequest_ContactPersonId,
+                                                    GridKCS_KBVInquirerOfTheRequest_DirPartyId.value(),
+                                                    this,
+                                                    GridKCS_KBVInquirerOfTheRequest_ContactPersonId.valueStr()  );
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>modified</c> method.
+        /// </summary>
+        /// <returns>
+        ///     <c>boolean</c> as type
+        /// </returns>
+        public boolean modified()
+        {
+            boolean                             ret;
+
+            ContactPersonName                   locContactPersonName;
+
+            AVAKBVDirPartyContactPersonHelper   locAVAKBVDirPartyContactPersonHelper;
+
+            FormDataSource                      locFormDataSource;
+            KCS_KBVInquirerOfTheRequest         locKCS_KBVInquirerOfTheRequest;
+
+            ret = super();
+
+            locAVAKBVDirPartyContactPersonHelper = new AVAKBVDirPartyContactPersonHelper();
+
+            locAVAKBVDirPartyContactPersonHelper.parmSet(false);
+            locAVAKBVDirPartyContactPersonHelper.parmDataAreaId(frmDataAreaId);
+            locAVAKBVDirPartyContactPersonHelper.parmDirPartyId(GridKCS_KBVInquirerOfTheRequest_DirPartyId.value());
+            locAVAKBVDirPartyContactPersonHelper.parmDirPartyName('');
+            locAVAKBVDirPartyContactPersonHelper.parmContactPersonId(GridKCS_KBVInquirerOfTheRequest_ContactPersonId.valueStr());
+            locAVAKBVDirPartyContactPersonHelper.parmContactPersonName(GridKCS_KBVInquirerOfTheRequest_editContactPersonName.valueStr());
+
+            locContactPersonName = locAVAKBVDirPartyContactPersonHelper.getEditContactPersonNameModified();
+
+            GridKCS_KBVInquirerOfTheRequest_DirPartyId.value(locAVAKBVDirPartyContactPersonHelper.parmDirPartyId());
+
+            locFormDataSource                               = element.KCS_KBVInquirerOfTheRequest_DS;
+            locKCS_KBVInquirerOfTheRequest                  = locFormDataSource.cursor();
+            locKCS_KBVInquirerOfTheRequest.DirPartyId       = locAVAKBVDirPartyContactPersonHelper.parmDirPartyId();
+
+            locKCS_KBVInquirerOfTheRequest.ContactPersonId  = locAVAKBVDirPartyContactPersonHelper.parmContactPersonId();
+            GridKCS_KBVInquirerOfTheRequest_ContactPersonId.Text(locAVAKBVDirPartyContactPersonHelper.parmContactPersonId());
+            GridKCS_KBVInquirerOfTheRequest_editContactPersonName.text(locAVAKBVDirPartyContactPersonHelper.parmContactPersonName());
+
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>KCS_KBVRequestTable</Name>
+			<Table>KCS_KBVRequestTable</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AddressCity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AddressCountryRegionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AddressStreet</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AddressZipCodeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAWorkerSalesTaker</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAWorkerSalesTakerDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactPersonId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustRef</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DirPartyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVBuildingProjectID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVDeclinedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVDeclinedDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVDeclinedMemo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVDeliveryDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVModifiedDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVPriority</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVReceiptDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVRequestID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVRequestStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVSmmSalesUnitIndoor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastQuotationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_OriginDataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesUnitId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<StartPosition>Last</StartPosition>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>KCS_KBVInquirerOfTheRequest</Name>
+			<Table>KCS_KBVInquirerOfTheRequest</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>ContactPersonId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DirPartyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<AllowEdit>No</AllowEdit>
+					<DataField>KCS_KBVBuildingProjectID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVPublishIotR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<AllowEdit>No</AllowEdit>
+					<DataField>KCS_KBVRequestID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>KCS_KBVRequestTable</JoinSource>
+			<Index>KCS_KBVRequestID</Index>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>SalesQuotationTable</Name>
+			<Table>SalesQuotationTable</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AddressRefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AddressRefTableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVACBSCommissCutPct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVACBSCommissSalesGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAExchangeRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAExchangeRateDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVANetPG1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVANetPG2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAPosted</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAPostedEnum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVASendExcel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankDocumentType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BusRelAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CallListID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CampaignId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CaseTagging</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscPercent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CommissionGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ConfirmDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactPersonId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CountyOrigDest</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CovStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CurrencyCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustFinalUser_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustomerRef</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustPurchaseOrder</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeliveryDateControlType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeliveryName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeliveryPostalAddress</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DiscPercent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvMode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvReason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvTerm</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocuConclusion</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocuIntro</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocuTitle</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Email</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EndDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EnterpriseNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Estimate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExportReason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FineCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FixedDueDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FixedExchRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FreightSlipType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FreightZone</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InclTax</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterestCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventLocationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventSiteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemTagging</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_BOSSpecialPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_ChainLineDiscCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_CommissSalesGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_Competitor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_CompetitorId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_CustCity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_DataArea</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_DecisionDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_GAEBImportID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_GAEBInquiry</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVBuildingProjectID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVProductGroupID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVRequestId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVSmmSalesUnitIndoor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVSubject</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_LimitGroupName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_LimitPriceExchRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_MaxBonusAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_OrgQuotationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_PriceDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_ProvisionFix</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_QLStdStepSize</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_QuotationAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_QuotationFirst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_QuotationShorttext</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_RefQuotationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_ShowIntPosPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_StatusId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LanguageId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Listcode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ManualEntryChangepolicy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MarkupGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModelId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MultiLineDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDXOneYearQuotation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_Brand</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NumberSequenceGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OperatingUnitPartyNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OpportunityId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrigQuotationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OverrideSalesTax</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PackedExtensions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PalletTagging</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Payment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymMode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymSpec</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Port</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PostingProfile</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PriceGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProjIdRef</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProjInvoiceProjId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PSAEstdProjDuration</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PSAEstProjEndDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PSAEstProjStartDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PSAExternalDescription</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PSAInternalDescription</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PSASchedCalendarId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PSASchedIgnoreCalendar</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PSAWizardNotOk</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QuotationCategory</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QuotationExpiryDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QuotationFollowupActivity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QuotationFollowUpDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QuotationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QuotationName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QuotationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QuotationType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReasonId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReceiptDateRequested</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingCurrencyFixedExchRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RetailChannelTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesIdRef</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesOriginId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesPoolId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesPurchOperationType_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesUnitId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ServiceId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettleVoucher</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ShippingDateRequested</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StatProcId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SystemEntryChangePolicy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SystemEntrySource</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TemplateActive</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TemplateGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TemplateName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Touched</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransactionCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransferredToForecast</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransferredToItemReq</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Transport</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>URL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VATNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VATNumRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VATNumTableType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WorkerSalesResponsible</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WorkerSalesTaker</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>KCS_KBVRequestTable</JoinSource>
+			<Index>QuotationIdx</Index>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>KCS_KBVBuildingProjectTable</Name>
+			<Table>KCS_KBVBuildingProjectTable</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AddressCity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AddressCountryRegionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AddressStreet</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AddressZipCodeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVAcceptanceDeadline</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVBuildingProjectID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVChaser</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVClassID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVClosedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVClosedDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVClosedInDataAreaID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVCreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVCreatedDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVCreatedInDataAreaID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVEndOfConstruction</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVEndOfWork</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVParentBuildingProjectID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVPlacingNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVProjectSum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVReceiptDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVStartOfConstruction</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVStartOfWork</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVSubject</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVSubmissionDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVTenderDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVTenderFirstPosition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVTenderFirstPositionQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KBVTenderID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_SFBVTrans</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>smmQuotationProbabilityId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>smmQuotationReasonId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>smmSalesDistrictId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>KCS_KBVRequestTable</JoinSource>
+			<Index>KCS_KBVBuildingProjectIDIdx</Index>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>DocuRef</Name>
+			<Table>DocuRef</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>ActualCompanyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Author</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAFormat</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVATCVPrintOnProductReceipt</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVATCVPrintOnPurchaseAgreement</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVA_TCVCopyItemToQualityOrder</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactPersonId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultAttachment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocumentId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EncyclopediaItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterCompanySkipUpdate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsJustification</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_GAEBImport</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVCopyToProd</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVCopyToProj</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVCopyToPurch</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVCopyToPurchRFQ</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVCopyToSale</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVCopyToWork</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVLanguageId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVLineNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVNotePosition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVPrintOnConfirm</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVPrintOnInvoice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVPrintOnPackingSlip</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVPrintOnPickingList</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVPrintOnProduction</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVPrintOnProjectInvoice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVPrintOnPurchaseOrder</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVPrintOnPurchRFQ</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVPrintOnQuotation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVPrintOnWork</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVRemoveLinkOnCopy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_TCVWarningNote</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Name</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Notes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Party</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefCompanyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefTableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Restriction</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>smmEMailEntryID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>smmEMailStoreID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>smmTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TypeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ValidFrom</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ValidTo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ValueRecId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>KCS_KBVRequestTable</JoinSource>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@NDX:NXARequests</Caption>
+		<Pattern xmlns="">TaskParentChild</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<ShowNewButton xmlns="">No</ShowNewButton>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>ActionPane</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>ActionPane</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonGroupControl">
+						<Name>ButtonGroupStdReplacement</Name>
+						<Type>ButtonGroup</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormMenuFunctionButtonControl">
+								<Name>AVAKBVCreateRequestTableNewReplacement</Name>
+								<Type>MenuFunctionButton</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<MenuItemName>AVAKBVCreateRequestTable</MenuItemName>
+								<NormalImage>Add</NormalImage>
+								<Text>@NDX:NXARequest</Text>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonSeparatorControl">
+								<Name>ButtonGroupStdReplacementSeparator</Name>
+								<Type>ButtonSeparator</Type>
+								<FormControlExtension
+									i:nil="true" />
+							</AxFormControl>
+						</Controls>
+						<HideIfEmpty>No</HideIfEmpty>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormActionPaneTabControl">
+						<Name>ActionPaneTabBPReuest</Name>
+						<Type>ActionPaneTab</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonGroupControl">
+								<Name>FormButtonGroupMaintain</Name>
+								<Type>ButtonGroup</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>AVAKBVSetRequestStatusMan</Name>
+										<Type>MenuFunctionButton</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<MenuItemName>AVAKBVSetRequestStatusMan</MenuItemName>
+										<MenuItemType>Action</MenuItemType>
+										<MultiSelect>No</MultiSelect>
+										<NeedsRecord>Yes</NeedsRecord>
+									</AxFormControl>
+								</Controls>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+								<Caption>@SYS316594</Caption>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonGroupControl">
+								<Name>FormButtonGroupNew</Name>
+								<Type>ButtonGroup</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>AVAKBVCreateRequestTable</Name>
+										<Type>MenuFunctionButton</Type>
+										<Visible>No</Visible>
+										<FormControlExtension
+											i:nil="true" />
+										<MenuItemName>AVAKBVCreateRequestTable</MenuItemName>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>AVASalesCreateQuotationBVRequest</Name>
+										<Type>MenuFunctionButton</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<MenuItemName>AVASalesCreateQuotationBVRequest</MenuItemName>
+										<MenuItemType>Action</MenuItemType>
+									</AxFormControl>
+								</Controls>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+								<Caption>@SYS2055</Caption>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonGroupControl">
+								<Name>FormButtonGroupEdit</Name>
+								<Type>ButtonGroup</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>AVAKBVRequestTableCopyToUcByCode</Name>
+										<Type>MenuFunctionButton</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<MenuItemName>AVAKBVRequestTableCopyToUC</MenuItemName>
+										<MultiSelect>No</MultiSelect>
+										<NeedsRecord>Yes</NeedsRecord>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>AVAKBVRequestTableCopyToUc</Name>
+										<Type>MenuFunctionButton</Type>
+										<Visible>No</Visible>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<MenuItemName>AVAKBVRequestTableCopyToUC</MenuItemName>
+										<MultiSelect>No</MultiSelect>
+										<NeedsRecord>Yes</NeedsRecord>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>SalesQuotationTableKBVRequestTable</Name>
+										<Type>MenuFunctionButton</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<MenuItemName>AVASalesQuotationTableBPRequest</MenuItemName>
+										<MultiSelect>No</MultiSelect>
+										<NeedsRecord>Yes</NeedsRecord>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>SalesQuotationTableKBVBuildingProjectTable</Name>
+										<Type>MenuFunctionButton</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>KCS_KBVBuildingProjectTable</DataSource>
+										<MenuItemName>AVASalesQuotationTableBPTable</MenuItemName>
+										<MultiSelect>No</MultiSelect>
+										<NeedsRecord>Yes</NeedsRecord>
+									</AxFormControl>
+								</Controls>
+								<Caption>@SYS311277</Caption>
+								<DataSource>KCS_KBVRequestTable</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonGroupControl">
+								<Name>Assignment</Name>
+								<Type>ButtonGroup</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormButtonControl">
+										<Name>AVAKBVTakeOverNextRequest</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<NeededPermission>Manual</NeededPermission>
+										<Type>Button</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<AutoRefreshData>Yes</AutoRefreshData>
+										<Text>@NDX:NXATakeOverNextRequest</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormButtonControl">
+										<Name>AVAKBVRequestIWillDoIt</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<NeededPermission>Manual</NeededPermission>
+										<Type>Button</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<AutoRefreshData>Yes</AutoRefreshData>
+										<MultiSelect>No</MultiSelect>
+										<NeedsRecord>Yes</NeedsRecord>
+										<Text>@NDX:NXAIWillDoIt</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormButtonControl">
+										<Name>AVAKBVRequestIDoNotDo</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<NeededPermission>Manual</NeededPermission>
+										<Type>Button</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<AutoRefreshData>Yes</AutoRefreshData>
+										<MultiSelect>No</MultiSelect>
+										<NeedsRecord>Yes</NeedsRecord>
+										<Text>@NDX:NXAIDoNotDo</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormButtonControl">
+										<Name>AVAKBVRequestSetMultiple</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<NeededPermission>Manual</NeededPermission>
+										<Type>Button</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<MultiSelect>Yes</MultiSelect>
+										<NeedsRecord>Yes</NeedsRecord>
+										<Text>@NDX:NXASetResponsiblePerson</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormButtonControl">
+										<Name>AVAKBVRequestRemoveMultiple</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<NeededPermission>Manual</NeededPermission>
+										<Type>Button</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<MultiSelect>Yes</MultiSelect>
+										<NeedsRecord>Yes</NeedsRecord>
+										<Text>@NDX:NXARemoveResponsiblePerson</Text>
+									</AxFormControl>
+								</Controls>
+								<Caption>@NDX:NXAAssignment</Caption>
+								<DataSource>KCS_KBVRequestTable</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonGroupControl">
+								<Name>FormButtonGroupInquire</Name>
+								<Type>ButtonGroup</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>AVAKBVBuildingProjectTable</Name>
+										<Type>MenuFunctionButton</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<MenuItemName>AVAKBVBuildingProjectTable</MenuItemName>
+										<Text>@NDX:NXABuildingProjects</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>AVASalesQuotationRequestStatsReportActionPreview</Name>
+										<Type>MenuFunctionButton</Type>
+										<Visible>No</Visible>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<MenuItemName>AVASalesQuotationRequestStatsReportActionPreview</MenuItemName>
+										<MenuItemType>Action</MenuItemType>
+										<MultiSelect>No</MultiSelect>
+										<NeedsRecord>Yes</NeedsRecord>
+									</AxFormControl>
+								</Controls>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+								<Caption>@SYS3850</Caption>
+							</AxFormControl>
+						</Controls>
+						<Caption>@NDX:NXABPRequest</Caption>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<AlignChildren>No</AlignChildren>
+				<ArrangeMethod>Vertical</ArrangeMethod>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>CustomFilterGroup</Name>
+				<Pattern>CustomFilters</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl>
+						<Name>QuickFilterControl</Name>
+						<FormControlExtension>
+							<Name>QuickFilterControl</Name>
+							<ExtensionComponents />
+							<ExtensionProperties>
+								<AxFormControlExtensionProperty>
+									<Name>targetControlName</Name>
+									<Type>String</Type>
+									<Value>GridHeader</Value>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>placeholderText</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>defaultColumnName</Name>
+									<Type>String</Type>
+									<Value>Grid_Description</Value>
+								</AxFormControlExtensionProperty>
+							</ExtensionProperties>
+						</FormControlExtension>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>KCS_KBVRequestTableFilterFields</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormComboBoxControl">
+								<Name>KCS_KBVRequestTableFilterFields_KCS_KBVRequestStatus</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>ComboBox</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<EnumType>KCS_KBVRequestStatus</EnumType>
+								<Items />
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>KCS_KBVRequestTableFilterFields_KCS_KBVSmmSalesUnitIndoor</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>KCS_KBVSmmSalesUnitIndoor</ExtendedDataType>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>KCS_KBVRequestTableFilterFields_AVAWorkerSalesTaker</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>ReferenceGroup</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<ExtendedDataType>AVAWorkerSalesTaker</ExtendedDataType>
+								<ReplacementFieldGroup>Person</ReplacementFieldGroup>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>KCS_KBVRequestTableFilterFields_KCS_KBVModifiedBy</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>ReferenceGroup</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<ExtendedDataType>KCS_KBVModifiedBy</ExtendedDataType>
+							</AxFormControl>
+						</Controls>
+						<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>SecondaryDataAreaInformation</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Group</Type>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>SecondaryDataAreaId</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>AVASecondaryDataAreaIdBPRequests</ExtendedDataType>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>SecondaryKCS_KBVDeliveryDate</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>Date</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>KCS_KBVDeliveryDate</ExtendedDataType>
+								<Label>@NDX:NXANextTenderClosingDate</Label>
+							</AxFormControl>
+						</Controls>
+						<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+				<FrameType>None</FrameType>
+				<Style>CustomFilter</Style>
+				<ViewEditMode>Edit</ViewEditMode>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormTabControl">
+				<Name>TabHeader</Name>
+				<AlignControl>No</AlignControl>
+				<ElementPosition>1431655764</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>Tab</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>TabHeaderOverview</Name>
+						<ElementPosition>613566756</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Pattern>ToolbarList</Pattern>
+						<PatternVersion>1.2</PatternVersion>
+						<Type>TabPage</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>GridHeader</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>Grid</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridHeader_KCS_KBVRequestID</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVRequestID</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>GridHeader_DirPartyId</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<Type>ReferenceGroup</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<ReferenceField>DirPartyId</ReferenceField>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridHeader_ContactPersonId</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<Type>String</Type>
+										<Visible>No</Visible>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ContactPersonId</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridHeader_editContactPersonName</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>editContactPersonName_KCS_KBVRequestTable</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridHeader_KCS_KBVBuildingProjectID</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVBuildingProjectID</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridHeader_displayKCS_KBVSubject</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayKCS_KBVSubject</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridHeader_CustRef</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>CustRef</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>GridHeader_KCS_KBVPriority</Name>
+										<Type>ComboBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVPriority</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>GridHeader_KCS_KBVRequestStatus</Name>
+										<Type>ComboBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVRequestStatus</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>GridHeader_KCS_KBVReceiptDate</Name>
+										<Type>Date</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVReceiptDate</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>GridHeader_KCS_KBVDeliveryDate</Name>
+										<Type>Date</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVDeliveryDate</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>GridHeader_KCS_KBVModifiedDate</Name>
+										<Type>Date</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVModifiedDate</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>GridHeader_KCS_KBVModifiedBy</Name>
+										<Type>ReferenceGroup</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<ReferenceField>KCS_KBVModifiedBy</ReferenceField>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>GridHeader_AVAWorkerSalesTaker</Name>
+										<Type>ReferenceGroup</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<ReferenceField>AVAWorkerSalesTaker</ReferenceField>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>GridHeader_AVAWorkerSalesTakerDate</Name>
+										<Type>Date</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>AVAWorkerSalesTakerDate</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridHeader_KCS_KBVSmmSalesUnitIndoor</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVSmmSalesUnitIndoor</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>GridHeader_KCS_KBVDeclinedDate</Name>
+										<Type>Date</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVDeclinedDate</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>GridHeader_KCS_KBVDeclinedBy</Name>
+										<Type>ReferenceGroup</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<ReferenceField>KCS_KBVDeclinedBy</ReferenceField>
+									</AxFormControl>
+								</Controls>
+								<AlternateRowShading>No</AlternateRowShading>
+								<DataSource>KCS_KBVRequestTable</DataSource>
+								<Style>Tabular</Style>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS9039</Caption>
+						<Scrollbars>Auto</Scrollbars>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>TabPageBPGeneral</Name>
+						<Pattern>FieldsFieldGroups</Pattern>
+						<PatternVersion>1.1</PatternVersion>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>GroupRequestCommon</Name>
+								<Type>Group</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupBPRequest_KCS_KBVRequestID</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVRequestID</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupBPRequest_KCS_KBVBuildingProjectID</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVBuildingProjectID</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>GroupBPRequest_KCS_KBVRequestStatus</Name>
+										<Type>ComboBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVRequestStatus</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>GroupBPRequest_KCS_KBVPriority</Name>
+										<Type>ComboBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVPriority</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupBPRequest_CustRef</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>CustRef</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+								</Controls>
+								<Caption>@NDX:NXABuildingProjects</Caption>
+								<DataGroup>Common</DataGroup>
+								<DataSource>KCS_KBVRequestTable</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>GroupRequestResponsibility</Name>
+								<Type>Group</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupBPResponsibility_KCS_KBVSmmSalesUnitIndoor</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVSmmSalesUnitIndoor</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>GroupBPResponsibility_AVAWorkerSalesTaker</Name>
+										<Type>ReferenceGroup</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<ReferenceField>AVAWorkerSalesTaker</ReferenceField>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>GroupBPResponsibility_AVAWorkerSalesTakerDate</Name>
+										<Type>Date</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>AVAWorkerSalesTakerDate</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>GroupBPResponsibility_KCS_KBVModifiedBy</Name>
+										<Type>ReferenceGroup</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<ReferenceField>KCS_KBVModifiedBy</ReferenceField>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>GroupBPResponsibility_KCS_KBVModifiedDate</Name>
+										<Type>Date</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVModifiedDate</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+								</Controls>
+								<Caption>@SYS67464</Caption>
+								<DataGroup>Responsibility</DataGroup>
+								<DataSource>KCS_KBVRequestTable</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>GroupRequestAppointment</Name>
+								<Type>Group</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>GroupRequestAppointment_KCS_KBVReceiptDate</Name>
+										<Type>Date</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVReceiptDate</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>GroupRequestAppointment_KCS_KBVDeliveryDate</Name>
+										<Type>Date</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVDeliveryDate</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataGroup>Appointment</DataGroup>
+								<DataSource>KCS_KBVRequestTable</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>GroupRequestRejection</Name>
+								<Type>Group</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>GroupRequestRejection_KCS_KBVDeclinedBy</Name>
+										<Type>ReferenceGroup</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<ReferenceField>KCS_KBVDeclinedBy</ReferenceField>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>GroupRequestRejection_KCS_KBVDeclinedDate</Name>
+										<Type>Date</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVDeclinedDate</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupRequestRejection_KCS_KBVDeclinedMemo</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVDeclinedMemo</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataGroup>Rejection</DataGroup>
+								<DataSource>KCS_KBVRequestTable</DataSource>
+							</AxFormControl>
+						</Controls>
+						<ColumnsMode>Fill</ColumnsMode>
+						<Caption>@SYS114913</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>TabPageBPContact</Name>
+						<Pattern>FieldsFieldGroups</Pattern>
+						<PatternVersion>1.1</PatternVersion>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>GroupContactOrganization</Name>
+								<Type>Group</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>GroupContactOrganization_DirPartyId</Name>
+										<Type>ReferenceGroup</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>KCS_KBVRequestTable</DataSource>
+										<ReferenceField>DirPartyId</ReferenceField>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupOrganization_displayOrganizationName</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayOrganizationName</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupOrganization_displayOrganizationAddress</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayOrganizationAddress</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupOrganization_displayOrganizationEmail</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayOrganizationEmail</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupOrganization_displayOrganizationPhone</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayOrganizationPhone</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupOrganization_displayOrganizationMobile</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayOrganizationMobile</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupContactOrganization_displayOrganizationFax</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayOrganizationFax</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+								</Controls>
+								<Caption>@SYS13342</Caption>
+								<DataGroup>ContactOrganization</DataGroup>
+								<DataSource>KCS_KBVRequestTable</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>GroupRequestContactPerson</Name>
+								<Type>Group</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupRequestContactPerson_ContactPersonId</Name>
+										<AllowEdit>No</AllowEdit>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ContactPersonId</DataField>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupRequestContactPerson_displayPersonName</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayPersonName</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupRequestContactPerson_displayPersonAddress</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayPersonAddress</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupRequestContactPerson_displayPersonEmail</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayPersonEmail</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupRequestContactPerson_displayPersonPhone</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayPersonPhone</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupRequestContactPerson_displayPersonMobile</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayPersonMobile</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupRequestContactPerson_displayPersonFax</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayPersonFax</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+								</Controls>
+								<Caption>@SYS14560</Caption>
+								<DataGroup>ContactContactPerson</DataGroup>
+								<DataSource>KCS_KBVRequestTable</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>GroupRequestContactInfo</Name>
+								<Type>Group</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupRequestContactInfo_displayEmail</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayEmail</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupRequestContactInfo_displayPhone</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayPhone</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupRequestContactInfo_displayMobile</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayMobile</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GroupRequestContactInfo_displayFax</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayFax</DataMethod>
+										<DataSource>KCS_KBVRequestTable</DataSource>
+									</AxFormControl>
+								</Controls>
+								<Caption>@SYS32673</Caption>
+								<DataGroup>ContactInfo</DataGroup>
+								<DataSource>KCS_KBVRequestTable</DataSource>
+							</AxFormControl>
+						</Controls>
+						<ColumnsMode>Fill</ColumnsMode>
+						<Caption>@SYS60248</Caption>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<ArrangeMethod>Vertical</ArrangeMethod>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>CtrlSplit</Name>
+				<AlignControl>Yes</AlignControl>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<ElementPosition>1288490187</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+				<AlignChild>No</AlignChild>
+				<HideIfEmpty>No</HideIfEmpty>
+				<BackgroundColor>WindowBackground</BackgroundColor>
+				<FrameType>None</FrameType>
+				<Style>SplitterHorizontalContainer</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormTabControl">
+				<Name>TabChilds</Name>
+				<AlignControl>No</AlignControl>
+				<ElementPosition>1610612733</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>Tab</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>TabPageSalesQuotationTable</Name>
+						<Pattern>ToolbarList</Pattern>
+						<PatternVersion>1.2</PatternVersion>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormActionPaneControl">
+								<Name>ActionPaneTabPageSalesQuotationTable</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>ActionPane</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormActionPaneTabControl">
+										<Name>ActionPaneTabTabPageSalesQuotationTable</Name>
+										<Type>ActionPaneTab</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormButtonGroupControl">
+												<Name>ButtonGroupTabPageSalesQuotationTable</Name>
+												<Type>ButtonGroup</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormCommandButtonControl">
+														<Name>SalesQuotationTableNew</Name>
+														<ElementPosition>596523234</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CommandButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+														<Command>New</Command>
+														<MultiSelect>Yes</MultiSelect>
+														<NormalImage>Add</NormalImage>
+														<Primary>Yes</Primary>
+														<ShowShortCut>No</ShowShortCut>
+														<Text>@SYS2055</Text>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormCommandButtonControl">
+														<Name>SalesQuotationTableDelete</Name>
+														<ElementPosition>596523234</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CommandButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+														<Command>DeleteRecord</Command>
+														<MultiSelect>Yes</MultiSelect>
+														<NormalImage>Delete</NormalImage>
+														<Primary>Yes</Primary>
+														<ShowShortCut>No</ShowShortCut>
+														<Text>@SYS10308</Text>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormMenuFunctionButtonControl">
+														<Name>AVAKBVCreateSalesQuotationGridSalesQuotationTable</Name>
+														<Type>MenuFunctionButton</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<DataSource>KCS_KBVRequestTable</DataSource>
+														<MenuItemName>AVASalesCreateQuotationBVRequest</MenuItemName>
+														<MenuItemType>Action</MenuItemType>
+														<NormalImage>Add</NormalImage>
+														<Text>@SYS84505</Text>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormButtonSeparatorControl">
+														<Name>FormButtonSeparatorControl1</Name>
+														<Type>ButtonSeparator</Type>
+														<FormControlExtension
+															i:nil="true" />
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormMenuFunctionButtonControl">
+														<Name>AVASalesQuotationRequestStatsReportActionPreview1</Name>
+														<Type>MenuFunctionButton</Type>
+														<Visible>No</Visible>
+														<FormControlExtension
+															i:nil="true" />
+														<DataSource>SalesQuotationTable</DataSource>
+														<MenuItemName>AVASalesQuotationRequestStatsReportActionPreview</MenuItemName>
+														<MenuItemType>Action</MenuItemType>
+														<MultiSelect>No</MultiSelect>
+														<NeedsRecord>Yes</NeedsRecord>
+													</AxFormControl>
+												</Controls>
+												<DataSource>SalesQuotationTable</DataSource>
+											</AxFormControl>
+										</Controls>
+										<DataSource>SalesQuotationTable</DataSource>
+									</AxFormControl>
+								</Controls>
+								<AlignChild>No</AlignChild>
+								<AlignChildren>No</AlignChildren>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+								<DataSource>SalesQuotationTable</DataSource>
+								<Style>Strip</Style>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>GridSalesQuotationTable</Name>
+								<Type>Grid</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridSalesQuotationTable_KCS_KBVRequestId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVRequestId</DataField>
+										<DataSource>SalesQuotationTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridSalesQuotationTable_QuotationId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>QuotationId</DataField>
+										<DataSource>SalesQuotationTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridSalesQuotationTable_BusRelAccount</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>BusRelAccount</DataField>
+										<DataSource>SalesQuotationTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridSalesQuotationTable_CustAccount</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>CustAccount</DataField>
+										<DataSource>SalesQuotationTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridSalesQuotationTable_QuotationName</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>QuotationName</DataField>
+										<DataSource>SalesQuotationTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>GridSalesQuotationTable_WorkerSalesTaker</Name>
+										<Type>ReferenceGroup</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>SalesQuotationTable</DataSource>
+										<ReferenceField>WorkerSalesTaker</ReferenceField>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridSalesQuotationTable_KCS_StatusId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_StatusId</DataField>
+										<DataSource>SalesQuotationTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>GridSalesQuotationTable_QuotationStatus</Name>
+										<Type>ComboBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>QuotationStatus</DataField>
+										<DataSource>SalesQuotationTable</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridSalesQuotationTable_KCS_KBVProductGroupID</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVProductGroupID</DataField>
+										<DataSource>SalesQuotationTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridSalesQuotationTable_NDX_Brand</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>NDX_Brand</DataField>
+										<DataSource>SalesQuotationTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>GridSalesQuotationTable_KCS_QuotationAmount</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_QuotationAmount</DataField>
+										<DataSource>SalesQuotationTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridSalesQuotationTable_CurrencyCode</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>CurrencyCode</DataField>
+										<DataSource>SalesQuotationTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>GridSalesQuotationTable_QuotationExpiryDate</Name>
+										<Type>Date</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>QuotationExpiryDate</DataField>
+										<DataSource>SalesQuotationTable</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataGroup>AVABuildingProjectOverview</DataGroup>
+								<DataSource>SalesQuotationTable</DataSource>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS114606</Caption>
+						<DataSource>SalesQuotationTable</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>TabPageKCS_KBVInquirerOfTheRequest</Name>
+						<Pattern>ToolbarList</Pattern>
+						<PatternVersion>1.2</PatternVersion>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormActionPaneControl">
+								<Name>ActionPaneTabPageKCS_KBVInquirerOfTheRequest</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>ActionPane</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormActionPaneTabControl">
+										<Name>ActionPaneTabTabPageKCS_KBVRelations</Name>
+										<Type>ActionPaneTab</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormButtonGroupControl">
+												<Name>ButtonGroupTabPageKCS_KBVRelations</Name>
+												<Type>ButtonGroup</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormCommandButtonControl">
+														<Name>RelationsToBVNew</Name>
+														<ElementPosition>596523234</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CommandButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+														<Command>New</Command>
+														<MultiSelect>Yes</MultiSelect>
+														<NormalImage>Add</NormalImage>
+														<Primary>Yes</Primary>
+														<ShowShortCut>No</ShowShortCut>
+														<Text>@SYS2055</Text>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormCommandButtonControl">
+														<Name>RelationsToBVDelete</Name>
+														<ElementPosition>596523234</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CommandButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+														<Command>DeleteRecord</Command>
+														<MultiSelect>Yes</MultiSelect>
+														<NormalImage>Delete</NormalImage>
+														<Primary>Yes</Primary>
+														<ShowShortCut>No</ShowShortCut>
+														<Text>@SYS10308</Text>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormButtonControl">
+														<Name>RelationNewContact</Name>
+														<Type>Button</Type>
+														<FormControlExtension
+															i:nil="true" />
+														<NormalImage>Add</NormalImage>
+														<Text>@SYS36170</Text>
+													</AxFormControl>
+												</Controls>
+												<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+											</AxFormControl>
+										</Controls>
+										<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+									</AxFormControl>
+								</Controls>
+								<AlignChild>No</AlignChild>
+								<AlignChildren>No</AlignChildren>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+								<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+								<Style>Strip</Style>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>GridKCS_KBVInquirerOfTheRequest</Name>
+								<Type>Grid</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridKCS_KBVInquirerOfTheRequest_KCS_KBVRequestID</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVRequestID</DataField>
+										<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridKCS_KBVInquirerOfTheRequest_KCS_KBVBuildingProjectID</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVBuildingProjectID</DataField>
+										<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>GridKCS_KBVInquirerOfTheRequest_KCS_KBVPublishIotR</Name>
+										<Type>CheckBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>KCS_KBVPublishIotR</DataField>
+										<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>GridKCS_KBVInquirerOfTheRequest_DirPartyId</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<Type>ReferenceGroup</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+										<ReferenceField>DirPartyId</ReferenceField>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridKCS_KBVInquirerOfTheRequest_ContactPersonId</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<Type>String</Type>
+										<Visible>No</Visible>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ContactPersonId</DataField>
+										<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridKCS_KBVInquirerOfTheRequest_editContactPersonName</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>editContactPersonName</DataMethod>
+										<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridKCS_KBVInquirerOfTheRequest_displayContactPersonName</Name>
+										<Type>String</Type>
+										<Visible>No</Visible>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayContactPersonName</DataMethod>
+										<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridKCS_KBVInquirerOfTheRequest_displayEmail</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayEmail</DataMethod>
+										<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridKCS_KBVInquirerOfTheRequest_displayPhone</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayPhone</DataMethod>
+										<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridKCS_KBVInquirerOfTheRequest_displayMobile</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayMobile</DataMethod>
+										<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridKCS_KBVInquirerOfTheRequest_displayFax</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayFax</DataMethod>
+										<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridKCS_KBVInquirerOfTheRequest_displayZIPCode</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayZIPCode</DataMethod>
+										<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridKCS_KBVInquirerOfTheRequest_displayCity</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>displayCity</DataMethod>
+										<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+							</AxFormControl>
+						</Controls>
+						<Caption>@NDX:NXAInquirerOfTheRquest</Caption>
+						<DataSource>KCS_KBVInquirerOfTheRequest</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>TabPageDocuRef</Name>
+						<Pattern>ToolbarList</Pattern>
+						<PatternVersion>1.2</PatternVersion>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormActionPaneControl">
+								<Name>ActionPaneTabPageDocuRef</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>ActionPane</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormActionPaneTabControl">
+										<Name>ActionPaneTabTabPageSalesQuotationTableCopy1</Name>
+										<Type>ActionPaneTab</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormButtonGroupControl">
+												<Name>ButtonGroupTabPageSalesQuotationTableCopy1</Name>
+												<Type>ButtonGroup</Type>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls />
+												<DataSource>SalesQuotationTable</DataSource>
+											</AxFormControl>
+										</Controls>
+										<DataSource>SalesQuotationTable</DataSource>
+									</AxFormControl>
+								</Controls>
+								<AlignChild>No</AlignChild>
+								<AlignChildren>No</AlignChildren>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+								<DataSource>DocuRef</DataSource>
+								<Style>Strip</Style>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>GridDocuRef</Name>
+								<Type>Grid</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridDocuRef_Name</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Name</DataField>
+										<DataSource>DocuRef</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridDocuRef_TypeId</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>TypeId</DataField>
+										<DataSource>DocuRef</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridDocuRef_Notes</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Notes</DataField>
+										<DataSource>DocuRef</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>GridDocuRef_fileExtension</Name>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<CacheDataMethod>Yes</CacheDataMethod>
+										<DataMethod>fileExtension</DataMethod>
+										<DataSource>DocuRef</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataGroup>BasicInformation</DataGroup>
+								<DataSource>DocuRef</DataSource>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS22565</Caption>
+						<DataSource>DocuRef</DataSource>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<ArrangeMethod>Vertical</ArrangeMethod>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

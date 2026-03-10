@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVATraverseRegalvanizationService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN 2014/02/21
+/// </summary>
+class AVATraverseRegalvanizationService extends SysOperationServiceBase
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_contract">AVATraverseRegalvanizationContract</param>
+    public void process(AVATraverseRegalvanizationContract _contract)
+    {
+
+        #OCCRetryCount
+
+        try
+        {
+            AVATraverseTrans        travTrans;
+            ProdParmReportFinished  prodParmReportFinished;
+            Qty                     zQty;
+
+            zQty = _contract.parmQty();
+            select firstonly forupdate travTrans where travTrans.ProdId == _contract.parmProdId()
+                                          && travTrans.TravNum == _contract.parmTraverseNum()
+                                          && travTrans.TravStatus == AVATravStatus::InProcess;
+            prodParmReportFinished = ProdParmReportFinished::find(_contract.parmReportFinishedParmId(), _contract.parmProdId(), true);
+
+            if ((travTrans.ZQty + zQty) > travTrans.Qty)
+            {
+                throw error(strFmt("@NDX:NXAErrorZQty", (zQty + travTrans.ZQty), travTrans.Qty));
+            }
+            if ((travTrans.ZQty + zQty) < 0)
+            {
+                throw error("@NDX:NXAErrorNegZQty");
+            }
+
+            ttsbegin;
+            travTrans.selectForUpdate();
+            travTrans.ZQty = travTrans.ZQty + zQty;
+            travTrans.update();
+            prodParmReportFinished.selectForUpdate();
+            prodParmReportFinished.QtyGood = travTrans.Qty - travTrans.ZQty;
+            prodParmReportFinished.update();
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

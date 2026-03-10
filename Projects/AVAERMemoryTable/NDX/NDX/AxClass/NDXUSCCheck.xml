@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXUSCCheck</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// WolfA 16.04.21
+/// </summary>
+class NDXUSCCheck
+{
+    #NDXUSCCHeck
+    TaxVatNumTable          taxVatNumTable;
+
+    URL                     URL;
+    
+    boolean                 USCCheck;
+    int                     USCErrorCode;
+    int                     ErrorCode;
+
+    DataAreaId              dataAreaId;
+    container               dataAreaIdList;
+    int                     i, nSeconds, nCount;
+    timeofDay               time;
+
+    const int ErrorCodeOK = 200;
+    const int ErrorCodeWrongCountry = 212;
+    const int ErrorCodeGerman = 213;
+
+    NDXUSCParameter ndxUSCParameter;
+
+    date                ResponseDatum;
+    TimeOfDay           ResponseTime;
+    NDXUSCCheckResults  ResponseName;
+    NDXUSCCheckResults  ResponseStreet;
+    NDXUSCCheckResults  ResponseZipCode;
+    NDXUSCCheckResults  ResponseCity;
+    date                ResponseValidFrom;
+    date                ResponseValidTo;
+
+    LogisticsAddressCountryRegion lLogisticsAddressCountryRegion;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// new method
+    /// </summary>
+    public void new()
+    {
+        ndxUSCParameter = NDXUSCParameter::find();
+        URL = ndxUSCParameter.Servername + #URL_Separator + ndxUSCParameter.Params;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// run method
+    /// </summary>
+    public void run()
+    {
+        time = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+        info("@NDX:NXD3954");
+        info(strfmt("@NDX:NXD3955", time2str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()), TimeSeparator::Colon, TimeFormat::Auto)));
+
+        dataAreaIdList  = connull();
+        dataAreaIdList  = DirUtility::getVirtualCompanyListFromCurrent();
+
+        nCount = 0;
+
+        for(i=1; i<=conlen(dataAreaIdList); i++)
+        {
+            dataAreaId = conpeek(dataAreaIdList, i);
+
+            changecompany(dataAreaId)
+            {
+                taxVatNumTable = null;
+
+                //Online-Prüfung aktiv?
+                if(NDXUSCParameter::find().OnlineCheck)
+                {
+                    if(CompanyInfo::find().VATNum)
+                    {
+                        while select forUpdate taxVatNumTable
+                        {
+                            USCErrorCode = this.checkVatnumCountry(taxVatNumTable.VATNum, taxVatNumTable.CountryRegionId);
+
+                            if(USCErrorCode == ErrorCodeOK)
+                            {
+                                //UST-ID-Prüfung
+                                USCErrorCode = this.simpleUstIdCheck(taxVatNumTable);
+                            }
+                            else
+                            {
+                                if(USCErrorCode != ErrorCodeOK)
+                                {
+                                    ttsbegin;
+                                    taxVatNumTable.Ust_Id_ErrorCode = USCErrorCode;
+                                    taxVatNumTable.USt_Id_Status = NDXUSCCheckStatus::Error;
+                                    taxVatNumTable.update();
+                                    ttscommit;
+                                }
+                            }
+                            nCount++;
+                        }
+                    }
+                    else
+                    {
+                        info(strfmt("@NDX:NXD3957", dataAreaId));
+                    }
+                }
+                else
+                {
+                    info(strfmt("@NDX:NXD3956", dataAreaId));
+                }
+            }
+        }
+
+        nSeconds = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()) - time;
+        info(strfmt("@NDX:NXD3958", nCount, nSeconds));
+        info(strfmt("@NDX:NXD3959", time2str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()), TimeSeparator::Colon, TimeFormat::Auto)));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runSingle</Name>
+				<Source><![CDATA[
+    public void runSingle(TaxVatNumTable _taxVatNumTable)
+    {
+        taxVatNumTable = _taxVatNumTable;
+        USCErrorCode = this.checkVatnumCountry(taxVatNumTable.VATNum, taxVatNumTable.CountryRegionId);
+        if(USCErrorCode == ErrorCodeOK)
+        {
+            //UST-ID-Prüfung
+            USCErrorCode = this.simpleUstIdCheck(taxVatNumTable);
+        }
+        else
+        {
+            if(USCErrorCode != ErrorCodeOK)
+            {
+                taxVatNumTable.selectForUpdate(true);
+                
+                ttsbegin;
+                taxVatNumTable.Ust_Id_ErrorCode = USCErrorCode;
+                taxVatNumTable.USt_Id_Status = NDXUSCCheckStatus::Error;
+                taxVatNumTable.update();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>simpleUstIdCheck</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns an error code fur UstId Check
+    /// </summary>
+    /// <param name = "_taxVatNumTable">TaxVatNumTable</param>
+    /// <param name = "_reduceTimeOut">boolean</param>
+    /// <returns>int</returns>
+    int simpleUstIdCheck(TaxVatNumTable _taxVatNumTable, boolean _reduceTimeOut = false)
+    {
+        XMLDocument         XML;
+
+        VATNum              CallOwnVatNum = CompanyInfo::find().VATNum;
+        VATNum              vatNum = _taxVatNumTable.VATNum;
+
+        Name                CallName = '';
+        AddressCity         CallCity = '';
+        AddressStreet       CallStreet = '';
+        AddressZipCodeId    CallZipCode = '';
+        str                 strDruck = '';
+
+        try 
+        {
+            XML = this.callURL(strfmt(URL, CallOwnVatNum, vatNum, CallName, CallCity, CallZipCode, CallStreet, strDruck));
+            this.getResponse(XML);
+            this.updateTaxVATNumTable(_taxVatNumTable);
+        }
+        catch
+        {
+            ErrorCode = 999;
+        }
+
+        return ErrorCode;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkVatnumCountry</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// checks vatNum for erroCode
+    /// </summary>
+    /// <param name = "vatNum">VATNum</param>
+    /// <param name = "_countryRegionId">AddressCountryRegionId</param>
+    /// <returns>int</returns>
+    int checkVatnumCountry(VATNum vatNum, AddressCountryRegionId _countryRegionId)
+    {
+        int ustIdErrorCode = ErrorCodeOK;
+        ;
+
+        if(substr(vatNum, 1, 2) != LogisticsAddressCountryRegion::find(_countryRegionId).ISOcode)
+        {
+            ustIdErrorCode = ErrorCodeWrongCountry;
+        }
+
+        return ustIdErrorCode;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>callURL</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// loads URL
+    /// </summary>
+    /// <param name = "_URL">URL</param>
+    /// <returns>XMLdocument</returns>
+    XMLdocument callURL(URL _URL)
+    {
+        XMLDocument     xml;
+        str a;
+        ;
+
+        xml = new XMLDocument();
+        xml.load(_URL);
+
+        a = xml.xml();
+
+        return xml;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getResponse</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// getResponse method
+    /// </summary>
+    /// <param name = "_xml">XMLDocument</param>
+    void getResponse(XMLDocument _xml)
+    {
+        XMLNodeList     nodeList;
+        XMLNode         currentnode;
+        XMLNode         root;
+        Str             variable;
+        str             x;
+        ;
+
+        x = _xml.xml(); //For debugger
+        root = _xml.root();
+
+        if(!root)
+        {
+            ErrorCode = 998; //Onlinesite get an Error. An outcome  cann't to execute.
+            return;
+        }
+
+        nodeList = root.selectNodes(#response_Node);
+        currentnode = nodeList.nextNode();
+        while (currentNode)
+        {
+            variable = currentnode.text();
+
+            if(strscan(variable,#response_ErrorCode, 1, strlen(variable)))
+            {
+                ErrorCode = str2Int(substr(Variable, strlen(#response_ErrorCode)+1, strlen(variable)));
+            }
+            else if(strscan(variable,#response_Date,1,strlen(variable)))
+            {
+                ResponseDatum = str2date(substr(Variable,strlen(#response_Date)+1,strlen(variable)),123);
+            }
+            else if(strscan(variable,#response_Time,1,strlen(variable)))
+            {
+                ResponseTime = str2time(substr(Variable,strlen(#response_Time)+1,strlen(variable)));
+            }
+            else if(strscan(variable,#response_Name,1,strlen(variable)))
+            {
+                ResponseName = this.setKCS_USCCheckResults(substr(Variable,strlen(#response_Name)+1,strlen(variable)));
+            }
+            else if(strscan(variable,#response_City,1,strlen(variable)))
+            {
+                ResponseCity = this.setKCS_USCCheckResults(substr(Variable,strlen(#response_City)+1,strlen(variable)));
+            }
+            else if(strscan(variable,#response_ZipCode,1,strlen(variable)))
+            {
+                ResponseZipCode = this.setKCS_USCCheckResults(substr(Variable,strlen(#response_ZipCode)+1,strlen(variable)));
+            }
+            else if(strscan(variable,#response_Street,1,strlen(variable)))
+            {
+                ResponseStreet = this.setKCS_USCCheckResults(substr(Variable,strlen(#response_Street)+1,strlen(variable)));
+            }
+            else if(strscan(variable,#response_ValidFrom,1,strlen(variable)))
+            {
+                ResponseValidFrom = str2date(substr(Variable,strlen(#response_ValidFrom)+1,strlen(variable)),123);
+            }
+            else if(strscan(variable,#response_ValidTo,1,strlen(variable)))
+            {
+                ResponseValidTo = str2date(substr(Variable,strlen(#response_ValidTo)+1,strlen(variable)),123);
+            }
+
+            currentnode = nodeList.nextNode();
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateTaxVATNumTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// updates TaxVATNumTable
+    /// </summary>
+    /// <param name = "_taxVatNumTable">TaxVatNumTable</param>
+    void updateTaxVATNumTable(TaxVatNumTable _taxVatNumTable)
+    {
+        ;
+
+        ttsbegin;
+        
+        _taxVatNumTable.selectForUpdate(true);
+
+        if(_taxVatNumTable.RecId)
+        {
+            if(ErrorCode == ErrorCodeOK)
+            {
+                _taxVatNumTable.USt_Id_Status = NDXUSCCheckStatus::OK;
+                _taxVatNumTable.Ust_Id_ErrorCode = ErrorCode;
+                _taxVatNumTable.USt_Id_LastValidRuntime = DateTimeUtil::utcNow();
+            }
+            else if(ErrorCode == ErrorCodeGerman)
+            {
+                if(_taxVatNumTable.USt_Id_Status == NDXUSCCheckStatus::OK)
+                {
+                    _taxVatNumTable.USt_Id_LastValidRuntime = TaxVATNumTable.USt_Id_LastCheckDateTime;
+                }
+
+                _taxVatNumTable.USt_Id_Status = NDXUSCCheckStatus::Unchecked;
+                _taxVatNumTable.Ust_Id_ErrorCode = ErrorCode;
+            }
+            else
+            {
+                if(_taxVatNumTable.USt_Id_Status == NDXUSCCheckStatus::OK)
+                {
+                    _taxVatNumTable.USt_Id_LastValidRuntime = TaxVATNumTable.USt_Id_LastCheckDateTime;
+                }
+
+                _taxVatNumTable.USt_Id_Status = NDXUSCCheckStatus::Error;
+                _taxVatNumTable.Ust_Id_ErrorCode = ErrorCode;
+            }
+            _taxVatNumTable.USt_Id_LastCheckDateTime = DateTimeUtil::utcNow();
+
+            _taxVatNumTable.update();
+        }
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getErrormessage</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// get error message for error code
+    /// </summary>
+    /// <param name = "_strErrorCode">int</param>
+    /// <param name = "_nextParameter">boolean</param>
+    /// <returns>Errormsg</returns>
+    Errormsg getErrormessage(int _strErrorCode,boolean _nextParameter = false)
+    {
+        errormsg message;
+        #define.CRLF('\n')
+        ;
+        if( !_nextParameter)
+        {
+            message = strFmt(NDXUSCErrorcodes::find(_strErrorCode).Errormessage, ResponseValidFrom, ResponseValidTo);
+        }
+        else
+        {
+            message = '';
+
+            if(ResponseName != NDXUSCCheckResults::A)
+            {
+                message += "@SYS93189"+ ' ' + enum2str(ResponseName) + #CRLF;
+            }
+            if(ResponseZipCode != NDXUSCCheckResults::A)
+            {
+                message += "@KCS1382" + ' ' + enum2str(ResponseZipCode) + #CRLF;
+            }
+            if(ResponseCity != NDXUSCCheckResults::A)
+            {
+                message += "@SYS22249" + ' ' + enum2str(ResponseCity) + #CRLF;
+            }
+            if(ResponseStreet != NDXUSCCheckResults::A)
+            {
+                message += "@SYS23438" + ' ' + enum2str(ResponseStreet) + #CRLF;
+            }
+        }
+
+        return message;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setKCS_USCCheckResults</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// set USCCheckResults according to value
+    /// </summary>
+    /// <param name = "_value">str</param>
+    /// <returns>NDXUSCCheckResults</returns>
+    NDXUSCCheckResults setKCS_USCCheckResults(str _value)
+    {
+        NDXUSCCheckResults ndxUSCCheckResults;
+
+        ;
+
+        switch(_value)
+        {
+            case #result_A:
+                ndxUSCCheckResults = NDXUSCCheckResults::A;
+                break;
+            case #result_B:
+                ndxUSCCheckResults = NDXUSCCheckResults::B;
+                break;
+            case #result_C:
+                ndxUSCCheckResults = NDXUSCCheckResults::C;
+                break;
+            case #result_D:
+                ndxUSCCheckResults = NDXUSCCheckResults::D;
+                break;
+            default:
+                ndxUSCCheckResults = NDXUSCCheckResults::A;
+                break;
+        }
+
+        return NDXUSCCheckResults;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

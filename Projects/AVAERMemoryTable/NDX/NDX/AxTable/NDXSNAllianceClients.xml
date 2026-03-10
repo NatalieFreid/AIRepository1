@@ -1,0 +1,543 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXSNAllianceClients</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// table NDXSNAllianceClients
+/// </summary>
+public class NDXSNAllianceClients extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getClientGroupNameForClient</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// gets the client group name for a certain client
+    /// </summary>
+    /// <returns>AVAClientGroupName</returns>
+    public AVAClientGroupName getClientGroupNameForClient()
+    {
+        NDXSNClientGroup2Client cG2CRecord      = NDXSNClientGroup2Client::findClientsRecId(this.RecId);
+        AVAClientGroupName      clientGroupName = NDXSNClientGroup::findRecId(cG2CRecord.RefRecId_ClientGroup).ClientGroupName;
+
+        return clientGroupName;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initParty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// init fields with DirPartyTable records
+    /// </summary>
+    /// <param name = "_partyTable">DirPartyTable</param>
+    public void initParty(DirPartyTable _partyTable)
+    {
+        this.DirPartyName   = _partyTable.Name;
+        this.DirPartyNumber = _partyTable.PartyNumber;
+        this.PartyRefRecId = _partyTable.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayClientGroupName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// display method for client group name
+    /// </summary>
+    /// <returns>AVAClientGroupName</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AVAClientGroupName displayClientGroupName()
+    {
+        return this.getClientGroupNameForClient();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findPartyTOS</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// finds a NDXSNAllianceClients record for provided DirPartyNumber and AVATOSId
+    /// </summary>
+    /// <param name = "_partyNumber">DirPartyNumber</param>
+    /// <param name = "_companys">NDXCompanys</param>
+    /// <param name = "_tosId">AVATOSId</param>
+    /// <param name = "_selectForUpdate">boolean</param>
+    /// <returns>NDXSNAllianceClients</returns>
+    public static NDXSNAllianceClients findPartyTOS(
+        DirPartyNumber  _partyNumber,
+        NDXCompanys     _companys,
+        AVATOSId        _tosId,
+        boolean         _selectForUpdate = false)
+    {
+        NDXSNAllianceClients allianceClients;
+
+        if(_selectForUpdate)
+        {
+            allianceClients.selectForUpdate(_selectForUpdate);
+        }
+
+        select firstonly allianceClients
+            where allianceClients.DirPartyNumber    == _partyNumber
+                && allianceClients.Companys         == _companys
+                && allianceClients.TOSId            == _tosId;
+ 
+        return allianceClients;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>existsRecordPartyTOS</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// checks if a records exists in NDXSNAllianceClients with provided TOSId and PartyNumber
+    /// </summary>
+    /// <param name = "_partyNumber">DirPartyNumber</param>
+    /// <param name = "_companys">NDXCompanys</param>
+    /// <param name = "_tosId">AVATOSId</param>
+    /// <returns>boolean</returns>
+    public static boolean existsRecordPartyTOS(
+        DirPartyNumber  _partyNumber,
+        NDXCompanys     _companys,
+        AVATOSId        _tosId)
+    {
+        return NDXSNAllianceClients::findPartyTOS(_partyNumber, _companys, _tosId).RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateClientsForTOSId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// creates new NDXSNAllianceClients records for not yet existing Party records in provided TOS
+    /// </summary>
+    /// <param name = "_tosId">AVATOSId</param>
+    public static void populateClientsForTOSId(AVATOSId _tosId)
+    {
+        NDXSNAllianceClients    allianceClients;
+        NDXSNCompanys           allianceCompanys;
+        DirPartyTable           dirParty;
+        CustTable               custTable;
+        
+        //ttsbegin;
+        while select crosscompany custTable
+            join allianceCompanys
+                where allianceCompanys.TOSId == _tosId
+            join dirParty
+            order by dirParty.PartyNumber
+            where custTable.Party == dirParty.RecId
+            && custTable.DataAreaId == allianceCompanys.CompanyId
+        {
+          
+            
+            if(NDXSNAllianceClients::existsRecordPartyTOS(dirParty.PartyNumber, NDXHelperCommon::CompanyId2NDXCompany(CustTable.company()), _tosId)
+                || !custTable.avaIsPartofTOSId(_tosId))
+            {
+                continue;
+            }
+
+            allianceClients.clear();
+
+            allianceClients.initParty(dirParty);
+            allianceClients.TOSId           = _tosId;
+            allianceClients.Companys        = NDXHelperCommon::CompanyId2NDXCompany(CustTable.company());
+            allianceClients.Child           = custTable.AccountNum;
+            allianceClients.Determined      = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+
+            
+            allianceClients.insert();
+            //insertList.add(allianceClients);
+        }
+        
+        //insertList.insertDatabase();
+        //ttscommit;
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>delete</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// poulate clients 
+    /// </summary>
+    /// <param name = "_tosId">alliance</param>
+    /*public static void populateClientsForTOSIdNew(AVATOSId _tosId)
+    {
+        NDXSNAllianceClients    allianceClients;
+        AccountNum accountNum;
+        DirPartyTable partyTable;
+        CustTable custTable;
+        NDXVerband verband = NDXVerband::constructor();
+        Set debitorsSet = new Set(Types::Record);
+        SetEnumerator debitorsEnumerators;
+       
+        container companies = NDXSNCompanys::getSelectedUks(_tosId);
+
+        debitorsSet = verband.getAllDebitorsFromMaster(_tosId,companies);
+        debitorsEnumerators = debitorsSet.getEnumerator();
+
+        while(debitorsEnumerators.moveNext())
+        {
+            custTable = debitorsEnumerators.current();
+            accountNum = custTable.AccountNum;
+            allianceClients.clear();
+            partyTable = DirPartyTable::findRec(custTable.Party);
+
+            allianceClients.initParty(partyTable);
+            allianceClients.TOSId           = _tosId;
+            allianceClients.Companys        = NDXHelperCommon::CompanyId2NDXCompany(custTable.company());
+            allianceClients.Child           = custTable.AccountNum;
+            allianceClients.Determined      = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+
+            allianceClients.insert();
+        }
+
+    } */
+
+    /// <summary>
+    /// delete method
+    /// </summary>
+    public void delete()
+    {
+        RecId locRecId = this.RecId;
+
+        super();
+
+        this.deleteClientGroupConnection(locRecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteClientGroupConnection</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// deletes the related record in NDXSNClientGroup2Client
+    /// </summary>
+    /// <param name = "_recId">RecId</param>
+    public void deleteClientGroupConnection(RecId _recId)
+    {
+        NDXSNClientGroup2Client cg2cRecord = NDXSNClientGroup2Client::findClientsRecId(_recId, true);
+
+        if(cg2cRecord.RecId)
+        {
+            ttsbegin;
+            cg2cRecord.delete();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findTosIdChild</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// finds a NDXSNAllianceClients record for provided Chil and AVATOSId
+    /// </summary>
+    /// <param name = "_child">alliance</param>
+    /// <param name = "_companys">NDXCompanys</param>
+    /// <param name = "_tosId">AVATOSId</param>
+    /// <param name = "_selectForUpdate">boolean</param>
+    /// <returns>NDXSNAllianceClients</returns>
+    public static NDXSNAllianceClients findTosIdChild(
+        AVAAllianceClient  _child,
+        NDXCompanys     _companys,
+        AVATOSId        _tosId,
+        boolean         _selectForUpdate = false)
+    {
+        NDXSNAllianceClients allianceClients;
+    
+        if(_selectForUpdate)
+        {
+            allianceClients.selectForUpdate(_selectForUpdate);
+        }
+    
+        select firstonly allianceClients
+            where allianceClients.Child    == _child
+                && allianceClients.Companys         == _companys
+                && allianceClients.TOSId            == _tosId;
+     
+        return allianceClients;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NXAAllianceClientsDevDoc</DeveloperDocumentation>
+	<Label>@NDX:NXAAllianceClients</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>TOSId</TitleField1>
+	<TitleField2>Child</TitleField2>
+	<AllowRowVersionChangeTracking>Yes</AllowRowVersionChangeTracking>
+	<ReplacementKey>PartyNumTOSdx</ReplacementKey>
+	<SaveDataPerCompany>No</SaveDataPerCompany>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>TOSId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Child</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Determined</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Companys</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Active</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ChildMap</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DirPartyNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DirPartyName</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PartyRefRecId</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>TOSId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DirPartyNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DirPartyName</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>DirPartyNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>TOSId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Companys</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>TOSId</Name>
+			<ExtendedDataType>AVATOSId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Child</Name>
+			<ExtendedDataType>AVAAllianceClient</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Companys</Name>
+			<ExtendedDataType>NDXCompanys</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<EnumType>NDXCompanyBE</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>Determined</Name>
+			<ExtendedDataType>AVADetermined</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>DirPartyNumber</Name>
+			<ExtendedDataType>DirPartyNumber</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>DirPartyName</Name>
+			<ExtendedDataType>DirPartyName</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>PartyRefRecId</Name>
+			<ExtendedDataType>DirPartyRecId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Active</Name>
+			<ExtendedDataType>AVAActive</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ChildMap</Name>
+			<ExtendedDataType>AVAAllianceClientMap</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>PartyNumTOSdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>DirPartyNumber</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>TOSId</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Companys</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>KCS_TOSTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>KCS_TOSTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>TOSId</Name>
+					<Field>TOSId</Field>
+					<RelatedField>TosId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>DirPartyTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>DirPartyTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>DirPartyNumber</Name>
+					<Field>DirPartyNumber</Field>
+					<RelatedField>PartyNumber</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>CustTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>CustTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Child</Name>
+					<Field>Child</Field>
+					<RelatedField>AccountNum</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>DirPartyTableRelationForeignKey</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<RelatedTable>DirPartyTable</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>PartyRefRecId</Name>
+					<Field>PartyRefRecId</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>NDXSNAllianceRelation</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>NDXSNAlliance</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>TOSId</Name>
+					<Field>TOSId</Field>
+					<RelatedField>TOSId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>NDXTmpKumUmsCustRelation</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<RelatedTable>NDXTmpKumUmsCust</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Child</Name>
+					<Field>Child</Field>
+					<RelatedField>Child</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Companys</Name>
+					<Field>Companys</Field>
+					<RelatedField>Company</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>TOSId</Name>
+					<Field>TOSId</Field>
+					<RelatedField>Alliance</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

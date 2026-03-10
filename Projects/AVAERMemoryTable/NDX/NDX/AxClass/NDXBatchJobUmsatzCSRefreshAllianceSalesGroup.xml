@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXBatchJobUmsatzCSRefreshAllianceSalesGroup</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 21.07.25
+/// </summary>
+public class NDXBatchJobUmsatzCSRefreshAllianceSalesGroup extends NDXBatchJobUmsatzCSRefresh
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 21.07.25
+    /// </summary>
+    /// <param name = "_batchJobId">RecId</param>
+    /// <returns>NDXBatchJobUmsatzCSRefresh</returns>
+    static NDXBatchJobUmsatzCSRefreshAllianceSalesGroup construct(RecId _batchJobId = 0)
+    {
+        NDXBatchJobUmsatzCSRefreshAllianceSalesGroup batchJob = new NDXBatchJobUmsatzCSRefreshAllianceSalesGroup(_batchJobId);
+        BatchHeader batchHeader = batchJob.parmBatchHeader();
+        if (batchHeader.parmBatchGroup() != batchGroupId)
+        {
+            batchHeader.parmBatchGroup(batchJob.parmBatchGroup(batchGroupId, batchGroupIdDescription).Group);
+        }
+        return batchJob;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addTask</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 08.09.25
+    /// </summary>
+    /// <param name = "_args"></param>
+    /// <returns></returns>
+    public RefRecId addTask(Args _args = new Args())
+    {
+        // Task 1: Umsatz Verband
+        NDXUmsatzCSRefreshControllerAlliance nDXUmsatzCSRefreshControllerAlliance = NDXUmsatzCSRefreshControllerAlliance::construct();
+        NDXUmsatzCSRefreshContract contract = nDXUmsatzCSRefreshControllerAlliance.getDataContractObject('_contract');
+        if (!contract)
+        {
+            throw Error(strFmt("@SYS23264", classStr(NDXUmsatzCSRefreshContract)));
+        }
+        contract.parmumsatzCSRefreshType(NDXUmsatzCSRefreshType::Alliance);
+        contract.parmBatchWithMultithreading(NoYes::Yes);
+
+        date today = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        const int DaysInFuture = 2;
+        date startDate = today + DaysInFuture;
+        utcdatetime startAt = DateTimeUtil::newDateTime(startDate, str2Time('22:00:00'), DateTimeUtil::getUserPreferredTimeZone());
+
+        SysRecurrenceData sysRecurrenceData = SysRecurrence::defaultRecurrence();
+        sysRecurrenceData = SysRecurrence::setRecurrenceStartDateTime(sysRecurrenceData, startAt);
+        sysRecurrenceData = SysRecurrence::setRecurrenceNoEnd(sysRecurrenceData);
+        sysRecurrenceData = SysRecurrence::setRecurrenceUnit(sysRecurrenceData, SysRecurrenceUnit::Day, 1);
+        batchHeader.parmRecurrenceData(sysRecurrenceData);
+
+        batchHeader.parmCaption("@NDX:NDXPrepareSalesDataForAllianceAndSalesArea");
+        batchHeader.parmStartDateTime(DateTimeUtil::addHours(DateTimeUtil::utcNow(), 1));    // job shouldn't start immediately
+        batchHeader.parmLogLevel(BatchLogLevel::Always);
+        batchHeader.parmExecutingBy(#AdminUser);
+
+        nDXUmsatzCSRefreshControllerAlliance.parmDialogCaption("@NDX:NDXSalesAlliance");
+        batchHeader.addTask(nDXUmsatzCSRefreshControllerAlliance);
+
+        // Task 2: Warte auf Ende von Task 1
+        NDXWaitForFinishMultiThreadJobController nDXWaitForFinishMultiThreadJobController = NDXWaitForFinishMultiThreadJobController::construct();
+        contract = nDXWaitForFinishMultiThreadJobController.getDataContractObject('_contract');
+        if (!contract)
+        {
+            throw Error(strFmt("@SYS23264", classStr(NDXUmsatzCSRefreshContract)));
+        }
+        contract.parmumsatzCSRefreshType(NDXUmsatzCSRefreshType::SalesGroup);
+        contract.parmBatchWithMultithreading(NoYes::No);
+        nDXWaitForFinishMultiThreadJobController.parmDialogCaption("@NDX:NDXWaitForCompletionSalesAlliance");
+        batchHeader.addTask(nDXWaitForFinishMultiThreadJobController, BatchConstraintType::And);
+        batchHeader.addDependency(nDXWaitForFinishMultiThreadJobController, nDXUmsatzCSRefreshControllerAlliance, BatchDependencyStatus::Finished);
+
+
+        // Task 3: Umsatz Verkaufsbereich
+        NDXUmsatzCSRefreshControllerSalesGroup nDXUmsatzCSRefreshControllerSalesGroup = NDXUmsatzCSRefreshControllerSalesGroup::construct();
+        contract = nDXUmsatzCSRefreshControllerSalesGroup.getDataContractObject('_contract');
+        if (!contract)
+        {
+            throw Error(strFmt("@SYS23264", classStr(NDXUmsatzCSRefreshContract)));
+        }
+        contract.parmumsatzCSRefreshType(NDXUmsatzCSRefreshType::SalesGroup);
+        contract.parmBatchWithMultithreading(NoYes::No);
+        nDXUmsatzCSRefreshControllerSalesGroup.parmDialogCaption('@NDX:NDXSalesSalesArea');
+        batchHeader.addTask(nDXUmsatzCSRefreshControllerSalesGroup, BatchConstraintType::And);
+        batchHeader.addDependency(nDXUmsatzCSRefreshControllerSalesGroup, nDXWaitForFinishMultiThreadJobController, BatchDependencyStatus::Finished);
+
+        batchHeader.save();
+
+        return batchHeader.parmBatchHeaderId();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 21.07.25
+    /// </summary>
+    /// <returns>class description</returns>
+    client server static ClassDescription description()
+    {
+        return "@NDX:NDXPrepareSalesAlliance";
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

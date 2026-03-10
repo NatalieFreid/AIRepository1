@@ -1,0 +1,429 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAInventTransferOrdersFrm_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>AVAInventTransferOrdersFrm_Extension</c> class is the extension for <c>InventTransferOrders</c>
+/// </summary>
+[ExtensionOf(FormStr(InventTransferOrders))]
+final class AVAInventTransferOrdersFrm_Extension
+{
+    public UserId                   frmUserId;
+    public HcmWorkerRecId           frmHcmWorkerRecId;
+    public HCMWorker                frmHCMWorker;
+    public AVAWorkerInventSite      frmAVAWorkerInventSite;
+    public InventSiteId             frmInitialInventSiteId;
+
+    public Args                     frmArgs;
+    public InventTransferTable      frmInventTransferTable;
+    public InventTransferLine       frmInventTransferLine;
+    public InventTransferId         frmInventTransferId;
+
+    public InventTransferLine       frmInventTransferLineDelete;
+
+    public AVAItemSetParameters     frmAVAItemSetParameters;
+
+    public Formdatasource           frmFDSInventTransferLine;
+    public boolean                  frmFDSInventTransferLineAllowDelete;
+    public boolean                  frmFDSInventTransferLineAllowEdit;
+
+    public boolean                  frmInventTransferLineQtyTransferAllowEdit;
+    public boolean                  frmInventTransferLineOverDeliveryPctAllowEdit;
+    public boolean                  frmInventTransferLineUnderDeliveryPctAllowEdit;
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>init</c> method.
+    /// </summary>
+    public void init()
+    {
+        frmAVAItemSetParameters = AVAItemSetParameters::find();
+
+        this.initFrmValues();
+
+        next init();
+
+        LineViewHeader_KCS_TransferTypeFilter.selection(KCS_TransferTypeFilter::All);
+
+        this.addFilterPaneRanges();
+        this.initFilterPane();
+        this.initQueryRanges();
+
+        frmFDSInventTransferLine = InventTransferLine_DS;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFrmValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>initFrmValues</c> method.
+    /// </summary>
+    void initFrmValues()
+    {
+        Common          locCommon;
+
+        frmHCMWorker            = HCMWorker::find(HcmWorkerLookup::currentWorker());
+        frmAVAWorkerInventSite  = AVAWorkerInventSite::find(frmHCMWorker.PersonnelNumber);
+
+        frmUserId               = curUserId();
+        frmHcmWorkerRecId       = HcmWorkerLookup::currentWorker();
+        frmHCMWorker            = HCMWorker::find(frmHcmWorkerRecId);
+        frmAVAWorkerInventSite  = AVAWorkerInventSite::find(frmHCMWorker.PersonnelNumber);
+
+        frmInitialInventSiteId = frmAVAWorkerInventSite.InventSiteId;
+
+        if(this.args())
+        {
+            frmArgs = new Args();
+            frmArgs = this.args();
+        }
+        
+        if(     this.args()
+            &&  this.args().menuItemName() == menuitemDisplayStr(InventTransferOrder)   )
+        {
+            if(frmArgs.record())
+            {
+                locCommon = frmArgs.record();
+
+                switch(locCommon.TableId)
+                {
+                    case Tablenum(InventTransferTable):
+                        frmInventTransferTable  = locCommon;
+                        frmInventTransferId     = frmInventTransferTable.TransferId;
+                        break;
+                            
+                    case Tablenum(InventTransferLine):
+                        frmInventTransferLine   = locCommon;
+                        frmInventTransferId     = frmInventTransferLine.TransferId;
+                        frmInventTransferTable  = InventTransferTable::find(frmInventTransferId);
+                        break;
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addFilterPaneRanges</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>addFilterPaneRanges</c> method.
+    /// </summary>
+    public void addFilterPaneRanges()
+    {
+        QueryBuildDataSource kcs_InventTransferTableQBDS;
+
+        kcs_InventTransferTableQBDS = InventTransferTable_DS.query().dataSourceName(InventTransferTable_DS.name());
+        
+        SysQuery::findOrCreateRange(kcs_InventTransferTableQBDS, fieldNum(InventTransferTable, KCS_TransferType));
+        SysQuery::findOrCreateRange(kcs_InventTransferTableQBDS, fieldNum(InventTransferTable, KCS_InventSiteIdFrom));
+        SysQuery::findOrCreateRange(kcs_InventTransferTableQBDS, fieldNum(InventTransferTable, TransferStatus));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFilterPane</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>initFilterPane</c> method.
+    /// </summary>
+    public void initFilterPane()
+    {
+        FormComboBoxControl locFormControl1;
+        FormStringControl   locFormControl2;
+        FormComboBoxControl locFormControl3;
+
+        locFormControl1 = this.design().controlName(formControlStr(InventTransferOrders, AVAFilterKCS_TransferType));
+        locFormControl1.selection(KCS_TransferTypeFilter::All);
+
+        locFormControl2 = this.design().controlName(formControlStr(InventTransferOrders, AVAFilterKCS_InventSiteIdFrom));
+        if(frmInventTransferTable.RecId)
+        {
+            locFormControl2.text('');
+        }
+        else
+        {
+            locFormControl2.text(frmInitialInventSiteId);
+        }
+
+        locFormControl3 = this.design().controlName(formControlStr(InventTransferOrders, AVAFilterInventTransferStatus));
+        locFormControl3.selection(enum2int(AVAInventTransferStatusFilter::All));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initQueryRanges</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>initQueryRanges</c> method.
+    /// </summary>
+    public void initQueryRanges()
+    {
+        this.setQueryRangeGridFilterInventSiteId();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>executeQueryInventTransferTableDS</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>executeQueryInventTransferTableDS</c> method.
+    /// </summary>
+    public void executeQueryInventTransferTableDS()
+    {
+        FormDataSource  locInventTransferTableDS;
+
+        locInventTransferTableDS = InventTransferTable_DS;
+
+        locInventTransferTableDS.executeQuery();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setQueryRangeGridFilterKCS_TransferType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>setQueryRangeGridFilterKCS_TransferType</c> method.
+    /// </summary>
+    public void setQueryRangeGridFilterKCS_TransferType()
+    {
+        KCS_TransferTypeFilter  qValue;
+        FormDataSource          locInventTransferTableDS;
+
+        locInventTransferTableDS    = InventTransferTable_DS;
+    
+        qValue                      = AVAFilterKCS_TransferType.selection();
+
+        /*
+        if (qValue != 0)
+        {
+        SysQuery::findOrCreateRange(locInventTransferTableDS.queryBuildDataSource(), fieldNum(InventTransferTable, KCS_TransferType)).value(queryValue(enum2Str(qValue)));
+        }
+        else
+        {
+        SysQuery::findOrCreateRange(locInventTransferTableDS.queryBuildDataSource(), fieldNum(InventTransferTable, KCS_TransferType)).value(SysQueryRangeUtil::valueUnlimited());
+        }
+        */
+        SysQuery::findOrCreateRange(locInventTransferTableDS.queryBuildDataSource(), fieldNum(InventTransferTable, KCS_TransferType)).value(AVAHelperClass::getQueryValueKCS_TransferTypeFilter(qValue));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setQueryRangeGridFilterInventSiteId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>setQueryRangeGridFilterInventSiteId</c> method.
+    /// </summary>
+    public void setQueryRangeGridFilterInventSiteId()
+    {
+        InventSiteId    qValue;
+        FormDataSource  locInventTransferTableDS;
+
+        locInventTransferTableDS    = InventTransferTable_DS;
+    
+        qValue                      = AVAFilterKCS_InventSiteIdFrom.valueStr();
+
+        if (qValue != '')
+        {
+            SysQuery::findOrCreateRange(locInventTransferTableDS.queryBuildDataSource(), fieldNum(InventTransferTable, KCS_InventSiteIdFrom)).value(queryValue(qValue));
+        }
+        else
+        {
+            SysQuery::findOrCreateRange(locInventTransferTableDS.queryBuildDataSource(), fieldNum(InventTransferTable, KCS_InventSiteIdFrom)).value(SysQueryRangeUtil::valueUnlimited());
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setQueryRangeGridFilterInventTransferStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>setQueryRangeGridFilterInventTransferStatus</c> method.
+    /// </summary>
+    public void setQueryRangeGridFilterInventTransferStatus()
+    {
+        AVAInventTransferStatusFilter   qValue;
+
+        FormDataSource                  locInventTransferTableDS;
+
+        locInventTransferTableDS    = InventTransferTable_DS;
+
+        qValue                      = any2Enum(AVAFilterInventTransferStatus.selection());
+        /*
+        if (qValue != 0)
+        {
+            SysQuery::findOrCreateRange(locInventTransferTableDS.queryBuildDataSource(), fieldNum(InventTransferTable, TransferStatus)).value(queryValue(enum2Str(qValue)));
+        }
+        else
+        {
+            SysQuery::findOrCreateRange(locInventTransferTableDS.queryBuildDataSource(), fieldNum(InventTransferTable, TransferStatus)).value(SysQueryRangeUtil::valueUnlimited());
+        }
+        */
+        SysQuery::findOrCreateRange(locInventTransferTableDS.queryBuildDataSource(), fieldNum(InventTransferTable, TransferStatus)).value(AVAHelperClass::getQueryValueAVAInventTransferStatusFilter(qValue));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaRefreshInventTransferLineDS</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaRefreshInventTransferLineDS</c> method.
+    /// </summary>
+    public void avaRefreshInventTransferLineDS()
+    {
+        FormDataSource  locInventTransferLineDS;
+
+        locInventTransferLineDS = InventTransferLine_DS;
+
+        locInventTransferLineDS.research(true);
+        locInventTransferLineDS.refresh();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckInventTransferTableControls</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaCheckInventTransferTableControls</c> method.
+    /// </summary>
+    public void avaCheckInventTransferTableControls()
+    {
+        InventTransferTable     locInventTransferTable;
+        FormControl             locFormMenuButtonControl;
+
+        locInventTransferTable      = InventTransferTable_DS.cursor();
+        locFormMenuButtonControl    = AVAInventTransferTableItemSetExpand;
+
+        if(locInventTransferTable.avaHasItemSetPositionExpandable())
+        {
+            locFormMenuButtonControl.enabled(true);
+        }
+        else
+        {
+            locFormMenuButtonControl.enabled(false);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckInventTransferLineControls</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaCheckInventTransferLineControls</c> method.
+    /// </summary>
+    public void avaCheckInventTransferLineControls()
+    {
+        InventTransferLine      locInventTransferLine;
+        FormControl             locFormMenuButtonControl;
+        boolean                 locAllowEdit;
+
+        locInventTransferLine       = InventTransferLine_ds.cursor();
+        locFormMenuButtonControl    = AVAInventTransferLineItemSetExpand;
+        locAllowEdit                = InventTransferLine_ds.allowEdit();
+
+        if(locInventTransferLine.avaIsItemSetPositionExpandable())
+        {
+            locFormMenuButtonControl.enabled(true);
+        }
+        else
+        {
+            locFormMenuButtonControl.enabled(false);
+        }
+
+        if(locInventTransferLine.AVAItemSetComponent)
+        {
+            this.avaDenyEditInventTransferLine();
+        }
+        else
+        {
+            InventTransferLine_ds.allowDelete(frmFDSInventTransferLineAllowDelete);
+            InventTransferLine_ds.allowEdit(frmFDSInventTransferLineAllowEdit);
+
+            inventTransferLine_ds.object(fieldNum(InventTransferLine, QtyTransfer)).allowEdit(frmInventTransferLineQtyTransferAllowEdit);
+            inventTransferLine_ds.object(fieldNum(InventTransferLine, OverDeliveryPct)).allowEdit(frmInventTransferLineOverDeliveryPctAllowEdit);
+            inventTransferLine_ds.object(fieldNum(InventTransferLine, UnderDeliveryPct)).allowEdit(frmInventTransferLineUnderDeliveryPctAllowEdit);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>allowEdit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>allowEdit</c> method.
+    ///     AVA - Schneider 20.09.2024
+    /// </summary>
+    /// <param name="_allowEdit">
+    ///     <c>boolean</c> as type
+    /// </param>
+    void  allowEdit(boolean  _allowEdit)
+    {
+        next allowEdit(_allowEdit);
+
+        this.avaDenyEditInventTransferLine();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDenyEditInventTransferLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaDenyEditInventTransferLine</c> method.
+    ///     AVA - Schneider 20.09.2024
+    /// </summary>
+    void  avaDenyEditInventTransferLine()
+    {
+        InventTransferLine      locInventTransferLine;
+        boolean                 locAllowEdit;
+
+        locInventTransferLine       = InventTransferLine_ds.cursor();
+        locAllowEdit                = InventTransferLine_ds.allowEdit();
+
+        if(locInventTransferLine.AVAItemSetComponent)
+        {
+            locAllowEdit = false;
+
+            InventTransferLine_ds.allowDelete(locAllowEdit);
+            InventTransferLine_ds.allowEdit(locAllowEdit);
+
+            InventTransferLine_ds.object(fieldNum(InventTransferLine, QtyTransfer)).allowEdit(locAllowEdit);
+            InventTransferLine_ds.object(fieldNum(InventTransferLine, OverDeliveryPct)).allowEdit(locAllowEdit);
+            InventTransferLine_ds.object(fieldNum(InventTransferLine, UnderDeliveryPct)).allowEdit(locAllowEdit);
+        }
+        else
+        {
+            InventTransferLine_ds.allowDelete(frmFDSInventTransferLineAllowDelete);
+            InventTransferLine_ds.allowEdit(frmFDSInventTransferLineAllowEdit);
+
+            inventTransferLine_ds.object(fieldNum(InventTransferLine, QtyTransfer)).allowEdit(frmInventTransferLineQtyTransferAllowEdit);
+            inventTransferLine_ds.object(fieldNum(InventTransferLine, OverDeliveryPct)).allowEdit(frmInventTransferLineOverDeliveryPctAllowEdit);
+            inventTransferLine_ds.object(fieldNum(InventTransferLine, UnderDeliveryPct)).allowEdit(frmInventTransferLineUnderDeliveryPctAllowEdit);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

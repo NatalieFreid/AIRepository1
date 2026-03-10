@@ -1,0 +1,3485 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXUmsatzClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// DebuC 22.09.23
+/// last modified: PaffH 20.01.25
+/// </summary>
+class NDXUmsatzClass extends RunBase
+{
+    //#NDX_Thread
+    //#NDX_Umsatz
+
+    NDXKumUmsCust                   kumUmsCust;
+    NDXKumUmsCustArtGrp             kumUmsCustArtGrp;
+    NDXUmsCustArtGrp                nDXUmsCustArtGrp;
+    NDXTmpCustomerAlliance          nDXTmpCustomerAlliance;
+    NDXUmsatzBuilds                 nDXUmsatzBuilds;
+
+    AccountNum                      accountNum;
+    AccountNum                      masterAlliance;
+    AccountNum                      accountNumCalculated;
+    AccountNum                      CSCheckedForaccount;
+    TreeItemIdx                     accountNumIdx;
+    Array                           aUmsLfdJ, aUmsVJ;
+    NDXJahr                         yearlfdJ, yearVJ;
+    int                             nAnzChilds;
+    boolean                         lInfoLog;
+    FormStaticTextControl           ctrlStatus;
+    NDXVerbandSE                    nDXVerband;
+    NDXUmsatzAbschluss              nDXUmsatzAbschluss;
+    NDXCompanyBE                    firma;
+    CompanyId                       firmaAsCompanyId;
+    Map                             mapFirma4Umsatz;
+
+    FormRun                         dialogForm;
+    Args                            argsCaller;
+    boolean                         lTestEnvironment;
+    boolean                         lInit1;
+    boolean                         lBasisUmsLfdJ;
+    boolean                         lCSIncl;                // Zentrallagerdaten darstellen
+    boolean                         lSalesGroup;            // SalesDistrict oder SalesGroup
+    container                       conFirmen;
+    container                       conCompanies;
+    container                       conUKs4Umsatz;          // UK's mit Umsatz
+    NDXMonthYearSignature           monthYearSignature;
+    NDXUmsSignature                 umsSignatureBase;
+    NDXUmsSignature                 umsSignature;
+    SysOperationProgressEmbedded    progressParent;
+    boolean                         lThread;
+    boolean                         lWithProt;
+    boolean                         lGetDataOnly;           // nur Datensammlung (keine Aufbereitung für Formdarstellung)
+    boolean                         lUseCalculatedData;     // bereits per Batch ermittelte Daten verwenden?
+    boolean                         lGetDataPerChild;       // Umsatzdaten pro Verbandsmitglied (statt je Verband)
+//    NDX_Umsatz2Excel                nDX_Umsatz2Excel;       // Datenaufbereitung für EXCEL
+    boolean                         lAlliance;              // Auswertung über Verbandstruktur oder Verkaufsbereich
+    smmSalesDistrictId              salesDistrictId;        // Verkaufsbereich
+    CommissSalesGroup               salesGroupId;           // Verkaufsbereich (Provision)
+    boolean                         lHasRLSCustTable;       // bestehen Einschränkungen auf der CustTable
+    boolean                         lShowBonusDirectly;     // Sofortbonus extra darstellen?
+    boolean                         lBonusDirectlyIncl;     // Sofortbonus dem Umsatz hinzuaddieren
+    CurrencySymbol                  currencySymbol;         // Währungskennzeichen
+    Version                         dataVersion;            // Daten versioniert aufbauen
+    RefRecId                        dirPartyIdCalculated;   // kalkulierte DirPartyId
+    int                             oldColorBG, oldColorFG; // Farbumsetzung bei Message-Anzeige
+
+    Query                           qNDX_TmpKumUmsCustArtGrp;
+    Query                           qNDX_TmpKumUmsCust;
+    Query                           qNDX_KumUmsCustMonat;
+    container                       conMessageCntrl;
+    NDXUmsatzClassArgs              umsatzClassArgs;
+    NDXSignature                    signatureArtGrp;
+    NDXSignature                    signatureCust;
+    NDXSignature                    signatureCS;
+    NDXBatchWithMultithreading batchWithMultiThreading;
+    RecId recIdNDXBatchProcessingTable;
+
+    #define.CurrentVersion(2)
+    #localmacro.CurrentList
+        accountNum,
+        lBasisUmsLfdJ,
+        lCSIncl,
+        firma,
+        lAlliance,
+        salesDistrictId,
+        salesGroupId,
+        lShowBonusDirectly,
+        lBonusDirectlyIncl
+    #endmacro
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmBatchWithMultiThreading</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 16.01.25
+    /// </summary>
+    /// <param name = "_batchWithMultiThreading">NDXBatchWithMultithreading</param>
+    /// <returns>batchWithMultiThreading</returns>
+    NDXBatchWithMultithreading parmBatchWithMultiThreading(NDXBatchWithMultithreading _batchWithMultiThreading = batchWithMultiThreading)
+    {
+        batchWithMultiThreading = _batchWithMultiThreading;
+        return batchWithMultiThreading;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.02.24
+    /// </summary>
+    /// <returns>boolean</returns>
+    protected boolean canRunInNewSession()
+    {
+        boolean ret;
+
+        ret = super();
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmConFirmen</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_conFirmen">container</param>
+    /// <returns>container</returns>
+    container parmConFirmen(container _conFirmen = conFirmen)
+    {
+        conFirmen = _conFirmen;
+        return conFirmen;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// last modified: PaffH 16.01.25
+    /// </summary>
+    /// <param name = "args">NDXUmsatzClassArgs</param>
+    protected void new(NDXUmsatzClassArgs args = null)
+    {
+        //NDX_ADSRunBaseBatch2    ndx_RunBaseBatch;
+        ;
+        super();
+
+        yearlfdJ            = year(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+        yearVJ              = yearlfdJ - 1;
+        dataVersion         = 0;
+        lThread             = false;
+        lWithProt           = false;
+        aUmsLfdJ            = new Array(Types::Class);
+        aUmsVJ              = new Array(Types::Class);
+        mapFirma4Umsatz     = new Map(Types::Enum, Types::Integer);
+        monthYearSignature  = this.parmMonthYearSignature(true);   // JahrMonat
+        umsSignatureBase    = this.parmUmsSignatureBase('', true);
+        umsSignature        = this.parmUmsSignature(umsSignature, true);
+//        lHasRLSCustTable    = NDX_RLS::isRLSActive(tablenum(CustTable));
+        conMessageCntrl     = connull();
+        batchWithMultiThreading = NoYes::No;
+
+        this.initVerband();
+        
+        currencySymbol      = Currency::NDXfindByCompanyInfo().Symbol;
+
+        nDXUmsatzAbschluss = NDXUmsatzAbschluss::construct();
+
+        if (args && args.parmlGetLastValues() != NDXNoYesBE::No)
+        {
+            xSysLastValue::getLast(this);
+        }
+        if (args && args.parmFirma())
+        {
+            firma = args.parmFirma();
+        }
+
+        this.parmlBasisUmsLfdJ(lBasisUmsLfdJ);  // Laufendes Jahr und Vorjahr setzen
+
+        if (args && args.parmlCSIncl() != NDXNoYesBE::WithoutAssignment)
+        {
+            this.parmLCSIncl(args.parmlCSIncl() == NDXNoYesBE::Yes);
+        }
+
+
+        lGetDataOnly    = false;
+
+        if (args)
+        {
+            argsCaller  = args;
+            //ndx_RunBaseBatch = args.object();
+            //if (ndx_RunBaseBatch)
+            //    lTestEnvironment = ndx_RunBaseBatch.parmlTestImport();
+
+        }
+
+        if (args && (args.parmMaster() || args.parmSalesGroupId()))
+        {
+            if (args.parmLAlliance() != NDXNoYesBE::WithoutAssignment)
+            {
+                this.parmlAlliance(args.parmLAlliance() == NDXNoYesBE::Yes ? true : false);
+            }
+            if (args.parmMaster())
+            {
+                this.parmAccountNum(args.parmMaster());
+                this.initVerband(args.parmMaster());
+            }
+            if (args.parmSalesGroupId())
+            {
+                this.parmSalesGroupId(args.parmSalesGroupId());
+            }
+        }
+
+        // Einstellung für Umsatzbasis
+        if (args)
+        {
+            switch (args.parmlBasisUmsLfdJ())
+            {
+                case NDXNoYesBE::Yes       :
+                    this.parmlBasisUmsLfdJ(NoYes::Yes);
+                    break;
+                case NDXNoYesBE::No        :
+                    this.parmlBasisUmsLfdJ(NoYes::No);
+                    break;
+            }
+        }
+
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// last modified: PaffH 20.01.25
+    /// </summary>
+    /// <param name = "args">NDXUmsatzClassArgs</param>
+    /// <returns>NDXUmsatzClass</returns>
+    static NDXUmsatzClass construct(NDXUmsatzClassArgs args = null)
+    {
+        NDXUmsatzClass          nDXUmsatzClass;
+        NDXGetUmsType           umsType = NDXGetUmsType::WithoutDefiniton;
+
+        boolean                 lAlliance;
+        CustAccount             master;
+        CommissSalesGroup       salesGroupId;
+        ;
+
+        if (args &&
+            args.parmEnumType() == enumnum(NDXGetUmsType))
+        {
+            umsType         = args.parmEnum();
+        }
+        nDXUmsatzClass =  new NDXUmsatzClass(args);
+
+        if (args)
+        {
+            nDXUmsatzClass.parmBatchWithMultiThreading(args.parmBatchWithMultithreading());
+            if (args.parmLAlliance() == NDXNoYesBE::WithoutAssignment)
+            {
+                lAlliance       = nDXUmsatzClass.parmlAlliance();
+            }
+            else
+            {
+                lAlliance       = args.parmLAlliance() == NDXNoYesBE::Yes ? true : false;
+            }
+
+            if (args.parmMaster())
+            {
+                master          = args.parmMaster();
+            }
+            else
+            {
+                master          = nDXUmsatzClass.parmAccountNum();
+            }
+            if (args.parmSalesGroupId())
+            {
+                salesGroupId    = args.parmSalesGroupId();
+            }
+            else
+            {
+                salesGroupId    = nDXUmsatzClass.parmSalesGroupId();
+            }
+
+            nDXUmsatzClass.parmDataVersion(args.parmDataVersion());
+            if (args.parmDataVersion() == NDXUmsatzConstants::DataVersionVerband ||
+                args.parmDataVersion() == NDXUmsatzConstants::DataVersionVKBereich)
+            {
+                nDXUmsatzClass.parmMonthYearSignature(true, nDXUmsatzClass.monthYearSignatureBase(), false);
+            }
+
+            if (args.parmlCSIncl() != NDXNoYesBE::WithoutAssignment)
+            {
+                nDXUmsatzClass.parmLCSIncl(args.parmlCSIncl() == NDXNoYesBE::Yes);
+            }
+            if (args.parmlShowBonusDirectly() != NDXNoYesBE::WithoutAssignment)
+            {
+                nDXUmsatzClass.parmLShowBonusDirectly(args.parmlShowBonusDirectly() == NDXNoYesBE::Yes);
+            }
+            if (args.parmlBonusDirectlyIncl() != NDXNoYesBE::WithoutAssignment)
+            {
+                nDXUmsatzClass.parmLBonusDirectlyIncl(args.parmlBonusDirectlyIncl() == NDXNoYesBE::Yes);
+            }
+        }
+
+        // Auszuwertende Firmen
+        nDXUmsatzClass.initFirmen();
+
+        // GetDataOnly
+        switch (umsType)
+        {
+            case NDXGetUmsType::perCustomerThread      :
+            case NDXGetUmsType::perAlliance            :
+            case NDXGetUmsType::perAllianceThread      :
+            case NDXGetUmsType::Init4AllianceRun       :
+            case NDXGetUmsType::Init4AllianceRunOne    :
+            case NDXGetUmsType::Init4SalesGroupRun     :
+                nDXUmsatzClass.parmLGetDataOnly(true);
+                break;
+        }
+
+
+        // Umsatzsignatur
+        switch (umsType)
+        {
+            case NDXGetUmsType::perCustomerThread  :
+                nDXUmsatzClass.parmUmsSignature(strfmt('%1%2', curuserid(), NDXUmsatzConstants::Thread));
+                break;
+            case NDXGetUmsType::perAlliance            :
+            case NDXGetUmsType::perAllianceThread      :
+            case NDXGetUmsType::Init4AllianceRun       :
+            case NDXGetUmsType::Init4AllianceRunOne    :
+            case NDXGetUmsType::Init4SalesGroupRun     :
+                nDXUmsatzClass.parmUmsSignature(nDXUmsatzClass.getCalculatedUser());
+                break;
+        }
+
+        // Threadsteuerung ?
+        switch (umsType)
+        {
+            //case NDX_GetUmsType::ohneFestlegung     :
+            //if (box::yesNo("@NXD1271", DialogButton::No)==DialogButton::Yes)        // Soll die Datenermittlung über Threads erfolgen?
+            //    nDX_UmsatzClass.parmLThread(true);
+            case NDXGetUmsType::perCustomerThread      :
+            case NDXGetUmsType::perAllianceThread      :
+                nDXUmsatzClass.parmLThread(true);
+                break;
+        }
+
+        // Tabelleninitialisierung (Alliance)
+        switch (umsType)
+        {
+            case NDXGetUmsType::perAllianceThread      :
+            case NDXGetUmsType::Init4AllianceRun       :
+                nDXUmsatzClass.initTables4Alliance();
+                break;
+        }
+
+        // Tabelleninitialisierung (ThreadRun)
+        switch (umsType)
+        {
+            case NDXGetUmsType::perCustomerThread      :
+            case NDXGetUmsType::Init4ThreadRun         :
+            case NDXGetUmsType::Init4AllianceRun       :
+            case NDXGetUmsType::Init4AllianceRunOne    :
+                nDXUmsatzClass.init4ThreadRun();
+                break;
+        }
+        // Tabelleninitialisierung (Allgemein)
+        switch (umsType)
+        {
+            case NDXGetUmsType::perCustomer            :
+            case NDXGetUmsType::perCustomerThread      :
+            case NDXGetUmsType::Init4ThreadRun         :
+            case NDXGetUmsType::Init4AllianceRun       :
+            case NDXGetUmsType::Init4AllianceRunOne    :
+            case NDXGetUmsType::Init4SalesGroupRun     :
+                nDXUmsatzClass.initTables();
+                nDXUmsatzClass.initNDXKumUmsCustMonat();
+                break;
+        }
+
+        // Verband initialisieren
+        nDXUmsatzClass.initVerband();
+
+        return nDXUmsatzClass;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmMonthYearSignature</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "lSet">boolean</param>
+    /// <param name = "l_monthYearSignature">NDXMonthYearSignature</param>
+    /// <param name = "lCheckUseCompressedData">boolean</param>
+    /// <returns>NDXMonthYearSignature</returns>
+    public NDXMonthYearSignature parmMonthYearSignature(boolean                    lSet = false,
+                                                     NDXMonthYearSignature     l_monthYearSignature = monthYearSignature,
+                                                     boolean                    lCheckUseCompressedData = true)
+    {
+        NDXTmpKumUmsCust        nDXTmpKumUmsCust;
+        ;
+        if (lSet)
+        {
+            monthYearSignature  = this.monthYearSignatureBase();
+
+            if (lCheckUseCompressedData)
+            {
+                // Falls mit dieser Signatur keine verdichteten Daten aufbereitet wurden
+                // kann die letzte Verdichtung genutzt werden
+                select firstOnly   monthYearSignature
+                    from       nDXTmpKumUmsCust
+                    where      nDXTmpKumUmsCust.umsSignature       == NDXUmsatzConstants::CalculatedUser
+                        &&     nDXTmpKumUmsCust.monthYearSignature == monthYearSignature;
+
+                if (!nDXTmpKumUmsCust)
+                {
+                    if (NDXUmsatzParametersGlobal::getUseCompressedData() == NoYes::Yes)
+                    {
+                        select firstOnly    monthYearSignature
+                        from            nDXTmpKumUmsCust
+                        group by        monthYearSignature desc
+                            where           nDXTmpKumUmsCust.umsSignature == NDXUmsatzConstants::CalculatedUser &&
+                                        nDXTmpKumUmsCust.monthYearSignature <= monthYearSignature;
+
+                        if (nDXTmpKumUmsCust)
+                        {
+                            monthYearSignature = NDXTmpKumUmsCust.MonthYearSignature;
+                        }
+                    }
+                }
+            }
+        }
+        //--> 1.2: NDX/PaffH/29.03.2011
+        if (!prmisdefault(l_monthYearSignature) && l_monthYearSignature)
+        {
+            monthYearSignature = l_monthYearSignature;
+        }
+        //<-- NDX/PaffH/29.03.2011
+
+        return monthYearSignature;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmUmsSignatureBase</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_umsSignatureBase">NDXUmsSignature</param>
+    /// <param name = "lSet">boolean</param>
+    /// <returns>NDXUmsSignature</returns>
+    public NDXUmsSignature parmUmsSignatureBase(NDXUmsSignature _umsSignatureBase = umsSignatureBase, boolean lSet = false)
+    {
+        umsSignatureBase = _umsSignatureBase;
+        if (lSet)
+        {
+            umsSignatureBase = curuserid();
+        }
+
+        return umsSignatureBase;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>monthYearSignatureBase</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <returns>NDXMonthYearSignature</returns>
+    public NDXMonthYearSignature monthYearSignatureBase()
+    {
+        str                     sDate;
+        NDXMonthYearSignature   lMonthYearSignature;
+        ;
+        sDate                   = date2str(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), 321, DateDay::Digits2, DateSeparator::None, DateMonth::Digits2, DateSeparator::None, DateYear::Digits4);
+        lMonthYearSignature      = substr(sDate, 1, 6);   // JahrMonat
+
+        if (!this.parmlBasisUmsLfdJ())
+        {
+            lMonthYearSignature = strfmt('%1%2', yearlfdJ, substr(lMonthYearSignature, 5,2)); // lfd.J entspricht bereits dem Vorjahr!
+        }
+
+        return lMonthYearSignature;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmlBasisUmsLfdJ</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_lBasisUmsLfdJ">NoYes</param>
+    /// <returns>NoYes</returns>
+    public NoYes   parmlBasisUmsLfdJ(NoYes _lBasisUmsLfdJ = lBasisUmsLfdJ)
+    {
+        ;
+
+        if (!prmisdefault(_lBasisUmsLfdJ))
+        {
+            lBasisUmsLfdJ = _lBasisUmsLfdJ;
+            if (lBasisUmsLfdJ == NoYes::Yes)
+            {
+                this.parmYearlfdJ(year(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())));
+            }
+            else
+            {
+                this.parmYearlfdJ(year(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))-1);
+            }
+            this.parmMonthYearSignature(true);                                     // 1.1: NDX/PaffH/24.03.2011
+
+            //xSysLastValue::saveLast(this);
+
+            // Basis wurde verändert; also bisherige kum. Umsatzwerte verwerfen
+            if (this.parmlUseCalculatedData())
+            {
+                this.initTmpKumUmsCust(false, true);
+            }
+            else
+            {
+                this.initTmpKumUmsCust();
+            }
+        }
+
+        return lBasisUmsLfdJ;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmYearlfdJ</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_yearlfdJ">NDXYear</param>
+    /// <returns>NDXYear</returns>
+    public NDXYear parmYearlfdJ(NDXYear _yearlfdJ = yearlfdJ)
+    {
+        yearlfdJ = _yearlfdJ;
+        yearVJ   = yearlfdJ - 1;
+
+        return yearlfdJ;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmlUseCalculatedData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_lUseCalculatedData">boolean</param>
+    /// <returns>boolean</returns>
+    boolean parmlUseCalculatedData(boolean _lUseCalculatedData = lUseCalculatedData)
+    {
+        ;
+        lUseCalculatedData  = _lUseCalculatedData;
+        return lUseCalculatedData;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initTmpKumUmsCust</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// last modified: PaffH 29.03.25
+    /// </summary>
+    /// <param name = "lInitSignature">boolean</param>
+    /// <param name = "lInit4CalculatedData">boolean</param>
+    void initTmpKumUmsCust(boolean lInitSignature = false, boolean lInit4CalculatedData = false)
+    {
+        NDXTmpKumUmsCust            nDXTmpKumUmsCust;
+        NDXTmpKumUmsCustArtGrp      nDXTmpKumUmsCustArtGrp;
+        NDXTmpCSAllianceArtGrp     nDXTmpCSAllianceArtGrp;
+        NDXTmpCustomerAlliance      lnDXTmpCustomerAlliance;
+        NDXTmpCSAlliance            nDXTmpCSAlliance;
+        int                         i;
+        dataAreaId                  company;
+        boolean                     lAllianceValues;
+        accountNum                  l_Alliance;
+        NDXUmsSignature             lUmsSignature;
+        Query                       q;
+        QueryRun                    qr;
+        QueryBuildDataSource        qbds;
+        str infoAddition;
+
+        lAllianceValues = NDXUmsatzClass::AllianceOrSalesGroupValues(this.parmlAlliance(), this.parmlUseCalculatedData(), this.parmLGetDataOnly(), this.parmNDXVerband().parmlSalesGroupMaster());
+        lUmsSignature  = lInit4CalculatedData ? this.getCalculatedUser() : umsSignature;
+
+        for (i = 1; i <= conlen(conCompanies); i++)
+        {
+            company = conpeek(conCompanies, i);
+            changecompany(company)
+            {
+                nDXTmpKumUmsCust           = null;
+                nDXTmpKumUmsCustArtGrp     = null;
+                lnDXTmpCustomerAlliance    = null;
+                nDXTmpCSAlliance           = null;
+                nDXTmpCSAllianceArtGrp    = null;
+
+                if (!lAllianceValues && this.parmSalesGroupId())
+                {
+                    l_Alliance  = this.parmSalesGroupId();
+                }
+                else
+                {
+                    l_Alliance  = this.parmAccountNum();
+                }
+
+                if (l_Alliance && !lInitSignature)
+                {
+                    // NDX_TmpKumUmsCust
+                    if (!lInit4CalculatedData)
+                    {
+                        q       = new Query();
+                        qbds    = q.addDataSource(tablenum(NDXTmpKumUmsCust));
+                        qbds.update(true);
+                        qbds.addRange(fieldnum(NDXTmpKumUmsCust, umsSignature)).value(lUmsSignature);
+                        qbds.addRange(fieldnum(NDXTmpKumUmsCust, MonthYearSignature)).value(monthYearSignature);
+                        if (l_Alliance != NDXUmsatzConstants::all)
+                        {
+                            if (this.parmPartyIdCalculated())
+                            {
+                                qbds.addRange(fieldnum(NDXTmpKumUmsCust, Party)).value(queryValue(this.parmPartyIdCalculated()));
+                            }
+                            else
+                            {
+                                qbds.addRange(fieldnum(NDXTmpKumUmsCust, Alliance)).value(l_Alliance);
+                            }
+                        }
+                        qr = new QueryRun(q);
+                        ttsbegin;
+                        while (qr.next())
+                        {
+                            nDXTmpKumUmsCust = qr.get(tablenum(NDXTmpKumUmsCust));
+                            nDXTmpKumUmsCust.delete();
+                        }
+                        ttscommit;
+                    }
+
+                    // NDX_TmpKumUmsCustArtGrp
+                    if (!lInit4CalculatedData)
+                    {
+                        q       = new Query();
+                        qbds    = q.addDataSource(tablenum(NDXTmpKumUmsCustArtGrp));
+                        qbds.update(true);
+                        qbds.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, umsSignature)).value(lUmsSignature);
+                        qbds.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, MonthYearSignature)).value(monthYearSignature);
+                        if (lAllianceValues && this.parmAccountNum())
+                        {
+                            if (this.parmPartyIdCalculated())
+                            {
+                                qbds.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, Party)).value(queryValue(this.parmPartyIdCalculated()));
+                            }
+                            else
+                            {
+                                qbds.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, Alliance)).value(this.parmAccountNum());
+                            }
+                        }
+                        if (!lAllianceValues && this.parmSalesGroupId())
+                        {
+                            if (this.parmSalesGroupId() != NDXUmsatzConstants::all) 
+                            {
+                                qbds.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, SalesGroup)).value(this.parmSalesGroupId());
+                            }
+                        }
+                        qr = new QueryRun(q);
+                        try
+                        {
+                            ttsbegin;
+                            while (qr.next())
+                            {
+                                nDXTmpKumUmsCustArtGrp = qr.get(tablenum(NDXTmpKumUmsCustArtGrp));
+                                nDXTmpKumUmsCustArtGrp.delete();
+                            }
+                            ttscommit;
+                        }
+                        catch (Exception::Deadlock)
+                        {
+                            if (xSession::currentRetryCount() >= NDXExceptionConstants::Retry5)
+                            {
+                                infoAddition = strFmt("@NDX:NDXErrorTmpKumUmsCustArtGrpAddition", sessionId(), nDXTmpKumUmsCustArtGrp.Alliance, nDXTmpKumUmsCustArtGrp.Child, nDXTmpKumUmsCustArtGrp.ItemGroup, nDXTmpKumUmsCustArtGrp.UmsSignature, nDXTmpKumUmsCustArtGrp.MonthYearSignature);
+                                infoAddition += " NDXUmsatzClass:645";
+                                throw Error(strFmt("@NDXBase:NDXDeadLock", tableId2Name(nDXTmpKumUmsCustArtGrp.TableId)) + infoAddition);
+                            }
+                            else
+                            {
+                                sleep(NDXExceptionConstants::RetryInterval500);
+                                retry;
+                            }
+                        }
+                        catch (Exception::UpdateConflict)
+                        {
+                            if (xSession::currentRetryCount() >= NDXExceptionConstants::Retry5)
+                            {
+                                infoAddition = strFmt("@NDX:NDXErrorTmpKumUmsCustArtGrpAddition", sessionId(), nDXTmpKumUmsCustArtGrp.Alliance, nDXTmpKumUmsCustArtGrp.Child, nDXTmpKumUmsCustArtGrp.ItemGroup, nDXTmpKumUmsCustArtGrp.UmsSignature, nDXTmpKumUmsCustArtGrp.MonthYearSignature);
+                                infoAddition += " NDXUmsatzClass:656";
+                                throw Error(strFmt("@NDXBase:NDXUpdateConflict", tableId2Name(nDXTmpKumUmsCustArtGrp.TableId)) + infoAddition);
+                            }
+                            else
+                            {
+                                sleep(NDXExceptionConstants::RetryInterval500);
+                                retry;
+                            }
+                        }
+                    }
+
+                    // NDXTmpCustomerAlliance
+                    q       = new Query();
+                    qbds    = q.addDataSource(tablenum(NDXTmpCustomerAlliance));
+                    qbds.update(true);
+                    qbds.addRange(fieldnum(NDXTmpCustomerAlliance, UmsSignature)).value(lUmsSignature);
+                    if (l_Alliance != NDXUmsatzConstants::all)
+                    {
+                        qbds.addRange(fieldnum(NDXTmpCustomerAlliance, Alliance)).value(l_Alliance);
+                    }
+                    qr = new QueryRun(q);
+                    ttsbegin;
+                    while (qr.next())
+                    {
+                        lnDXTmpCustomerAlliance = qr.get(tablenum(NDXTmpCustomerAlliance));
+                        lnDXTmpCustomerAlliance.delete();
+                    }
+                    ttscommit;
+
+                    // NDXTmpCustomerAllianceBlock
+                    NDXTmpCustomerAllianceBlock lnDXTmpCustomerAllianceBlock;
+                    q       = new Query();
+                    qbds    = q.addDataSource(tablenum(NDXTmpCustomerAllianceBlock));
+                    qbds.update(true);
+                    qbds.addRange(fieldnum(NDXTmpCustomerAllianceBlock, UmsSignature)).value(lUmsSignature);
+                    if (l_Alliance != NDXUmsatzConstants::all)        
+                    {
+                        qbds.addRange(fieldnum(NDXTmpCustomerAllianceBlock, Alliance)).value(l_Alliance);
+                    }
+                    qr = new QueryRun(q);
+                    ttsbegin;
+                    while (qr.next())
+                    {
+                        lnDXTmpCustomerAllianceBlock = qr.get(tablenum(NDXTmpCustomerAllianceBlock));
+                        lnDXTmpCustomerAllianceBlock.delete();
+                    }
+                    ttscommit;
+
+                    // NDX_TmpCSAlliance
+                    if (!lInit4CalculatedData)
+                    {
+                        q       = new Query();
+                        qbds    = q.addDataSource(tablenum(NDXTmpCSAlliance));
+                        qbds.update(true);
+                        qbds.addRange(fieldnum(NDXTmpCSAlliance, umsSignature)).value(lUmsSignature);
+                        qbds.addRange(fieldnum(NDXTmpCSAlliance, monthYearSignature)).value(monthYearSignature);
+                        if (lAllianceValues && this.parmAccountNum())
+                        {
+                            qbds.addRange(fieldnum(NDXTmpCSAlliance, Alliance)).value(this.parmAccountNum());
+                        }
+                        qr = new QueryRun(q);
+                        ttsbegin;
+                        while (qr.next())
+                        {
+                            nDXTmpCSAlliance = qr.get(tablenum(NDXTmpCSAlliance));
+                            nDXTmpCSAlliance.delete();
+                        }
+                        ttscommit;
+                    }
+
+                    // NDX_TmpCSAllianceArtGrp
+                    if (!lInit4CalculatedData)
+                    {
+                        q       = new Query();
+                        qbds    = q.addDataSource(tablenum(NDXTmpCSAllianceArtGrp));
+                        qbds.update(true);
+                        qbds.addRange(fieldnum(NDXTmpCSAllianceArtGrp, umsSignature)).value(lUmsSignature);
+                        qbds.addRange(fieldnum(NDXTmpCSAllianceArtGrp, monthYearSignature)).value(monthYearSignature);
+                        if (lAllianceValues && this.parmAccountNum())
+                        {
+                            qbds.addRange(fieldnum(NDXTmpCSAllianceArtGrp, Alliance)).value(this.parmAccountNum());
+                        }
+                        qr = new QueryRun(q);
+                        ttsbegin;
+                        while (qr.next())
+                        {
+                            nDXTmpCSAllianceArtGrp = qr.get(tablenum(NDXTmpCSAllianceArtGrp));
+                            nDXTmpCSAllianceArtGrp.delete();
+                        }
+                        ttscommit;
+                    }
+
+                }
+                else
+                {
+                    try
+                    {
+                        if (!lInit4CalculatedData)
+                        {
+                            delete_from nDXTmpKumUmsCust
+                            where   nDXTmpKumUmsCust.UmsSignature                  == lUmsSignature &&
+                                    nDXTmpKumUmsCust.MonthYearSignature            == monthYearSignature;
+                        }
+
+                        if (!lInit4CalculatedData)
+                        {
+                            delete_from nDXTmpKumUmsCustArtGrp
+                            where   nDXTmpKumUmsCustArtGrp.UmsSignature            == lUmsSignature &&
+                                    nDXTmpKumUmsCustArtGrp.MonthYearSignature      == monthYearSignature;
+                        }
+
+                        delete_from nDXTmpCustomerAlliance
+                        where   nDXTmpCustomerAlliance.UmsSignature               == lUmsSignature;
+                        //delete_from nDXTmpCustomerAllianceBlock
+                        //    where   nDXTmpCustomerAllianceBlock.UmsSignature          == lUmsSignature;
+
+                        if (!lInit4CalculatedData)
+                        {
+                            delete_from NDXTmpCSAlliance
+                            where   NDXTmpCSAlliance.UmsSignature                  == lUmsSignature   &&
+                                    nDXTmpCSAlliance.MonthYearSignature            == monthYearSignature;
+                        }
+
+                        if (!lInit4CalculatedData)
+                        {
+                            delete_from nDXTmpCSAllianceArtGrp
+                            where   nDXTmpCSAllianceArtGrp.UmsSignature           == lUmsSignature   &&
+                                    nDXTmpCSAllianceArtGrp.MonthYearSignature     == monthYearSignature;
+                        }
+                    }
+                    catch (Exception::Deadlock)
+                    {
+                        if (xSession::currentRetryCount() >= NDXExceptionConstants::Retry5)
+                        {
+                            infoAddition = strFmt("@NDX:NDXErrorTmpKumUmsCustArtGrpAddition", sessionId(), nDXTmpKumUmsCustArtGrp.Alliance, nDXTmpKumUmsCustArtGrp.Child, nDXTmpKumUmsCustArtGrp.ItemGroup, nDXTmpKumUmsCustArtGrp.UmsSignature, nDXTmpKumUmsCustArtGrp.MonthYearSignature);
+                            infoAddition += " NDXUmsatzClass:794";
+                            throw Error(strFmt("@NDXBase:NDXDeadLock", tableId2Name(nDXTmpKumUmsCustArtGrp.TableId)) + infoAddition);
+                        }
+                        else
+                        {
+                            sleep(NDXExceptionConstants::RetryInterval500);
+                            retry;
+                        }
+                    }
+                    catch (Exception::UpdateConflict)
+                    {
+                        if (xSession::currentRetryCount() >= NDXExceptionConstants::Retry5)
+                        {
+                            infoAddition = strFmt("@NDX:NDXErrorTmpKumUmsCustArtGrpAddition", sessionId(), nDXTmpKumUmsCustArtGrp.Alliance, nDXTmpKumUmsCustArtGrp.Child, nDXTmpKumUmsCustArtGrp.ItemGroup, nDXTmpKumUmsCustArtGrp.UmsSignature, nDXTmpKumUmsCustArtGrp.MonthYearSignature);
+                            infoAddition += " NDXUmsatzClass:808";
+                            throw Error(strFmt("@NDXBase:NDXUpdateConflict", tableId2Name(nDXTmpKumUmsCustArtGrp.TableId)) + infoAddition);
+                        }
+                        else
+                        {
+                            sleep(NDXExceptionConstants::RetryInterval500);
+                            retry;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AllianceOrSalesGroupValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "l_lAlliance">boolean</param>
+    /// <param name = "lUseCalculatedData">boolean</param>
+    /// <param name = "lGetDataOnly">boolean</param>
+    /// <param name = "lSalesGroupMaster">boolean</param>
+    /// <returns>boolean</returns>
+    static boolean AllianceOrSalesGroupValues(boolean               l_lAlliance,
+                                          boolean               lUseCalculatedData  = false,
+                                          boolean               lGetDataOnly        = false,
+                                          boolean               lSalesGroupMaster   = false)
+    {
+        boolean lAlliance = l_lAlliance;
+        lAlliance   = lAlliance || !lUseCalculatedData;
+
+        if (!prmisdefault(lSalesGroupMaster) && lSalesGroupMaster)
+        {
+            lAlliance = false;
+        }
+
+        if (lGetDataOnly)
+        {
+            lAlliance   = l_lAlliance;
+        }
+
+        return lAlliance;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmRecIdNDXBatchProcessingTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 20.02.25
+    /// </summary>
+    /// <param name = "_recIdNDXBatchProcessingTable">RecId</param>
+    /// <returns>recIdNDXBatchProcessingTable</returns>
+    RecId parmRecIdNDXBatchProcessingTable(RecId _recIdNDXBatchProcessingTable = recIdNDXBatchProcessingTable)
+    {
+        recIdNDXBatchProcessingTable = _recIdNDXBatchProcessingTable;
+        return recIdNDXBatchProcessingTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmAccountNum</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_accountNum">AccountNum</param>
+    /// <returns>AccountNum</returns>
+    AccountNum parmAccountNum(AccountNum _accountNum = accountNum)
+    {
+        if (accountNum  != _accountNum)
+        {
+            accountNum  = _accountNum;
+        }
+        return accountNum;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSalesGroupId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "l_SalesGroupId">CommissSalesGroup</param>
+    /// <returns>CommissSalesGroup</returns>
+    CommissSalesGroup parmSalesGroupId(CommissSalesGroup l_SalesGroupId = SalesGroupId)
+    {
+        salesGroupId = l_SalesGroupId;
+        if (nDXVerband)
+        {
+            nDXVerband.parmSalesGroupId(salesGroupId);
+        }
+        return salesGroupId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNDXVerband</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <returns>NDXVerband</returns>
+    public NDXVerbandSE parmNDXVerband()
+    {
+        return nDXVerband;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmLGetDataOnly</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_lGetDataOnly">boolean</param>
+    /// <returns>boolean</returns>
+    boolean parmLGetDataOnly(boolean  _lGetDataOnly = lGetDataOnly)
+    {
+        ;
+        lGetDataOnly    = _lGetDataOnly;
+        return lGetDataOnly;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmlAlliance</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_lAlliance">boolean</param>
+    /// <returns>boolean</returns>
+    boolean parmlAlliance(boolean _lAlliance = lAlliance)
+    {
+        lAlliance = _lAlliance;
+        if (nDXVerband)
+        {
+            nDXVerband.parmlAlliance(lAlliance);
+        }
+        return lAlliance;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initVerband</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// init
+    /// </summary>
+    /// <param name = "_custAccount">customer account number</param>
+    void initVerband(CustAccount _custAccount = '')
+    {
+        nDXVerband = NDXVerbandSE::construct(umsSignature, lTestEnvironment, _custAccount);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCalculatedUser</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <returns>str</returns>
+    str getCalculatedUser()
+    {
+        return (dataVersion ? strfmt('%1.%2', NDXUmsatzConstants::CalculatedUser, dataVersion) : NDXUmsatzConstants::CalculatedUser);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initNDXKumUmsCustMonat</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    void initNDXKumUmsCustMonat()
+    {
+        NDXKumUmsCustMonat     kumUmsCustMonat;
+        RecordInsertList       insertList = new RecordInsertList(tableNum(NDXKumUmsCustMonat), true);
+
+        int                     i, j;
+        NDXCompanyBE            company;
+
+        for (i=1; i <= conlen(conFirmen)+1; i++)
+        {
+            if (i > conlen(conFirmen))
+            {
+                company  = NDXCompanyBE::AllCompanies;
+            }
+            else
+            {
+                company  = conpeek(conFirmen, i);
+            }
+
+            delete_from kumUmsCustMonat
+            where   kumUmsCustMonat.Company == company &&
+                    kumUmsCustMonat.UmsSignature == umsSignature;
+
+            for (j=1; j <= NDXMonthBE::December; j++)
+            {
+                kumUmsCustMonat.clear();
+                kumUmsCustMonat.Month = j;
+                kumUmsCustMonat.Company = company;
+                kumUmsCustMonat.UmsSignature = umsSignature;
+                insertList.add(kumUmsCustMonat);
+            }
+        }
+        insertList.insertDatabase();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initTables</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    void initTables()
+    {
+        this.initTmpKumUmsCust();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init4ThreadRun</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    void init4ThreadRun()
+    {
+        NDXThreadErrors                    nDXThreadErrors;
+        NDXThreadControl                   nDXThreadControl;
+        NDXTmpUmsatzClassThreadControl     nDXTmpUmsatzClassThreadControl;
+        ;
+        delete_from nDXThreadErrors
+            where   nDXThreadErrors.createdBy                  == umsSignature;
+
+        delete_from nDXThreadControl
+            where   nDXThreadControl.createdBy                 == umsSignature;
+
+        delete_from nDXTmpUmsatzClassThreadControl
+            where   nDXTmpUmsatzClassThreadControl.createdBy   == umsSignature;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initTables4Alliance</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    void initTables4Alliance()
+    {
+        ;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmLThread</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_lThread">boolean</param>
+    /// <returns>boolean</returns>
+    public boolean parmLThread(boolean _lThread = lThread)
+    {
+        ;
+        lThread = _lThread;
+        return lThread;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmUmsSignature</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_umsSignature">NDXUmsSignature</param>
+    /// <param name = "lSet">boolean</param>
+    /// <returns>NDXUmsSignature</returns>
+    public NDXUmsSignature parmUmsSignature(NDXUmsSignature _umsSignature = umsSignature, boolean lSet = false)
+    {
+        Random                  random;
+        ;
+        umsSignature = _umsSignature;
+        if (lSet)
+        {
+            random = new Random();
+            umsSignature = strfmt('%1.%2.%3', this.parmUmsSignatureBase(umsSignatureBase, true), SessionId(), random.nextInt());
+        }
+        return umsSignature;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFirmen</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_conFirmen">container</param>
+    void initFirmen(container _conFirmen = connull())
+    {
+        int                     i;
+        ;
+
+        //--> 1.3: NDX/PAFFH/NDX_TASK1235003759/03.11.2014
+        if (prmisdefault(_conFirmen))
+        {
+            conFirmen       = NDXUmsatzCompanies::uk2con();
+            conCompanies    = NDXUmsatzCompanies::CompanyId2con();
+        }
+        else
+        {
+            conFirmen       = NDXUmsatzCompanies::uk2con(false, _conFirmen);
+            conCompanies    = NDXUmsatzCompanies::CompanyId2con(false, _conFirmen);
+        }
+        //<-- NDX/PAFFH/NDX_TASK1235003759/03.11.2014
+        for (i=1; i<=conlen(conFirmen); i++)
+        {
+            mapFirma4Umsatz.insert(conpeek(conFirmen,i)  , i-1);
+        }
+        mapFirma4Umsatz.insert(NDXCompanyBE::AllCompanies, conlen(conFirmen));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmLBonusDirectlyIncl</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "l_lBonusDirectlyIncl">boolean</param>
+    /// <returns>boolean</returns>
+    boolean parmLBonusDirectlyIncl(boolean l_lBonusDirectlyIncl = lBonusDirectlyIncl)
+    {
+        lBonusDirectlyIncl  = l_lBonusDirectlyIncl;
+        return lBonusDirectlyIncl;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmLShowBonusDirectly</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "l_lShowBonusDirectly">boolean</param>
+    /// <returns>boolean</returns>
+    boolean parmLShowBonusDirectly(boolean l_lShowBonusDirectly = lShowBonusDirectly)
+    {
+        lShowBonusDirectly  = l_lShowBonusDirectly;
+        return lShowBonusDirectly;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmLCSIncl</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_lCSIncl">NoYes</param>
+    /// <returns>NoYes</returns>
+    NoYes parmLCSIncl(NoYes _lCSIncl = lCSIncl)
+    {
+        ;
+        if (!prmisdefault(_lCSIncl))
+        {
+            lCSIncl = _lCSIncl;         
+        }
+
+        return lCSIncl;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmDataVersion</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "l_dataVersion">int</param>
+    /// <returns>int</returns>
+    int parmDataVersion(int l_dataVersion = dataVersion)
+    {
+        ;
+        dataVersion = l_dataVersion;
+        return dataVersion;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmPartyIdCalculated</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_dirPartyIdCalculated">RefRecId</param>
+    /// <returns>RefRecId</returns>
+    RefRecId parmPartyIdCalculated(RefRecId _dirPartyIdCalculated = dirPartyIdCalculated)
+    {
+        dirPartyIdCalculated = _dirPartyIdCalculated;
+        return dirPartyIdCalculated;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>FillCSStatistikData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// last modified: PaffH 20.01.25
+    /// </summary>
+    /// <param name = "l_args">NDXUmsatzClassArgs</param>
+    static server void FillCSStatistikData(NDXUmsatzClassArgs l_args)
+    {
+
+        const str verkaufsbereich = 'Verkaufsbereich';
+        const str verband = 'Verband';
+        NDXMasterAlliance           nDX_MasterAlliance;
+        CommissionSalesGroup        commissionSalesGroup;
+        NDXUmsatzClassArgs         args = new NDXUmsatzClassArgs();
+
+        int                         nStatus;
+        List                        listThread = new List(Types::Class);
+        System.Threading.Tasks.Task t;
+        int                         nCounter;
+        int                         nBis = 10;
+        int                         nAnz, i;
+        ListIterator                iterator;
+        NDXGetUmsType               umsType;
+        NDXUmsatzClass              nDXUmsatzClass;
+        CompanyId                   company;
+
+        Query                       q;
+        QueryRun                    qr;
+        QueryBuildDataSource        qbds;
+
+        boolean                     lThread         = l_args.parmlThread();
+        //boolean                     lBuildVerband   = l_args.parmlBuildVerband();
+        CustAccount                 alliance        = l_args.parmMaster();
+        CommissSalesGroup           salesGroup      = l_args.parmSalesGroupId();
+        NDXNoYesBE                  lBasisUmsLfdJ   = l_args.parmlBasisUmsLfdJ();
+        boolean                     lisBatch        = l_args.parmLisBatch();
+
+        NDXJobMangerJobsClass       nDX_JobManagerJobs;
+        str                         actionStr, actionID;
+        container                   conCompanys;
+
+        info(strfmt("@NDX:NDXDetermineCentralSalesVolume", NDXHelperCommon::seconds2Str(), salesGroup ? verkaufsbereich : verband));             // [%1] Start: Zentralumsätze ermitteln [%2]
+        
+        nDX_JobManagerJobs = NDXJobMangerJobsClass::construct(NDXJobManagerJobId::getUmsVerband_L1);
+        //TODO: DebuC austauschen der Winapi durch Protokolltabelle
+        nDX_JobManagerJobs.openFileToWrite();
+        nDX_JobManagerJobs.start();
+
+        if (!lisBatch)
+        {
+            //TODO DebuC: (PaffH 30.01.25) lBuildVerband wird nicht weiter ausgewertet; daher ausdokumentiert
+            //lBuildVerband = (box::yesNo("@NDX:NDXRebuildMasterAlliance" /*Soll die MasterAlliance-Tabelle neu aufgebaut werden?*/, DialogButton::Yes, "@NDX:NDXPrepareCSEvaluationStatistic" /*Statistiken , die für die CS-Auswertung benötigt werden, aufbereiten*/) == DialogButton::Yes);
+        }
+
+        conCompanys = NDXUmsatzCompanies::CompanyId2con();
+        info(strfmt("@NDX:NDXMasterAllianceDetermination", NDXHelperCommon::seconds2Str(), Con2Str(conCompanys)));                  // [%1] Ermittlung der MasterAlliance aus (%2)
+        nAnz = NDXVerbandSE::getMasters(conCompanys);
+        info(strfmt("@NDX:NDXMasterAllianceDetermined", NDXHelperCommon::seconds2Str(), nAnz));             // [%1] [%2] MasterAlliance ermittelt
+
+        // Grundinitialisierung (z.B. temp. Tabellen)
+        args.parmLAlliance(NDXNoYesBE::Yes);
+        args.parmlGetLastValues(l_args.parmlGetLastValues());                           // lGetLastValues ?
+        args.parmlBasisUmsLfdJ(l_args.parmlBasisUmsLfdJ());                             // Umsatzzahlen für aktuelles Jahr ermitteln?
+        args.parmlCSIncl(l_args.parmlCSIncl());                                         // Zentrallagerverteilung einbeziehen
+        args.parmBatchWithMultithreading(l_args.parmBatchWithMultithreading());
+        if (!l_args.parmDataVersion())
+        {
+            args.parmDataVersion(1);
+        }
+        else
+        {
+            args.parmDataVersion(l_args.parmDataVersion());
+        }
+
+        if (salesGroup)
+        {
+            umsType = NDXGetUmsType::Init4SalesGroupRun;
+            args.parmLAlliance(NDXNoYesBE::No);
+            args.parmSalesGroupId(salesGroup);
+        }
+        else if (alliance)
+        {
+            umsType = NDXGetUmsType::Init4AllianceRunOne;
+            args.parmMaster(alliance);
+        }
+        else
+        {
+            umsType = NDXGetUmsType::Init4AllianceRun;
+        }
+        args.parmEnumType(enumnum(NDXGetUmsType));
+        args.parmEnum(enum2int(umsType));
+        nDXUmsatzClass = NDXUmsatzClass::construct(args);
+
+        nDXUmsatzClass.parmLThread(lThread);                                       
+        // HP 19.01.11  über Thread funktionierts noch nicht
+        nDXUmsatzClass.parmlAlliance(args.parmLAlliance() == NDXNoYesBE::Yes ? true : false);
+        if (!nDXUmsatzClass.parmlAlliance())
+        {
+            nDXUmsatzClass.parmSalesGroupId(salesGroup);
+            nDXUmsatzClass.parmNDXVerband().parmlSalesGroupMaster(l_args.parmlSalesGroupMaster());
+        }
+
+        nAnz    = 0;
+
+        for (i=1; i<=conlen(conCompanys); i++)
+        {
+            company = conpeek(conCompanys, i);
+
+            nDXUmsatzClass.initFirmen([NDXHelperCommon::CompanyId2NDXCompany(company)]);
+
+            changecompany(company)
+            {
+                q       = new Query();
+                if (nDXUmsatzClass.parmlAlliance())
+                {
+                    qbds    = q.addDataSource(tablenum(NDXMasterAlliance));
+                    qbds.addRange(fieldnum(NDXMasterAlliance, Company)).value(company);
+                    qbds.addRange(fieldnum(NDXMasterAlliance, Type)).value(queryValue(NDXMasterAllianceType::TOSId)); // PaffH 23.01.25
+                    if (alliance)
+                    {
+                        qbds.addRange(fieldnum(NDXMasterAlliance, AllianceMaster)).value(alliance);
+                    }
+                }
+                else
+                {
+                    qbds    = q.addDataSource(tablenum(CommissionSalesGroup));
+                    if (salesGroup != NDXUmsatzConstants::all)
+                    {
+                        qbds.addRange(fieldnum(CommissionSalesGroup, GroupId)).value(salesGroup);
+                    }
+                }
+
+                qr      = new QueryRun(q);
+                while (qr.next())
+                {
+                    ++nCounter;
+
+                    if (nDXUmsatzClass.parmlAlliance())
+                    {
+                        nDX_MasterAlliance      = qr.get(tablenum(NDXMasterAlliance));
+                        nDXUmsatzClass.parmAccountNum(nDX_MasterAlliance.AllianceMaster);
+                        info(strfmt('[%1] %2.) Verband [%3-%4] %5', 
+                            NDXHelperCommon::seconds2Str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone())), 
+                            nCounter, nDX_MasterAlliance.AllianceMaster, company, 
+                            lBasisUmsLfdJ ==  NDXNoYesBE::Yes ? "@NDXBase:NDXCurrentYear" : "@NDXBase:NDXLastYear"));
+                        actionID  = strfmt('%1-%2', company, nDX_MasterAlliance.AllianceMaster);
+                        actionStr = strfmt('Verband [%1]', 
+                            lBasisUmsLfdJ ==  NDXNoYesBE::Yes ? "@NDXBase:NDXCurrentYear" : "@NDXBase:NDXLastYear");       // "laufendes Jahr" : "Vorjahr"
+                    }
+                    else
+                    {
+                        commissionSalesGroup    = qr.get(tablenum(CommissionSalesGroup));
+                        nDXUmsatzClass.parmSalesGroupId(commissionSalesGroup.GroupId);
+                        info(strfmt('[%1] %2.) Verkaufsbereich [%3-%4] %5', 
+                            NDXHelperCommon::seconds2Str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone())), 
+                            nCounter, commissionSalesGroup.GroupId, company, 
+                            lBasisUmsLfdJ == NDXNoYesBE::Yes ? "@NDXBase:NDXCurrentYear" : "@NDXBase:NDXLastYear"));
+                        actionID  = strfmt('%1-%2', company, commissionSalesGroup.GroupId);
+                        actionStr = strfmt('Verkaufsbereich [%1]', 
+                            lBasisUmsLfdJ ==  NDXNoYesBE::Yes ? "@NDXBase:NDXCurrentYear" : "@NDXBase:NDXLastYear");       // "laufendes Jahr" : "Vorjahr"
+                    }
+                    
+                    nDX_JobManagerJobs.setAction(strfmt('UK [%1] %2', company, actionStr), actionID, nCounter);
+
+                    //lThread = true;
+                    if (lThread)
+                    {
+                        // HP - Test: 10 überspringen
+                        if (nCounter < 5)
+                        {
+                            continue;
+                        }
+                        if (nCounter >= nBis)
+                        {
+                            break;
+                        }
+                    }
+                    //t = NDX_UmsatzClassThread::runGetUmsAlliance(nDX_MasterAlliance.AllianceMaster, nDX_UmsatzClass.parmLThread(), nDX_UmsatzClass);
+                    t = NDXUmsatzClassThread::runGetUmsAlliance(nDXUmsatzClass);
+                    ++nAnz;
+                    /*
+                    t = NDX_UmsatzClassThread::construct();
+                    t = NDX_UmsatzClassThread::getUmsAlliance(t, nDX_MasterAlliance.AllianceMaster, lThread);
+                    if (t.status() == NDX_ThreadStatus::ErrorInThread)
+                        Warning(strfmt("Thread-Fehler bei Master [%1]", nDX_MasterAlliance.AllianceMaster));
+                    */
+                    if (lThread)
+                    {
+                        listThread.addEnd(t);
+                    }
+
+                }
+            }
+        }
+
+        // Warten, bis alle Threads beendet sind
+        while (!listThread.empty())
+        {
+            iterator = new ListIterator(listThread);
+            while (iterator.more())
+            {
+                t = iterator.value();
+                nStatus = t.Status;
+                if (nStatus == System.Threading.Tasks.TaskStatus::RanToCompletion ||
+                    nStatus == System.Threading.Tasks.TaskStatus::Canceled ||
+                    nStatus == System.Threading.Tasks.TaskStatus::Faulted)
+                {
+                    iterator.delete();
+                }
+                iterator.next();
+            }
+            sleep(1000);
+        }
+
+        info(strfmt("@NDX:NDXDetermineCentralSalesVolumeEnd", NDXHelperCommon::seconds2Str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone())), salesGroup ? verkaufsbereich : verband, nAnz));      // [%1] Ende: [%3] Zentralumsätze ermitteln [%2]
+
+        if (salesGroup)
+        {
+            NDXUmsatzParametersGlobal::setLastBuildSalesGroup();
+        }
+        else
+        {
+            NDXUmsatzParametersGlobal::setLastBuildAlliance();
+        }
+        nDX_JobManagerJobs.ende();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getUmsAlliance</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// last modified: PaffH 17.02.25
+    /// </summary>
+    /// <param name = "inputParm">Container</param>
+    static server void getUmsAlliance(Container inputParm)
+    {
+        NDXTmpUmsatzClassThreadControl threadControl;
+        NDXThreadControl               nDXThreadControl;
+
+        NDXUmsatzClassArgs      args = new NDXUmsatzClassArgs();
+        NDXGetUmsType           umsType;
+        NDXUmsatzClass          nDXUmsatzClass;
+        nDXVerbandSE              nDXVerband;
+        NDXUmsSignature         umsSignature;
+        CustAccount             alliance;
+        int                     conPos;
+        boolean                 lThread;
+        int                     threadSession;
+        int                     i;
+        boolean                 lAlliance;
+        CommissSalesGroup       salesGroupId;
+        Version                 dataVersion;       
+        boolean                 lBasisUmsLfdJahr;
+        boolean                 lCSIncl;
+        boolean                 lSalesGroupMaster;
+        
+        NDXJobMangerJobsClass   nDX_JobManagerJobs;
+        str                     actionStr;
+        container               conFirmen = connull();
+        int                     conLen;
+        NDXSignature            signatureValuesArtGrp;
+        NDXSignature            signatureValuesCust;
+        NDXSignature            signatureValuesCS;
+
+        System.Threading.Tasks.Task  taskArtGrp;
+        System.Threading.Tasks.Task  taskCust;
+        System.Threading.Tasks.Task  taskCS;
+
+        conPos                          = 0;
+        ++conPos; 
+        umsSignature          = conpeek(inputParm, conPos);
+        ++conPos; 
+        lThread               = conpeek(inputParm, conPos);
+        
+        // PaffH 13.02.25
+        lThread = true;
+
+        ++conPos; 
+        lalliance             = conpeek(inputParm, conPos);
+        ++conPos; 
+        alliance              = conpeek(inputParm, conPos);
+        ++conPos; 
+        salesGroupId          = conpeek(inputParm, conPos);
+        ++conPos; 
+        dataVersion           = conpeek(inputParm, conPos);
+        ++conPos; 
+        lBasisUmsLfdJahr      = conpeek(inputParm, conPos);
+        ++conPos; 
+        lCSIncl               = conpeek(inputParm, conPos);
+        ++conPos; 
+        lSalesGroupMaster     = conpeek(inputParm, conPos);
+        ++conPos; 
+        conLen               = conpeek(inputParm, conPos);
+        for (i=1; i <= conLen; i++)
+        {
+            ++conPos;
+            conFirmen += conpeek(inputParm, conPos);
+        }
+        
+        NDXUmsatzClassParmContract nDXUmsatzClassParmContract = NDXUmsatzClassParmContract::contractFromCon(inputParm);
+        // #NDXBatchMultiThreading
+        if (nDXUmsatzClassParmContract.parmBatchMultiThreadingStatus() == NDXBatchMultiThreadingStatus::DataCollection)
+        {
+            NDXMultiThreadingCreateTaskController controller;
+            NDXBatchMultiThreadingContract contract = NDXBatchMultiThreadingContract::construct();
+            NDXBatchProcessingTableHeader nDXBatchProcessingTableHeader = NDXBatchProcessingTableHeader::findActive(
+                nDXUmsatzClassParmContract.parmLBasisUmsLfdJ() == NoYes::Yes ?
+                NDXBatchProcessingType::SalesCurrentYear :
+                NDXBatchProcessingType::SalesLastYear);
+            contract.parmSysOperationExecutionMode(SysOperationExecutionMode::ReliableAsynchronous);
+            contract.parmSignature(nDXBatchProcessingTableHeader.Signature);
+            contract.parmUmsBasisLJ(nDXUmsatzClassParmContract.parmLBasisUmsLfdJ() == NoYes::Yes);
+            controller = NDXMultiThreadingCreateTaskUmsController::instance(contract);
+            controller.addCon2NDXBatchProcessingTable(nDXUmsatzClassParmContract);
+           
+            return;
+        }
+
+        nDX_JobManagerJobs = NDXJobMangerJobsClass::construct(NDXJobManagerJobId::getUmsVerband_L2);
+        //TODO: DebuC austauschen der Winapi durch Protokolltabelle
+        nDX_JobManagerJobs.openFileToWrite();
+        nDX_JobManagerJobs.start();
+        if (lAlliance)
+        {
+            actionStr = strfmt('Verband [%1]', alliance);
+        }
+        else
+        {
+            actionStr = strfmt('Verkaufsbereich [%1]', salesGroupId);
+        }
+
+        if (lThread)
+        {
+            ++conPos; 
+            threadSession = conpeek(inputParm, conPos);
+            //nDXThreadControl.ThreadSession = threadSession;
+            nDXThreadControl.ThreadSession = SessionId();
+            nDXThreadControl.MethodName    = staticmethodstr(NDXUmsatzClass, getUmsAlliance);
+            nDXThreadControl.ClassName     = classstr(NDXUmsatzClass);
+            nDXThreadControl = NDXThreadControl::findOrCreate(nDXThreadControl);
+
+            threadControl = NDXTmpUmsatzClassThreadControl::find(umsSignature, NDXThreadTypes::getValuesCS, true);
+
+        }
+
+        if (lThread)
+        {
+            umsType = NDXGetUmsType::perAllianceThread;
+        }
+        else
+        {
+            umsType = NDXGetUmsType::perAlliance;
+        }
+
+        args.parmEnumType(enumnum(NDXGetUmsType));
+        args.parmEnum(enum2int(umsType));
+        args.parmLAlliance(lAlliance ? NDXNoYesBE::Yes : NDXNoYesBE::No);
+        args.parmMaster(alliance);
+        args.parmSalesGroupId(salesGroupId);
+        args.parmDataVersion(dataVersion); 
+        args.parmBatchWithMultithreading(nDXUmsatzClassParmContract.parmBatchWithMultithreading());
+
+        if (lBasisUmsLfdJahr)
+        {
+            args.parmlBasisUmsLfdJ(NDXNoYesBE::Yes);
+        }
+        else
+        {
+            args.parmlBasisUmsLfdJ(NDXNoYesBE::No);
+        }
+
+        if (lCSIncl)
+        {
+            args.parmlCSIncl(NDXNoYesBE::Yes);
+        }
+        else
+        {
+            args.parmlCSIncl(NDXNoYesBE::No);
+        }
+
+        nDXUmsatzClass = NDXUmsatzClass::construct(args);
+        nDXUmsatzClass.parmFirma(NDXHelperCommon::CompanyId2NDXCompany(curext()));
+
+        // mit übergebenen Firmen initialisieren
+        nDXUmsatzClass.initFirmen(conFirmen);
+
+        nDXUmsatzClass.parmAccountNum(alliance);
+        nDXUmsatzClass.parmMasterAlliance(alliance);
+
+        nDXUmsatzClass.parmlAlliance(lAlliance);
+        nDXUmsatzClass.parmSalesGroupId(salesGroupId);
+        nDXUmsatzClass.parmNDXVerband().parmlSalesGroupMaster(lSalesGroupMaster);
+
+        //nDX_UmsatzClass.parmlGetDataPerChild(true);
+        nDXUmsatzClass.parmLThread(lThread);
+        nDXVerband = nDXUmsatzClass.parmNDXVerband();
+        nDXVerband.initFromNDXUmsatzClass(nDXUmsatzClass);
+        if (nDXUmsatzClass.parmlAlliance())
+        {
+            nDXVerband.getChildsFromMaster(true);
+        }
+        else
+        {
+            nDXVerband.getChildsFromSalesGroupId(true, nDXUmsatzClass.parmConCompanies(), umsSignature);
+        }
+
+        nDXUmsatzClass.parmNAnzChilds(nDXVerband.parmNAnzChilds());
+        nDXUmsatzClass.parmRecIdNDXBatchProcessingTable(nDXUmsatzClassParmContract.parmRecIdNDXBatchProcessingTable());
+        
+        nDX_JobManagerJobs.setAction('Zentrallager ermitteln', actionStr);
+        nDXVerband.getCSFromMaster(nDXUmsatzClass.parmConFirmen());
+
+
+        //*** Artikelgruppenumsatz ermitteln
+        {
+            signatureValuesArtGrp = NDXHelperCommon::Signature();
+            nDXUmsatzClass.parmSignatureArtGrp(signatureValuesArtGrp);
+            nDX_JobManagerJobs.setAction('Artikelgruppenumsatz ermitteln', actionStr);
+            taskArtGrp     = NDXUmsatzClassThread::runGetValuesArtGrp(nDXUmsatzClass);
+            NDXThreadErrors::increaseCounter(signatureValuesArtGrp, taskArtGrp ? taskArtGrp.Status : System.Threading.Tasks.TaskStatus::RanToCompletion);
+        }
+
+        //*** Kundenumsatz
+        {
+            for (i=1; i<=NDXThreadConstants::MaxStatusLoops; i++)
+            {
+                signatureValuesCust = NDXHelperCommon::Signature();
+                nDXUmsatzClass.parmSignatureCust(signatureValuesCust);
+                nDX_JobManagerJobs.setAction('Kundenumsatz ermitteln', actionStr);
+                
+                taskCust       = NDXUmsatzClassThread::runGetValuesCust(nDXUmsatzClass);
+
+                if (!lThread || taskCust.Status != System.Threading.Tasks.TaskStatus::Canceled)
+                {
+                    break;
+                }
+                sleep(1000);
+            }
+            NDXThreadErrors::increaseCounter(signatureValuesCust, taskCust ? taskCust.Status : System.Threading.Tasks.TaskStatus::RanToCompletion);
+
+            // zunächst müssen die Umsatzdaten der Customer ermittelt worden sein, bevor die Zentrallageranteile berechnet werden
+            if (lThread)
+            {
+                while (taskCust.Status != System.Threading.Tasks.TaskStatus::RanToCompletion)
+                {
+                    NDXThreadErrors::increaseCounter(signatureValuesCust, taskCust.status);
+                    sleep(1000);
+                    if (NDXBatchProcessingParameters::throwExceptionTaskUms())
+                    {
+                        throw error("@NDX:NDXForcedTerminationRunGetValuesCust");
+                    }
+                }
+            }
+        }
+
+        //*** Zentrallager-Umsatzanteile
+        {
+            signatureValuesCS = NDXHelperCommon::Signature();
+            nDXUmsatzClass.parmSignatureCS(signatureValuesCS);
+            nDX_JobManagerJobs.setAction('Zentrallager-Umsatz-Anteile ermitteln', actionStr);
+            for (i=1; i<=NDXThreadConstants::MaxStatusLoops; i++)
+            {
+                taskCS         = NDXUmsatzClassThread::runGetValuesCS(nDXUmsatzClass);
+                if (!lThread || taskCS.Status != System.Threading.Tasks.TaskStatus::Canceled)
+                {
+                    break;
+                }
+                sleep(1000);
+            }
+            
+
+            NDXThreadErrors::increaseCounter(signatureValuesCS, taskCS ? taskCS.Status : System.Threading.Tasks.TaskStatus::RanToCompletion);
+
+            // Wurden alle Umsätze aller Zentrallager ermittelt?
+            if (lThread)
+            {
+                while (taskCS.Status != System.Threading.Tasks.TaskStatus::RanToCompletion)
+                {
+                    
+                    NDXThreadErrors::increaseCounter(signatureValuesCS, taskCS.Status);
+                    sleep(1000);
+                    if (NDXBatchProcessingParameters::throwExceptionTaskUms())
+                    {
+                        throw error("@NDX:NDXForcedTerminationRunGetValuesCS");
+                    }
+                }
+            }
+        }
+
+        // wurden alle Zentrallager-Debitoren berücksichtigt?
+        //TODO DEBUC: Threadfähigkeit programmieren
+        //if (lThread)
+        //warning("nDX_UmsatzClass.getCSExclPct() aus NDX_UmsatzClass.getUmsAlliance() wurde noch nicht Threadfähig programmiert!");
+        //nDXUmsatzClass.getCSExclPct(nDXUmsatzClass.parmYearVJ());
+
+        // Wurden alle Umsätze aller Artikelgruppen ermittelt?
+        if (lThread)
+        {
+            while (taskArtGrp.status != System.Threading.Tasks.TaskStatus::RanToCompletion
+                && taskArtGrp.status != System.Threading.Tasks.TaskStatus::Canceled
+                && taskArtGrp.status != System.Threading.Tasks.TaskStatus::Faulted)
+            {
+                NDXThreadErrors::increaseCounter(signatureValuesArtGrp, taskArtGrp.Status);
+                sleep(1000);
+            }
+        }
+
+        if (lThread)
+        {
+            nDXThreadControl.stop();
+        }
+        
+        nDX_JobManagerJobs.ende();
+        return;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmConCompanies</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <returns>container</returns>
+    container parmConCompanies()
+    {
+        return conCompanies;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmYearVJ</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <returns>NDXYear</returns>
+    public NDXYear parmYearVJ()
+    {
+        return yearVJ;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmLwithProt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_lWithProt">boolean</param>
+    /// <returns>boolean</returns>
+    boolean parmLwithProt(boolean _lWithProt = lWithProt)
+    {
+        ;
+        lWithProt   = _lWithProt;
+        return lWithProt;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNdxUmsatzAbschluss</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <returns>nDXUmsatzAbschluss</returns>
+    nDXUmsatzAbschluss parmNdxUmsatzAbschluss()
+    {
+        return nDXUmsatzAbschluss;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmFirma</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_Firma">NDXCompanyBE</param>
+    /// <returns>NDXCompanyBE</returns>
+    NDXCompanyBE parmFirma(NDXCompanyBE _Firma = firma)
+    {
+        firma = _Firma;
+
+        if ( NDXHelperCommon::Company2NDXUks(_Firma, true) == NDXUKs::empty)
+        {
+            firma = NDXCompanyBE::WithoutAssignment;
+        }
+        if (firma == NDXCompanyBE::WithoutAssignment ||
+            firma == NDXCompanyBE::AllCompanies)
+        {
+            firmaAsCompanyId = '';
+        }
+        else
+        {
+            firmaAsCompanyId = NDXHelperCommon::NDXCompanys2CompanyId(firma);
+        }
+
+        return firma;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNAnzChilds</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_nAnzChilds">int</param>
+    /// <returns>int</returns>
+    public int parmNAnzChilds(int _nAnzChilds = nAnzChilds)
+    {
+        nAnzChilds = _nAnzChilds;
+        return nAnzChilds;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmMasterAlliance</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_masterAlliance">AccountNum</param>
+    /// <param name = "_lAlliance">boolean</param>
+    /// <returns>AccountNum</returns>
+    AccountNum parmMasterAlliance(AccountNum _masterAlliance = masterAlliance, boolean _lAlliance = NoYes::Yes)
+    {
+        masterAlliance  = _masterAlliance;
+
+        if (!prmisdefault(_lAlliance))
+        {
+            lAlliance       = _lAlliance;
+        }
+
+        return masterAlliance;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMasters</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "conDataArea">container</param>
+    /// <returns>int</returns>
+    static int getMasters(container  conDataArea = [curext()])
+    {
+        CustTable           custTable;
+        NDXMasterAlliance   nDX_MasterAlliance;
+
+        int                         nAnzMasters, i, j;
+        NDXVerbandSE                  nDX_Verband;
+        NDXUmsSignature             umsSignature = curuserid();
+        NDXMasterAllianceStructure  masterAllianceStructure;
+        MapEnumerator               masterAllianceMapEnumerator;
+
+        Query                   q = new Query();
+        QueryBuildDataSource    qbds;
+        QueryRun                qr;
+        Set                     setOld = new Set(Types::Container);
+        Set                     setNew = new Set(Types::Container);
+        Set                     setDel = new Set(Types::Container);
+        Set                     setApp = new Set(Types::Container);
+        SetEnumerator           enum;
+        CompanyId               company;
+        NDXMasterAllianceType   type;
+        AVATOSId                allianceMaster;
+
+        qbds = q.addDataSource(tablenum(NDXMasterAlliance));
+        for (i=1; i<=conlen(conDataArea); i++)
+        {
+            qbds.addRange(fieldnum(NDXMasterAlliance, Company)).value(conpeek(conDataArea, i));
+        }
+        qr = new QueryRun(q);
+        while (qr.next())
+        {
+            nDX_MasterAlliance = qr.get(tablenum(NDXMasterAlliance));
+            setOld.add([ nDX_MasterAlliance.Company, nDX_MasterAlliance.AllianceMaster,nDX_MasterAlliance.Type]);
+        }
+
+        nDX_Verband = NDXVerbandSE::construct(umsSignature, false);
+        for (j=1; j <= conlen(conDataArea); j++)
+        {
+            company = conpeek(conDataArea, j);
+            changecompany(company)
+            {
+                custTable = null;
+                while select custTable
+                {
+                    masterAllianceStructure  = nDX_Verband.getMaster(custTable.AccountNum, custTable.dataAreaId);
+                    masterAllianceMapEnumerator = masterAllianceStructure.getMasterAllianceEnumerator();
+                    while(masterAllianceMapEnumerator.moveNext())
+                    {
+                        if (setNew.add([custTable.dataAreaId, masterAllianceMapEnumerator.currentKey(),masterAllianceMapEnumerator.currentValue()]))
+                        {
+                            ++nAnzMasters;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Einträge löschen
+        setDel = Set::difference(setOld, setNew);
+        enum = setDel.getEnumerator();
+        while (enum.moveNext())
+        {
+            company         = conpeek(enum.current(), 1);
+            allianceMaster  = conpeek(enum.current(), 2);
+            type            = conpeek(enum.current(), 3);
+            nDX_MasterAlliance = NDXMasterAlliance::find(allianceMaster, company, true);
+            if (nDX_MasterAlliance)
+            {
+                ttsbegin;
+                nDX_MasterAlliance.delete();
+                ttscommit;
+            }
+        }
+        // Einträge anfügen
+        setApp = Set::difference(setNew, setOld);
+        enum = setApp.getEnumerator();
+        while (enum.moveNext())
+        {
+            company         = conpeek(enum.current(), 1);
+            allianceMaster  = conpeek(enum.current(), 2);
+            type            = conpeek(enum.current(), 3);
+            //nDX_MasterAlliance = NDXMasterAlliance::find(allianceMaster, company);
+            if (!nDX_MasterAlliance)
+            {
+                nDX_MasterAlliance.AllianceMaster   = allianceMaster;
+                nDX_MasterAlliance.Company          = company;
+                nDX_MasterAlliance.Type             = type;
+                nDX_MasterAlliance.insert();
+            }
+        }
+
+        return nAnzMasters;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmlGetDataPerChild</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_lGetDataPerChild">boolean</param>
+    /// <returns>boolean</returns>
+    boolean parmlGetDataPerChild(boolean _lGetDataPerChild = lGetDataPerChild)
+    {
+        ;
+        lGetDataPerChild    = _lGetDataPerChild;
+        return lGetDataPerChild;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCustTableFromCustAccount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "custAccount">CustAccount</param>
+    /// <returns>CustTable</returns>
+    CustTable getCustTableFromCustAccount(CustAccount custAccount)
+    {
+        Query                                   q;
+        QueryRun                                qr;
+        QueryBuildDataSource                    qbds1;
+        ;
+        q = new Query();
+        q.allowCrossCompany(true);
+        q.addCompanyRange(firmaAsCompanyId ? firmaAsCompanyId : NDXHelperCommon::NDXCompanys2CompanyId(NDXCompanyBE::Niedax));
+        qbds1 = q.addDataSource(tablenum(CustTable));
+        qbds1.firstOnly(true);
+        qbds1.addSortField(fieldnum(CustTable, AccountNum), SortOrder::Ascending);
+        qbds1.addRange(fieldnum(CustTable, AccountNum)).value(custAccount);
+        qr = new QueryRun(q);
+        qr.next();
+        return qr.get(tablenum(CustTable));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCustTableFromAccount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "accountNum">AccountNum</param>
+    /// <param name = "firma">NDXCompanys</param>
+    /// <returns>CustTable</returns>
+    static CustTable getCustTableFromAccount(AccountNum accountNum, NDXCompanys firma)
+    {
+        NDXCompanys     lfirma;
+
+        lfirma = firma;
+        if (firma == NDXCompanyBE::AllCompanies ||
+            firma == NDXCompanyBE::WithoutAssignment)
+        {
+            lfirma = NDXCompanyBE::Niedax;
+        }
+        return NDXKumUmsCustWithSales::custTableFromAccount(accountNum, lfirma);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFieldPrefixFromNDX_MonatBE</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <returns>Map</returns>
+    static Map getFieldPrefixFromNDX_MonatBE()
+    {
+        Map             l_map = new Map(Types::Enum, Types::String);
+        DictEnum        enum;
+        NDXMonthBE      monatBE;
+        int             i;
+        str             prefix;
+        ;
+        enum = new DictEnum(enumnum(NDXMonthBE));
+
+        for (i = 0; i < enum.values(); i++)
+        {
+            monatBE = enum.index2Value(i);
+            prefix  = strfmt('%1%2', ((i < 10) ? '0' : ''), i);
+            l_map.insert(monatBE, prefix);
+        }
+        return l_map;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>VUAJahrNDXTmpKumUmsCustArtGrp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "nDX_TmpKumUmsCustArtGrp">NDXTmpKumUmsCustArtGrp</param>
+    /// <returns>NDXUmsatz</returns>
+    NDXUmsatz VUAJahrNDXTmpKumUmsCustArtGrp(NDXTmpKumUmsCustArtGrp nDX_TmpKumUmsCustArtGrp)
+    {
+        int             i;
+        NDXUmsatz      umsatz;
+        ;
+        if (nDXUmsatzAbschluss.parmJahr() <= yearlfdJ)
+        {
+            // Werte bis zum Abschlussmonat ermitteln
+            for (i = 1; i <= nDXUmsatzAbschluss.parmMonat(); i++)
+            {
+                switch (i)
+                {
+                    case 1 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.VU01; 
+                        break;
+                    case 2 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.VU02; 
+                        break;
+                    case 3 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.VU03; 
+                        break;
+                    case 4 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.VU04; 
+                        break;
+                    case 5 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.VU05; 
+                        break;
+                    case 6 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.VU06; 
+                        break;
+                    case 7 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.VU07; 
+                        break;
+                    case 8 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U08; 
+                        break;
+                    case 9 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U09; 
+                        break;
+                    case 10: 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U10; 
+                        break;
+                    case 11: 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U11; 
+                        break;
+                    case 12: 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U12; 
+                        break;
+                }
+            }
+            return umsatz;
+        }
+        else
+        {
+            return nDX_TmpKumUmsCustArtGrp.getUmsLfdJahr();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCustTableFromPartyId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "party">RefRecId</param>
+    /// <param name = "firma">NDXCompanys</param>
+    /// <returns>CustTable</returns>
+    static CustTable getCustTableFromPartyId(RefRecId party, NDXCompanys firma)
+    {
+        container       conUK;
+        CustTable       custTable;
+        NDXCompanys     lfirma;
+        ;
+        lfirma = firma;
+        if (firma == NDXCompanyBE::AllCompanies ||
+            firma == NDXCompanyBE::WithoutAssignment)
+        {
+            lfirma = NDXCompanyBE::Niedax;
+        }
+
+        conUK += NDXHelperCommon::NDXCompanys2CompanyId(lfirma);
+        select crosscompany:conUK custTable where custTable.Party == party;
+        return custTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>UAJahrNDXTmpCSAllianceArtGrp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "nDX_TmpCSAllianceArtGrp">NDXTmpCSAllianceArtGrp</param>
+    /// <returns>NDXUmsatz</returns>
+    NDXUmsatz UAJahrNDXTmpCSAllianceArtGrp(NDXTmpCSAllianceArtGrp nDX_TmpCSAllianceArtGrp)
+    {
+        int             i;
+        NDXUmsatz      umsatz;
+        ;
+        if (nDXUmsatzAbschluss.parmJahr() <= yearlfdJ)
+        {
+            // Werte bis zum Abschlussmonat ermitteln
+            for (i = 1; i <= nDXUmsatzAbschluss.parmMonat(); i++)
+            {
+                switch (i)
+                {
+                    case 1 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.U01; 
+                        break;
+                    case 2 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.U02; 
+                        break;
+                    case 3 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.U03; 
+                        break;
+                    case 4 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.U04; 
+                        break;
+                    case 5 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.U05; 
+                        break;
+                    case 6 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.U06; 
+                        break;
+                    case 7 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.U07; 
+                        break;
+                    case 8 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.U08; 
+                        break;
+                    case 9 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.U09; 
+                        break;
+                    case 10: 
+                        umsatz += nDX_TmpCSAllianceArtGrp.U10; 
+                        break;
+                    case 11: 
+                        umsatz += nDX_TmpCSAllianceArtGrp.U11; 
+                        break;
+                    case 12: 
+                        umsatz += nDX_TmpCSAllianceArtGrp.U12; 
+                        break;
+                }
+            }
+            return umsatz;
+        }
+        else
+        {
+            return nDX_TmpCSAllianceArtGrp.UJahr();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>VUAJahrNDXTmpCSAllianceArtGrp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "nDX_TmpCSAllianceArtGrp">NDXTmpCSAllianceArtGrp</param>
+    /// <returns>NDXUmsatz</returns>
+    NDXUmsatz VUAJahrNDXTmpCSAllianceArtGrp(NDXTmpCSAllianceArtGrp nDX_TmpCSAllianceArtGrp)
+    {
+        int             i;
+        NDXUmsatz      umsatz;
+        ;
+        if (nDXUmsatzAbschluss.parmJahr() <= yearlfdJ)
+        {
+            // Werte bis zum Abschlussmonat ermitteln
+            for (i = 1; i <= nDXUmsatzAbschluss.parmMonat(); i++)
+            {
+                switch (i)
+                {
+                    case 1 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.VU01; 
+                        break;
+                    case 2 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.VU02; 
+                        break;
+                    case 3 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.VU03; 
+                        break;
+                    case 4 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.VU04; 
+                        break;
+                    case 5 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.VU05; 
+                        break;
+                    case 6 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.VU06; 
+                        break;
+                    case 7 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.VU07; 
+                        break;
+                    case 8 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.VU08; 
+                        break;
+                    case 9 : 
+                        umsatz += nDX_TmpCSAllianceArtGrp.VU09; 
+                        break;
+                    case 10: 
+                        umsatz += nDX_TmpCSAllianceArtGrp.VU10; 
+                        break;
+                    case 11: 
+                        umsatz += nDX_TmpCSAllianceArtGrp.VU11; 
+                        break;
+                    case 12: 
+                        umsatz += nDX_TmpCSAllianceArtGrp.VU12; 
+                        break;
+                }
+            }
+            return umsatz;
+        }
+        else
+        {
+            return nDX_TmpCSAllianceArtGrp.VUJahr();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>UAJahrNDXTmpKumUmsCustArtGrp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "nDX_TmpKumUmsCustArtGrp">NDXTmpKumUmsCustArtGrp</param>
+    /// <returns>NDXUmsatz</returns>
+    NDXUmsatz UAJahrNDXTmpKumUmsCustArtGrp(NDXTmpKumUmsCustArtGrp nDX_TmpKumUmsCustArtGrp)
+    {
+        int             i;
+        NDXUmsatz      umsatz;
+        ;
+        if (nDXUmsatzAbschluss.parmJahr() <= yearlfdJ)
+        {
+            // Werte bis zum Abschlussmonat ermitteln
+            for (i = 1; i <= nDXUmsatzAbschluss.parmMonat(); i++)
+            {
+                switch (i)
+                {
+                    case 1 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U01; 
+                        break;
+                    case 2 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U02; 
+                        break;
+                    case 3 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U03; 
+                        break;
+                    case 4 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U04; 
+                        break;
+                    case 5 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U05; 
+                        break;
+                    case 6 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U06; 
+                        break;
+                    case 7 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U07; 
+                        break;
+                    case 8 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U08; 
+                        break;
+                    case 9 : 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U09; 
+                        break;
+                    case 10: 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U10; 
+                        break;
+                    case 11: 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U11; 
+                        break;
+                    case 12: 
+                        umsatz += nDX_TmpKumUmsCustArtGrp.U12; 
+                        break;
+                }
+            }
+            return umsatz;
+        }
+        else
+        {
+            return nDX_TmpKumUmsCustArtGrp.getUmsLfdJahr();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillNDXKumUmsCustArtGrpFromLiveSales</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "monat">NDXMonthBE</param>
+    /// <param name = "jahr">int</param>
+    /// <param name = "lCheckKumUmsCustArtGrp">boolean</param>
+    static void fillNDXKumUmsCustArtGrpFromLiveSales(NDXMonthBE monat, int jahr, boolean lCheckKumUmsCustArtGrp = true)
+    {
+        NDXKumUmsCust           nDX_KumUmsCust;
+        NDXUmsCust              nDX_UmsCust, nDX_UmsCustCompany;
+        NDXUmsCust_ArtGrp       nDX_UmsCust_ArtGrp, nDX_UmsCust_ArtGrpCompany ;
+        NDXKumUmsCustArtGrp     nDX_KumUmsCustArtGrp, l_nDX_KumUmsCustArtGrp;
+
+        NDXCompanyBE            firma;
+        Query                   q;
+        QueryRun                qr;
+        QueryBuildDataSource    qbds;
+        ;
+
+        info(strfmt("@NDX:NDXSalesVolumeInKumUmsCustArtGrp", NDXHelperCommon::seconds2Str()));                   // [%1] START: Umsätze in NDX_KumUmsCustArtGrp aus Livedaten verbuchen
+        // Prüfen, ob alle Datensätze in NDX_KumUmsCustArtGrp einen CustAccount zugeordnet haben
+        // in NDX_KumUmsCust wurden die Referenzen bereits bereinigt.
+        // Daher werden diese Daten als Basis genutzt
+        if (lCheckKumUmsCustArtGrp)
+        {
+            info(strfmt("@NDX:NDXCheckCustAccountOfKumUmsCustArtGrp", NDXHelperCommon::seconds2Str()));               // [%1] Prüfung, ob alle Datensätze in NDX_KumUmsCustArtGrp einen CustAccount zugeordnet haben
+            while select  nDX_KumUmsCustArtGrp
+            where     !nDX_KumUmsCustArtGrp.CustAccount
+            join      nDX_KumUmsCust
+                where nDX_KumUmsCust.KdNr == nDX_KumUmsCustArtGrp.KdNr
+            {
+                ttsbegin;
+                l_nDX_KumUmsCustArtGrp = NDXKumUmsCustArtGrp::findOrCreate(nDX_KumUmsCustArtGrp, true);
+
+                l_nDX_KumUmsCustArtGrp.CustAccount    = nDX_KumUmsCust.CustAccount;
+                if (!l_nDX_KumUmsCustArtGrp.CompanyId)
+                {
+                    l_nDX_KumUmsCustArtGrp.CompanyId  = NDXHelperCommon::NDXCompanys2CompanyId(l_nDX_KumUmsCustArtGrp.Companys);
+                }
+                l_nDX_KumUmsCustArtGrp.update();
+                ttscommit;
+            }
+        }
+
+        // Zunächst Umsätze des Monats initialisieren
+        info(strfmt("@NDX:NDXSetSalesVolumeToZero", NDXHelperCommon::seconds2Str(), monat, jahr));      // [%1] Umsätze des Monats [%2-%3] auf 0 setzen
+        q       = new Query();
+        qbds    = q.addDataSource(tablenum(NDXKumUmsCustArtGrp));
+        qbds.update(true);
+        qbds.addRange(fieldnum(NDXKumUmsCustArtGrp, jahr)).value(QueryValue(jahr));
+        qr      = new QueryRun(q);
+        while (qr.next())
+        {
+            ttsbegin;
+            nDX_KumUmsCustArtGrp  = qr.get(tablenum(NDXKumUmsCustArtGrp));
+            nDX_KumUmsCustArtGrp.initUmsMonat(monat);
+            nDX_KumUmsCustArtGrp.update();
+            ttscommit;
+
+        }
+
+        // Umsätze zubuchen
+        info(strfmt("@NDX:NDXPostSalesVolumeOfMonth", NDXHelperCommon::seconds2Str(), monat, jahr));      // [%1] Umsätze des Monats [%2-%3] zubuchen
+        while select    nDX_UmsCust_ArtGrpCompany
+        group by    CompanyId
+            join    nDX_UmsCustCompany
+            where   nDX_UmsCustCompany.InvoiceId    == nDX_UmsCust_ArtGrpCompany.InvoiceId  &&
+                    nDX_UmsCustCompany.Month        == monat                                &&
+                    nDX_UmsCustCompany.Jahr         == jahr
+        {
+            firma = NDXHelperCommon::CompanyId2NDXCompany(nDX_UmsCust_ArtGrpCompany.CompanyId);
+            changecompany(nDX_UmsCust_ArtGrpCompany.CompanyId)
+            {
+                nDX_UmsCust_ArtGrp = null;
+
+                while select nDX_UmsCust_ArtGrp
+                where       nDX_UmsCust_ArtGrp.CompanyId   == nDX_UmsCust_ArtGrpCompany.CompanyId
+                join        nDX_UmsCust
+                    where   nDX_UmsCust.InvoiceId   == nDX_UmsCust_ArtGrp.InvoiceId     &&
+                            nDX_UmsCust.Month       == monat                            &&
+                            nDX_UmsCust.Jahr        == jahr
+                {
+                    // Umsatz
+                    ttsbegin;
+                    nDX_KumUmsCustArtGrp = null;
+                    nDX_KumUmsCustArtGrp.CustAccount  = nDX_UmsCust.OrderAccount;
+                    nDX_KumUmsCustArtGrp.ARTGRP       = nDX_UmsCust_ArtGrp.GoodsId;
+                    nDX_KumUmsCustArtGrp.CompanyId    = nDX_UmsCust_ArtGrp.CompanyId;
+                    nDX_KumUmsCustArtGrp.Jahr         = jahr;
+                    nDX_KumUmsCustArtGrp.Companys        = firma;
+                    nDX_KumUmsCustArtGrp = NDXKumUmsCustArtGrp::findOrCreate(nDX_KumUmsCustArtGrp, true);
+                    if (!nDX_KumUmsCustArtGrp.KdNr)
+                    {
+                        nDX_KumUmsCustArtGrp.KdNr = str2int(nDX_KumUmsCustArtGrp.CustAccount);
+                    }
+                    nDX_KumUmsCustArtGrp.addUmsFromNDXUmsCust_ArtGrp(monat, nDX_UmsCust_ArtGrp);
+                    nDX_KumUmsCustArtGrp.update();
+                    ttscommit;
+                }
+            }
+        }
+        info(strfmt("@NDX:NDXSalesVolumeInKumUmsCustArtGrpEnd", NDXHelperCommon::seconds2Str()));                   // [%1] ENDE: Umsätze in NDX_KumUmsCustArtGrp aus Livedaten verbuchen
+
+        // Übernahme der Live-Daten in Parameter speichern
+        NDXUmsatzParametersGlobal::setLastSalesImport();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkCustAccountRef</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    static void checkCustAccountRef()
+    {
+        NDXKumUmsCust          nDX_KumUmsCust;
+        NDXKumBonCust          nDX_KumBonCust;
+        NDXKumUmsCustArtGrp    nDX_KumUmsCustArtGrp;
+        NDXKumUmsCustWithSales nDX_KumUmsCustWithSales;
+        CustTable               custTable;
+        SalesTable              salesTable;
+        NDXUmsatzClass         nDX_UmsatzClass;
+
+        container               conCompany;
+        container               conFirmen;
+        int                     i;
+        Query                   q;
+        QueryRun                qr;
+        QueryBuildDataSource    qbds, qbds2, qbds3;
+        ;
+
+        //--> 1.1: NDX/PAFFH/NDX_TASK1235003633/17.02.2014
+        // Sind für alle Debitoren der Umsatz-UK's Referenzen vorhanden?
+        nDX_UmsatzClass = NDXUmsatzClass::construct();
+        conFirmen = nDX_UmsatzClass.parmConFirmen();
+        for (i=1; i <= conlen(conFirmen); i++)
+        {
+            changecompany(NDXHelperCommon::NDXCompanys2CompanyId(conpeek(conFirmen,i)))
+            {
+                q = new Query();
+                qbds = q.addDataSource(tablenum(SalesTable));
+                qbds.orderMode(OrderMode::GroupBy);
+                //qbds.addOrderByField(fieldnum(SalesTable, CustAccount));
+                qbds.addGroupByField(fieldnum(SalesTable, CustAccount));
+                qbds.addSortField(fieldnum(SalesTable, CustAccount));
+
+                qbds3 = qbds.addDataSource(tablenum(CustTable));
+                qbds3.joinMode(JoinMode::InnerJoin);
+                qbds3.addLink(fieldnum(SalesTable, CustAccount), fieldnum(CustTable, AccountNum));
+                qbds3.addGroupByField(fieldnum(CustTable, dataAreaId));
+                qbds3.addGroupByField(fieldnum(CustTable, AccountNum));
+                qbds3.addGroupByField(fieldnum(CustTable, Party));
+                qbds3.fetchMode(QueryFetchMode::One2One);
+
+                qbds2 = qbds.addDataSource(tablenum(NDXKumUmsCustWithSales));
+                qbds2.addLink(fieldnum(SalesTable, dataAreaId), fieldnum(NDXKumUmsCustWithSales, CompanyId));
+                qbds2.addLink(fieldnum(SalesTable, CustAccount), fieldnum(NDXKumUmsCustWithSales, CustAccount));
+                qbds2.joinMode(JoinMode::NoExistsJoin);
+                qbds2.fetchMode(QueryFetchMode::One2One);
+                qr = new QueryRun(q);
+
+                while (qr.next())
+                {
+                    salesTable = qr.get(tablenum(SalesTable));
+                    custTable  = qr.get(tablenum(CustTable));
+                    if (custTable.AccountNum)
+                    {
+                        nDX_KumUmsCustWithSales.clear();
+                        nDX_KumUmsCustWithSales.CompanyId = custTable.dataAreaId;
+                        nDX_KumUmsCustWithSales.NameAlias   = DirPartyTable::findRec(custTable.Party).NameAlias;
+                        nDX_KumUmsCustWithSales.Company       = conpeek(conFirmen,i);
+                        nDX_KumUmsCustWithSales.CustAccount = custTable.AccountNum;
+                        nDX_KumUmsCustWithSales.insert();
+                    }
+                }
+            }
+        }
+
+        // sind zu allen Monatsumsatz-Datensätzen die Account-Referenzen vorhanden?
+        while select forUpdate  nDX_KumUmsCust
+        where               !nDX_KumUmsCust.CustAccount
+        {
+            conCompany = connull();
+            conCompany += nDX_KumUmsCust.CompanyId;
+            select firstonly crosscompany:conCompany custTable where custTable.AccountNum == int2str(nDX_KumUmsCust.KdNr);
+            if (custTable)
+            {
+                ttsbegin;
+                nDX_KumUmsCust.CustAccount  = custTable.AccountNum;
+                nDX_KumUmsCust.update();
+                ttscommit;
+            }
+            else
+            {
+                warning(strfmt("@NDX:NDXMissingCustomerRef", nDX_KumUmsCust.CompanyId, nDX_KumUmsCust.KdNr, tableid2name(nDX_KumUmsCust.TableId))); // Für Kunde [%1-%2] wurde keine Kundenreferenz in [%3] gefunden
+            }
+        }
+
+        // sind zu allen MonatsBonus-Datensätzen die Account-Referenzen vorhanden?
+        while select forUpdate  nDX_KumBonCust
+        where               !nDX_KumBonCust.CustAccount
+        {
+            conCompany = connull();
+            conCompany += nDX_KumBonCust.CompanyId;
+            select firstonly crosscompany:conCompany custTable where custTable.AccountNum == int2str(nDX_KumBonCust.KdNr);
+            if (custTable)
+            {
+                ttsbegin;
+                nDX_KumBonCust.CustAccount  = custTable.AccountNum;
+                nDX_KumBonCust.update();
+                ttscommit;
+            }
+            else
+            {
+                warning(strfmt("@NDX:NDXMissingCustomerRef", nDX_KumBonCust.CompanyId, nDX_KumBonCust.KdNr, tableid2name(nDX_KumBonCust.TableId))); // Für Kunde [%1-%2] wurde keine Kundenreferenz in [%3] gefunden
+            }
+
+        }
+
+
+        // sind für alle Artikelgruppenumsätze die Referenzen vorhanden?
+        while select forUpdate  nDX_KumUmsCustArtGrp
+        where               !nDX_KumUmsCustArtGrp.CustAccount
+        {
+            // ist die CompanyId zugeordnet?
+            if (!nDX_KumUmsCustArtGrp.CompanyId)
+            {
+                nDX_KumUmsCustArtGrp.CompanyId = NDXHelperCommon::NDXCompanys2CompanyId(nDX_KumUmsCustArtGrp.Companys);
+            }
+
+            conCompany = connull();
+            conCompany += nDX_KumUmsCustArtGrp.CompanyId;
+            select firstonly crosscompany:conCompany custTable where custTable.AccountNum == int2str(nDX_KumUmsCustArtGrp.KdNr);
+            if (custTable)
+            {
+                ttsbegin;
+                nDX_KumUmsCustArtGrp.CustAccount  = custTable.AccountNum;
+                nDX_KumUmsCustArtGrp.update();
+                ttscommit;
+            }
+            else
+            {
+                nDX_KumUmsCustWithSales = NDXKumUmsCustWithSales::findKdNr(nDX_KumUmsCustArtGrp.KdNr, nDX_KumUmsCustArtGrp.Companys);
+                if (nDX_KumUmsCustWithSales.CustAccount)
+                {
+                    ttsbegin;
+                    nDX_KumUmsCustArtGrp.CustAccount  = nDX_KumUmsCustWithSales.CustAccount;
+                    nDX_KumUmsCustArtGrp.update();
+                    ttscommit;
+                }
+            }
+            if (!nDX_KumUmsCustArtGrp.CustAccount &&
+            nDX_KumUmsCustArtGrp.Jahr > 2007  &&
+            nDX_KumUmsCustArtGrp.getUmsJahr())
+            {
+                warning(strfmt("@NDX:NDXMissingCustomerRef", nDX_KumUmsCustArtGrp.CompanyId, nDX_KumUmsCustArtGrp.KdNr, tableid2name(nDX_KumUmsCustArtGrp.TableId)));
+            }
+
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillLiveSales</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "dateFrom">InvoiceDate</param>
+    /// <param name = "dateTo">InvoiceDate</param>
+    /// <param name = "voucher">Voucher</param>
+    static void fillLiveSales(InvoiceDate   dateFrom  = DateStartMth(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())),
+        InvoiceDate   dateTo    = dateEndMth(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())),
+                          Voucher       voucher   = '')
+    {
+        const str SofortbonusId = 'Sofort_Bon';
+        const str SofortbonusLike = 'Sofort_B*';
+        InventTableModule       inventTableModule;
+        InventTable             inventTable;
+        CustInvoiceJour         custInvoiceJour;
+        CustInvoiceTrans        custInvoiceTrans;
+        MarkupTrans             markupTrans, markupTrans2, markupTrans3, markupTransLine;
+        MarkupTable             markupTable;
+        InventTrans             inventTrans;
+
+
+        NDXUmsCust_ArtGrp       nDX_UmsCust_ArtGrp;
+        NDXUmsCust              nDX_UmsCust;
+
+        NDXUmsatzClassArgs      nDX_UmsatzClassArgs;
+        NDXUmsatzClass          nDX_UmsatzClass;
+        NDXGetUmsType           umsType;
+        container               conCompanies;
+        int                     i;
+        dataAreaId              company;
+        InventLineDiscCode      lineDiscCode;
+
+        Query                   qHead, qPos;
+        QueryRun                qrHead, qrPos;
+        QueryBuildDataSource    qbdsHead, qbdsHead2, qbdsPos;
+        QueryBuildFieldList     fieldsHead;
+        AmountCur               amountSum;
+        AmountCur               sofbonSum;
+        CostAmountPosted        costAmountPosted, costAmountPostedSum;
+        CostAmountAdjusted      costAmountAdjusted, costAmountAdjustedSum;
+        Qty                     qty;
+
+        ;
+        umsType             = NDXGetUmsType::perCustomer;
+        nDX_UmsatzClassArgs = new NDXUmsatzClassArgs();
+        nDX_UmsatzClassArgs.parmEnumType(enumnum(NDXGetUmsType));
+        nDX_UmsatzClassArgs.parmEnum(enum2int(umsType));
+        nDX_UmsatzClass     = NDXUmsatzClass::construct(nDX_UmsatzClassArgs);
+        conCompanies        = nDX_UmsatzClass.parmConCompanies();
+
+        if (!confind(conCompanies, NDXHelperCommon::NDXCompanys2CompanyId(NDXCompanyBE::Niedergesaess)))
+        {
+            conCompanies += NDXHelperCommon::NDXCompanys2CompanyId(NDXCompanyBE::Niedergesaess);
+        }
+        if (!confind(conCompanies, NDXHelperCommon::NDXCompanys2CompanyId(NDXCompanyBE::Fintech)))
+        {
+            conCompanies += NDXHelperCommon::NDXCompanys2CompanyId(NDXCompanyBE::Fintech);
+        }
+
+        info(strfmt("@NDX:NDXProcessSalesDataForPeriod", NDXHelperCommon::seconds2Str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone())), dateFrom, dateTo));        // [%1] START: Live-Umsatzdaten des Zeitraums [%2 - %3] verarbeiten
+
+        if (!voucher)
+        {
+            info(strfmt("@NDX:NDXDeleteCapturedDataUmsCustArtGrp", NDXHelperCommon::seconds2Str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()))));                      // [%1] Erfasste Daten in NDX_UmsCust_ArtGrp löschen
+            //Erfasste Daten des Zeitraums bereinigen
+            delete_from nDX_UmsCust_ArtGrp
+            exists join nDX_UmsCust
+                where   nDX_UmsCust.CompanyId   == nDX_UmsCust_ArtGrp.CompanyId &&
+                        nDX_UmsCust.InvoiceId   == nDX_UmsCust_ArtGrp.InvoiceId &&
+                        nDX_UmsCust.InvoiceDate >= dateFrom                     &&
+                        nDX_UmsCust.InvoiceDate <= dateTo;
+
+            info(strfmt("@NDX:NDXDeleteCapturedDataUmsCust", NDXHelperCommon::seconds2Str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()))));                      // [%1] Erfasste Daten in NDX_UmsCust löschen
+            delete_from     nDX_UmsCust
+                where   nDX_UmsCust.InvoiceDate >= dateFrom                     &&
+                        nDX_UmsCust.InvoiceDate <= dateTo;
+        }
+
+        for (i = 1; i <= conlen(conCompanies); i++)
+        {
+            company = conpeek(conCompanies, i);
+            changecompany(company)
+            {
+                inventTable         = null;
+                inventTableModule   = null;
+                custInvoiceJour     = null;
+                custInvoiceTrans    = null;
+                markupTable         = null;
+                markupTrans         = null;
+                markupTrans2        = null;
+                markupTrans3        = null;
+                markupTransLine     = null;
+                inventTrans         = null;
+
+                // Daten sammeln
+                info(strfmt("@NDX:NDXProcessJournalizedSalesVolumeInCompany", NDXHelperCommon::seconds2Str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone())), company));         // [%1] Journalisierte Umsätze im UK [%2] verarbeiten
+                markupTable = markupTable::find(MarkupModuleType::Cust, SofortbonusId);
+
+                qHead       = new Query();
+                qbdsHead    = qHead.addDataSource(tablenum(CustInvoiceJour));
+                qbdsHead2   = qbdsHead.addDataSource(tablenum(custInvoiceTrans));
+                qbdsHead2.addRange(fieldnum(custInvoiceTrans, SalesId)).value(SysQuery::valueNotEmptyString());
+                qbdsHead2.joinMode(JoinMode::ExistsJoin);
+                qbdsHead2.addLink(fieldnum(custInvoiceJour, InvoiceId), fieldnum(custInvoiceTrans, InvoiceId));
+
+                qbdsHead.addRange(fieldnum(custInvoiceJour, InvoiceId)).value(SysQuery::valueNotEmptyString());
+                qbdsHead.addRange(fieldnum(custInvoiceJour, InvoiceDate)).value(strfmt('%1..%2', dateFrom, dateTo));
+                qbdsHead.addRange(fieldnum(custInvoiceJour, SalesType)).value(SysQuery::valueNot(SalesType::Journal));
+                if (voucher)
+                {
+                    qbdsHead.addRange(fieldnum(custInvoiceJour, LedgerVoucher)).value(voucher);
+                }
+
+                fieldsHead  = qbdsHead.fields();
+                fieldsHead.addField(fieldnum(CustInvoiceJour, InvoiceId));
+                fieldsHead.addField(fieldnum(CustInvoiceJour, InvoiceAccount));
+                fieldsHead.addField(fieldnum(CustInvoiceJour, OrderAccount));
+                fieldsHead.addField(fieldnum(CustInvoiceJour, InvoiceDate));
+                fieldsHead.addField(fieldnum(CustInvoiceJour, SalesBalance));
+                fieldsHead.addField(fieldnum(CustInvoiceJour, RecId));
+                fieldsHead.addField(fieldnum(CustInvoiceJour, SalesId));
+                fieldsHead.addField(fieldnum(custInvoiceJour, SalesBalanceMST)); 
+
+                qrHead = new QueryRun(qHead);
+
+                while (qrHead.next())
+                {
+                    custInvoiceJour = qrHead.get(tablenum(CustInvoiceJour));
+                    nDX_UmsCust = NDXUmsCust::find(company, custInvoiceJour.InvoiceId, custInvoiceJour.RecId, true);
+                    select firstonly markupTrans
+                    where   markupTrans.TransTableId    == custInvoiceJour.TableId   &&
+                            markupTrans.TransRecId      == custInvoiceJour.RecId     &&
+                //            markupTrans.MarkupCode      == markupTable.MarkupCode;
+                    markupTrans.MarkupCode      like SofortbonusLike;
+
+
+                    // sonstige Zuschläge
+                    //TODO: DebuC Umsatzauswertung Fremdwährung
+                    select      sum(CalculatedAmount) from markupTrans2
+                    group by TransTableId, TransRecId
+                    where   markupTrans2.TransTableId    == custInvoiceJour.TableId   &&
+                            markupTrans2.TransRecId      == custInvoiceJour.RecId
+                    notexists join markupTrans3
+                    where   markupTrans3.TransTableId    == custInvoiceJour.TableId   &&
+                            markupTrans3.TransRecId      == custInvoiceJour.RecId     &&
+                            markupTrans3.MarkupCode      like SofortbonusLike;
+
+                    ttsbegin;
+
+                    nDX_UmsCust.CompanyId       = company;
+                    nDX_UmsCust.InvoiceId       = custInvoiceJour.InvoiceId;
+                    nDX_UmsCust.SalesId         = custInvoiceJour.SalesId;
+                    nDX_UmsCust.RefRecId        = custInvoiceJour.RecId;
+                    nDX_UmsCust.InvoiceAccount  = custInvoiceJour.InvoiceAccount;
+                    nDX_UmsCust.OrderAccount    = custInvoiceJour.OrderAccount;
+                    nDX_UmsCust.InvoiceDate     = custInvoiceJour.InvoiceDate;
+                    //TODO: DebuC Umsatzauswertung Fremdwährung
+                    nDX_UmsCust.SalesBalance    = custInvoiceJour.SalesBalanceMST + markupTrans.CalculatedAmount; // Rechnungswert - Bonus
+                    nDX_UmsCust.Sofortbonus     = markupTrans.Value;
+                    //TODO: DebuC Umsatzauswertung Fremdwährung
+                    nDX_UmsCust.SofortbonusWert = markupTrans.CalculatedAmount;
+                    nDX_UmsCust.Jahr            = year(nDX_UmsCust.InvoiceDate);
+                    nDX_UmsCust.Month           = mthofyr(nDX_UmsCust.InvoiceDate);
+
+                    //CustInvoiceTrans durchlaufen
+                    qPos    = new Query();
+                    qbdsPos = qPos.addDataSource(tablenum(CustInvoiceTrans));
+                    qbdsPos.addRange(fieldnum(CustInvoiceTrans, SalesId)).value(custInvoiceJour.SalesId);
+                    qbdsPos.addRange(fieldnum(CustInvoiceTrans, InvoiceId)).value(custInvoiceJour.InvoiceId);
+                    qbdsPos.addRange(fieldnum(CustInvoiceTrans, InvoiceDate)).value(QueryValue(custInvoiceJour.InvoiceDate));
+                    qbdsPos.addRange(fieldnum(CustInvoiceTrans, numberSequenceGroup)).value(custInvoiceJour.numberSequenceGroup);
+                    qrPos   = new QueryRun(qPos);
+                    amountSum               = 0;
+                    sofbonSum               = 0;
+                    costAmountAdjustedSum   = 0;
+                    costAmountPostedSum     = 0;
+                    while (qrPos.next())
+                    {
+                        custInvoiceTrans = qrPos.get(tablenum(CustInvoiceTrans));
+
+                        if (!custInvoiceTrans.ItemId)
+                        {
+                            info(strfmt("@NDX:NDXDocumentInheritsPositionWithoutItemNumber", custInvoiceTrans.InvoiceId));                   // Beleg [%1] mit Position ohne Artikelnummer
+                        }
+                        inventTable         = inventTable::find(custInvoiceTrans.ItemId);
+                        inventTableModule   = inventTableModule::find(custInvoiceTrans.ItemId, ModuleInventPurchSales::Sales);
+                        lineDiscCode        = inventTableModule.LineDisc;
+                        //--> 1.3: NDX/PaffH/18.05.2011
+                        if (!lineDiscCode)
+                        {
+                            info(strfmt("@NDX:NDXItemWithoutDiscountGroup" , custInvoiceTrans.ItemId, company, custInvoiceTrans.InvoiceId, custInvoiceTrans.LineAmount));       // Artikel [%1] aus Rechnung [%2-%3] ohne Positionsrabattgruppe; Umsatz [%4]
+                            nDX_UmsCust.ohnePosRabGrp += custInvoiceTrans.LineAmount;
+                        }
+                        nDX_UmsCust_ArtGrp  = NDXUmsCust_ArtGrp::find(company, custInvoiceJour.SalesId, custInvoiceTrans.InvoiceId, lineDiscCode, true);
+                        if (!nDX_UmsCust_ArtGrp)
+                        {
+                            nDX_UmsCust_ArtGrp.CompanyId    = company;
+                            nDX_UmsCust_ArtGrp.SalesId      = custInvoiceJour.SalesId;
+                            nDX_UmsCust_ArtGrp.InvoiceId    = custInvoiceTrans.InvoiceId;
+                            nDX_UmsCust_ArtGrp.GoodsId      = lineDiscCode;
+                        }
+
+                        select firstonly markupTransLine
+                        where   markupTransLine.TransTableId    == custInvoiceTrans.TableId   &&
+                                markupTransLine.TransRecId      == custInvoiceTrans.RecId     &&
+                                markupTransLine.MarkupCode      like SofortbonusLike;
+                        //TODO: DebuC Umsatzauswertung Fremdwährung
+                        sofbonSum += markupTransLine.CalculatedAmount;
+                        nDX_UmsCust_ArtGrp.LineAmount       += custInvoiceTrans.LineAmountMST;
+                        amountSum                           += custInvoiceTrans.LineAmountMST;
+
+                        // InventTrans-Summen ermitteln
+                        [costAmountPosted, CostAmountAdjusted, qty] = custInvoiceTrans.NDXinventCostAmount();
+                        if ((qty * -1) != custInvoiceTrans.Qty) // InventTransid [%1]; InvoiceId [%4] Menge aus InventTrans [%2] entspricht nicht der aus CustInvoiceTrans [%3]
+                        {
+                            info(strfmt("@NDX:NDXQuantityDiffInventTransCustInvoiceTrans", custInvoiceTrans.InventTransId, qty, custInvoiceTrans.Qty, custInvoiceTrans.InvoiceId ));
+                        }
+                        nDX_UmsCust_ArtGrp.CostAmountPosted     += costAmountPosted;
+                        nDX_UmsCust_ArtGrp.CostAmountAdjusted += CostAmountAdjusted;
+                        costAmountPostedSum                     += costAmountPosted;
+                        costAmountAdjustedSum                   += CostAmountAdjusted;
+
+                        nDX_UmsCust_ArtGrp.write();
+                    }
+                    if (sofbonSum)
+                    {
+                        nDX_UmsCust.SofortbonusWert += sofbonSum;
+                        nDX_UmsCust.SalesBalance    += sofbonSum;
+                    }
+
+                    if (!nDX_UmsCust.Sofortbonus && markupTransLine.Value)
+                    {
+                        nDX_UmsCust.Sofortbonus = markupTransLine.Value;
+                    }
+
+                    if (amountSum != nDX_UmsCust.SalesBalance - nDX_UmsCust.SofortbonusWert)
+                    {
+                        info(strfmt("@NDX:NDXDifferenceLineAmount", nDX_UmsCust.InvoiceId, (nDX_UmsCust.SalesBalance - nDX_UmsCust.SofortbonusWert) - amountSum));      // Beleg [%1] Differenz LineAmount [%2]
+                    }
+
+                    nDX_UmsCust.CostAmountAdjusted    = costAmountAdjustedSum;
+                    nDX_UmsCust.CostAmountPosted        = costAmountPostedSum;
+
+                    nDX_UmsCust.write();
+                    ttscommit;
+
+                }
+            }
+        }
+        info(strfmt("@NDX:NDXProcessSalesDataForPeriodEnd", NDXHelperCommon::seconds2Str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone())), dateFrom, dateTo));        // [%1] ENDE: Live-Umsatzdaten des Zeitraums [%2 - %3] verarbeiten
+
+        if (voucher)
+        {
+            info("@NDX:NDXDataPreparedForOneDocument");               // Achtung: Daten wurden nur für einen Beleg aufbereitet. Es ist eine neue zeitraumbasierte Aufbereitung notwendig!
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillNDXKumUmsCustFromLiveSales</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "monat">NDXMonthBE</param>
+    /// <param name = "jahr">int</param>
+    /// <param name = "lCheckKumUmsCust">boolean</param>
+    static void fillNDXKumUmsCustFromLiveSales(NDXMonthBE monat, int jahr, boolean lCheckKumUmsCust = true)
+    {
+        NDXUmsCust             nDX_UmsCust, nDX_UmsCustCompany ;
+        NDXKumUmsCust          nDX_KumUmsCust, l_nDX_KumUmsCust;
+        NDXKumBonCust          nDX_KumBonCust, l_nDX_KumBonCust;
+
+        NDXCompanyBE            firma;
+        int                     nErrors = 0;
+        Query                   q;
+        QueryRun                qr;
+        QueryBuildDataSource    qbds;
+        ;
+        info(strfmt("@NDX:NDXSalesVolumeInKumUmsCustArtGrp", NDXHelperCommon::seconds2Str()));                   // [%1] START: Umsätze in NDX_KumUmsCust aus Livedaten verbuchen
+
+        // Prüfen, ob alle Datensätze in NDX_KumUmsCust einen CustAccount zugeordnet haben
+        if (lCheckKumUmsCust)
+        {
+            info(strfmt("@NDX:NDXCheckCustAccountOfKumUmsCust", NDXHelperCommon::seconds2Str()));               // [%1] Prüfung, ob alle Datensätze in NDX_KumUmsCust einen CustAccount zugeordnet haben
+            NDXUmsatzClass::checkCustAccountRef();
+        }
+
+        // Besteht für alle Debitoren ein Referenz-Datensatz
+        // Umsatz
+        info(strfmt("@NDX:NDXReferenceCheckKumUmsCust", NDXHelperCommon::seconds2Str()));                   // [%1] Referenz-Prüfung, NDX_KumUmsCust
+        while select        nDX_UmsCust
+        group by        OrderAccount, CompanyId
+        where           nDX_UmsCust.Month   == monat    &&
+                        nDX_UmsCust.Jahr    == jahr
+        notexists join  nDX_KumUmsCust
+            where       nDX_KumUmsCust.CustAccount  == nDX_UmsCust.OrderAccount
+                &&      nDX_KumUmsCust.CompanyId    == nDX_UmsCust.CompanyId
+        {
+            // Existiert eine Referenz über die Kundennummer (ansonsten ist es korrekt, das der Datensatz neue angelegt wird
+            select firstOnly    l_nDX_KumUmsCust
+            where           l_nDX_KumUmsCust.KdNr       == str2int(nDX_UmsCust.OrderAccount)
+                &&          l_nDX_KumUmsCust.CompanyId  == nDX_UmsCust.CompanyId;
+            if (l_nDX_KumUmsCust)
+            {
+                Warning(strfmt("@NDX:NDXCustomerWithoutRefKumUmsCust", l_nDX_KumUmsCust.KdNr));             // Debitor [%1] ohne CustAccount-Referenz in NDX_KumUmsCust
+                ++nErrors;
+            }
+            else
+            {
+                info(strfmt("@NDX:NDXNewCustomerForSalesVolumeDisplay", nDX_UmsCust.OrderAccount));             // neuer Debitor für Umsatzdarstellung [%1]
+            }
+
+        }
+        // Bonus
+        info(strfmt("@NDX:NDXReferenceCheckKumBonCust", NDXHelperCommon::seconds2Str()));                   // [%1] Referenz-Prüfung, NDX_KumBonCust
+        while select        nDX_UmsCust
+        group by        OrderAccount, CompanyId
+        where           nDX_UmsCust.Month   == monat    &&
+                        nDX_UmsCust.Jahr    == jahr     &&
+                        nDX_UmsCust.SofortbonusWert
+        notexists join  nDX_KumBonCust
+            where       nDX_KumBonCust.CustAccount  == nDX_UmsCust.OrderAccount
+                &&      nDX_KumBonCust.CompanyId    == nDX_UmsCust.CompanyId
+        {
+            // Existiert eine Referenz über die Kundennummer (ansonsten ist es korrekt, das der Datensatz neue angelegt wird
+            select firstOnly    l_nDX_KumBonCust
+            where           l_nDX_KumBonCust.KdNr       == str2int(nDX_UmsCust.OrderAccount)
+                &&          l_nDX_KumBonCust.CompanyId  == nDX_UmsCust.CompanyId;
+            if (l_nDX_KumBonCust)
+            {
+                Warning(strfmt("@NDX:NDXCustomerWithoutRefKumBonCust", l_nDX_KumBonCust.KdNr));             // Debitor [%1] ohne CustAccount-Referenz in NDX_KumBonCust
+                ++nErrors;
+            }
+            else
+            {
+                info(strfmt("@NDX:NDXNewCustomerForBonusDisplay", nDX_UmsCust.OrderAccount));             // neuer Debitor für Bonusdarstellung [%1]
+            }
+
+        }
+
+        // Verbuchung nur, wenn keine Fehler festgestellt wurden
+        if (nErrors)
+        {
+            throw Error(strfmt("@NDX:NDXUpdaateNotPerformedMissingReferences", nErrors));                           // Verbuchung wurde nicht durchgeführt, weil [%1] fehlende Referenzen festgestellt wurden
+        }
+
+
+        // Zunächst Umsätze des Monats initialisieren
+        info(strfmt("@NDX:NDXSetSalesVolumeToZero", NDXHelperCommon::seconds2Str(), monat, jahr));      // [%1] Umsätze des Monats [%2-%3] auf 0 setzen
+        {
+            q       = new Query();
+            qbds    = q.addDataSource(tablenum(NDXKumUmsCust));
+            qbds.update(true);
+            qbds.addRange(fieldnum(NDXKumUmsCust, jahr)).value(QueryValue(jahr));
+            qr      = new QueryRun(q);
+            ttsbegin;
+            while (qr.next())
+            {
+                nDX_KumUmsCust  = qr.get(tablenum(NDXKumUmsCust));
+                nDX_KumUmsCust.initUmsMonat(monat);
+                nDX_KumUmsCust.update();
+            }
+            ttscommit;
+            // Bonus zurücksetzen
+            q       = new Query();
+            qbds    = q.addDataSource(tablenum(NDXKumBonCust));
+            qbds.update(true);
+            qbds.addRange(fieldnum(NDXKumBonCust, year)).value(QueryValue(jahr));
+            qr      = new QueryRun(q);
+            ttsbegin;
+            while (qr.next())
+            {
+                nDX_KumBonCust  = qr.get(tablenum(NDXKumBonCust));
+                nDX_KumBonCust.initBonMonat(monat);
+                nDX_KumBonCust.update();
+            }
+            ttscommit;
+        }
+
+        // Umsätze und Bonus zubuchen
+        info(strfmt("@NDX:NDXPostSalesVolumeOfMonth", NDXHelperCommon::seconds2Str(), monat, jahr));      // [%1] Umsätze des Monats [%2-%3] zubuchen
+        while select    nDX_UmsCustCompany
+        group by    CompanyId
+        where       nDX_UmsCustCompany.Month   == monat    &&
+                    nDX_UmsCustCompany.Jahr    == jahr
+        {
+            firma = NDXHelperCommon::CompanyId2NDXCompany(nDX_UmsCustCompany.CompanyId);
+            changecompany(nDX_UmsCustCompany.CompanyId)
+            {
+                nDX_UmsCust = null;
+
+                ttsbegin;
+                while select    nDX_UmsCust
+                where       nDX_UmsCust.CompanyId   == nDX_UmsCustCompany.CompanyId     &&
+                            nDX_UmsCust.Month       == monat                            &&
+                            nDX_UmsCust.Jahr        == jahr
+                {
+                    // Umsatz
+                    nDX_KumUmsCust = null;
+                    nDX_KumUmsCust.CustAccount  = nDX_UmsCust.OrderAccount;
+                    nDX_KumUmsCust.CompanyId    = nDX_UmsCust.CompanyId;
+                    nDX_KumUmsCust.Jahr         = jahr;
+                    nDX_KumUmsCust.Party        = CustTable::find(nDX_KumUmsCust.CustAccount).Party;
+                    nDX_KumUmsCust              = NDXKumUmsCust::findOrCreate(nDX_KumUmsCust, true);
+                    nDX_KumUmsCust.Companys      = firma;
+                    if (!nDX_KumUmsCust.KdNr)
+                    {
+                        nDX_KumUmsCust.KdNr = str2int(nDX_KumUmsCust.CustAccount);
+                    }
+
+                    nDX_KumUmsCust.addUmsFromNDXUmsCust(monat, nDX_UmsCust);
+                    nDX_KumUmsCust.update();
+
+
+                    // Bonus
+                    if (nDX_UmsCust.SofortbonusWert)
+                    {
+                        nDX_KumBonCust = null;
+                        nDX_KumBonCust.CustAccount  = nDX_UmsCust.OrderAccount;
+                        nDX_KumBonCust.CompanyId    = nDX_UmsCust.CompanyId;
+                        nDX_KumBonCust.Party        = CustTable::find(nDX_KumBonCust.CustAccount).Party;  // 1.3: NDX/PAFFH/NDX_TASK1235003633/20.02.2014
+                        nDX_KumBonCust.Year         = jahr;
+                        nDX_KumBonCust              = NDXKumBonCust::findOrCreate(nDX_KumBonCust, true);
+                        nDX_KumBonCust.Company      = firma;
+                        if (!nDX_KumBonCust.KdNr)
+                        {
+                            nDX_KumBonCust.KdNr = str2int(nDX_KumBonCust.CustAccount);
+                        }
+
+                        nDX_KumBonCust.addBonFromNDXUmsCust(monat, nDX_UmsCust);
+                        nDX_KumBonCust.update();
+                    }
+                }
+                ttscommit;
+            }
+        }
+        info(strfmt("@NDX:NDXSalesVolumeInKumUmsCustEnd", NDXHelperCommon::seconds2Str()));                   // [%1] ENDE: Umsätze in NDX_KumUmsCust aus Livedaten verbuchen
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSignatureArtGrp</Name>
+				<Source><![CDATA[
+    public NDXSignature parmSignatureArtGrp(NDXSignature _signatureArtGrp = signatureArtGrp)
+    {
+        if(!prmIsDefault(_signatureArtGrp))
+        {
+            signatureArtGrp = _signatureArtGrp;
+        }
+
+        return signatureArtGrp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSignatureCust</Name>
+				<Source><![CDATA[
+    public NDXSignature parmSignatureCust(NDXSignature _signatureCust = signatureCust)
+    {
+        if(!prmIsDefault(_signatureCust))
+        {
+            signatureCust = _signatureCust;
+        }
+
+        return signatureCust;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSignatureCS</Name>
+				<Source><![CDATA[
+    public NDXSignature parmSignatureCS(NDXSignature _signatureCS = signatureCS)
+    {
+        if(!prmIsDefault(_signatureCS))
+        {
+            signatureCS = _signatureCS;
+        }
+
+        return signatureCS;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildQueryUmsAlliancePerArtGrp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// query builder alliance per item group
+    /// </summary>
+    /// <param name = "_umsatzQuery">query </param>
+    /// <param name = "_umsSignature">signatur</param>
+    /// <param name = "_alliance">alliance</param>
+    /// <returns>QueryRun</returns>
+    QueryRun buildQueryUmsAlliancePerArtGrp(NDXSalesVolumeQuery _umsatzQuery,
+                                          NDXUmsSignature _umsSignature = this.parmUmsSignature(),
+                                          CustAccount _alliance = this.parmlAlliance() ? this.parmMasterAlliance() : this.parmSalesGroupId())
+    {
+        Query                   q;
+        QueryRun                qr;
+        QueryBuildDataSource    qbds, qbds2;
+        QueryBuildFieldList     fieldList;
+
+        q = new Query();
+        qbds = q.addDataSource(tablenum(NDXTmpKumUmsCustArtGrp));
+
+        if (this.parmlAlliance())
+        {
+            qbds.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, Alliance)).value(_alliance);
+        }
+        else
+        {
+            qbds.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, SalesGroup)).value(_alliance);
+        }
+
+        qbds.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, Child)).value(SysQuery::valueNot(_alliance));
+        qbds.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, UmsSignature)).value(_umsSignature);
+        qbds.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, MonthYearSignature)).value(this.parmMonthYearSignature());
+
+        qbds2 = qbds.addDataSource(tablenum(NDXSNAllianceItemGroups));
+        qbds2.relations(true);
+        qbds2.joinMode(JoinMode::OuterJoin);
+        qbds2.fetchMode(QueryFetchMode::One2One);
+
+        switch (_umsatzQuery)
+        {
+            case NDXSalesVolumeQuery::perCompany:
+            case NDXSalesVolumeQuery::allCompanies:
+                qbds.orderMode(OrderMode::GroupBy);
+                qbds.addSortField(fieldnum(NDXTmpKumUmsCustArtGrp, Company));
+        }
+
+        // Filterung
+        switch (_umsatzQuery)
+        {
+            case NDXSalesVolumeQuery::perRecord       :
+            case NDXSalesVolumeQuery::perCompany           :
+                qbds.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, Company)).value(SysQuery::valueNot(NDXCompanyBE::AllCompanies));
+                break;
+            case NDXSalesVolumeQuery::allCompanies        :
+                qbds.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, Company)).value(SysQuery::value(NDXCompanyBE::AllCompanies));
+                break;
+        }
+
+        // Sortierung
+        switch (_umsatzQuery)
+        {
+            case NDXSalesVolumeQuery::perRecord:
+                qbds.addSortField(fieldnum(NDXTmpKumUmsCustArtGrp, ItemGroup));
+                break;
+        }
+
+        switch (_umsatzQuery)
+        {
+            case NDXSalesVolumeQuery::perCompany           :
+            case NDXSalesVolumeQuery::allCompanies        :
+                fieldList = qbds.fields();
+                // Umsatz
+
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, RecId), SelectionField::Count);
+
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U01), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U02), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U03), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U04), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U05), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U06), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U07), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U08), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U09), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U10), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U11), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U12), SelectionField::Sum);
+
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU01), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU02), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU03), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU04), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU05), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU06), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU07), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU08), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU09), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU10), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU11), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU12), SelectionField::Sum);
+
+                break;
+        }
+        qr = new QueryRun(q);
+        return qr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildQueryUmsAlliancePerCustomer</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// last modified: PaffH 17.03.25
+    /// </summary>
+    /// <param name = "_umsatzQuery">NDXSalesVolumeQuery</param>
+    /// <param name = "_umsSignature">NDXUmsSignature</param>
+    /// <param name = "_alliance">CustAccount</param>
+    /// <returns>QueryRun</returns>
+    QueryRun buildQueryUmsAlliancePerCustomer(NDXSalesVolumeQuery _umsatzQuery,
+                                            NDXUmsSignature _umsSignature  = this.parmUmsSignature(),
+                                            CustAccount     _alliance      = this.parmlAlliance() ? this.parmMasterAlliance() : this.parmSalesGroupId())
+    {
+        Query                   q;
+        QueryRun                qr;
+        QueryBuildDataSource    qbds, qbds2, qbds3;
+        QueryBuildFieldList     fieldList;
+
+        q       = new Query();
+        qbds    = q.addDataSource(tablenum(NDXTmpKumUmsCust));
+        if (this.parmlAlliance())
+        {
+            qbds.addRange(fieldnum(NDXTmpKumUmsCust, Alliance)).value(_alliance);
+        }
+        else
+        {
+            qbds.addRange(fieldnum(NDXTmpKumUmsCust, SalesGroup)).value(_alliance);
+        }
+
+        qbds.addRange(fieldnum(NDXTmpKumUmsCust, Child)).value(SysQuery::valueNot(_alliance));
+        qbds.addRange(fieldnum(NDXTmpKumUmsCust, UmsSignature)).value(_umsSignature);
+        qbds.addRange(fieldnum(NDXTmpKumUmsCust, MonthYearSignature)).value(this.parmMonthYearSignature());
+
+        switch (_umsatzQuery)
+        {
+            case NDXSalesVolumeQuery::perRecord:
+                qbds2 = qbds.addDataSource(tablenum(NDXAllianceTreeCustomer));
+                qbds2.relations(true);
+                qbds2.fetchMode(QueryFetchMode::One2One);
+                qbds2.joinMode(JoinMode::OuterJoin);
+
+                qbds3 = qbds.addDataSource(tablenum(NDXSNAllianceClients));
+                qbds3.relations(true);
+                qbds3.joinMode(JoinMode::OuterJoin);
+                qbds3.fetchMode(QueryFetchMode::One2One);
+                break;
+            case NDXSalesVolumeQuery::SubAlliance:    // alle Unterverbände
+                qbds2 = qbds.addDataSource(tablenum(NDXAllianceTreeCustomer));
+                qbds2.addLink(fieldnum(NDXTmpKumUmsCust, Alliance), fieldnum(NDXAllianceTreeCustomer, Alliance));
+                qbds2.addLink(fieldnum(NDXTmpKumUmsCust, Child), fieldnum(NDXAllianceTreeCustomer, AccountNum));
+                qbds2.addLink(fieldnum(NDXTmpKumUmsCust, Company), fieldnum(NDXAllianceTreeCustomer, Company));
+                qbds2.joinMode(JoinMode::InnerJoin);
+                break;
+        }
+
+        switch (_umsatzQuery)
+        {
+            case NDXSalesVolumeQuery::subAlliance :
+                qbds2.orderMode(OrderMode::GroupBy);
+                qbds2.addSortField(fieldnum(NDXAllianceTreeCustomer, Child));
+            case NDXSalesVolumeQuery::perCompany           :
+                qbds.orderMode(OrderMode::GroupBy);
+                qbds.addSortField(fieldnum(NDXTmpKumUmsCust, Company));
+        }
+
+        // Sortierung
+        switch (_umsatzQuery)
+        {
+            case NDXSalesVolumeQuery::perRecord       :
+                qbds.addSortField(fieldnum(NDXTmpKumUmsCust, Party));
+                break;
+        }
+
+        switch (_umsatzQuery)
+        {
+            case NDXSalesVolumeQuery::SubAlliance :
+            case NDXSalesVolumeQuery::perCompany :
+            case NDXSalesVolumeQuery::allCompanies :
+                fieldList = qbds.fields();
+                // Umsatz
+
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, RecId), SelectionField::Count);
+
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, U01), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, U02), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, U03), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, U04), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, U05), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, U06), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, U07), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, U08), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, U09), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, U10), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, U11), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, U12), SelectionField::Sum);
+
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VU01), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VU02), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VU03), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VU04), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VU05), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VU06), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VU07), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VU08), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VU09), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VU10), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VU11), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VU12), SelectionField::Sum);
+
+                // Bonus
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, B01), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, B02), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, B03), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, B04), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, B05), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, B06), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, B07), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, B08), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, B09), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, B10), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, B11), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, B12), SelectionField::Sum);
+
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VB01), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VB02), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VB03), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VB04), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VB05), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VB06), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VB07), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VB08), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VB09), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VB10), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VB11), SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCust, VB12), SelectionField::Sum);
+
+
+                break;
+        }
+        qr = new QueryRun(q);
+        return qr;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

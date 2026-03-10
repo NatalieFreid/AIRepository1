@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesQuotationListPageFrm_AVAGAEBViaMail_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVAExtension for object AVAGAEBViaMail in form SalesQuotationListPage
+/// </summary>
+[ExtensionOf(formControlStr(SalesQuotationListPage, AVAGAEBViaMail))]
+final class AVASalesQuotationListPageFrm_AVAGAEBViaMail_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>clicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// clicked method
+    /// </summary>
+    public void clicked()
+    {
+        FormControl curButton = any2Object(this) as FormControl;
+        FormDataSource          quotationDS = curButton.formRun().dataSource(tableStr(SalesQuotationTable));
+        SalesQuotationTable     salesQuotationTable;
+        KCS_HDMSalesQuotationTableInfoFields    infoFields;
+        boolean                                 postJour = true;
+        Args                                    args;
+        if (quotationDS)
+        {
+            salesQuotationTable.data(quotationDS.cursor());
+        }
+
+        if (salesQuotationTable.Email == '')
+        {
+            throw Error("@NDX:NXAEmailInQuotMiss");
+        }
+
+        next clicked();
+        CustQuotationJour           lastCustQuotationJour;
+
+        if (salesQuotationTable.avaGAEBMissingOZ())
+        {
+            //warning("@NDX:NXAGAEBWarningMissingOZ");
+            if (Box::yesNo(strFmt("@NDX:NXAGAEBWarningCountMissingOZ", salesQuotationTable.avaGAEBCountPosWithMissingOZ()), DialogButton::No) == DialogButton::No)
+            {
+                postJour = false;
+            }
+        }
+        //else
+        if (postJour)
+        {
+            infoFields = KCS_HDMSalesQuotationTableInfoFields::find(salesQuotationTable.QuotationId, true);
+
+            if (infoFields.InfoField2 != '' && infoFields.InfoField2Finished == NoYes::No)
+            {
+                if (Box::yesNo(strFmt("@NDX:NXACommitInfo2", infoFields.InfoField2), DialogButton::Yes) == DialogButton::Yes)
+                {
+                    ttsbegin;
+                    infoFields.InfoField2Finished = NoYes::Yes;
+                    infoFields.InfoField2FinishedDateTime = DateTimeUtil::getSystemDateTime();
+                    infoFields.InfoField2FinishedUser = curUserId();
+                    infoFields.update();
+                    ttscommit;
+                    postJour = true;
+                }
+            }
+            else
+            {
+                postJour = true;
+            }
+        }
+
+        if (postJour)
+        {
+            args = new Args();
+            args.record(salesQuotationTable);
+            args.caller(curButton);
+            args.parm('GAEB');
+
+            new MenuFunction(menuItemActionStr(AVACreateQuotationJournal), MenuItemType::Action).run(args);
+
+            lastCustQuotationJour = CustQuotationJour::avaFindLatestQuotation(salesQuotationTable.QuotationId);
+            
+        }
+
+        if (lastCustQuotationJour)
+        {
+            DocuRef     docuRef;
+            DocuValue   docuValue;
+
+            select firstOnly docuRef
+                     join docuValue
+                     where docuRef.RefTableId     == lastCustQuotationJour.TableId                &&
+                           docuRef.RefRecId       == lastCustQuotationJour.RecId                  &&
+                           docuValue.RecId        == docuRef.ValueRecId                     &&
+                          (docuValue.FileType ==  'd94' || docuValue.FileType == 'p94');
+                 
+
+            if (!docuRef)
+            {
+                AVAGAEBExportD94CreateFile createFile = AVAGAEBExportD94CreateFile::construct(lastCustQuotationJour);
+                createFile.sendGAEB();
+            }
+
+            args = new Args();
+            args.record(lastCustQuotationJour);
+            args.caller(curButton);
+
+            //new MenuFunction(menuItemActionStr(AVAERQuotationEmailCreation), MenuItemType::Action).run(args);
+            AVAEREmailCreationHelper emailCreation = new AVAEREmailCreationHelper();
+
+            emailCreation.parmSendGAEB(true);
+            emailCreation.parmRecord(args.record());
+            emailCreation.findRecordTable(args);
+        }
+
+        if (quotationDS)
+        {
+            quotationDS.executeQuery();
+            quotationDS.positionToRecord(salesQuotationTable);
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

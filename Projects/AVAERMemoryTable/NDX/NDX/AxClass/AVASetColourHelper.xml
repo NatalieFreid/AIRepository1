@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASetColourHelper</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN 2024/05/27   AVA_011496_SetColourInReqTransReqPO
+/// </summary>
+internal final class AVASetColourHelper
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createProductVariant</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN 2024/05/27   AVA_011496_SetColourInReqTransReqPO
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_inventDim">Inventdim</param>
+    public static void createProductVariant(ItemId     _itemId, InventDim  _inventDim)
+    {
+        EcoResColor                         locEcoResColor;
+        EcoResProductMasterColor            ecoResProductMasterColor;
+        EcoResProduct                       ecoResProduct = InventTable::find(_itemId).Product();
+
+
+        if (!InventDimCombination::find(_itemId, _inventDim.inventDimId))
+        {
+            ttsbegin;
+            AVAEcoResProductMasterManager::addNewProductDimensionValue(
+                    ecoResProduct.RecId,
+                    EcoResProductDimensionAttribute::inventDimFieldId2DimensionAttributeRecId(fieldNum(InventDim, InventColorId)),
+                    _inventDim.InventColorId,
+                    '',
+                    '');
+
+            locEcoResColor = ecoResColor::findByName(_inventDim.InventColorId);
+           
+            if (locEcoResColor.RecId && !EcoResProductMasterColor::existByProductColor(ecoResProduct.RecId, EcoResProductDimensionAttribute::inventDimFieldId2DimensionAttributeRecId(fieldNum(InventDim, InventColorId)), locEcoResColor.RecId))
+            {
+                ecoResProductMasterColor.Color = locEcoResColor.RecId;
+                ecoResProductMasterColor.ColorProductMaster = ecoResProduct.RecId;
+                ecoResProductMasterColor.ColorProductDimensionAttribute = EcoResProductDimensionAttribute::inventDimFieldId2DimensionAttributeRecId(fieldNum(InventDim, InventColorId));
+                ecoResProductMasterColor.insert();
+            }
+            ttscommit;
+
+            AVASetColourHelper::releaseVariant(ecoResProduct, _inventDim, _itemId);    // Release the variant
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>releaseVariant</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// releases create variant
+    /// </summary>
+    /// <param name = "_ecoResProduct">EcoResProduct</param>
+    /// <param name = "_inventDim">InventDim</param>
+    /// <param name = "_itemid">itemId</param>
+    public static void releaseVariant(EcoResProduct                  _ecoResProduct,
+                               InventDim                      _inventDim,
+                                itemid                          _itemid)
+    {
+        EcoResDistinctProductVariant        productVariant;
+        EcoResProductReleaseManagerBase     releaseManager;
+        container                           productVariantContainer;
+
+        productVariantContainer = EcoResProductVariantDimValue::getDimensionValuesContainerByInventDim(_inventDim);
+        
+        productVariant = EcoResProductVariantManager::findDistinctProductVariant(_ecoResProduct.RecId, productVariantContainer);
+
+        // Create product variant only if it is not created
+        if (!productVariant)
+        {
+            productVariant.DisplayProductNumber = EcoResProductNumberBuilderVariant::buildFromProductNumberAndDimensions(
+                                                        _ecoResProduct.productNumber(),
+                                                        productVariantContainer);
+
+            // Create Product variant with Product and dimensions provided
+            RefRecId ecoResDistinctProductVariantRecId  = EcoResProductVariantManager::createProductVariant(
+                _ecoResProduct.RecId, _ecoResProduct.SearchName, productVariantContainer, productVariant.DisplayProductNumber);
+
+            // Find newly created Product Variant
+            productVariant = ecoResDistinctProductVariant::find(ecoResDistinctProductVariantRecId);
+            releaseManager = EcoResProductReleaseManagerBase::newFromProduct(productVariant);
+            releaseManager.release();
+
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVABPJobsService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// The <c>AVABPJobsService</c> class is the service class for <c>BP-Jobs</c>
+/// </summary>
+class AVABPJobsService extends SysOperationServiceBase
+{
+    AVABPJobsContract   dataContract;
+    boolean             lJobMode;
+
+    FormRun             formRunCaller;
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>runService</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>runService</c> method.
+    /// </summary>
+    /// <param name="_dataContract">
+    ///    <c>AVABPJobsContract</c> as type
+    /// </param>
+    void runService(AVABPJobsContract _dataContract)
+    {
+
+        if (this.isExecutingInBatch() && !_dataContract.parmProcessSingleBatchtask() && _dataContract.parmKCS_KBVBuildingProjectID() == '' && !_dataContract.parmRunFromRico())
+        {
+            this.createThreathBatch(_dataContract);
+        }
+        else
+        {
+            this.runCalcoulation(_dataContract);
+            this.checkCaller();
+        }
+       
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createThreathBatch</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 12.05.2025
+    /// </summary>
+    /// <param name = "_dataContract">_dataContract</param>
+    public void createThreathBatch(AVABPJobsContract _dataContract)
+    {
+        BatchHeader batchHeader;
+        AVABPJobsServiceTaskBatchManager       AVABPJobsServiceTaskBatchManager;
+
+        batchHeader = BatchHeader::construct(this.getCurrentBatchTask().BatchJobId);
+
+        AVABPJobsServiceTaskBatchManager = AVABPJobsServiceTaskBatchManager::newFromBatchParameters(batchHeader,this.getCurrentBatchTask());
+        AVABPJobsServiceTaskBatchManager.createBatchTasks(_dataContract);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runCalcoulation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 
+    /// </summary>
+    /// <param name = "_dataContract">_dataContract</param>
+    public void runCalcoulation(AVABPJobsContract       _dataContract)
+    {
+        timeofDay                   time;
+        KCS_KBVBuildingProjectID    locKCS_KBVBuildingProjectID;
+        
+        AVABPJobsExecution          locAVABPJobsExecution;
+        container                   companiesToProcess;
+
+        dataContract                = _dataContract;
+        locKCS_KBVBuildingProjectID = dataContract.parmKCS_KBVBuildingProjectID();
+
+        if (dataContract.parmArgs() && dataContract.parmArgs().caller() is FormRun)
+        {
+            formRunCaller   = dataContract.parmArgs().caller();
+        }
+
+
+        time        = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+        lJobMode    = false;
+
+        /*if(this.isExecutingInBatch())
+        {
+            lJobMode    = true;
+        }  */
+
+        locAVABPJobsExecution = AVABPJobsExecution::newFromArgs(dataContract.parmArgs());
+        locAVABPJobsExecution.parmlJobMode(lJobMode);
+        locAVABPJobsExecution.parmProcessingInterval(dataContract.parmProcessingInterval());
+        /*
+        companiesToProcess = [curExt()];
+        */
+        companiesToProcess = AVAKBVBuildingProjectHelper::getAllBPCompanies(); // include all BP companies, same if companiesToProcess = conNull(); defaulting to AVAKBVBuildingProjectHelper::getAllBPCompanies()
+        locAVABPJobsExecution.parmCompaniesToProcess(companiesToProcess);
+        
+        //info(strfmt('@NXD3534', time2str(timeNow(), TimeSeparator::Colon, TimeFormat::Auto)));
+        //info(strfmt("@NDX:NXAStartTimeP1", time2str(time, TimeSeparator::Colon, TimeFormat::Auto)));
+
+        //BV-Status uk-spezifisch
+        if(dataContract.parmUpdateBPStatus())
+        {
+            locAVABPJobsExecution.updateBPStatus(companiesToProcess); // all companies
+            //AVABPJobsExecution::KCS_KBVPeriodicUpdate(locKCS_KBVBuildingProjectID, lJobMode);
+        }
+        
+        //BV-Status GLB
+        if(dataContract.parmUpdateBPStatusGLB())
+        {
+            locAVABPJobsExecution.updateBPStatusGLB(companiesToProcess);
+            //AVABPJobsExecution::KCS_KBVPeriodicUpdateGLB(locKCS_KBVBuildingProjectID, lJobMode);
+        }
+        
+        //Umsatzpotential uk-spezifisch
+        if(dataContract.parmUpdateSalesVolume())
+        {
+            locAVABPJobsExecution.updateSalesVolume(companiesToProcess);
+            //KCS_BatchRun::KCS_KBVUpdatePotSalesVol(locKCS_KBVBuildingProjectID, lJobMode);
+        }
+
+        //Umsatzpotential uk-übergreifend
+        if(dataContract.parmUpdateSalesVolumeGLB())
+        {
+            locAVABPJobsExecution.updateSalesVolumeGLB(companiesToProcess);
+            //KCS_BatchRun::KCS_KBVUpdatePotSalesVol_GLB(locKCS_KBVBuildingProjectID, lJobMode);
+        }
+        
+        //Zuständigkeiten
+        if(dataContract.parmUpdateResponsibilities())
+        {
+            locAVABPJobsExecution.updateResponsibilities(companiesToProcess);
+            //KCS_BatchRun::KCS_KBVSetResponsibilities(locKCS_KBVBuildingProjectID, lJobMode);
+        }
+        
+        //Aktivitäten erzeugen und/oder versenden
+        if(dataContract.parmCreateActivities())
+        {
+            locAVABPJobsExecution.updateActivities(companiesToProcess, dataContract.parmCreateActivities(), false);
+            // KCS_BatchRun::KCS_KBVActivitySendList(kBVBuildingProjectId, lJobMode, kBVActivitySendList, printMasterDataList);
+        }
+
+        if (!this.isExecutingInBatch())
+        {
+            info(strFmt("@NDX:NXAUpdateOfBVReady",locKCS_KBVBuildingProjectID));
+        }
+        
+       
+        //info(strfmt('@NXD3535', NDX_Utility::seconds2Str(timeNow() - time)));
+        //info(strfmt("@NDX:NXADurationP1", DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()) - time));
+        //info(strfmt("@NDX:NXAEndTimeP1", time2str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()), TimeSeparator::Colon, TimeFormat::Auto)));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkCaller</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>checkCaller</c> method.
+    /// </summary>
+    void checkCaller()
+    {
+        if (dataContract && dataContract.parmArgs() && dataContract.parmArgs().caller())
+        {
+            if(dataContract.parmArgs().caller().name() == formStr(AVAKBVBuildingProjectTable))
+            {
+                KCS_KBVBuildingProjectTable   locbuildingProjectTable;
+                FormRun                       formRun = dataContract.parmArgs().caller();
+                if (formRun)
+                {
+                    FormDataSource                locBuildingProjectTableDS = formRun.dataSource(formDataSourceStr(AVAKBVBuildingProjectTable,KCS_KBVBuildingProjectTable));
+                    locbuildingProjectTable.data( dataContract.parmArgs().record());
+                
+
+                    if (locBuildingProjectTableDS)
+                    {
+                        locBuildingProjectTableDS.executeQuery();
+                        locBuildingProjectTableDS.positionToRecord(locbuildingProjectTable);
+                    }
+                }
+                /*if (formHasMethod(formRunCaller, literalStr(afterBPJobs)))
+                {
+                    formRunCaller.afterBPJobs();
+                } */
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAUpdateResourceCalendarService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN/2025/05/15   AVA_013002_ResourceCalendar
+/// </summary>
+class AVAUpdateResourceCalendarService extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/05/15   AVA_013002_ResourceCalendar
+    /// </summary>
+    /// <param name = "_contract">AVAUpdateResourceCalendarContract</param>
+    public void process(AVAUpdateResourceCalendarContract _contract)
+    {
+        FromDate fromDate;
+        ToDate toDate;
+        CalendarId  calendarId, tempCalendarId;
+        boolean fromReleaseStatus;
+        WrkCtrResourceCalendar  resourceCalendar;
+        WrkCtrId resourceId;
+        ValidToDate             tempValidToDate;
+
+        fromDate = _contract.parmFromDate();
+        toDate = _contract.parmToDate();
+        calendarId = _contract.parmCalendarId();
+        resourceId = _contract.parmResourceId();
+        fromReleaseStatus = _contract.parmFromReleaseStatus(); 
+
+        if (!fromDate)
+        {    
+            fromdate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+        }
+
+        if (!toDate)
+        {
+            toDate = DateTimeUtil::date(DateTimeUtil::maxValue());        
+        }
+
+        try
+        {
+            // Look up if the target resoruce calendar valid from date overlap the date range of the existing resoruce calendar record.
+            resourceCalendar = WrkCtrResourceCalendar::findActiveForResource(resourceId, fromDate, true);
+
+            ttsbegin;
+            if (resourceCalendar)
+            {
+                resourceCalendar.validTimeStateUpdateMode(ValidTimeStateUpdate::Correction);
+                if (resourceCalendar.ValidFrom < fromDate)
+                {
+                    // Update the existing record valid to date to become 1 day less then the validFrom date
+                    tempValidToDate = resourceCalendar.ValidTo;
+                    tempCalendarId = resourceCalendar.CalendarId;
+                    resourceCalendar.ValidTo    = DateTimeUtil::date(DateTimeUtil::addDays(DateTimeUtil::newDateTime(fromDate,0), -1));
+                    resourceCalendar.update();
+
+                    // Add a new record for the new calendar association
+                    resourceCalendar.clear();
+                    resourceCalendar.WrkCtrId   = resourceId;
+                    resourceCalendar.CalendarId = calendarId;
+                    resourceCalendar.ValidFrom  = fromDate;
+                    resourceCalendar.ValidTo    = toDate;
+                    resourceCalendar.insert();
+
+                    if (tempValidToDate > toDate)
+                    {
+                        resourceCalendar.clear();
+                        resourceCalendar.WrkCtrId   = resourceId;
+                        resourceCalendar.CalendarId = tempCalendarId;
+                        resourceCalendar.ValidFrom  = DateTimeUtil::date(DateTimeUtil::addDays(DateTimeUtil::newDateTime(toDate,0), 1));
+                        resourceCalendar.ValidTo    = tempValidToDate;
+                        resourceCalendar.insert();
+                    
+                    }
+                }
+                else if (resourceCalendar.ValidFrom == fromDate)
+                {
+                    tempValidToDate = resourceCalendar.ValidTo;
+                    tempCalendarId = resourceCalendar.CalendarId;
+                    resourceCalendar.CalendarId = calendarId;
+                    resourceCalendar.ValidTo = toDate;
+                    resourceCalendar.update();
+                    if (tempValidToDate > toDate)
+                    {
+                        resourceCalendar.clear();
+                        resourceCalendar.WrkCtrId   = resourceId;
+                        resourceCalendar.CalendarId = tempCalendarId;
+                        resourceCalendar.ValidFrom  = DateTimeUtil::date(DateTimeUtil::addDays(DateTimeUtil::newDateTime(toDate,0), 1));
+                        resourceCalendar.ValidTo    = tempValidToDate;
+                        resourceCalendar.insert();                   
+                    }
+                }
+            }
+            else
+            {
+                resourceCalendar.clear();
+                resourceCalendar.WrkCtrId   = resourceId;
+                resourceCalendar.CalendarId = calendarId;
+                resourceCalendar.ValidFrom  = fromDate;
+                resourceCalendar.ValidTo    = toDate;
+                resourceCalendar.insert();
+            }
+            ttscommit;
+        }
+        catch(Exception::Error)
+        {
+            //ttsabort;
+            exceptionTextFallThrough();
+        }
+
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

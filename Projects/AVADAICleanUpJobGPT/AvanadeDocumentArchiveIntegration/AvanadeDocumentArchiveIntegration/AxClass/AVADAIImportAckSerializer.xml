@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADAIImportAckSerializer</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Data from from DMS extract.
+/// </summary>
+[System.ComponentModel.Composition.ExportMetadataAttribute(enumStr(AVADAIAcknowledgementImportType), AVADAIAcknowledgementImportType::AcknowledgementOfExportedReport),
+    System.ComponentModel.Composition.ExportAttribute('Dynamics.AX.Application.AVADAIImportSerializer')]
+class AVADAIImportAckSerializer implements AVADAIImportSerializer
+{
+    const str                   documentIdKey   = 'doku_id';
+    const str                   documentUrlKey  = '#url';
+    const str                   docuRefNameKey  = 'Title';
+    AVADAIDocumentId            documentId;
+    AVADAIDocumentUrl           documentUrl;
+    Description                 docuRefName;
+    AVADAIErrorMsg              ErrorTxt;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initAcknowledgment</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initialization table with ack.
+    /// </summary>
+    /// <param name = "_acknowledgement">The sAVADAIAcknowledgementImport.</param>
+    public void initAcknowledgment(AVADAIAcknowledgementImport _acknowledgement)
+    {
+        AVADAIReport                reportconfig;
+        AVADAIReportExportTable     export;
+        export = this.findExportMetadataByExecutionId(_acknowledgement.ServerId, _acknowledgement.ExportExecutionId);
+                
+        if (export.RecId)
+        {
+            this.updateLinkForExportAndImport(_acknowledgement, export);
+            reportconfig                    = AVADAIReport::find(export.ServerId, export.Report, export.Design);
+            _acknowledgement.TableName      = reportconfig.AckRefTableName;
+            _acknowledgement.TableFieldName = reportconfig.AckRefTableFieldName;
+            _acknowledgement.RefNum         = export.RefNum;
+        }
+        else
+        {
+            ErrorTxt = strFmt("@AVADAI:ExportIDNotFound",_acknowledgement.ExportExecutionId);
+            throw error(ErrorTxt);
+        } 
+
+
+        if(!_acknowledgement.DocuRefName)
+        {
+            _acknowledgement.DocuRefName     = DocuType::find(_acknowledgement.DocuTypeId).Name;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processImportRecord</Name>
+				<Source><![CDATA[
+     /// <summary>
+    /// Set form configuration.
+    /// </summary>
+    /// <param name = "AVADAIAcknowledgementImport"></param>
+    /// <returns>A <c></c> object.</returns>"
+
+    public boolean processImportRecord(AVADAIAcknowledgementImport _import)
+    {
+        
+        DictTable                   dictTable;
+        Common                      common;
+        TableId                     tableId;
+        FieldId                     fieldId;
+
+        tableId = tableName2Id(_import.TableName);
+        fieldId = fieldName2Id(tableId, _import.TableFieldName);
+
+
+        if (tableId && fieldId && _import.RefNum && _import.Company)
+        {
+            changecompany (_import.Company)
+            {
+                if (AVADAIParameters::find().Enabled == NoYes::Yes)
+                {
+                    dictTable = new DictTable(tableId);
+
+                    common = dictTable.makeRecord();
+
+                    select firstOnly common
+                        where common.(fieldId) == _import.RefNum;
+
+                    if (common.RecId)
+                    {
+                        this.createDocuRef(common, _import);
+                            
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createDocuRef</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Create docuref for DMS feedback.
+    /// </summary>
+    /// <param name = "_forRecord">The record.</param>
+    /// <param name = "_import">Import record for initialization.</param>
+    protected void createDocuRef(Common _forRecord, AVADAIAcknowledgementImport _import)
+    {
+        DocuRef docuRef;
+
+        ttsbegin;
+        docuRef.clear();
+        docuRef.initValue();
+        docuRef.refTableId          = _forRecord.TableId;
+        docuRef.RefRecId            = _forRecord.RecId;
+        docuRef.RefCompanyId        = _forRecord.DataAreaId;
+        this.initDocuRefFromAcknowledgementImport(docuRef, _import);
+        docuRef.insert();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initDocuRefFromAcknowledgementImport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Copy relevant data from the acknowledgement import record to the new DocuRef.
+    /// </summary>
+    /// <param name = "_docuRef">DocuRef to initialize</param>
+    /// <param name = "_import">Acknowledgement import record</param>
+    protected void initDocuRefFromAcknowledgementImport(DocuRef _docuRef, AVADAIAcknowledgementImport _import)
+    {
+        _docuRef.TypeId              = _import.DocuTypeId;
+        _docuRef.Name                = _import.DocuRefName;
+        _docuRef.Notes               = _import.DMSDocumentUrl;
+        _docuRef.AVADAIDocumentId    = _import.DMSDocumentId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findExportMetadata</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Find report export to DMS.
+    /// </summary>
+    /// <param name = "_serverId">DMS Server</param>
+    /// <param name = "_ackFileName">Acknlowedgement file</param>
+    /// <returns>A <c>AVADAIReportExportTable</c> object.</returns>
+    protected AVADAIReportExportTable findExportMetadata(AVADAIServerId _serverId, AVADAIFileNameAck _ackFileName)
+    {
+        return AVADAIReportExportTable::findAckFileName(_serverId, _ackFileName, true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findExportMetadataByExecutionId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Find report export to DMS.
+    /// </summary>
+    /// <param name = "_serverId">DMS Server</param>
+    /// <param name = "_executionId">ExecutionId file</param>
+    /// <returns>A <c>AVADAIReportExportTable</c> object.</returns>
+    protected AVADAIReportExportTable findExportMetadataByExecutionId(AVADAIServerId _serverId, AVADAIExecutionId _executionId)
+    {
+        return AVADAIReportExportTable::findAckByExecutionId(_serverId, _executionId, true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateLinkForExportAndImport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Set bindings import/export
+    /// </summary>
+    /// <param name = "_import">The import.</param>
+    /// <param name = "_export">The export.</param>
+    protected void updateLinkForExportAndImport(AVADAIAcknowledgementImport _import, AVADAIReportExportTable _export)
+    {
+        ttsbegin;
+        _export.DMSDocumentId   = _import.DMSDocumentId;
+        _export.DMSDocumentUrl  = _import.DMSDocumentUrl;
+        _export.ProcessStatus   = AVADAIProcessStatus::Confirmed;
+        _import.Company         = _export.Company;
+        _import.RefNum          = _export.RefNum;
+
+        _export.update();
+        ttscommit;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getErrorTxt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// getErrorTxt
+    /// </summary>
+    /// <returns>ErrorTxt</returns>
+    public AVADAIErrorMsg getErrorTxt()
+    {
+        return ErrorTxt;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

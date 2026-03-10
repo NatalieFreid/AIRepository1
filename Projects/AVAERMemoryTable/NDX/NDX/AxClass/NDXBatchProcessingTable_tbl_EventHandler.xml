@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXBatchProcessingTable_tbl_EventHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 22.01.25
+/// </summary>
+internal final class NDXBatchProcessingTable_tbl_EventHandler
+{
+    protected static NDXBatchProcessingTable nDXBatchProcessingTable;
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 20.02.25
+    /// </summary>
+    protected void new()
+    {
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 20.02.25
+    /// </summary>
+    /// <returns>NDXBatchProcessingTable_tbl_EventHandler</returns>
+    public static NDXBatchProcessingTable_tbl_EventHandler construct()
+    {
+        return new NDXBatchProcessingTable_tbl_EventHandler();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNDXBatchProcessingTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 20.02.25
+    /// </summary>
+    /// <param name = "_nDXBatchProcessingTable">NDXBatchProcessingTable</param>
+    /// <returns>NDXBatchProcessingTable</returns>
+    public NDXBatchProcessingTable parmNDXBatchProcessingTable(NDXBatchProcessingTable _nDXBatchProcessingTable = nDXBatchProcessingTable)
+    {
+        nDXBatchProcessingTable = _nDXBatchProcessingTable;
+        return nDXBatchProcessingTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXBatchProcessingTable_onProcessRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 22.01.25
+    /// </summary>
+    /// <param name="_nDXBatchProcessingTable">NDXBatchProcessingTable</param>
+    /// <param name="_eventResult">EventHandlerResult</param>
+    [SubscribesTo(tableStr(NDXBatchProcessingTable), delegateStr(NDXBatchProcessingTable, onProcessRecord))]
+    public static void NDXBatchProcessingTable_onProcessRecord(NDXBatchProcessingTable _nDXBatchProcessingTable, NDXEventHandlerResultBatch _eventResult)
+    {
+        System.Exception ex;
+        NDXTestRunsBatchMultithreadingUms testRuns = NDXUmsatzParametersGlobal::find().TestRunsBatchMultithreadingUms;
+        if (testRuns && _nDXBatchProcessingTable.parmNDXBatchProcessingTableHeader().CountTasksProcessed > testRuns)  // for Tests
+        {
+            _eventResult.parmProcessStatus(NDXProcessStatus::NotProcessed);
+            _eventResult.parmMessageDetail(strFmt('ID [%1] zu Testzwecken nicht verarbeitet', _nDXBatchProcessingTable.ID));
+        }
+        else
+        {
+            container con = _nDXBatchProcessingTable.FieldContainer;
+            if (conLen(con) > 1)
+            {
+                changecompany(_nDXBatchProcessingTable.DataAreaIdProcess)
+                {
+                    Integer logPointBegin = infologLine();
+
+                    NDXBatchProcessingTable_tbl_EventHandler nDXBatchProcessingTable_tbl_EventHandler = NDXBatchProcessingTable_tbl_EventHandler::construct();
+                    nDXBatchProcessingTable_tbl_EventHandler.parmNDXBatchProcessingTable(_nDXBatchProcessingTable);
+
+                    infolog.parmRaiseInfologMessageEvent(Exception::Info, true);
+                    infolog.onMessageAdd += eventhandler(NDXBatchProcessingTable_tbl_EventHandler::onInfologMessageAdd);
+
+                    System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
+                    stopwatch.Start();
+                    NDXUmsatzClassParmContract nDXUmsatzClassParmContract = NDXUmsatzClassParmContract::contractFromCon(con);
+                    nDXUmsatzClassParmContract.parmBatchMultiThreadingStatus(NDXBatchMultiThreadingStatus::DataProcessing);
+                    nDXUmsatzClassParmContract.parmRecIdNDXBatchProcessingTable(_nDXBatchProcessingTable.RecId);
+                    try
+                    {
+                        System.Threading.Tasks.Task taskUms = NDXUmsatzClassThread::getUmsAllianceFromNDXUmsatzClassParmContractAsync(nDXUmsatzClassParmContract);
+                        while (taskUms.Status != System.Threading.Tasks.TaskStatus::RanToCompletion)
+                        {
+                            sleep(1000);
+                        }
+
+                        //NDXUmsatzClass::getUmsAlliance(nDXUmsatzClassParmContract.containerFromContract());
+                        _eventResult.parmProcessStatus(NDXProcessStatus::ProcessEndWithoutError);
+                    }
+                    catch (ex)
+                    {
+                        _eventResult.parmErrorMessageDetail(ex.Message);
+                        _eventResult.parmProcessStatus(NDXProcessStatus::ProcessEndWithError);
+                    }
+                    stopwatch.Stop();
+                    _eventResult.parmMessageDetail(strFmt('ID [%1] Dauer [%2 sec]',_nDXBatchProcessingTable.ID, stopwatch.ElapsedMilliseconds/1000));
+                    infolog.onMessageAdd -= eventhandler(NDXBatchProcessingTable_tbl_EventHandler::onInfologMessageAdd);
+
+                    Integer logPointNow = infologLine();
+                    if (logPointBegin + 1 <= logPointNow)
+                    {
+                        //inventClosing.writeLog(infolog.cut(logPointBegin + 1, logPointNow), LogType::Misc, logId);
+                        container conInfoLog = infolog.cut(logPointBegin + 1, logPointNow);
+                        str infoCon2Str = Info::infoCon2Str(conInfoLog);
+                    }
+
+                }
+            }
+            else
+            {
+                _eventResult.parmProcessStatus(NDXProcessStatus::ProcessEndWithError);
+                _eventResult.parmErrorMessageDetail(strFmt('ID [%1] Keine Container-Übergabe im Feld: FieldContainer',_nDXBatchProcessingTable.ID));
+                _eventResult.parmWithError(true);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>onInfologMessageAdd</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 20.02.25
+    /// last modified: PaffH 29.04.25
+    /// </summary>
+    /// <param name = "_exception">Exception</param>
+    /// <param name = "_message">str</param>
+    public static void onInfologMessageAdd(Exception _exception, str _message)
+    {
+        // for breakpoints
+        switch (_exception)
+        {
+            case Exception::Info:
+                break;
+            case Exception::Deadlock:
+                break;
+            case Exception::DuplicateKeyException:
+                break;
+            case Exception::UpdateConflict:
+                break;
+            case Exception::Error:
+                break;
+            default:
+                break;
+        }
+
+        NDXBatchProcessingTable_tbl_EventHandler nDXBatchProcessingTable_tbl_EventHandler = NDXBatchProcessingTable_tbl_EventHandler::construct();
+        NDXBatchProcessingTable nDXBatchProcessingTableLocal = nDXBatchProcessingTable_tbl_EventHandler.parmNDXBatchProcessingTable();
+        if (nDXBatchProcessingTableLocal)
+        {
+            ttsbegin;
+            nDXBatchProcessingTableLocal.selectForUpdate(true);
+            nDXBatchProcessingTableLocal.ErrorMessageDetail += _message;
+            nDXBatchProcessingTableLocal.write();
+            ttscommit;
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

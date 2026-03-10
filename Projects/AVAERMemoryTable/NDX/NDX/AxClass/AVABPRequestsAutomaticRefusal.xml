@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVABPRequestsAutomaticRefusal</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// The <c>AVABPRequestsAutomaticRefusal</c> class close open BP requests and updates the Status of the corresponding BP if possible
+/// </summary>
+class AVABPRequestsAutomaticRefusal
+{
+    KCS_KBVParameters           clsKCS_KBVParameters;
+    int                         clsKCS_KBVParametersRequestDays;
+    KCS_KBVDeclinedMemo         clsKCS_KBVDeclinedMemo;
+    container                   clsCompaniesContainer;
+
+    DataAreaId                  clsDataAreaId;
+    HcmWorkerRecId              clsHCMWorkerRecId;
+    Date                        clsToday;
+    Date                        clsCleanUpDate;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Inits values of instance <c>AVABPRequestsAutomaticRefusal</c> class.
+    /// </summary>
+    void init()
+    {
+        clsKCS_KBVParameters            = KCS_KBVParameters::find();
+        clsKCS_KBVParametersRequestDays = clsKCS_KBVParameters.NDX_RequestDays;
+        clsKCS_KBVDeclinedMemo          = clsKCS_KBVParameters.KCS_KBVDeclinedMemo;
+        clsCompaniesContainer           = AVAKBVBuildingProjectHelper::getAllBPCompanies();
+        
+        clsHCMWorkerRecId               = HcmWorkerLookup::currentWorker();
+        clsToday                        = AVAKBVBuildingProjectHelper::getToday();
+        clsDataAreaId                   = CompanyInfo::find().DataArea;
+
+        clsCleanUpDate                  = clsToday - clsKCS_KBVParametersRequestDays;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Runs logic  of instance <c>AVABPRequestsAutomaticRefusal</c> class.
+    /// </summary>
+    void run()
+    {
+        KCS_KBVRequestTable         locKCS_KBVRequestTable;
+        KCS_KBVRequestTable         locKCS_KBVRequestTableTmp;
+        KCS_KBVBuildingProjectTable locKCS_KBVBuildingProjectTable;
+
+        int i;
+
+        for(i = 1 ; i <= conlen(clsCompaniesContainer); i++)
+        {
+            clsDataAreaId = conpeek(clsCompaniesContainer, i);
+            changecompany(clsDataAreaId)
+            {
+                locKCS_KBVRequestTable = null;
+
+                while select forupdate  KCS_KBVRequestID, KCS_KBVBuildingProjectID, KCS_KBVRequestStatus, KCS_KBVDeclinedBy, KCS_KBVDeliveryDate, KCS_KBVDeclinedDate, KCS_KBVDeclinedMemo
+                from    locKCS_KBVRequestTable
+                where   locKCS_KBVRequestTable.KCS_KBVRequestStatus ==  KCS_KBVRequestStatus::Created
+                    &&  locKCS_KBVRequestTable.KCS_KBVDeliveryDate  <   clsCleanUpDate
+                {
+                    locKCS_KBVRequestTable.KCS_KBVRequestStatus = KCS_KBVRequestStatus::Refused;
+                    locKCS_KBVRequestTable.KCS_KBVDeclinedBy    = clsHCMWorkerRecId;
+                    locKCS_KBVRequestTable.KCS_KBVDeclinedDate  = clsToday;
+                    locKCS_KBVRequestTable.KCS_KBVDeclinedMemo  = clsKCS_KBVDeclinedMemo;
+
+                    ttsbegin;
+                    locKCS_KBVRequestTable.write();
+
+                    select firstonly crosscompany : clsCompaniesContainer locKCS_KBVRequestTableTmp
+                    where   locKCS_KBVRequestTableTmp.KCS_KBVBuildingProjectID  == locKCS_KBVRequestTable.KCS_KBVBuildingProjectID
+                        &&  locKCS_KBVRequestTableTmp.KCS_KBVRequestStatus      != KCS_KBVRequestStatus::Refused
+                        &&  locKCS_KBVRequestTableTmp.KCS_KBVDeliveryDate       >= clsCleanUpDate;
+                    if(!locKCS_KBVRequestTableTmp.RecId) // existing valid request on the building project to avoid closing accidentally
+                    {
+                        locKCS_KBVBuildingProjectTable = KCS_KBVBuildingProjectTable::find(locKCS_KBVRequestTable.KCS_KBVBuildingProjectID, true);
+                        if(     locKCS_KBVBuildingProjectTable.RecId
+                            &&  (locKCS_KBVBuildingProjectTable.KCS_KBVClosedDate != clsToday || locKCS_KBVBuildingProjectTable.KCS_KBVClosedBy != clsHCMWorkerRecId)   )
+                        {
+                            locKCS_KBVBuildingProjectTable.KCS_KBVClosedDate    = clsToday;
+                            locKCS_KBVBuildingProjectTable.KCS_KBVClosedBy      = clsHCMWorkerRecId;
+                            locKCS_KBVBuildingProjectTable.update();
+                        }
+                    }
+                    ttscommit;
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Runs logic  of instance <c>AVABPRequestsAutomaticRefusal</c> class.
+    /// </summary>
+    /// <param name="_args">
+    ///    The Args parameter the <c>AVABPRequestsAutomaticRefusal</c> class.
+    /// </param>
+    public static void main(Args _args)
+    {
+        AVABPRequestsAutomaticRefusal locAVABPRequestsAutomaticRefusal;
+
+        locAVABPRequestsAutomaticRefusal = new AVABPRequestsAutomaticRefusal();
+        locAVABPRequestsAutomaticRefusal.init();
+        locAVABPRequestsAutomaticRefusal.run();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

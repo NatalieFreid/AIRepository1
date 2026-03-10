@@ -1,0 +1,416 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>AVARUMConfigPartOf</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class AVARUMConfigPartOf extends FormRun
+{
+    BOMId                   parentBOMId;
+    BOM                     BOM;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        BOM bomCur;
+
+        if (element.args().caller())
+        {
+            if (classidget(element.args().caller()) == classnum(BOMDesignerCtrl))
+            {
+                if (element.args().record())
+                {
+                    bomCur = element.args().record();
+                    parentBOMId = bomCur.BOMId;
+                    BOM = bomCur;
+                }
+            }
+            else
+            {
+                parentBOMId = element.args().caller().BOMId();
+            }
+        }
+         
+        super();
+
+        if (!parentBOMId)
+        {
+            element.close();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillTmpTable</Name>
+				<Source><![CDATA[
+    public void fillTmpTable()
+    {
+        AVARUMTmpConfigTable LocAVARUMTmpConfigTable;
+        delete_from LocAVARUMTmpConfigTable;
+
+        BOMVersion locBOMVersion;
+        InventDimCombination locInventDimCombination;
+        InventDim locInventDim;
+
+        while select ItemId from locBOMVersion
+            group by itemid
+                where locBOMVersion.BOMId == parentBOMId
+        {
+            while select locInventDimCombination
+                    group by locInventDim.configId
+                    join locInventDim
+                    where locInventDimCombination.InventDimId==locInventDim.inventDimId
+                      && locInventDimCombination.ItemId==locBOMVersion.itemid
+            {
+                LocAVARUMTmpConfigTable.clear();
+                LocAVARUMTmpConfigTable.ItemId=locBOMVersion.ItemId;                
+                LocAVARUMTmpConfigTable.ConfigId=locInventDim.configId;
+                LocAVARUMTmpConfigTable.Chosen=false;
+                LocAVARUMTmpConfigTable.ChosenConfigId='';
+                LocAVARUMTmpConfigTable.ChosenItemId=BOM.ItemId;
+                LocAVARUMTmpConfigTable.ChosenConfigGroupId=BOM.ConfigGroupId;
+
+                ConfigChoice locConfigChoice;
+                select firstonly * from locConfigChoice
+                    where locConfigChoice.ItemId==LocAVARUMTmpConfigTable.ItemId
+                    &&locConfigChoice.ConfigId==LocAVARUMTmpConfigTable.ConfigId
+                    &&locConfigChoice.ChosenItemId==LocAVARUMTmpConfigTable.ChosenItemId
+                    &&locConfigChoice.ChosenGroupId==LocAVARUMTmpConfigTable.ChosenConfigGroupId;
+                if (locConfigChoice)
+                {
+                    LocAVARUMTmpConfigTable.Chosen=true;
+                    LocAVARUMTmpConfigTable.ChosenConfigId=locConfigChoice.ChosenConfigId;                    
+                }
+
+                LocAVARUMTmpConfigTable.insert();
+            }
+        }
+        AVARUMTmpConfigTable.setTmpData(LocAVARUMTmpConfigTable);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>saveOne</Name>
+				<Source><![CDATA[
+    public void saveOne(AVARUMTmpConfigTable LocAVARUMTmpConfigTable)
+    {                
+        ttsbegin;
+        ConfigChoice locConfigChoice;
+        select firstonly * from locConfigChoice
+                where locConfigChoice.ItemId==LocAVARUMTmpConfigTable.ItemId
+                &&locConfigChoice.ConfigId==LocAVARUMTmpConfigTable.ConfigId
+                &&locConfigChoice.ChosenItemId==LocAVARUMTmpConfigTable.ChosenItemId;
+        if (!LocAVARUMTmpConfigTable.Chosen || !LocAVARUMTmpConfigTable.ChosenConfigId)
+        {
+            if (locConfigChoice)
+            {
+                locConfigChoice.selectForUpdate(true);
+                locConfigChoice.delete();
+            }
+        }
+        else
+        {
+            if (!locConfigChoice)
+            {
+                locConfigChoice.ItemId=LocAVARUMTmpConfigTable.ItemId;
+                locConfigChoice.ConfigId=LocAVARUMTmpConfigTable.ConfigId;
+                locConfigChoice.ChosenItemId=LocAVARUMTmpConfigTable.ChosenItemId;
+            }
+            locConfigChoice.ChosenConfigId=LocAVARUMTmpConfigTable.ChosenConfigId;
+            locConfigChoice.ChosenGroupId=LocAVARUMTmpConfigTable.ChosenConfigGroupId;
+            locConfigChoice.write();
+        }
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>AVARUMTmpConfigTable</Name>
+				<Methods>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Set editable fields on active
+        /// </summary>
+        /// <returns>standard value</returns>
+        public int active()
+        {
+            int ret;
+    
+            ret = super();
+
+            boolean allowEdit;
+
+            allowEdit = BOM.inventTable().configActive();
+
+            AVARUMTmpConfigTable_ds.object(fieldNum(AVARUMTmpConfigTable, ChosenConfigId)).allowEdit(allowEdit);
+            AVARUMTmpConfigTable_ds.object(fieldNum(AVARUMTmpConfigTable, ChosenConfigId)).skip(!allowEdit);
+    
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>linkActive</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Init tmp table on changed link record
+        /// </summary>
+        public void linkActive()
+        {
+            BOM = element.args().record();
+            super();
+
+            element.fillTmpTable();
+            AVARUMTmpConfigTable_ds.executeQuery();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>write</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Sync saved data to table configChoice
+        /// </summary>
+        public void write()
+        {
+            super();
+            element.saveOne(AVARUMTmpConfigTable);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>validateWrite</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Checks wheater combination Chosen and ChosenConfigId is correct
+        /// </summary>
+        /// <returns></returns>
+        public boolean validateWrite()
+        {
+            boolean ret;
+        
+            ret = super();
+            if (ret
+                && AVARUMTmpConfigTable.Chosen
+                && AVARUMTmpConfigTable.ChosenConfigId=='')
+            {
+                ret=checkFailed(strFmt("@SYS26332", fieldpname(AVARUMTmpConfigTable, ChosenConfigId)));
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields>
+					<Field>
+						<DataField>Chosen</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            /// <summary>
+            /// On deselect remove config id
+            /// </summary>
+            public void modified()
+            {
+                super();
+                if (!AVARUMTmpConfigTable.Chosen)
+                {
+                    AVARUMTmpConfigTable.ChosenConfigId='';
+                }
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>ChosenConfigId</DataField>
+						<Methods>
+							<Method>
+								<Name>lookup</Name>
+								<Source><![CDATA[
+            /// <summary>
+            /// Lookup to available variants
+            /// </summary>
+            /// <param name = "_formControl">config control</param>
+            /// <param name = "_filterStr">filterstr</param>
+            public void lookup(FormControl _formControl, str _filterStr)
+            {
+                //super(_formControl, _filterStr);
+                ConfigLookup::lookupConfigId(_formControl, bom.ItemId);
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+				</Fields>
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="" />
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>AVARUMTmpConfigTable</Name>
+			<Table>AVARUMTmpConfigTable</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>Chosen</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ChosenConfigId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<AllowEdit>No</AllowEdit>
+					<DataField>ConfigId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<AllowEdit>No</AllowEdit>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@SYS11737</Caption>
+		<HideIfEmpty xmlns="">No</HideIfEmpty>
+		<Pattern xmlns="">SimpleList</Pattern>
+		<PatternVersion xmlns="">1.1</PatternVersion>
+		<ShowDeleteButton xmlns="">No</ShowDeleteButton>
+		<ShowNewButton xmlns="">No</ShowNewButton>
+		<Style xmlns="">SimpleList</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>ApplicationBar</Name>
+				<Type>ActionPane</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>QuickFilterGroup</Name>
+				<Pattern>CustomAndQuickFilters</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl>
+						<Name>QuickFilterControl</Name>
+						<FormControlExtension>
+							<Name>QuickFilterControl</Name>
+							<ExtensionComponents />
+							<ExtensionProperties>
+								<AxFormControlExtensionProperty>
+									<Name>targetControlName</Name>
+									<Type>String</Type>
+									<Value>ConfigurationGrid</Value>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>defaultColumnName</Name>
+									<Type>String</Type>
+									<Value>EcoResConfiguration_Name</Value>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>placeholderText</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+							</ExtensionProperties>
+						</FormControlExtension>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+				<FrameType>None</FrameType>
+				<Style>CustomFilter</Style>
+				<ViewEditMode>Edit</ViewEditMode>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGridControl">
+				<Name>ConfigurationGrid</Name>
+				<Type>Grid</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AVARUMTmpConfigTable_ItemId</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>ItemId</DataField>
+						<DataSource>AVARUMTmpConfigTable</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AVARUMTmpConfigTable_ConfigId</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>ConfigId</DataField>
+						<DataSource>AVARUMTmpConfigTable</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCheckBoxControl">
+						<Name>AVARUMTmpConfigTable_Chosen</Name>
+						<Type>CheckBox</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Chosen</DataField>
+						<DataSource>AVARUMTmpConfigTable</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AVARUMTmpConfigTable_ChosenConfigId</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>ChosenConfigId</DataField>
+						<DataSource>AVARUMTmpConfigTable</DataSource>
+					</AxFormControl>
+				</Controls>
+				<Style>Tabular</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADAISrsPrintMgmtController_cls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using Microsoft.Dynamics.ApplicationPlatform.SSRSReportRuntime.Instrumentation;
+using Microsoft.Dynamics.AX.Framework.Reporting.Shared;
+
+/// <summary>
+/// Extension for SrsPrintMgmtController.
+/// </summary>
+[extensionOf(classStr(SrsPrintMgmtController))]
+final class AVADAISrsPrintMgmtController_cls_Extension
+{
+    private boolean mayTriggerDAI;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>outputReports</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This is invoked when the print of all copies of a report is started.
+    /// If two journals are posted and printed this called when the system starts with the second journal.
+    /// </summary>
+    protected void outputReports()
+    {
+        mayTriggerDAI = true;
+
+        next outputReports();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Export data for report.
+    /// </summary>
+    public void runReport()
+    {
+        SrsPrintMgmtExecutionInfo   executionInfo;
+        str                         executionId;
+        int                         printSettingsCount;
+        int64                       executionDocId;
+        int                         counter;
+        boolean                     export2Archive;
+
+        SRSPrintDestinationSettings printSettingsOrig;
+
+        if(isConfigurationkeyEnabled(configurationKeyNum(AVADAI)))
+        {
+            executionInfo = this.parmReportContract().parmReportExecutionInfo() as SrsPrintMgmtExecutionInfo;
+
+            // copy current print settings due to the fact that the PDF print preview changes the setting from screen to PDF
+            // see also SrsReportPdfViewerForm.getBase64Report()
+            container packedSetting = this.parmReportContract().parmPrintSettings().pack();
+            printSettingsOrig = new SRSPrintDestinationSettings();
+            printSettingsOrig.unpack(packedSetting);
+
+            PrintMgmtReportFormatName reportName = this.parmReportName();
+            this.resetDaiService();
+
+            if (mayTriggerDAI && this.AVADAIReportService(reportName).isDAIEnabled() && this.AVADAIReportService(reportName).isDAIMetadataExport() && printSettingsOrig.printMediumType() != SRSPrintMediumType::Screen)
+            {
+                // keep count of print settings for each document. Will be used for raising the rendered complete event.
+                if (documentPrintCountMap.exists(executionInfo.parmDocumentId()))
+                {
+                    counter = documentPrintCountMap.lookup(executionInfo.parmDocumentId());
+                    counter+= 1;
+
+                    documentPrintCountMap.insert(executionInfo.parmDocumentId(), counter);
+                }
+            }
+        }
+
+        next runReport();
+
+        if(isConfigurationkeyEnabled(configurationKeyNum(AVADAI)))
+        {
+            executionInfo = this.parmReportContract().parmReportExecutionInfo() as SrsPrintMgmtExecutionInfo;
+
+            if (mayTriggerDAI && this.AVADAIReportService(reportName).isDAIEnabled() && this.AVADAIReportService(reportName).isDAIMetadataExport() && printSettingsOrig.printMediumType() != SRSPrintMediumType::Screen)
+            {
+                if (executionInfo)
+                {
+                    executionId         = executionInfo.parmExecutionId();
+                    executionDocId      = executionInfo.parmDocumentId();
+                    export2Archive      = AVADAIReportExportRunContoller::construct(this, this.AVADAIReportService(reportName), executionId).exportReport();
+
+                    // post report run, this will clean up data.
+                    if(documentPrintCountMap.exists(executionDocId))
+                    {
+                        printSettingsCount = documentPrintCountMap.lookup(executionDocId);
+                        if (printSettingsCount != 0)
+                        {
+                            // update with the new print count.
+                            printSettingsCount--;
+                            documentPrintCountMap.remove(executionDocId);
+                            documentPrintCountMap.insert(executionDocId, printSettingsCount);
+                            executionInfo.parmPrintSettingsCount(printSettingsCount);
+
+                            // run again to properly decrement the document count which is not done in runReport due to increased printSettingsCount
+                            this.postReportRun(executionInfo);
+                        }
+                    }
+
+                    this.parmReportRun().postRunReport(executionInfo);
+                }
+            }
+
+            if (    !export2Archive
+                || (!mayTriggerDAI && this.AVADAIReportService(reportName).isDAIEnabled() && this.AVADAIReportService(reportName).isDAIReportExport()))
+            {
+                // delete PDF and protocol entry if it was created
+                AVADAIReportExportTable::deleteTempExportTable(executionInfo.parmExecutionId());
+            }
+
+            if (export2Archive)
+            {
+                // do it only once per report
+                mayTriggerDAI = false;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

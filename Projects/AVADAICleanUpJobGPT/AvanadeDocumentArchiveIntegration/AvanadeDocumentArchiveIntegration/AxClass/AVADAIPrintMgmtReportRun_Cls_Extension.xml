@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADAIPrintMgmtReportRun_Cls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(classStr(PrintMgmtReportRun))]
+final class AVADAIPrintMgmtReportRun_Cls_Extension
+{
+    public Common querytable;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>load</Name>
+				<Source><![CDATA[
+    public void load(Common _queryTableBuffer, Common _referencedTableBuffer, str _languageId, str _documentKeyValue)
+    {
+        next load(_queryTableBuffer,_referencedTableBuffer,_languageId,_documentKeyValue);
+        querytable = _queryTableBuffer;
+        this.avaParmQueryTableBuffer(_queryTableBuffer);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaParmQueryTableBuffer</Name>
+				<Source><![CDATA[
+    public Common avaParmQueryTableBuffer(Common _queryTableBuffer = querytable)
+    {
+        querytable = _queryTableBuffer;
+        return querytable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>execute</Name>
+				<Source><![CDATA[
+    public static void execute(PrintMgmtReportRun _reportRun)
+    {
+        _reportRun.parmReportRunController().parmReportName(_reportRun.settingDetail().parmReportFormatName());
+
+        next execute(_reportRun);
+      
+        if (_reportRun.settingDetail().parmSSRS() != PrintMgmtSSRS::SSRS)
+        {
+            if(isConfigurationkeyEnabled(configurationKeyNum(AVADAI)))
+            {
+                SrsReportRunController controller = _reportRun.parmReportRunController();
+                Common  common = _reportRun.avaParmQueryTableBuffer();
+                
+                PrintMgmtPrintSettingDetail settingDetail = _reportRun.settingDetail();            
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaExportER</Name>
+				<Source><![CDATA[
+    public static AVADAIExportId avaExportER(
+        SrsReportRunController _controller,
+        PrintMgmtPrintSettingDetail _settingDetail,
+        Common _queryTableBuffer,
+        SRSCatalogItemName _reportName = '')
+    {
+        SrsPrintMgmtExecutionInfo   executionInfo;
+        str                         executionId;
+        int                         printSettingsCount;
+        int64                       executionDocId;
+        int                         counter;
+        boolean                     export2Archive;
+        
+        SrsReportRunController controller =_controller;
+        Common common = _queryTableBuffer;
+        PrintMgmtPrintSettingDetail settingDetail = _settingDetail;
+
+        PrintMgmtReportFormatName name = settingDetail.parmReportFormatName();
+        PrintMgmtReportFormat printMgmtReportFormat;
+
+        select firstonly Description from printMgmtReportFormat
+            where printMgmtReportFormat.Name == name;
+
+        SRSCatalogItemName reportName = _reportName ? _reportName : printMgmtReportFormat.Description;
+        AVADAIReportService daiReportService = controller.AVADAIERReportService(reportName);
+               
+        if (controller && daiReportService.isDAIEnabled() && daiReportService.isDAIMetadataExport())
+        {
+            SrsPrintMgmtController printMgmtController = controller as SrsPrintMgmtController;
+            SrsReportDataContract reportDataContract = printMgmtController.parmReportContract();
+                    
+            if (reportDataContract)
+            {
+                SrsPrintMgmtExecutionInfo printMgmtExecutionInfo = reportDataContract.parmReportExecutionInfo();
+                if (printMgmtExecutionInfo)
+                {
+                    executionId = guid2StrWithoutBraces(newGuid());
+                    executionDocId = printMgmtExecutionInfo.parmDocumentId();
+
+                    export2Archive    = AVADAIReportExportRunContoller::construct(controller,daiReportService, executionId).exportReport();
+
+                    if (!export2Archive)
+                    {
+                        export2Archive    = AVADAIReportExportRunContoller::construct(controller,daiReportService, executionId).exportER(common);
+                    }
+
+                    //Update export table post adding procress queue, if found
+                    ttsbegin;
+                    AVADAIReportExportTable exportTable = AVADAIReportExportTable::find(executionId,true);
+
+                    if (exportTable)
+                    {
+                        if (export2Archive)
+                        {
+                            exportTable.ReportExported = NoYes::Yes;
+                            exportTable.update();
+                        }
+                        else
+                        {
+                            exportTable.delete();
+                        }
+                    }
+                    else
+                    {
+                        export2Archive = false;
+                    }
+                    ttscommit;
+                    
+                    if (!export2Archive)
+                    {
+                        // delete protocol entry if it was created
+                        AVADAIReportExportTable::deleteTempExportTable(executionId);
+
+                        executionId = '';
+                    }
+                }
+            }
+        }
+
+        return executionId;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

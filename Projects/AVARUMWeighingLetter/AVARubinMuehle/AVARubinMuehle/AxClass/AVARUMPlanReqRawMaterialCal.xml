@@ -1,0 +1,685 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVARUMPlanReqRawMaterialCal</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Calc coverage for Rubin Bio Matrix planning
+/// </summary>
+public class AVARUMPlanReqRawMaterialCal
+{
+    ItemId                              selItemId;
+    AVARUMPeriodType                    selPeriodType;
+    TransDate                           selFromDate, selToDate;
+    ParmId                              parmid;    
+    AVARUMPlanPeriod                    tmpAVARUMPlanPeriod;
+    AVARUMTmpAttributCombinationPrio    mTmpAVARUMTmpAttributCombinationPrio;
+    ForecastModelHeadId                 selModelSales, selModelPurch;
+    boolean                             debug;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>setParms</Name>
+				<Source><![CDATA[
+    public void setParms(ItemId _selItemId, AVARUMPeriodType _selPeriodType, TransDate _selFromDate, TransDate _selToDate, ForecastModelHeadId _selModelSales, ForecastModelHeadId _selModelPurch)
+    {
+        selItemId=_selItemId;
+        selPeriodType=_selPeriodType;
+        selFromDate=_selFromDate;
+        selToDate=_selToDate;
+        selModelSales=_selModelSales;
+        selModelPurch=_selModelPurch;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    static public AVARUMPlanReqRawMaterialCal construct(ItemId _selItemId, AVARUMPeriodType _selPeriodType, TransDate _selFromDate, 
+        TransDate _selToDate, ForecastModelHeadId _selModelSales, ForecastModelHeadId _selModelPurch)
+    {
+        AVARUMPlanReqRawMaterialCal obj=new AVARUMPlanReqRawMaterialCal();
+
+        obj.setParms(_selItemId, _selPeriodType, _selFromDate, _selToDate, _selModelSales, _selModelPurch);
+
+        return obj;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// process the planning
+    /// </summary>
+    public void run()
+    {
+        str myUrlParam = System.Web.HttpUtility::ParseQueryString(URLUtility::getUrl()).Get('avaDebug');
+        if (myUrlParam)     
+        {
+            debug=true;
+        }        
+
+        parmid=curUserId();  // prototype
+
+        // cleanup Old data
+        AVARUMPlanReqRawMaterialCal::cleanup(parmid);
+
+        ttsbegin;
+        //calc periods
+        this.calcPeriods();
+
+        // init extimated prio for recepits
+        this.initPlanAttrDimPrioForReceipt();
+
+        //do Calc
+        // fill Trans
+        this.fillTransIssue();
+        this.fillTransReceipt();
+
+        // do coverage loop
+        this.coveageLoop();
+
+        // calc sum fields: fill Deckung und ueberplanung
+        this.calcSumFields();
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>coveageLoop</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Planning coverage loop
+    /// </summary>
+    public void coveageLoop()
+    {
+        AVARUMPlanReqTrans grpAVARUMPlanReqTrans;
+        AVARUMAttributCombination grpAVARUMAttributCombination;
+        AVARUMTmpAttributCombinationPrio tmpAVARUMTmpAttributCombinationPrio;
+
+        while select grpAVARUMPlanReqTrans
+            group by PlanAttrDimId        
+            where grpAVARUMPlanReqTrans.ParmId==parmid
+        {
+            select firstonly grpAVARUMAttributCombination
+                where grpAVARUMAttributCombination.PlanAttrDimId==grpAVARUMPlanReqTrans.PlanAttrDimId;
+
+            tmpAVARUMTmpAttributCombinationPrio.clear();
+            tmpAVARUMTmpAttributCombinationPrio.initValue();
+            tmpAVARUMTmpAttributCombinationPrio.PlanAttrDimId=grpAVARUMAttributCombination.PlanAttrDimId;
+            tmpAVARUMTmpAttributCombinationPrio.PlanAttrDimPriority=grpAVARUMAttributCombination.PlanAttrDimPriority;
+            tmpAVARUMTmpAttributCombinationPrio.insert();            
+        }
+
+        while select tmpAVARUMTmpAttributCombinationPrio
+            group by PlanAttrDimPriority                        // lower pio first!
+            order by PlanAttrDimPriority
+        {
+            this.planOneDim(tmpAVARUMTmpAttributCombinationPrio);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>planOneDim</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// plan all PlanAttrDimId for one priority
+    /// </summary>
+    /// <param name = "_AVARUMTmpAttributCombinationPrio"> table with prio and tempdb for PlanAttrDimId</param>
+    public void planOneDim(AVARUMTmpAttributCombinationPrio _AVARUMTmpAttributCombinationPrio)
+    {
+        AVARUMPlanReqTransCov locAVARUMPlanReqTransCovIssue, locAVARUMPlanReqTransCovReceipt;
+        AVARUMPlanReqTrans locAVARUMPlanReqTransIssue, locAVARUMPlanReqTransReceipt;
+        AVARUMTmpAttributCombinationPrio tmpAVARUMTmpAttributCombinationPrio;
+
+        tmpAVARUMTmpAttributCombinationPrio.linkPhysicalTableInstance(_AVARUMTmpAttributCombinationPrio);
+
+        while select locAVARUMPlanReqTransIssue
+            order by TransDate
+             where locAVARUMPlanReqTransIssue.ParmId==parmid
+            join tmpAVARUMTmpAttributCombinationPrio
+            where tmpAVARUMTmpAttributCombinationPrio.PlanAttrDimId==locAVARUMPlanReqTransIssue.PlanAttrDimId
+               && tmpAVARUMTmpAttributCombinationPrio.PlanAttrDimPriority==_AVARUMTmpAttributCombinationPrio.PlanAttrDimPriority
+               && locAVARUMPlanReqTransIssue.CustAccount!=''   // is issue
+        {
+            // calc Crop
+            Qty qtyneeded;
+            //use convertQtyCrop
+            //if (locAVARUMPlanReqTransIssue.Crop)
+            //{
+                //    qtyneeded=locAVARUMPlanReqTransIssue.ReqQtyIssue * 100 /  locAVARUMPlanReqTransIssue.Crop;
+                //}
+                //else
+            {
+                qtyneeded=locAVARUMPlanReqTransIssue.ReqQtyIssue;
+            }                        
+
+            // find receipt
+            while select locAVARUMPlanReqTransReceipt
+                order by mTmpAVARUMTmpAttributCombinationPrio.PlanAttrDimPriority desc
+                join mTmpAVARUMTmpAttributCombinationPrio
+                where  mTmpAVARUMTmpAttributCombinationPrio.PlanAttrDimId==locAVARUMPlanReqTransReceipt.PlanAttrDimId
+                  && locAVARUMPlanReqTransReceipt.ParmId==parmid
+                  && locAVARUMPlanReqTransReceipt.QtyRemain>0                 
+                  && locAVARUMPlanReqTransReceipt.VendAccount!=''   // is receipt
+                  && locAVARUMPlanReqTransReceipt.PeriodId==locAVARUMPlanReqTransIssue.PeriodId  // date check: must be same period
+            {                
+
+                if (this.checkPlanAttrDimFits(locAVARUMPlanReqTransIssue.PlanAttrDimId, locAVARUMPlanReqTransReceipt.PlanAttrDimId)) //check attributes are fitting
+                {
+                    Qty qtyNow= (locAVARUMPlanReqTransReceipt.QtyRemain>qtyneeded ? qtyneeded : locAVARUMPlanReqTransReceipt.QtyRemain);
+                    locAVARUMPlanReqTransReceipt.selectForUpdate(true);
+                    locAVARUMPlanReqTransReceipt.QtyRemain-=qtyNow;
+                    locAVARUMPlanReqTransReceipt.update();
+
+                    // create Issue/Receipt References
+                    locAVARUMPlanReqTransCovIssue.clear();
+                    locAVARUMPlanReqTransCovIssue.initValue();
+                    locAVARUMPlanReqTransCovIssue.CustAccount=locAVARUMPlanReqTransIssue.CustAccount;
+                    locAVARUMPlanReqTransCovIssue.CustName=locAVARUMPlanReqTransIssue.CustName;
+                    locAVARUMPlanReqTransCovIssue.SalesAgreementId=locAVARUMPlanReqTransIssue.SalesAgreementId;
+                    locAVARUMPlanReqTransCovIssue.SalesId=locAVARUMPlanReqTransIssue.SalesId;
+                    locAVARUMPlanReqTransCovIssue.TransDate=locAVARUMPlanReqTransIssue.TransDate;
+                    locAVARUMPlanReqTransCovIssue.ItemId=locAVARUMPlanReqTransIssue.ItemId;
+                    locAVARUMPlanReqTransCovIssue.PlanAttrDimId=locAVARUMPlanReqTransIssue.PlanAttrDimId;
+                    locAVARUMPlanReqTransCovIssue.Qty=locAVARUMPlanReqTransIssue.ReqQtyIssue;
+                    locAVARUMPlanReqTransCovIssue.QtyCoverage=qtyNow;
+                    locAVARUMPlanReqTransCovIssue.TransRefRecId=locAVARUMPlanReqTransReceipt.RecId;
+                    locAVARUMPlanReqTransCovIssue.insert();
+
+                    locAVARUMPlanReqTransCovReceipt.clear();
+                    locAVARUMPlanReqTransCovReceipt.initValue();
+                    locAVARUMPlanReqTransCovReceipt.VendAccount=locAVARUMPlanReqTransReceipt.VendAccount;
+                    locAVARUMPlanReqTransCovReceipt.VendName=locAVARUMPlanReqTransReceipt.VendName;
+                    locAVARUMPlanReqTransCovReceipt.PurchAgreementId=locAVARUMPlanReqTransReceipt.PurchAgreementId;
+                    locAVARUMPlanReqTransCovReceipt.PurchId=locAVARUMPlanReqTransReceipt.PurchId;
+                    locAVARUMPlanReqTransCovReceipt.TransDate=locAVARUMPlanReqTransReceipt.TransDate;
+                    locAVARUMPlanReqTransCovReceipt.PlanAttrDimId=locAVARUMPlanReqTransReceipt.PlanAttrDimId;
+                    locAVARUMPlanReqTransCovReceipt.Qty=locAVARUMPlanReqTransReceipt.ReqQtyReceipt;
+                    locAVARUMPlanReqTransCovReceipt.QtyCoverage=qtyNow;
+                    locAVARUMPlanReqTransCovReceipt.TransRefRecId=locAVARUMPlanReqTransIssue.RecId;
+                    locAVARUMPlanReqTransCovReceipt.insert();
+
+                    qtyneeded-=qtyNow;
+                    if (qtyneeded<=0)
+                    {
+                        break;
+                    }
+                }
+            }
+            locAVARUMPlanReqTransIssue.selectForUpdate(true);
+            locAVARUMPlanReqTransIssue.QtyRemain=qtyneeded;
+            locAVARUMPlanReqTransIssue.update();
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcSumFields</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// calculate summary fields after planning
+    /// </summary>
+    public void calcSumFields()
+    {
+        AVARUMPlanReqTrans locAVARUMPlanReqTrans;
+
+        update_recordset locAVARUMPlanReqTrans
+            setting QtyCovIssue= -1*(locAVARUMPlanReqTrans.ReqQtyIssue-locAVARUMPlanReqTrans.QtyRemain)
+        where locAVARUMPlanReqTrans.ParmId==parmid
+            && locAVARUMPlanReqTrans.CustAccount!='';
+
+        update_recordset locAVARUMPlanReqTrans
+            setting QtyCovReceipt=locAVARUMPlanReqTrans.QtyRemain
+        where locAVARUMPlanReqTrans.ParmId==parmid
+            && locAVARUMPlanReqTrans.VendAccount!='';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillTransIssue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Fill issue transaction table for selection
+    /// </summary>
+    public void fillTransIssue()
+    {
+        AVARUMPlanReqTrans locAVARUMPlanReqTrans, l1AVARUMPlanReqTrans;
+        ForecastSales locForecastSales;
+        AVARUMCropAssignment locAVARUMCropAssignment;
+
+        while select locForecastSales
+            where locForecastSales.AVARUMAgreementId !='' 
+              && locForecastSales.ModelId==selModelSales
+              && locForecastSales.startDate >= selFromDate
+              && locForecastSales.StartDate <= selToDate  
+        join locAVARUMCropAssignment
+            where locAVARUMCropAssignment.ItemId==locForecastSales.ItemId
+               && locAVARUMCropAssignment.ItemIdRawMaterial==selItemId
+        {
+            InventTable locInventTable=locForecastSales.inventTable();
+            AVARUMPlanPeriod AVARUMPlanPeriod;
+
+            locAVARUMPlanReqTrans.clear();            
+            locAVARUMPlanReqTrans.ParmId=parmid;
+            locAVARUMPlanReqTrans.TransDate=locForecastSales.startDate;
+            locAVARUMPlanReqTrans.CustAccount=locForecastSales.CustAccountId;
+            AVARUMPlanPeriod=this.getPeriodId(locForecastSales.startDate);
+            locAVARUMPlanReqTrans.PeriodId=AVARUMPlanPeriod.PeriodId;
+            locAVARUMPlanReqTrans.CustName=CustTable::find(locForecastSales.CustAccountId).Name();
+            locAVARUMPlanReqTrans.ItemId=locForecastSales.ItemId;
+            locAVARUMPlanReqTrans.SalesAgreementId=locForecastSales.AVARUMAgreementId;
+            locAVARUMPlanReqTrans.PlanAttrDimId=locInventTable.AVARUMPlanAttrDimId;
+            locAVARUMPlanReqTrans.QtySold=locForecastSales.SalesQty; 
+            locAVARUMPlanReqTrans.ReqQtyIssue=this.convertQtyCrop(locForecastSales.SalesQty, locAVARUMCropAssignment.Crop);
+            locAVARUMPlanReqTrans.QtyCovIssue=0;            
+            locAVARUMPlanReqTrans.Crop=locAVARUMCropAssignment.Crop;
+
+            // search for released Agreements
+            AgreementLineQuantityCommitment aline;
+            AgreementLineReleasedLine agreementLineReleasedLine;
+            SalesLine salesLine;
+            SalesAgreementHeader  SalesAgreementHeader;
+
+            // find Agreement/Sales Line
+            SalesAgreementHeader=SalesAgreementHeader::findAgreementId(locAVARUMPlanReqTrans.SalesAgreementId);
+            select firstonly aline
+                where aline.Agreement==SalesAgreementHeader.RecId
+                   && aline.ItemId==locAVARUMPlanReqTrans.ItemId;    // ?? was tun falls mehrere gleiche Artikel im Rahmenauftrag!?
+
+            while select agreementLineReleasedLine
+                join salesLine 
+            where agreementLineReleasedLine.AgreementLine         == aline.RecId      
+               && agreementLineReleasedLine.SalesLineDataAreaId==salesLine.DataAreaId
+               && agreementLineReleasedLine.SalesLineInventTransId==salesLine.InventTransId
+               && !agreementLineReleasedLine.IsDeleted
+               && salesLine.RemainInventPhysical
+               && ((salesLine.ShippingDateConfirmed
+               && salesLine.ShippingDateConfirmed>=AVARUMPlanPeriod.FromDate
+               && salesLine.ShippingDateConfirmed<=AVARUMPlanPeriod.ToDate)
+                || (!salesLine.ShippingDateConfirmed
+               && salesLine.ShippingDateRequested>=AVARUMPlanPeriod.FromDate
+               && salesLine.ShippingDateRequested<=AVARUMPlanPeriod.ToDate))
+            {
+                l1AVARUMPlanReqTrans.data(locAVARUMPlanReqTrans);
+                l1AVARUMPlanReqTrans.ReqQtyIssue=this.convertQtyCrop(salesLine.RemainInventPhysical, locAVARUMCropAssignment.Crop);                    
+                l1AVARUMPlanReqTrans.QtyRemain=l1AVARUMPlanReqTrans.ReqQtyIssue;
+                locAVARUMPlanReqTrans.QtySold=salesLine.RemainInventPhysical;
+                l1AVARUMPlanReqTrans.SalesId=salesLine.SalesId;                
+                l1AVARUMPlanReqTrans.insert();
+
+                locAVARUMPlanReqTrans.ReqQtyIssue-=l1AVARUMPlanReqTrans.ReqQtyIssue;
+                if (locAVARUMPlanReqTrans.ReqQtyIssue<=0)
+                {
+                    //break;  do not limit
+                }
+            }
+            
+            if (locAVARUMPlanReqTrans.ReqQtyIssue>0)
+            {
+                locAVARUMPlanReqTrans.QtyRemain=locAVARUMPlanReqTrans.ReqQtyIssue;
+                locAVARUMPlanReqTrans.insert();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillTransReceipt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Fill receipt transaction table for selection
+    /// </summary>
+    public void fillTransReceipt()
+    {
+        AVARUMPlanReqTrans locAVARUMPlanReqTrans, l1AVARUMPlanReqTrans;
+        ForecastPurch locForecastPurch;        
+
+        while select locForecastPurch
+            where locForecastPurch.AVARUMAgreementId !=''  
+              && locForecastPurch.ItemId==selItemId
+              && locForecastPurch.ModelId==selModelPurch
+              && locForecastPurch.startDate >= selFromDate
+              && locForecastPurch.StartDate <= selToDate   
+        {           
+            AVARUMPlanPeriod AVARUMPlanPeriod;
+
+            locAVARUMPlanReqTrans.clear();
+            locAVARUMPlanReqTrans.ParmId=parmid;
+            locAVARUMPlanReqTrans.TransDate=locForecastPurch.startDate;
+            locAVARUMPlanReqTrans.VendAccount=locForecastPurch.VendAccountId;
+            AVARUMPlanPeriod=this.getPeriodId(locForecastPurch.startDate);
+            locAVARUMPlanReqTrans.PeriodId=AVARUMPlanPeriod.PeriodId;
+            locAVARUMPlanReqTrans.VendName=VendTable::find(locForecastPurch.VendAccountId).Name();
+            locAVARUMPlanReqTrans.ItemId=locForecastPurch.ItemId;
+            locAVARUMPlanReqTrans.PurchAgreementId=locForecastPurch.AVARUMAgreementId;
+            locAVARUMPlanReqTrans.PlanAttrDimId=locForecastPurch.AVARUMPlanAttrDimId;
+            locAVARUMPlanReqTrans.QtySold=0; 
+            locAVARUMPlanReqTrans.ReqQtyReceipt=locForecastPurch.PurchQty;
+            locAVARUMPlanReqTrans.QtyCovReceipt=0;
+            locAVARUMPlanReqTrans.Crop=0;
+
+            // search for released Agreements
+            AgreementLineQuantityCommitment aline;
+            AgreementLineReleasedLine agreementLineReleasedLine;
+            PurchLine PurchLine;
+            PurchAgreementHeader  PurchAgreementHeader;
+
+            // find Agreement/Purch Line
+            PurchAgreementHeader=PurchAgreementHeader::findAgreementId(locAVARUMPlanReqTrans.PurchAgreementId);
+            select firstonly aline
+                where aline.Agreement==PurchAgreementHeader.RecId
+                   && aline.ItemId==locAVARUMPlanReqTrans.ItemId;    // ?? was tun falls mehrere gleiche Artikel im Rahmenauftrag!?
+
+            while select agreementLineReleasedLine
+                join PurchLine
+            where agreementLineReleasedLine.AgreementLine         == aline.RecId
+               && agreementLineReleasedLine.PurchLineDataAreaId==PurchLine.DataAreaId
+               && agreementLineReleasedLine.PurchLineInventTransId==PurchLine.InventTransId
+               && !agreementLineReleasedLine.IsDeleted
+               && PurchLine.RemainInventPhysical
+               && ((PurchLine.ConfirmedDlv 
+               && PurchLine.ConfirmedDlv>=AVARUMPlanPeriod.FromDate  
+               && PurchLine.ConfirmedDlv<=AVARUMPlanPeriod.ToDate)
+                ||(!PurchLine.ConfirmedDlv
+               && PurchLine.deliveryDate>=AVARUMPlanPeriod.FromDate
+               && PurchLine.deliveryDate<=AVARUMPlanPeriod.ToDate))               
+            {
+                l1AVARUMPlanReqTrans.data(locAVARUMPlanReqTrans);
+                l1AVARUMPlanReqTrans.ReqQtyReceipt=PurchLine.RemainInventPhysical;  //?
+                l1AVARUMPlanReqTrans.PurchId=PurchLine.PurchId;
+                l1AVARUMPlanReqTrans.QtyRemain=l1AVARUMPlanReqTrans.ReqQtyReceipt;
+                l1AVARUMPlanReqTrans.insert();
+
+                locAVARUMPlanReqTrans.ReqQtyReceipt-=l1AVARUMPlanReqTrans.ReqQtyReceipt;
+                if (locAVARUMPlanReqTrans.ReqQtyReceipt<=0)
+                {
+                    // break; do not limit
+                }
+            }
+            
+            if (locAVARUMPlanReqTrans.ReqQtyReceipt>0)
+            {
+                locAVARUMPlanReqTrans.QtyRemain=locAVARUMPlanReqTrans.ReqQtyReceipt;
+                locAVARUMPlanReqTrans.insert();
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPeriodId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Find period record for selected date
+    /// </summary>
+    /// <param name = "_date">Date</param>
+    /// <returns>Period record</returns>
+    protected AVARUMPlanPeriod getPeriodId(TransDate _date)
+    {
+        AVARUMPlanPeriod rc;
+        select firstonly tmpAVARUMPlanPeriod
+            where tmpAVARUMPlanPeriod.FromDate<=_date
+             && tmpAVARUMPlanPeriod.ToDate>=_date;
+
+        buf2Buf(tmpAVARUMPlanPeriod, rc);
+        return rc;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcPeriods</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  Calc planning periods for selected date renge
+    /// </summary>
+    public void calcPeriods()
+    {        
+        TransDate calcDate=selFromDate, wkDate;
+        boolean done=false;
+        int day;
+
+        delete_from tmpAVARUMPlanPeriod;   // is tmp
+
+        while (!done)
+        {
+            tmpAVARUMPlanPeriod.clear();
+            tmpAVARUMPlanPeriod.FromDate=calcDate;
+
+            switch(selPeriodType)
+            {
+                case AVARUMPeriodType::Month:
+                    wkDate=endMth(calcDate);
+                    tmpAVARUMPlanPeriod.PeriodId=strFmt('%1-%2', Year(calcDate), strRFix(int2Str(mthOfYr(calcDate)), 2, '0'));
+                    calcDate=wkDate+1;
+                    break;
+                case AVARUMPeriodType::Week:
+                    day=dayOfWk(calcDate);
+                    wkDate=calcDate+(7-day);
+                    tmpAVARUMPlanPeriod.PeriodId=strFmt('%1-%2', Year(calcDate), strRFix(int2Str(wkOfYr(calcDate)), 2, '0'));
+                    calcDate=wkDate+1;  // go to next week
+                    break;
+                case AVARUMPeriodType::Year:
+                    wkDate=mkDate(31,12, year(calcDate));
+                    tmpAVARUMPlanPeriod.PeriodId=strFmt('%1', Year(calcDate));
+                    calcDate=wkDate+1;
+                    break;
+            }
+
+            tmpAVARUMPlanPeriod.ToDate=wkDate;
+            tmpAVARUMPlanPeriod.insert();
+
+            if (calcDate>=selToDate)
+            {
+                done=true;
+            }
+        }
+
+        if (debug)
+        {            
+            while select tmpAVARUMPlanPeriod
+            {
+                Info(strFmt('%1;%2;%3', tmpAVARUMPlanPeriod.PeriodId, tmpAVARUMPlanPeriod.FromDate, tmpAVARUMPlanPeriod.ToDate));
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initPlanAttrDimPrioForReceipt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// fill mTmpAVARUMTmpAttributCombinationPrio with estimated priority for receipts (for receipts: lower pio value is lower prio)
+    /// </summary>
+    public void initPlanAttrDimPrioForReceipt()
+    {
+        AVARUMAttributCombination locAVARUMAttributCombination, locAVARUMAttributCombinationIssue;
+
+        while select locAVARUMAttributCombination
+            where !locAVARUMAttributCombination.PlanAttrDimPriority
+        {
+            while select locAVARUMAttributCombinationIssue
+                order by PlanAttrDimPriority           
+                where locAVARUMAttributCombinationIssue.PlanAttrDimPriority>0
+            {
+                if (this.checkPlanAttrDimFits(locAVARUMAttributCombinationIssue.PlanAttrDimId, locAVARUMAttributCombination.PlanAttrDimId))
+                {
+                    mTmpAVARUMTmpAttributCombinationPrio.clear();
+                    mTmpAVARUMTmpAttributCombinationPrio.initValue();
+                    mTmpAVARUMTmpAttributCombinationPrio.PlanAttrDimId=locAVARUMAttributCombination.PlanAttrDimId;
+                    mTmpAVARUMTmpAttributCombinationPrio.PlanAttrDimPriority=locAVARUMAttributCombinationIssue.PlanAttrDimPriority; // estimated prio
+                    mTmpAVARUMTmpAttributCombinationPrio.insert();                    
+                    break;
+                }                    
+            }
+        }        
+
+        // fill remaining with prio 0
+        while select * from locAVARUMAttributCombination
+            notexists join mTmpAVARUMTmpAttributCombinationPrio
+            where locAVARUMAttributCombination.PlanAttrDimId==mTmpAVARUMTmpAttributCombinationPrio.PlanAttrDimId
+        {
+            mTmpAVARUMTmpAttributCombinationPrio.clear();
+            mTmpAVARUMTmpAttributCombinationPrio.initValue();
+            mTmpAVARUMTmpAttributCombinationPrio.PlanAttrDimId=locAVARUMAttributCombination.PlanAttrDimId;
+            mTmpAVARUMTmpAttributCombinationPrio.PlanAttrDimPriority=0;
+            mTmpAVARUMTmpAttributCombinationPrio.insert();
+        }
+
+        if (debug)
+        {
+            while select mTmpAVARUMTmpAttributCombinationPrio
+            {
+                Info(strFmt('%1;%2', mTmpAVARUMTmpAttributCombinationPrio.PlanAttrDimId, mTmpAVARUMTmpAttributCombinationPrio.PlanAttrDimPriority));
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkPlanAttrDimFits</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// All attributes of dim issue must also be set in dim receipt to fit
+    /// </summary>
+    /// <param name = "_issue"> dim of issue</param>
+    /// <param name = "_receipt">dim of receipt</param>
+    /// <returns>true if fits</returns>
+    protected boolean checkPlanAttrDimFits(AVARUMPlanAttrDimId _issue, AVARUMPlanAttrDimId _receipt)
+    {
+        AVARUMAttributCombinationAttribute  locAVARUMAttributCombinationAttribute;
+        Set receiptDimSet=new Set(Types::Int64);
+        
+        while select locAVARUMAttributCombinationAttribute
+            where locAVARUMAttributCombinationAttribute.PlanAttrDimId==_receipt
+        {
+            receiptDimSet.add(locAVARUMAttributCombinationAttribute.EcoResAttributeRecId);
+        }
+
+        while select locAVARUMAttributCombinationAttribute
+            where locAVARUMAttributCombinationAttribute.PlanAttrDimId==_issue
+        {
+            if (!receiptDimSet.in(locAVARUMAttributCombinationAttribute.EcoResAttributeRecId))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>convertQtyCrop</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Convert Qty using defined Puchase precision
+    /// </summary>
+    /// <param name = "_qty">qty</param>
+    /// <param name = "_factor">factor</param>
+    /// <returns></returns>
+    protected Qty convertQtyCrop(Qty _qty, real _factor)
+    {
+        Qty rc=_qty;
+        if (_factor)
+        {
+            rc=_qty*100.0/_factor;
+
+            UnitOfMeasureSymbol purchUnit=InventTableModule::find(selItemId, ModuleInventPurchSales::Purch).UnitId;
+            if (purchUnit)
+            {
+                rc= roundDownDec(rc, UnitOfMeasure::findBySymbol(purchUnit).DecimalPrecision);
+            }            
+        }        
+        return rc;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>cleanup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Clean all data for this session/parmid
+    /// </summary>
+    /// <param name = "_parmid">ParamKey</param>
+    static public void cleanup(ParmId _parmid)
+    {
+        // cleanup Old data
+        AVARUMPlanReqTransCov locAVARUMPlanReqTransCov;
+        AVARUMPlanReqTrans locAVARUMPlanReqTrans;
+
+        delete_from locAVARUMPlanReqTransCov
+            exists join locAVARUMPlanReqTrans
+            where locAVARUMPlanReqTrans.ParmId==_parmid
+            && locAVARUMPlanReqTransCov.TransRefRecId==locAVARUMPlanReqTrans.RecId;
+
+        delete_from locAVARUMPlanReqTrans
+            where locAVARUMPlanReqTrans.ParmId==_parmid;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Maintenance funktion, see avaCmd url suffix
+    /// </summary>
+    /// <param name = "_args">args</param>
+    static public void main(Args _args)
+    {
+        str myUrlParam = System.Web.HttpUtility::ParseQueryString(URLUtility::getUrl()).Get('avaCmd');
+        if (myUrlParam=='clean') 
+        {
+            AVARUMPlanReqRawMaterialCal::cleanupAll();
+            Info(strFmt('%1: %2',"@SYS10114", myUrlParam));
+        }
+        else
+        {
+            Info("@SYS83964");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>cleanupAll</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Clean all planning data - all sessions!
+    /// </summary>
+    static public void cleanupAll()
+    {
+        // cleanup all data
+        AVARUMPlanReqTransCov locAVARUMPlanReqTransCov;
+        AVARUMPlanReqTrans locAVARUMPlanReqTrans;
+
+        delete_from locAVARUMPlanReqTransCov;
+        delete_from locAVARUMPlanReqTrans;        
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

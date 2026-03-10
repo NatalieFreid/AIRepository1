@@ -1,0 +1,622 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVARUMWeightInManager</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using Microsoft.Azure.Relay;
+using System.Threading.Tasks;
+using System.IO;
+using Avanade.RUB.Azure.Relay.Message;
+
+/// <summary>
+/// Manager class for handling weight-in operations, including history creation, movement, and repeat weighing.
+/// </summary>
+internal final class AVARUMWeightInManager
+{
+    /// <summary>
+    /// Dictionary enum for weight-in steps.
+    /// </summary>
+    internal static readonly DictEnum WeightInStepDE = new DictEnum(enumNum(AVARUMWeightInStep));
+    
+    /// <summary>
+    /// Dictionary enum for weight-in origin IDs.
+    /// </summary>
+    internal static readonly DictEnum WeightInOriginDE = new DictEnum(enumNum(AVARUMWeightInOriginId));
+        
+    /// <summary>
+    /// Configuration parameters for weight-in operations.
+    /// </summary>
+    internal static AVARUMWeightInParameters weightInParameters = AVARUMWeightInParameters::find();
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+        /// <summary>
+    /// Main entry point for weight-in management actions, triggered by menu items or record selection.
+    /// </summary>
+    /// <param name="args">Arguments containing the selected record and menu item name.</param>
+    static void main(Args args)
+    {
+        Common record;
+        RecId weightInRecId;
+
+        record = args.record();
+
+        if (!record)
+        {
+            throw Global::error("@AVARUM:NoRecordSelected");
+        }
+        
+        switch (record.TableId)
+        {
+            case tableNum(PurchLine):
+                PurchLine purchLine = record;
+                weightInRecId = AVARUMWeightInManager::createWeightInHistory
+                (
+                    AVARUMWeightInOrigin::Purch,
+                    record.TableId,
+                    purchLine.RecId,
+                    purchLine.PurchId
+                );
+                break;
+                 
+            case tableNum(SalesLine):
+                SalesLine salesLine = record;
+                weightInRecId = AVARUMWeightInManager::createWeightInHistory
+                (
+                    AVARUMWeightInOrigin::Sales,
+                    record.TableId,
+                    salesLine.recId,
+                    SalesLine.SalesId
+                );
+                break;
+              
+            case tableNum(AVARUMWeightInHistory):
+                AVARUMWeightInHistory weightInHistory = record;
+                str menuName = args.menuItemName();
+
+                switch (menuName)
+                {
+                    case menuItemActionStr(AVARUMWeightInRepeat):
+                        if (AVARUMWeightInManager::promptRepeatWeighing(weightInHistory.Step))
+                        {
+                            ttsbegin;
+                            weightInHistory.delete();
+                            ttscommit;
+
+                            weightInRecId = AVARUMWeightInManager::createWeightInHistory
+                            (
+                                weightInHistory.OriginId,
+                                weightInHistory.OriginRefTableId,
+                                weightInHistory.OriginRefRecId,
+                                weightInHistory.OriginDocumentId,
+                                weightInHistory.Identifier
+                            );
+                        }
+
+                        weightInRecId = weightInHistory.RecId;
+                        break;
+
+                    
+                    case menuItemActionStr(AVARUMWeightInPrint):
+                        // Todo: Implement printing logic here
+                        break;
+                }
+                break;
+
+            default:
+                throw Global::error(strFmt("@AVARUM:UnsupportedTableId", tableId2Name(record.TableId)));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>promptRepeatWeighing</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Prompts the user to confirm repeating the weighing process for a given step.
+    /// </summary>
+    /// <param name="_weightInStep">The weight-in step to repeat.</param>
+    /// <returns>True if the user confirms; otherwise, false.</returns>
+    private static boolean promptRepeatWeighing(AVARUMWeightInStep _weightInStep)
+    {
+        return Box::yesNo(strFmt("@AVARUM:WeightInHistoryExists", AVARUMWeightInManager::WeightInStepDE.value2Label(_weightInStep)), DialogButton::No, "@AVARUM:WeightInHistoryExistsTitle") == DialogButton::Yes;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>promptMoveWeighing</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Prompts the user to confirm moving weighing data from one document to another.
+    /// </summary>
+    /// <param name="_fromDocumentId">Source document ID.</param>
+    /// <param name="_toDocumentId">Target document ID.</param>
+    /// <returns>True if the user confirms; otherwise, false.</returns>
+    private static boolean promptMoveWeighing(Num _fromDocumentId, Num _toDocumentId)
+    {
+        return Box::yesNo(strFmt("@AVARUM:WeightInMoveToOtherDocument", _fromDocumentId, _toDocumentId), DialogButton::No, "@AVARUM:WeightInMoveTitle") == DialogButton::Yes;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>promptDeleteWeighing</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Prompts the user to confirm deletion of weighing data for a specific document and step.
+    /// </summary>
+    /// <param name = "_documentId">Document ID.</param>
+    /// <param name = "_step">Weight-in step.</param>
+    /// <returns>True if the user confirms; otherwise, false.</returns>
+    private static boolean promptDeleteWeighing(Num _documentId, AVARUMWeightInStepId _step)
+    {
+        return Box::yesNo(strFmt("@AVARUM:WeightInDelete", AVARUMWeightInManager::WeightInStepDE.value2Label(_step), _documentId), DialogButton::No, "@AVARUM:WeightInDeleteTitle") == DialogButton::Yes;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showWeightInScaleRequestFailed</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Displays an error message indicating that the weight-in scale request failed.
+    /// </summary>
+    private static void showWeightInScaleRequestFailed()
+    {                
+        throw Global::error("@AVARUM:WeightInScaleRequestFailed");
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showWeightInCreateFailed</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Displays an error message indicating that the weight-in creation failed for a specific document ID.
+    /// </summary>
+    /// <param name = "_documentId">The document ID for which the weight-in creation failed.</param>
+    private static void showWeightInCreateFailed(Num _documentId)
+    {
+        throw Global::error(strFmt("@AVARUM:WeightInCreateFailed", _documentId));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createWeightInHistory</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates a new weight-in history record or adds subsequent steps if history exists.
+    /// </summary>
+    /// <param name="_origin">Origin of the weight-in (Purch/Sales).</param>
+    /// <param name="_refTableId">Reference table ID.</param>
+    /// <param name="_originRefRecId">Reference record ID.</param>
+    /// <param name="documentId">Document ID associated with the weight-in.</param>
+    /// <param name="_identifier">Optional identifier for the weight-in.</param>
+    /// <returns>The RecId of the created or updated weight-in history record.</returns>
+    private static RecId createWeightInHistory(AVARUMWeightInOriginId _origin, RefTableId _refTableId, RefRecId _originRefRecId, Num _documentId, AVARUMWeightInIdentifier _identifier = '')
+    {
+        System.Exception e;
+        AVARUMWeightInHistory weightIn;
+
+        try
+        {
+            weightIn = AVARUMWeightInHistory::find(_origin, _refTableId, _originRefRecId, AVARUMWeightInStep::First);
+            
+            ttsbegin;
+
+            if (!weightIn)
+            {
+                weightIn.clear();
+                weightIn.initValue();
+                weightIn.OriginId = _origin;
+                weightIn.OriginRefTableId = _refTableId;
+                weightIn.OriginRefRecId = _originRefRecId;
+                weightIn.OriginDocumentId = _documentId;
+                weightIn.Step = AVARUMWeightInStep::First;
+                weightIn.Value = 0;
+                weightIn.Identifier = _identifier;
+                weightIn.StatusId = AVARUMWeightInStatus::Pending;
+                weightIn.insert();
+            }
+            else
+            {
+                RefRecId parentRecId = weightIn.RecId;
+                real weightInValue = weightIn.Value;
+
+                weightIn = AVARUMWeightInHistory::initByReference(weightIn, AVARUMWeightInStep::Second, weightIn.Value);
+                weightIn.StatusId = AVARUMWeightInStatus::Pending;
+                weightIn.ParentStepRefRecId = parentRecId;
+                weightIn.insert();
+            }
+
+            ttscommit;
+                    
+            System.Threading.CancellationTokenSource tokenSource = new System.Threading.CancellationTokenSource();
+            Global::runAsync
+            (
+                classNum(AVARUMWeightInManager),
+                staticMethodStr(AVARUMWeightInManager, sendRequestToScale),
+                [weightIn.DataAreaId, weightIn.Id],
+                tokenSource.Token,                 
+                classNum(AVARUMWeightInManager),
+                staticMethodStr(AVARUMWeightInManager, sendRequestToScaleResult)
+            );
+        }
+        catch (Exception::CLRError)
+        {
+            e = CLRInterop::getLastException();
+
+            if (e != null)
+            {
+                e = e.InnerException;
+                Global::error(e.ToString());
+            }
+
+            AVARUMWeightInManager::showWeightInCreateFailed(_documentId);
+        }
+        catch
+        {                       
+            AVARUMWeightInManager::showWeightInCreateFailed(_documentId);
+        }
+
+        return weightIn.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>moveWeightInHistory</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Moves weight-in history records to a new origin reference record and document ID.
+    /// </summary>
+    /// <param name="_weightInHistory">The weight-in history record to move.</param>
+    /// <param name="_originRefRecIdToMove">The new origin reference record ID.</param>
+    /// <returns>The updated weight-in history record.</returns>
+    public static AVARUMWeightInHistory moveWeightInHistory(AVARUMWeightInHistory _weightInHistory, RefRecId _originRefRecIdToMove)
+    {
+        try
+        {
+            Num orginDocumentIdToMove;
+
+            switch (_weightInHistory.OriginId)
+            {
+                case AVARUMWeightInOrigin::Purch:
+                    PurchLine purchLine = PurchLine::findRecId(_originRefRecIdToMove);
+                    orginDocumentIdToMove = purchLine.PurchId;
+                    break;
+
+                case AVARUMWeightInOrigin::Sales:
+                    SalesLine salesLine = SalesLine::findRecId(_originRefRecIdToMove);
+                    orginDocumentIdToMove = salesLine.SalesId;
+                    break;
+
+                default:
+                    throw Global::error(strFmt("@AVARUM:WeightInUnsupportedOriginId", AVARUMWeightInManager::WeightInOriginDE.value2Label(_weightInHistory.OriginId)));
+            }
+
+            if (!orginDocumentIdToMove)
+            {
+                throw Global::error("@AVARUM:WeightInMoveNoDocumentId");
+            }
+
+            if (AVARUMWeightInManager::promptMoveWeighing(_weightInHistory.OriginDocumentId, orginDocumentIdToMove))
+            {
+                AVARUMWeightInHistory records;
+                       
+                ttsbegin;
+
+                update_recordset records
+                    setting OriginRefRecId = _originRefRecIdToMove,
+                        OriginDocumentId = orginDocumentIdToMove
+                    where records.OriginId == _weightInHistory.OriginId &&
+                        records.OriginRefTableId == _weightInHistory.OriginRefTableId &&
+                        records.OriginRefRecId == _weightInHistory.OriginRefRecId;
+
+                ttscommit;
+            }
+        }
+        catch
+        {
+            throw Global::error(strFmt("@AVARUM:WeightInMoveFailed", _weightInHistory.OriginDocumentId));
+        }
+
+        return _weightInHistory;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteWeightInHistory</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Deletes weight-in history records for the specified history entry.
+    /// Prompts the user for confirmation before deletion.
+    /// If the step is 'First', deletes all related records for the document.
+    /// If the step is 'Second', deletes only the 'Second' and 'Amount' step records for the document.
+    /// Throws an error if deletion fails.
+    /// </summary>
+    /// <param name="_weightInHistory">The weight-in history record to delete.</param>
+    /// <returns>True if the records were deleted; otherwise, false.</returns>
+    public static boolean deleteWeightInHistory(AVARUMWeightInHistory _weightInHistory)
+    {
+        boolean result;
+
+        try
+        {
+            _weightInHistory.reread();
+
+            result = AVARUMWeightInManager::promptDeleteWeighing(_weightInHistory.OriginDocumentId, _weightInHistory.Step);
+
+            if (result)
+            {
+                AVARUMWeightInHistory records;
+                                         
+                records.skipDeleteActions(true);
+                records.skipDataMethods(true);
+                records.skipEvents(true);
+                records.skipDatabaseLog(true);
+                records.skipDataSourceValidateDelete(true);
+
+                ttsbegin;
+
+                if (_weightInHistory.Step == AVARUMWeightInStep::First)
+                {
+                    delete_from records
+                        where records.OriginId == _weightInHistory.OriginId &&
+                            records.OriginRefTableId == _weightInHistory.OriginRefTableId &&
+                            records.OriginDocumentId == _weightInHistory.OriginDocumentId;
+                }
+                else if (_weightInHistory.Step == AVARUMWeightInStep::Second)
+                {
+                    delete_from records
+                    where records.OriginId == _weightInHistory.OriginId &&
+                        records.OriginRefTableId == _weightInHistory.OriginRefTableId &&
+                        records.OriginDocumentId == _weightInHistory.OriginDocumentId &&
+                        (records.Step == AVARUMWeightInStep::Second || records.Step == AVARUMWeightInStep::Amount);
+                }
+
+                ttscommit;
+            }
+        }
+        catch
+        {
+            result = false;
+            throw Global::error(strFmt("@AVARUM:WeightInDeleteFailed", _weightInHistory.OriginDocumentId));
+        }
+
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendRequestToScale</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sends a request to the physical scale via Azure Relay to perform weighing.
+    /// </summary>
+    /// <param name = "_params">A container with DataAreaId and AVARUMWeightInGuid.</param>
+    private static void sendRequestToScale(container _params)
+    {               
+        System.Exception e;
+        DataAreaId dataAreaId = conPeek(_params, 1);
+        AVARUMWeightInGuid guidId = conPeek(_params, 2);
+        var onError = false;
+
+        if (!dataAreaId || !guidId)
+        {
+            throw Global::error(strFmt("@AVARUM:Error_MethodCalledWithInvalidParameters", staticMethodStr(AVARUMWeightInManager,sendRequestToScale)));
+        }
+
+        try
+        {
+            /// Get the connection details from the parameters table
+            str keyValueKeyName = weightInParameters.AzureRelayKeyVaultKeyName;
+            str policyKeyName = weightInParameters.AzureRelayPolicyKeyName;
+            str key = AVARUMKeyVaultHelper::getKeyFromKeyVault(keyValueKeyName);
+            str relayNamespace = weightInParameters.AzureRelayNamespace;
+            str connectionName = weightInParameters.AzureRelayConnectionName;
+                  
+            // Create a new hybrid connection client.
+            TokenProvider tokenProvider = TokenProvider::CreateSharedAccessSignatureTokenProvider(policyKeyName, key);
+            HybridConnectionClient hybridClient = new HybridConnectionClient(new System.Uri(System.String::Format("sb://{0}/{1}", relayNamespace, connectionName)), tokenProvider);
+            
+            // Initiate the connection.
+            using (HybridConnectionStream relayConnection = hybridClient.CreateConnectionAsync().Result)
+            {
+                using (StreamWriter writer = new StreamWriter(relayConnection))
+                {
+                    str requestJson;
+
+                    switch (AVARUMWeightInManager::weightInParameters.ScaleType)
+                    {
+                        case AVARUMWeightInScaleType::Udp:
+                            ScaleUdpWeighingRequest requestUpd = new ScaleUdpWeighingRequest(dataAreaId, guid2Str(guidId));
+                            requestJson = requestUpd.ToJson();
+                            break;
+                            
+                        case AVARUMWeightInScaleType::Sql:
+                            ScaleSqlWeighingRequest requestSql = new ScaleSqlWeighingRequest(dataAreaId, guid2Str(guidId));
+                            requestJson = requestSql.ToJson();
+                            break;
+
+                        default:
+                            throw Global::error(strFmt("@AVARUM:WeightInUnsupportedScaleType", enum2Str(AVARUMWeightInManager::weightInParameters.ScaleType)));
+                    }
+                        
+                    writer.AutoFlush = true;
+                    writer.WriteLine(requestJson);
+                }
+            }
+        }
+        catch (Exception::CLRError)
+        {   
+            onError = true;            
+            e = CLRInterop::getLastException();       
+
+            if (e != null)
+            {
+                e = e.InnerException;
+                throw Global::error(e.ToString());
+            }
+             
+            AVARUMWeightInManager::showWeightInScaleRequestFailed();
+        }
+        catch
+        {    
+            onError = true;
+            AVARUMWeightInManager::showWeightInScaleRequestFailed();
+        }
+        finally
+        {
+            if (onError)
+            {
+                /// Update the weight-in history record status to Failed
+                AVARUMWeightInHistory weightInHistory = AVARUMWeightInHistory::findByGuid(guidId, true);
+
+                if (weightInHistory)
+                {
+                    ttsbegin;                      
+                    weightInHistory.reread(); 
+                                    
+                    // Enable overwriting system fields and preserve original
+                    weightInHistory.updateDateTimeFieldInfo(weightInHistory.ModifiedBy);
+                    weightInHistory.StatusId = AVARUMWeightInStatus::Error;
+                    weightInHistory.Message = "@AVARUM:WeightInScaleRequestFailed";
+                    weightInHistory.write();
+
+                    AVARUMWeightInManager::createOrUpdateWeightInAmount(weightInHistory);
+                    ttscommit;
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendRequestToScaleResult</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Async callback to process the result of the scale request.
+    /// </summary>
+    /// <param name = "_taskResult">Result of async scale request.</param>
+    private static void sendRequestToScaleResult(AsyncTaskResult _taskResult)
+    {
+        System.Exception exception;
+
+        if (_taskResult != null)
+        {                     
+            // Exception thrown by async method invocation.
+            exception = _taskResult.getException();
+
+            if (!ClrInterop::isNull(exception))
+            {            
+                throw Global::error(exception.Message);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createOrUpdateWeightInAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates or updates the weight-in amount based on the provided weight-in history record.
+    /// </summary>
+    /// <param name = "_weightInHistory">The weight-in history record to process.</param>
+    public static void createOrUpdateWeightInAmount(AVARUMWeightInHistory _weightInHistory)
+    {
+        System.Exception e;
+                
+        try
+        {
+            AVARUMWeightInHistory weightInFirst;
+            AVARUMWeightInHistory weightInSecond;
+
+            /// If the step is already Amount, no need to update
+            if (_weightInHistory.Step == AVARUMWeightInStep::Amount)
+            {
+                return;
+            }
+            else if (_weightInHistory.Step == AVARUMWeightInStep::Second)
+            {
+                weightInSecond = _weightInHistory;
+                weightInFirst = AVARUMWeightInHistory::find(_weightInHistory.OriginId, _weightInHistory.OriginRefTableId, _weightInHistory.OriginRefRecId, AVARUMWeightInStep::First);
+   
+                /// If there is no first weighing, we cannot calculate the amount
+                if (!weightInFirst)
+                {
+                    return;
+                }
+            }
+            else if (_weightInHistory.Step == AVARUMWeightInStep::First)
+            {
+                weightInFirst = _weightInHistory;
+                weightInSecond = AVARUMWeightInHistory::find(_weightInHistory.OriginId, _weightInHistory.OriginRefTableId, _weightInHistory.OriginRefRecId, AVARUMWeightInStep::Second);
+   
+                /// If there is no second weighing, we cannot calculate the amount
+                if (!weightInSecond)
+                {
+                    return;
+                }
+            }
+
+            ttsbegin;
+                       
+            var amount = weightInFirst.Value - weightInSecond.Value;
+            var weightInAmount = AVARUMWeightInHistory::find(_weightInHistory.OriginId, _weightInHistory.OriginRefTableId, _weightInHistory.OriginRefRecId, AVARUMWeightInStep::Amount, true);
+            
+            if (!weightInAmount)
+            {
+                weightInAmount.clear();
+                weightInAmount.initValue();
+                weightInAmount.OriginId = _weightInHistory.OriginId;
+                weightInAmount.OriginRefTableId = _weightInHistory.OriginRefTableId;
+                weightInAmount.OriginRefRecId = _weightInHistory.OriginRefRecId;
+                weightInAmount.OriginDocumentId = _weightInHistory.OriginDocumentId;
+                weightInAmount.identifier = weightInFirst.Identifier;
+                weightInAmount.ParentStepRefRecId = weightInFirst.RecId;
+                weightInAmount.Step = AVARUMWeightInStep::Amount;
+                weightInAmount.StatusId = AVARUMWeightInStatus::OK;
+                weightInAmount.IsMaintainedManuallyId = NoYes::Yes;
+            }
+                                   
+            weightInAmount.StatusId = AVARUMWeightInStatus::OK;
+            weightInAmount.Value = amount;
+            weightInAmount.write();                                              
+
+            ttscommit;
+        }
+        catch (Exception::CLRError)
+        {
+            e = CLRInterop::getLastException();
+
+            if (e != null)
+            {
+                e = e.InnerException;
+                Global::error(e.ToString());
+            }
+
+            AVARUMWeightInManager::showWeightInCreateFailed(_weightInHistory.OriginDocumentId);
+        }
+        catch
+        {
+            AVARUMWeightInManager::showWeightInCreateFailed(_weightInHistory.OriginDocumentId);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

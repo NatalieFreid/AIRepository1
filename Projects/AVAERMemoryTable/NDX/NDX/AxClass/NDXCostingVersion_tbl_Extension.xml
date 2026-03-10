@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXCostingVersion_tbl_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// CostingVersion table extension class
+/// </summary>
+[ExtensionOf(tableStr(CostingVersion))]
+final class NDXCostingVersion_tbl_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>KCS_findCurrentVersion</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds current Version
+    /// </summary>
+    /// <param name = "_transDate">date</param>
+    /// <param name = "_versionId">versionId</param>
+    /// <param name = "_forUpdate">forupdate</param>
+    /// <returns>Costing Version record</returns>
+    static CostingVersion KCS_findCurrentVersion(TransDate _transDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), CostingVersionId _versionId = '', boolean _forUpdate = false)
+	{
+        CostingVersion      costingVersion;
+        ;
+
+        costingVersion.selectForUpdate(_forUpdate); 
+
+        if(_transDate && !_versionId)
+        {	
+            select firstonly costingVersion 
+			    order by DefaultDate desc, LastUpdate desc
+				    where costingVersion.Blocked == 0 &&
+                    (_transDate >= costingVersion.DefaultDate || !costingVersion.DefaultDate) &&
+                    (_transDate <= costingVersion.KCS_ToDate || !costingVersion.KCS_ToDate);
+           
+        }
+
+        if (_transDate && _versionId)
+        {
+            select firstonly costingVersion
+				where costingVersion.Blocked    == 0            &&
+				costingVersion.VersionId        == _versionId   &&
+                (_transDate                     >= costingVersion.DefaultDate   || !costingVersion.DefaultDate)   &&
+                (_transDate                     <= costingVersion.KCS_ToDate    || !costingVersion.KCS_ToDate);
+        }
+
+        return costingVersion;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDX_findByItemId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds CostingVersion record by ItemId
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_transDate">_transDate</param>
+    /// <returns>CostingVersion record</returns>
+    static CostingVersion NDX_findByItemId(ItemId _itemId, TransDate _transDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), boolean _lookInSimPrice = false)
+    {
+        InventItemPrice     inventItemPrice;
+        InventItemPriceSim  inventItemPriceSim;
+        CostingVersion      costingVersion;
+        ;
+
+        select firstOnly inventItemPrice
+            order by ActivationDate
+                where inventItemPrice.ItemId == _itemId
+                    && inventItemPrice.VersionId
+                join costingVersion
+                    where costingVersion.VersionId == inventItemPrice.VersionId
+                   //     && costingVersion.Blocked == NoYesCombo::No
+            && (!costingVersion.DefaultDate || costingVersion.DefaultDate <= _transDate)
+            && (!costingVersion.KCS_ToDate || costingVersion.KCS_ToDate >= _transDate);
+
+        if (!inventItemPrice.RecId && _lookInSimPrice)
+        {
+            select firstonly inventItemPriceSim
+                where inventItemPriceSim.ItemId  == _itemId
+                 join costingVersion
+                    where costingVersion.VersionId == inventItemPriceSim.VersionId
+                   //     && costingVersion.Blocked == NoYesCombo::No
+                        && (!costingVersion.DefaultDate || costingVersion.DefaultDate <= _transDate)
+                        && (!costingVersion.KCS_ToDate || costingVersion.KCS_ToDate >= _transDate);
+        }
+
+        return costingVersion;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDX_findCostingVersion</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds CostingVersion record by ItemId
+    /// </summary>
+    /// <param name = "transDate">date</param>
+    /// <param name = "versionId">VersionId</param>
+    /// <param name = "lNotBlocked">not blocked</param>
+    /// <param name = "lCostingVersionWithFallback">with fallback</param>
+    /// <returns>Costing Version record</returns>
+    static CostingVersion NDX_findCostingVersion(TransDate transDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), 
+        CostingVersionId    versionId  = '',
+        boolean             lNotBlocked = true,
+        boolean             lCostingVersionWithFallback = false)
+    {
+        CostingVersion      costingVersion;
+
+        Query                   q = new Query();
+        QueryRun                qr;
+        QueryBuildDataSource    qbds;
+
+        qbds = q.addDataSource(tablenum(CostingVersion));
+        qbds.update(true);
+
+        if (versionId)
+        {
+            qbds.addRange(fieldnum(CostingVersion, versionId)).value(versionId);
+        }
+        else
+        {
+            qbds.addSortField(fieldnum(CostingVersion, DefaultDate), SortOrder::Descending);
+            qbds.addSortField(fieldnum(CostingVersion, LastUpdate), SortOrder::Descending);
+        }
+
+        if(lNotBlocked)
+        {
+            qbds.addRange(fieldnum(CostingVersion, Blocked)).value(QueryValue(NoYesCombo::No));
+        }
+
+        if (lCostingVersionWithFallback)
+        {
+            qbds.addRange(fieldnum(CostingVersion, BOMFallBackVersion)).value(SysQuery::valueNotEmptyString());
+        }
+
+        if (transDate)
+        {
+            qbds.addRange(fieldnum(CostingVersion, DefaultDate)).value(SysQuery::range(dateNull(), transDate+1));
+            qbds.addRange(fieldnum(CostingVersion, DefaultDate)).value(SysQuery::valueEmptyString());
+            qbds.addRange(fieldnum(CostingVersion, KCS_ToDate)).value(SysQuery::range(transDate-1, dateMax()));
+            qbds.addRange(fieldnum(CostingVersion, KCS_ToDate)).value(SysQuery::valueEmptyString());
+        }
+        qr = new QueryRun(q);
+        qr.next();
+        costingVersion = qr.get(tablenum(CostingVersion));
+
+        return costingVersion;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_checkDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if toDtae is smaller than fromDate 
+    /// </summary>
+    /// <returns>true or false</returns>
+    boolean  KCS_checkDate()
+    {
+        boolean  ok = true;
+        ;
+
+        if (this.KCS_ToDate  < this.DefaultDate)
+        {
+            if (this.KCS_ToDate)
+            {
+                ok = checkFailed("@SYS16982");
+            }
+        }
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Vlidates Field
+    /// </summary>
+    /// <param name = "_fieldIdToCheck">FieldId</param>
+    /// <returns>true or false</returns>
+    public boolean validateField(FieldId _fieldIdToCheck)
+    {
+        boolean ret;
+        ret = next validateField(_fieldIdToCheck);
+
+        switch (_fieldIdToCheck)
+        {
+            case fieldnum(CostingVersion, DefaultDate) :
+            case fieldNum(CostingVersion, KCS_ToDate)  :
+                ret = this.KCS_checkDate();
+                break;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

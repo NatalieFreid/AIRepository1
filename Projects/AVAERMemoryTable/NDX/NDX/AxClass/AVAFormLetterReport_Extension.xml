@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAFormLetterReport_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(classStr(FormLetterReport))]
+internal final class AVAFormLetterReport_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>loadPrintSettings</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_jourTable">_jourTable</param>
+    /// <param name = "_transTable">_transTable</param>
+    /// <param name = "_languageId">_languageId</param>
+    /// <param name = "_documentKeyValue">_documentKeyValue</param>
+    public void loadPrintSettings(Common _jourTable, Common _transTable, str _languageId, str _documentKeyValue)
+    {
+        next loadPrintSettings(_jourTable,_transTable,_languageId,_documentKeyValue);
+       
+        
+        void setSettingDetail(PrintMgmtDocInstanceType _type, SRSPrintDestinationSettings _defaultSettings)
+        {
+            PrintMgmtPrintSettingDetail printSettingDetail = new PrintMgmtPrintSettingDetail();
+            PrintMgmtReportFormat printMgmtReportFormat;
+            PrintMgmtDocInstance            printMgmtDocInstance;
+            PrintMgmtSettings printMgmtSettings;
+
+            if (printMgmtReportRun.parmDocType() == PrintMgmtDocumentType::Quotation  && _type == PrintMgmtDocInstanceType::Copy)
+            {
+                AVASalesParameters          avaSalesParameters = AVASalesParameters::find();
+                select firstonly printMgmtReportFormat
+                    where printMgmtReportFormat.Name  == avaSalesParameters.SalesQuotationExcelReport;
+            }
+
+            if (!printMgmtReportFormat)
+            {
+                select firstonly printMgmtReportFormat
+                    where printMgmtReportFormat.DocumentType == printMgmtReportRun.parmDocType()
+                    join printMgmtSettings
+                    where printMgmtSettings.ReportFormat == printMgmtReportFormat.RecId
+                        join printMgmtDocInstance
+                            where printMgmtDocInstance.RecId == printMgmtSettings.ParentId
+                    && printMgmtDocInstance.PrintType == _type;
+            }
+         
+
+            if (!printMgmtReportFormat || printMgmtReportFormat.SSRS == PrintMgmtSSRS::SSRS)
+            {
+                printMgmtReportFormat = PrintMgmtReportFormat::findSystem(this.getPrintMgmtDocumentType());
+            }
+
+            printSettingDetail.parmReportFormatName(printMgmtReportFormat.Name);
+            printSettingDetail.parmSSRS(printMgmtReportFormat.ssrs);
+
+            printSettingDetail.parmType(_type);
+
+            printSettingDetail.parmInstanceName(enum2str(_type));
+
+            // Since this will be reported to the screen, one copy is the only thing that makes sense
+            printSettingDetail.parmNumberOfCopies(1);
+
+            printSettingDetail.parmPrintJobSettings(_defaultSettings);
+
+            if (!this.parmUseUserDefinedDestinations())
+            {
+                printSettingDetail.parmPrintJobSettings().printMediumType(SRSPrintMediumType::Screen);
+            }
+
+
+            if (printMgmtSettings != null)
+            {
+                PrintMgmtIdentificationText printMgmtIdentificationText = PrintMgmtIdentificationText::find(printMgmtSettings.RecId, _languageId);
+
+                printSettingDetail.parmIdentificationText(printMgmtIdentificationText.IdentificationText);
+                printSettingDetail.parmNamedDestination(printMgmtSettings.NamedDestination);
+            }
+
+            printMgmtReportRun.loadSettingDetail(printSettingDetail, _documentKeyValue);
+        }
+        
+        if (_jourTable.TableId == tableNum(CustQuotationJour) && this.parmPrintType() == PrintCopyOriginal::Copy)
+        {
+            // Print a copy
+            setSettingDetail(PrintMgmtDocInstanceType::Copy, printMgmtReportRun.parmDefaultCopyPrintJobSettings());
+        }
+        
+
+       
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

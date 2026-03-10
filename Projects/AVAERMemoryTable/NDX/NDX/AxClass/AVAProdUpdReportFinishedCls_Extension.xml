@@ -1,0 +1,347 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAProdUpdReportFinishedCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// The <c>AVAProdUpdReportFinishedCls_Extension</c> represents a extension of ProdUpdReportFinished class.
+/// </summary>
+/// <remarks>
+/// AVA_007156_MDEReportFinish
+/// </remarks>
+[
+    ExtensionOf(classStr(ProdUpdReportFinished))
+]
+final class AVAProdUpdReportFinishedCls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>proposalQtyGood</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Proposes a good quantity for reporting as finished on the production order.
+    /// </summary>
+    /// <param name="_prodId">
+    /// The ID of the production order.
+    /// </param>
+    /// <returns>
+    /// A good quantity for reporting as finished on the production order.
+    /// </returns>
+    public static InventQty proposalQtyGood(ProdId _prodId)
+    {
+        InventQty   avaProposalQty;
+        AVATraverseTrans travTrans;
+
+        avaProposalQty = next proposalQtyGood(_prodId);
+        select firstonly travTrans where travTrans.ProdId == _prodId
+            && travTrans.BasketNum;
+        if (travTrans)
+        {
+            avaProposalQty = travTrans.Qty;
+        }
+        else
+        {
+            avaProposalQty = ProdUpdReportFinished::avaCheckNoReportFinishedProposalQty(avaProposalQty);
+        }
+
+        return avaProposalQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckNoReportFinishedProposalQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Wert 2023/03/05
+    /// </summary>
+    /// <param name = "_avaProposalQty">_avaProposalQty</param>
+    /// <returns>InventQty</returns>
+    private static InventQty avaCheckNoReportFinishedProposalQty(InventQty   _avaProposalQty)
+    {
+        InventQty                                   avaProposalQty;
+        AVANoReportFinishedProposalQtyIDisposable   avaNoReportFinishedProposalQtyIDisposable;
+
+        avaNoReportFinishedProposalQtyIDisposable = AVANoReportFinishedProposalQtyIDisposable::current();
+
+        if (avaNoReportFinishedProposalQtyIDisposable
+            && avaNoReportFinishedProposalQtyIDisposable.noReportFinishedProposalQty == NoYes::Yes)
+        {
+            avaProposalQty = 0;
+        }
+        else
+        {
+            avaProposalQty = _avaProposalQty;
+        }
+
+        return avaProposalQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateProdReceipt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN 2024/03/05
+    /// </summary>
+    void updateProdReceipt()
+    {
+        next updateProdReceipt();
+
+        //AVATraverseTrans    travTans = AVATraverseTrans::findByProdId(this.prodTable().ProdId, true);
+        AVATraverseTrans    travtrans;
+        select firstonly forupdate travtrans where travtrans.ProdId == this.prodTable().ProdId
+                                                && travtrans.TravNum == this.prodParmReportFinished.AVATraverseNum
+                                                && travtrans.TravStatus == AVATravStatus::InProcess;
+        if (travTrans)
+        {
+            ttsbegin;
+            travTrans.selectForUpdate(true);
+            travTrans.FinishedQty = travTrans.FinishedQty + this.qtyErrorProductionReceipt + this.qtyGoodProductionReceipt;
+            travTrans.update();
+            ttscommit;
+        }
+
+        if(prodTable.AVABatchProjId != '')
+        {
+            this.avaCreateProjRecords();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCreateProjRecords</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates a Journal and position within it for a connected prodTable record with defined finised good qty
+    /// </summary>
+    public void avaCreateProjRecords()
+    {
+        ProjTable   avaProjTable;
+        Qty         avaQtyGood;
+        InventJournalTable avaInventJournalTable;
+        InventJournalTrans avaInventJournalTrans;
+
+        try
+        {
+            avaProjTable = prodTable.avaBatchProjTable();
+            avaQtyGood = this.avaSumQtyGood();
+            avaInventJournalTable = InventJournalTable::avaFindOrCreateInventJournal_ProjProd(avaProjTable.ProjId, prodTable.ProdId);
+            avaInventJournalTrans = this.avaCreateJournalTransRecords(avaInventJournalTable, avaProjTable, avaQtyGood);
+
+            this.avaUpdateJournalNumOfLines(avaInventJournalTable);
+            this.avaJournalTransReservation(avaInventJournalTrans);
+            this.avaPostInventJournal(avaInventJournalTable);
+        }
+        catch
+        {
+            error("@NDX:NXAProjJournalTableCreateBookError");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCreateJournalTransRecords</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates a new record based on projTable and ProdTable values
+    /// </summary>
+    /// <param name = "_inventJournalTable">InventJournalTable</param>
+    /// <param name = "_projTable">ProjTable</param>
+    /// <param name = "_qty">Qty</param>
+    /// <returns>InventJournalTrans</returns>
+    public InventJournalTrans avaCreateJournalTransRecords(InventJournalTable _inventJournalTable, ProjTable _projTable, Qty _qty)
+    {
+        InventJournalTrans avaInventJournalTrans;
+
+        ttsbegin;
+        avaInventJournalTrans.avaInitProjProd(_inventJournalTable, _projTable, prodTable, _qty);
+        avaInventJournalTrans.InventDimId = prodParmReportFinished.InventDimId;
+        avaInventJournalTrans.insert();
+        ttscommit;
+
+        return avaInventJournalTrans;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateJournalNumOfLines</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the field NumOfLines in JournalTable
+    /// </summary>
+    /// <param name = "_inventJournalTable">InventJournalTable</param>
+    public void avaUpdateJournalNumOfLines(InventJournalTable _inventJournalTable)
+    {
+        ttsbegin;
+        _inventJournalTable.selectForUpdate(true);
+        InventJournalTable::initTotal(_inventJournalTable);
+        _inventJournalTable.update();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaJournalTransReservation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Reserves item for specified inventJournalTrans record
+    /// </summary>
+    /// <param name = "_inventJournalTrans">InventJournalTrans</param>
+    public void avaJournalTransReservation(InventJournalTrans _inventJournalTrans)
+    {
+        InventUpd_Reservation   reservation;
+        InventMovement          movement;
+
+        movement = InventMovement::construct(_inventJournalTrans);
+
+        InventQty reserveQuantity = _inventJournalTrans.Qty;
+
+        if (reserveQuantity > 0)
+        {
+            reservation = InventUpd_Reservation::newMovement(
+                                    movement,
+                                    -reserveQuantity,
+                                    true);
+
+            reservation.updateNow();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaPostInventJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Posts a provided InventJournalTable
+    /// </summary>
+    /// <param name = "_inventJournalTable">InventJournalTable</param>
+    public void avaPostInventJournal(InventJournalTable _inventJournalTable)
+    {
+        JournalCheckPost avaJournalCheckPost;
+
+        avaJournalCheckPost = InventJournalCheckPost::newPostJournal(_inventJournalTable);
+        avaJournalCheckPost.run();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateBOMConsumption</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 31.07.2024
+    /// </summary>
+    void updateBOMConsumption()
+    {
+        next updateBOMConsumption();
+        if (prodParmReportFinished.bomAutoConsump == BOMAutoConsump::Never)
+        {
+            setPrefix("@SYS28536");
+
+            ProdJournalTable prodJournalTable = this.createJournal();
+            prodJournalTable.AcceptError = NoYes::Yes;
+
+            if (this.canPostBOMJournal(prodJournalTable))
+            {
+                ProdJournalCheckPostBOM prodJournalCheckPostBOM = ProdJournalCheckPostBOM::newPostJournal(prodJournalTable.JournalId,prodParmReportFinished.JournalShowInfo);
+                prodJournalCheckPostBOM.parmTransferErrors(true);
+                prodJournalCheckPostBOM.parmThrowCheckFailed(false) ;
+                prodJournalCheckPostBOM.runOperation();              
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 30.07.2024
+    /// </summary>
+    /// <returns>ProdJournalTable</returns>
+    protected ProdJournalTable createJournal()
+    {
+        prodParmReportFinished.BOMAutoConsump = BOMAutoConsump::Always;
+        ProdJournalTable        prodJournalTable = next createJournal();
+        return prodJournalTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeProdJournalBOM</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 31.07.2024
+    /// </summary>
+    /// <param name = "_prodJournalBOM">_prodJournalBOM</param>
+    /// <param name = "_prodJournalTableData">_prodJournalTableData</param>
+    /// <param name = "_prodJournalTransData">_prodJournalTransData</param>
+    /// <param name = "_prodBOM">_prodBOM</param>
+    /// <param name = "_prodBOMCalc">_prodBOMCalc</param>
+    protected void initializeProdJournalBOM(
+        ProdJournalBOM          _prodJournalBOM,
+        ProdJournalTableData    _prodJournalTableData,
+        ProdJournalTransData    _prodJournalTransData,
+        ProdBOM                 _prodBOM,
+        ProdBOMCalc             _prodBOMCalc)
+    {
+        WMSLocationId   workCenterLocationId = WHSProdTable::getWorkCenterLocationFromProdId(_prodBOM.ProdId, _prodBOM.OprNum, _prodBOM.InventDimId);
+        InventDim       prodBOMInventDim = _prodBOM.inventDim();
+        prodBOMInventDim.wMSLocationId = workCenterLocationId;
+        _prodBOM.InventDimId = InventDim::findOrCreate(prodBOMInventDim).inventDimId;
+        next initializeProdJournalBOM(_prodJournalBOM,_prodJournalTableData,_prodJournalTransData,_prodBOM,_prodBOMCalc);
+        InventDim       locInventDim = _prodJournalBOM.inventDim();
+        if (!locInventDim.wMSLocationId)
+        {
+           
+            locInventDim.wMSLocationId = workCenterLocationId;
+            _prodJournalBOM.InventDimId = InventDim::findOrCreate(locInventDim).inventDimId;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/03/14  AVA_013157_ProdCalcDifference
+    /// </summary>
+    void run()
+    {
+        next run();
+        this.prodTable().AVASetCostCalcDiff();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSumQtyGood</Name>
+				<Source><![CDATA[
+    public Qty avaSumQtyGood()
+    {
+        ProdParmReportFinished locProdParmFinished;
+
+        select sum(QtyGood) from locProdParmFinished
+            where locProdParmFinished.ParmId == this.prodParmReportFinished.ParmId
+                && locProdParmFinished.ProdId == this.prodParmReportFinished.ProdId;
+
+        return locProdParmFinished.QtyGood;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

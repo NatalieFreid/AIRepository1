@@ -1,0 +1,301 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAWHSLocDirActionQueryHelper</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Helper class for cloning and managing WHSLocDirAction queries
+/// Pattern based on WHSLocationDirectiveActionCopier standard class
+/// </summary>
+internal final class AVAWHSLocDirActionQueryHelper
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>cloneQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Clones a WHSLocDirAction query by reading the StrategyQuery container
+    /// </summary>
+    /// <param name="_sourceAction">The source WHSLocDirAction record</param>
+    /// <returns>Packed query container from StrategyQuery field</returns>
+    public static container cloneQuery(WHSLocDirAction _sourceAction)
+    {
+        container packedQuery;
+        
+        try
+        {
+            if (!_sourceAction.RecId)
+            {
+                throw error("@AVAExtension:InvalidSourceRecord");
+            }
+            
+            // Get the packed query from the StrategyQuery field
+            // This field stores the serialized query as a container
+            packedQuery = _sourceAction.StrategyQuery;
+            
+            if (packedQuery == conNull())
+            {
+                // If StrategyQuery is empty, try to build from the current strategy
+                Query query;
+                WHSLocDirStrategy strategy;
+                
+                strategy = WHSLocDirStrategy::construct(_sourceAction);
+                if (strategy)
+                {
+                    query = strategy.getQuery();
+                    if (query)
+                    {
+                        packedQuery = query.pack();
+                    }
+                }
+                
+                if (packedQuery == conNull())
+                {
+                    info("@AVAExtension:NoQueryFound");
+                }
+            }
+        }
+        catch (Exception::Error)
+        {
+            error("@AVAExtension:ErrorCloningQuery");
+        }
+        
+        return packedQuery;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>applyClonedQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Applies a cloned query to a WHSLocDirAction record
+    /// </summary>
+    /// <param name="_targetAction">The target WHSLocDirAction record</param>
+    /// <param name="_packedQuery">The packed query container</param>
+    /// <returns>True if successful, false otherwise</returns>
+    public static boolean applyClonedQuery(WHSLocDirAction _targetAction, container _packedQuery)
+    {
+        boolean ret = false;
+        Query query;
+        
+        try
+        {
+            if (!_targetAction.RecId)
+            {
+                throw error("@AVAExtension:InvalidSourceRecord");
+            }
+            
+            if (_packedQuery == conNull())
+            {
+                warning("@AVAExtension:EmptyQueryContainer");
+                return false;
+            }
+            
+            // Validate the packed query container
+            if (conLen(_packedQuery) == 0)
+            {
+                warning("@AVAExtension:EmptyQueryContainer");
+                return false;
+            }
+            
+            // Unpack and validate the query
+            try
+            {
+                query = new Query(_packedQuery);
+            }
+            catch
+            {
+                error("@AVAExtension:InvalidQueryContainer");
+                return false;
+            }
+            
+            if (query)
+            {
+                // Store the packed query directly in the StrategyQuery field
+                // This is the standard D365FO pattern for WHSLocDirAction
+                _targetAction.selectForUpdate(true);
+                _targetAction.StrategyQuery = _packedQuery;
+                _targetAction.doUpdate();
+                
+                ret = true;
+            }
+            else
+            {
+                warning("@AVAExtension:InvalidQueryContainer");
+            }
+        }
+        catch (Exception::Error)
+        {
+            error("@AVAExtension:ErrorApplyingQuery");
+        }
+        
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyActionRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates a copy of a WHSLocDirAction record with batch enabled
+    /// Pattern based on WHSLocationDirectiveActionCopier
+    /// </summary>
+    /// <param name="_sourceAction">The source action record</param>
+    /// <returns>The new action record, or null if failed</returns>
+    public static WHSLocDirAction copyActionRecord(WHSLocDirAction _sourceAction)
+    {
+        WHSLocDirAction newAction;
+        container packedQuery;
+        boolean queryCloned = false;
+        
+        if (!_sourceAction.RecId)
+        {
+            error("@AVAExtension:InvalidSourceRecord");
+            return newAction;
+        }
+        
+        if (_sourceAction.IsBatchEnabled == NoYes::Yes)
+        {
+            warning("@AVAExtension:BatchAlreadyEnabled");
+            return newAction;
+        }
+        
+        ttsbegin;
+        
+        try
+        {
+            // Step 1: Clone the query BEFORE changing batch flag
+            // This is critical because enabling batch resets the StrategyQuery
+            packedQuery = AVAWHSLocDirActionQueryHelper::cloneQuery(_sourceAction);
+            queryCloned = (packedQuery != conNull() && conLen(packedQuery) > 0);
+            
+            // Step 2: Create new record by copying all fields using buf2Buf
+            buf2Buf(_sourceAction, newAction);
+            
+            // Step 3: Clear RecId and set new values
+            newAction.clear(fieldNum(WHSLocDirAction, RecId));
+            newAction.IsCopied = NoYes::No; // New record is NOT marked as copied
+            
+            // Step 4: Set batch enabled to Yes
+            // IMPORTANT: This will reset StrategyQuery in standard D365FO behavior
+            newAction.IsBatchEnabled = NoYes::Yes;
+            
+            // Step 5: Insert the new record
+            // The insert will trigger standard logic that may reset StrategyQuery
+            newAction.doInsert();
+            
+            // Step 6: Re-apply the cloned query AFTER insert
+            // This overrides the reset that occurred during insert
+            if (queryCloned)
+            {
+                AVAWHSLocDirActionQueryHelper::applyClonedQuery(newAction, packedQuery);
+            }
+            
+            // Step 7: Mark the source record as copied
+            _sourceAction.selectForUpdate(true);
+            _sourceAction.IsCopied = NoYes::Yes;
+            _sourceAction.doUpdate();
+            
+            ttscommit;
+            
+            if (queryCloned)
+            {
+                info(strFmt("@AVAExtension:ActionCopiedSuccess", _sourceAction.LineNum, newAction.LineNum));
+            }
+            else
+            {
+                warning(strFmt("@AVAExtension:ActionCopiedNoQuery", _sourceAction.LineNum, newAction.LineNum));
+            }
+        }
+        catch (Exception::Error)
+        {
+            ttsabort;
+            error("@AVAExtension:ErrorCopyingAction");
+            newAction = null;
+        }
+        
+        return newAction;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Validates that a packed query container is valid
+    /// </summary>
+    /// <param name="_packedQuery">The packed query container to validate</param>
+    /// <returns>True if valid, false otherwise</returns>
+    public static boolean validateQuery(container _packedQuery)
+    {
+        boolean ret = false;
+        Query query;
+        
+        if (_packedQuery == conNull() || conLen(_packedQuery) == 0)
+        {
+            return false;
+        }
+        
+        try
+        {
+            query = new Query(_packedQuery);
+            ret = (query != null);
+        }
+        catch
+        {
+            ret = false;
+        }
+        
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyActionWithValidation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates a copy with additional validation and error handling
+    /// </summary>
+    /// <param name="_sourceAction">The source action record</param>
+    /// <param name="_validateQuery">If true, validates the query before copying</param>
+    /// <returns>The new action record, or null if failed</returns>
+    public static WHSLocDirAction copyActionWithValidation(WHSLocDirAction _sourceAction, boolean _validateQuery = true)
+    {
+        WHSLocDirAction newAction;
+        container packedQuery;
+        
+        if (!_sourceAction.RecId)
+        {
+            error("@AVAExtension:InvalidSourceRecord");
+            return newAction;
+        }
+        
+        // Pre-validation
+        if (_validateQuery)
+        {
+            packedQuery = _sourceAction.StrategyQuery;
+            
+            if (packedQuery != conNull() && !AVAWHSLocDirActionQueryHelper::validateQuery(packedQuery))
+            {
+                error("@AVAExtension:InvalidQueryContainer");
+                return newAction;
+            }
+        }
+        
+        // Perform the copy
+        newAction = AVAWHSLocDirActionQueryHelper::copyActionRecord(_sourceAction);
+        
+        return newAction;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

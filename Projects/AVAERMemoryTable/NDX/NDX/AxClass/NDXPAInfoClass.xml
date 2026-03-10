@@ -1,0 +1,443 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXPAInfoClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 02.11.22
+/// AX2009: classes.NDX_PAInfo
+/// </summary>
+internal final class NDXPAInfoClass
+{
+    #ResAppl
+    #File
+    str infoTxt;
+    str infoTxt2, infoTxt3;
+    NDXPAInfoTable nDX_PAInfoTable;
+    NDXPAInfoTable nDX_PAInfoTableTmp;
+    Map mapProdId;
+    ReqTrans reqTransIssue, reqTransReceipt;
+    ReqTransCov reqTransCov;
+    FormTreeControl treeFormControl;
+    ImageRes                        imageFolder     = 0;
+    ImageRes                        imageCust       = 0;
+    ImageRes                        imageCS         = 0;
+    ImageRes                    image;
+    boolean         maxLevelReached;
+    ProdTable prodTable;
+    NoYes setTemporary;
+    const str reqPlanId = 'Produktpro';
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 02.11.22
+    /// </summary>
+    /// <param name = "_prodTable">ProdTable</param>
+    /// <param name = "_treeFormControl">FormTreeControl</param>
+    /// <param name = "_setTemporary">NoYes</param>
+    protected void new(ProdTable _prodTable, FormTreeControl _treeFormControl = null, NoYes _setTemporary = NoYes::No)
+    {
+        prodTable = _prodTable;
+        treeFormControl = _treeFormControl;
+        setTemporary = _setTemporary;
+        mapProdId = new Map(Types::Int64, Types::Record);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 02.11.22
+    /// </summary>
+    /// <param name = "_prodTable">ProdTable</param>
+    /// <param name = "_treeFormControl">FormTreeControl</param>
+    /// <param name = "_setTemporary">NoYes</param>
+    /// <returns>NDXPAInfoClass</returns>
+    public static NDXPAInfoClass construct(ProdTable _prodTable, FormTreeControl _treeFormControl = null, NoYes _setTemporary = NoYes::No)
+    {
+        NDXPAInfoClass  nDXPAInfoClass;
+        nDXPAInfoClass = new NDXPAInfoClass(_prodTable, _treeFormControl, _setTemporary);
+        return nDXPAInfoClass;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildPATreeStructureFromProdTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 02.11.22
+    /// </summary>
+    /// <param name = "_prodTable">ProdTable</param>
+    /// <param name = "_treeFormControl">FormTreeControl</param>
+    /// <param name = "_setTemporary">NoYes</param>
+    /// <returns>container</returns>
+    public static container buildPATreeStructureFromProdTable(ProdTable _prodTable, FormTreeControl _treeFormControl = null, NoYes _setTemporary = NoYes::No)
+    {
+        NDXPAInfoClass  nDXPAInfoClass = NDXPAInfoClass::construct(_prodTable, _treeFormControl, _setTemporary);
+        return nDXPAInfoClass.buildPATreeStructure();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMasterProd</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 02.11.22
+    /// </summary>
+    /// <param name = "_lProdTable">ProdTable</param>
+    /// <returns>ProdTable</returns>
+    ProdTable getMasterProd(ProdTable _lProdTable)
+    {
+        ProdTable   prodTable1;
+        ProdTable   prodTable2 = _lProdTable;
+        ;
+        if (prodTable2.InventRefId && prodTable2.InventRefType == InventRefType::ProdLine)
+        {
+            infoTxt = strfmt("@NDX:NDXPAInfoTxtHighRankingPO", prodTable2.ProdId, prodTable2.InventRefId, prodTable2.CollectRefLevel);
+            infoTxt2 += infoTxt + #delimiterEnter;
+            prodTable1 = ProdTable::find(prodTable2.InventRefId);
+            nDX_PAInfoTableTmp.clear();
+            //nDX_PAInfoTableTmp.ProdId = prodTable.ProdId;
+            nDX_PAInfoTableTmp.ProdTable = prodTable1.RecId;
+            nDX_PAInfoTableTmp.ReqGroupIdMain   = InventTable::find(prodTable1.ItemId).ReqGroupId;
+            mapProdId.insert(prodTable1.RecId, nDX_PAInfoTableTmp);
+            prodTable2 = this.getMasterProd(prodTable1);
+            nDX_PAInfoTable.ReqGroupIdMain = InventTable::find(prodTable2.ItemId).ReqGroupId;
+        }
+        else
+        {
+            infoTxt = strfmt("@NDX:NDXPAInfoTxtHighestPO", prodTable2.ProdId);
+            infoTxt2 += infoTxt + #delimiterEnter;
+            infoTxt = '       ' + strfmt("@NDX:NDXPAInfoTxtRefTypeContents", prodTable2.InventRefType, prodTable2.InventRefId);
+            infoTxt2 += infoTxt + #delimiterEnter;
+        }
+        return prodTable2;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPaPos</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 02.11.22
+    /// </summary>
+    /// <param name = "lProdTable3">ProdTable</param>
+    /// <param name = "lProdBOM3">ProdBOM</param>
+    /// <returns>ProdTable</returns>
+    [SuppressBPWarning('BPErrorSelectUsingFirstOnly', 'may be one or more')]
+    ProdTable getPaPos(ProdTable lProdTable3, ProdBOM lProdBOM3)
+    {
+        ProdTable   prodTablePos3;
+        InventTable inventTable3 = InventTable::find(lProdBOM3.ItemId);
+
+        // Mit welchem PA wird der Artikel gefertigt
+        nDX_PAInfoTable.ProdStatus = lProdTable3.ProdStatus;
+        if (lProdTable3.status().isAfterOrEqualTo(ProdStatus::ReportedFinished))
+        {
+            // die gleiche InventRefId kann sich auf verschiedene PA's beziehen
+            while select prodTablePos3
+                where prodTablePos3.ItemId      == lProdBOM3.ItemId &&
+                      prodTablePos3.InventRefId == lProdTable3.ProdId
+            {
+                if (mapProdId.exists(lProdTable3.RecId))
+                {
+                    break;
+                }
+            }
+            if (!prodTablePos3)
+            {
+                select prodTablePos3
+                where prodTablePos3.ItemId      == lProdBOM3.ItemId &&
+                      prodTablePos3.InventRefId == lProdTable3.ProdId;
+            }
+            if (prodTablePos3)
+            {
+                infoTxt = strfmt("@NDX:NDXProdIdItemIdReqGroupId", prodTablePos3.ProdId, lProdBOM3.ItemId, inventTable3.ReqGroupId);
+            }
+            else
+            {
+                infoTxt = strfmt("@NDX:NDXProductionOrderNotFound", lProdTable3.ProdStatus, lProdBOM3.ItemId, inventTable3.ReqGroupId);
+            }
+        }
+        else
+        {
+
+            // Bedarfsverursacher ermitteln
+            ReqPlanVersion reqPlanVersion;
+            select * from reqTransIssue
+                where   reqTransIssue.RefId     == lProdBOM3.ProdId
+                    &&  reqTransIssue.ItemId    == lProdBOM3.ItemId
+                    join reqPlanVersion
+                        where reqPlanVersion.RecId == reqTransIssue.PlanVersion
+                            &&  reqPlanVersion.ReqPlanId == reqPlanId;
+
+            select * from reqTransCov
+                where   reqTransCov.IssueRecId  == reqTransIssue.RecId
+                    &&  reqTransCov.ItemId      == lProdBOM3.ItemId;
+
+            // Produktion dieses Artikels über
+            select * from reqTransReceipt
+                where     reqTransReceipt.RecId == reqTransCov.ReceiptRecId;
+            if (reqTransReceipt)
+            {
+                //TODO PaffH: changed relation reqTransReceipt.InventTransId -> InventTransOrigin
+                //26.10.22 passt die ermittelte relation?
+                //select prodTablePos3
+                //where prodTablePos3.ProdId          == reqTransReceipt.RefId &&
+                //      prodTablePos3.InventTransId   == reqTransReceipt.InventTransId;
+                InventTransOrigin inventTransOrigin;
+                select prodTablePos3
+                        where prodTablePos3.ProdId == reqTransReceipt.RefId
+                        join inventTransOrigin
+                            where inventTransOrigin.RecId == reqTransReceipt.inventTransOrigin
+                                && inventTransOrigin.InventTransId == prodTablePos3.InventTransId;
+
+
+                if (reqTransReceipt.RefId)
+                {
+                    infoTxt = strfmt("@NDX:NDXItemReqGroupIdPOSourceOfDemand", prodTablePos3.ProdId, lProdBOM3.ItemId, inventTable3.ReqGroupId);
+                }
+                else
+                {
+                    infoTxt = strfmt("@NDX:NDXItemReqGroupIdSourceOfDemand", reqTransReceipt.RefType, lProdBOM3.ItemId, inventTable3.ReqGroupId);
+                }
+            }
+            else
+            {
+                infoTxt = strfmt("@NDX:NDXItemReqGroupIdWithoutSourceOfDemand", lProdBOM3.ItemId, inventTable3.ReqGroupId);
+            }
+        }
+        return prodTablePos3;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getStructureItemInfo</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 02.11.22
+    /// Ebene durchlaufen
+    /// </summary>
+    /// <param name = "ltreeItemIdx">TreeItemIdx</param>
+    /// <param name = "lProdTable">ProdTable</param>
+    /// <returns>boolean</returns>
+    boolean getStructureItemInfo(TreeItemIdx ltreeItemIdx, ProdTable lProdTable)
+    {
+        ProdTable   prodTablePos2;
+        ProdBOM     lProdBOM2;
+        InventTable lInventTable2;
+        boolean     hasStructure, lHasStructure;
+        TreeItemIdx ltreeItemIdx2;
+        ;
+        //if (mapProdId.exists(lProdTable.RecId))
+        //{
+        //    nDX_PAInfoTableTmp2 = mapProdId.lookup(lProdTable.RecId);
+        //    ProdTable = ProdTable::findRecId(nDX_PAInfoTableTmp2.ProdTable);
+        //}
+        while select lProdBOM2
+            where lProdBOM2.ProdId == lProdTable.ProdId
+            join lInventTable2
+                where lInventTable2.ItemId   == lProdBOM2.ItemId
+            //                   && lInventTable2.ItemType == ItemType::BOM
+        {
+
+            hasStructure = true;
+            prodTablePos2 = this.getPaPos(lProdTable, lProdBOM2);
+            infoTxt2 += infoTxt + #delimiterEnter;
+
+            if (treeFormControl)
+            {
+                image = maxLevelReached ? imageCust : imageFolder;
+
+                ltreeItemIdx2 = SysFormTreeControl::addTreeItem(treeFormControl,
+                                                              infoTxt,
+                                                              ltreeItemIdx,
+                                                              Con2Str([lProdBOM2.RecId, reqTransCov.RecId]),
+                                                              image,
+                                                              !maxLevelReached);
+            }
+            lHasStructure = this.getStructureItemInfo(ltreeItemIdx2, prodTablePos2);
+        }
+        return hasStructure;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildPATreeStructure</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 02.11.22
+    /// </summary>
+    /// <returns>container</returns>
+    public container buildPATreeStructure()
+    {
+
+        ProdTable           prodTableTop;
+        ProdTable           prodTablePos;
+        ProdBOM             lProdBOM;
+        InventTable         lInventTable;
+        InventTable         lInventTableTop;
+        ProdParameters      prodParameters = ProdParameters::find();
+
+//        NDX_UmsatzStructureImageList    umsatzStructureImageList = new NDX_UmsatzStructureImageList();
+//        ImageRes                        imageFolder     = umsatzStructureImageList.image(#ImageFolder);
+//        ImageRes                        imageCust       = umsatzStructureImageList.image(#imageAxapta);
+//        ImageRes                        imageCS         = umsatzStructureImageList.image(#ImageServer);
+        TreeItemIdx                 treeItemIdx;
+        TreeItemIdx                 parentItemIdx;
+        FormTreeItem                formTreeItem;
+        boolean         lFirst = true;
+        boolean         lPrintPAInfo;
+        MapEnumerator   mapEnum;
+
+        nDX_PAInfoTable = NDXPAInfoTable::findOrCreate(prodTable.RecId);
+        nDX_PAInfoTableTmp.setTmp();
+        if (treeFormControl)
+        {
+            treeFormControl.deleteAll();
+        }
+
+        // Ermittlung des obersten Produktionsauftrag
+        nDX_PAInfoTableTmp.clear();
+        nDX_PAInfoTableTmp.ProdTable = prodTable.RecId;
+        nDX_PAInfoTableTmp.ReqGroupIdMain   = InventTable::find(prodTable.ItemId).ReqGroupId;
+        if (prodTable.InventRefId && prodTable.InventRefType == InventRefType::ProdLine)
+        {
+            mapProdId.insert(prodTable.RecId, nDX_PAInfoTableTmp);
+            prodTableTop = this.getMasterProd(prodTable);
+            nDX_PAInfoTable.ProdTableMain = prodTableTop.RecId;
+        }
+        else
+        {
+            prodTableTop = prodTable;
+            nDX_PAInfoTable.ProdTableMain = 0;
+            mapProdId.insert(prodTable.RecId, nDX_PAInfoTableTmp);
+        }
+        nDX_PAInfoTable.PAInfo = (prodTableTop.InventRefType == InventRefType::Sales) ? SalesLine::findInventTransId(prodTableTop.InventRefTransId).NDX_PAInfo : '';
+
+        lInventTableTop = InventTable::find(prodTableTop.ItemId);
+        // alle Stücklistenpositionen mit HFM zum aktuellen (obersten) PA
+        while select lProdBOM
+        where lProdBOM.ProdId == prodTableTop.ProdId
+        join lInventTable
+            where lInventTable.ItemId == lProdBOM.ItemId
+//               && lInventTable.ItemType == ItemType::BOM
+        {
+            if (lFirst)
+            {
+                lFirst = false;
+                infoTxt = strfmt("@NDX:NDXManufacturingMainItem", prodTableTop.ProdId, prodTableTop.ItemId, lInventTableTop.ReqGroupId);
+                infoTxt2 += infoTxt + #delimiterEnter;
+                if (treeFormControl)
+                {
+                    parentItemIdx = SysFormTreeControl::addTreeItem(treeFormControl,
+                                                                infoTxt,
+                                                                FormTreeAdd::Root,
+                                                                Con2Str([0,0]),
+                                                                imageFolder,
+                                                                true);
+                }
+            }
+
+            prodTablePos = this.getPaPos(prodTableTop, lProdBOM);
+
+            infoTxt2 += infoTxt + #delimiterEnter;
+
+            if (treeFormControl)
+            {
+                image = maxLevelReached ? imageCust : imageFolder;
+                treeItemIdx = SysFormTreeControl::addTreeItem(treeFormControl,
+                                                          infoTxt,
+                                                          parentItemIdx,
+                                                          Con2Str([lProdBOM.RecId, reqTransCov.RecId]),
+                                                          image,
+                                                          !maxLevelReached);
+            }
+            if (prodTable.RecId == prodTablePos.RecId)
+            {
+                if (treeFormControl)
+                {
+                    formTreeItem = treeFormControl.getItem(treeItemIdx);
+                    formTreeItem.stateBold(true);
+                    treeFormControl.setItem(formTreeItem);
+                }
+            }
+
+            // nächste Ebene
+            this.getStructureItemInfo(treeItemIdx, prodTablePos);
+
+        }
+
+        if (treeFormControl)
+        {
+            SysFormTreeControl::expandTree(treeFormControl, treeFormControl.getRoot());
+        }
+        ttsbegin;
+
+        // handelt es sich um eine permanente oder temporäre Datenermittlung?
+        if (setTemporary == NoYes::Yes)
+        {
+            if (nDX_PAInfoTable.RecId == 0)
+            {
+                nDX_PAInfoTable.Temporary = NoYes::Yes;
+            }
+        }
+        else
+        {
+            nDX_PAInfoTable.Temporary = NoYes::No;
+        }
+
+        // Prüfung: ist die PA-Info zu drucken?
+        lPrintPAInfo = nDX_PAInfoTable.PAInfo != '';
+        if (lPrintPAInfo)   // auf allen Ebenen muss die Dispo-Steuerungsgruppe EB* sein
+        {
+            mapEnum = mapProdId.getEnumerator();
+            while (mapEnum.moveNext())
+            {
+                nDX_PAInfoTableTmp = mapEnum.currentValue();
+                lPrintPAInfo = lPrintPAInfo && (nDX_PAInfoTableTmp.ReqGroupIdMain like prodParameters.NDXReqGroupIdFilter);
+            }
+        }
+        nDX_PAInfoTable.PrintPAInfo = lPrintPAInfo;
+        nDX_PAInfoTable.write();
+        ttscommit;
+        return [nDX_PAInfoTable, infoTxt2];
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAllPAInfo</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 28.12.22
+    /// AX2009: classes.NDX_PA_Info::getAllPAInfo()
+    /// </summary>
+    /// <param name = "_fdsProdTable">FormDataSource ProdTable</param>
+    /// <param name = "_temporary">NoYes (default: Yes)</param>
+    static public void getAllPAInfo(FormDataSource _fdsProdTable, NoYes _temporary = NoYes::Yes)
+    {
+        for (ProdTable prodTable = _fdsProdTable.getFirst(); prodTable; prodTable = _fdsProdTable.getNext())
+        {
+            NDXPAInfoClass::buildPATreeStructureFromProdTable(prodTable, null, _temporary);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

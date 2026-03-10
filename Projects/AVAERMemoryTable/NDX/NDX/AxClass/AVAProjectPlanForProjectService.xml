@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAProjectPlanForProjectService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///  AVA/WEN 2024/09/20
+/// </summary>
+public class AVAProjectPlanForProjectService extends SysOperationServiceBase
+{
+
+    str                     packedQuery;
+    AVAHierarchyTemplateId  templateId;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>startOperation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  AVA/WEN 2024/09/20
+    /// </summary>
+    /// <param name = "_dataContract">AVAProjectPlanForProjectContract</param>
+    public void startOperation(AVAProjectPlanForProjectContract _dataContract)
+    {
+        System.Exception ex;
+        #OCCRetryCount
+
+        packedQuery             = _dataContract.parmPackedQuery();
+        templateId              = _dataContract.parmTemplateId();
+
+        try
+        {
+            this.processOperation();
+        }
+
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+
+        catch (Exception::Error)
+        {
+            error("@NDX:NXAErrorOccured");
+            retry;
+        }
+
+        catch (Exception::CLRError)
+        {
+            ex = ClrInterop::getLastException();
+
+            if (ex != null)
+            {
+                ex = ex.get_InnerException();
+                if (ex != null)
+                {
+                    error("@NDX:NXAErrorOccured");
+                }
+            }
+
+            retry;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processOperation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  AVA/WEN 2024/09/20
+    /// </summary>
+    private void processOperation()
+    {
+        Query                           query = new Query(SysOperationHelper::base64Decode(packedQuery));
+        QueryRun                        queryRun;
+        ProjTable                       projTable;
+        Hierarchy                       destHierarchy, sourceHierarchy = Hierarchy::find(templateId);
+        ProjPlanVersionDetail           projPlanVersionDetail;
+        ProjPlanVersion                 projPlanVersion;
+        HierarchyLinkTable              hierarchyLinkTable;
+
+
+        queryrun = new QueryRun(query);
+
+        while (queryRun.next())
+        {
+            projTable           = queryRun.get(tableNum(ProjTable));
+
+            select firstonly destHierarchy
+                join hierarchyLinkTable where hierarchyLinkTable.RefTableId == tableNum(projTable)
+                                           && hierarchyLinkTable.RefRecId == projTable.RecId
+                                           && hierarchyLinkTable.HierarchyId == destHierarchy.HierarchyId;
+            if (!destHierarchy)
+            {
+                destHierarchy = this.createDestinationHierarchy(projTable);
+            }
+
+            projPlanVersionDetail = projPlanVersionDetail::findProjectDraftVersion(projTable.ProjId);
+            if (!projPlanVersionDetail)
+            {
+                ProjPlanVersionsManager::createDraft(destHierarchy.HierarchyId,
+                                                ProjTable.ProjId,
+                                                ProjTable.PSASchedStartDate,
+                                                ProjTable.PSASchedEndDate,
+                                                ProjTable.ProjId             );
+            }
+ 
+            projPlanVersion = ProjPlanVersion::getRootTask(destHierarchy.HierarchyId);
+
+            ProjPlanVersionsManager::preImportHierarchy(sourceHierarchy.HierarchyId, destHierarchy.HierarchyId, projPlanVersion.HierarchyTaskId);
+
+            ProjPlanVersionsManager::importTemplateHierarchy(sourceHierarchy.HierarchyId,
+                                                    destHierarchy.HierarchyId,
+                                                    projPlanVersion.HierarchyTaskId,
+                                                    true);
+            projPlanVersionDetail = projPlanVersionDetail::findProjectDraftVersion(projTable.ProjId);
+
+            ProjPlanVersionsManager::publishVersion(projPlanVersionDetail.ProjId, projPlanVersionDetail.VersionId);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createDestinationHierarchy</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  AVA/WEN 2024/09/20
+    /// </summary>
+    /// <param name = "_projTable">ProjTable</param>
+    /// <returns>Hierarchy</returns>
+    protected Hierarchy createDestinationHierarchy(ProjTable    _projTable)
+    {
+        //create Hierarchy record
+        HierarchyCreate hierarchyCreate = HierarchyCreate::construct(HierarchyType::Project);
+        hierarchyCreate.parmSourceCommon(_projTable);
+        hierarchyCreate.run();
+
+        return hierarchyCreate.parmHierarchy();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

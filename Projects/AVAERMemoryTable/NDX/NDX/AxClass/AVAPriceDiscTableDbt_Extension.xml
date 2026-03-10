@@ -1,0 +1,509 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPriceDiscTableDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(tableStr(PriceDiscTable))]
+final class AVAPriceDiscTableDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initFromPriceDiscAdm</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed frpm AVA
+    /// </summary>
+    /// <param name = "tmpPriceDiscAdm">tmpPriceDiscAdm</param>
+    void  initFromPriceDiscAdm(PriceDiscAdmTrans  tmpPriceDiscAdm)
+    {
+        next initFromPriceDiscAdm(tmpPriceDiscAdm);
+        this.AVAGraduatedPrice = tmpPriceDiscAdm.AVAGraduatedPrice;
+        this.AVAEffectivePrice = tmpPriceDiscAdm.AVAEffectivePrice;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAchargeAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_calculatedDate">TransDate, this.ToDate as default</param>
+    /// <returns>Amount</returns>
+    display public Amount AVAchargeAmount(TransDate     _calculatedDate = this.ToDate)
+    {
+        return PriceDiscTable::avaCalcHKCostPrice(this,_calculatedDate);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAchargeAmountInventUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_calculatedDate">TransDate, this.ToDate as default</param>
+    /// <returns>Amount</returns>
+    display public Amount AVAchargeAmountInventUnit(TransDate     _calculatedDate = this.ToDate)
+    {
+        return PriceDiscTable::avaHK2CostPriceInventUnit(this,_calculatedDate);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcDiscountedAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calculates the amount minus the discount
+    /// </summary>
+    /// <param name = "_transDate">TransDate, today as default</param>
+    /// <returns>Amount</returns>
+    public Amount avaCalcDiscountedAmount(TransDate _transDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        Amount avaDiscountedAmount =  this.avaCalcPricePerUnit(_transDate) * this.PriceUnit - this.avaCalcDiscAmount(_transDate);
+
+        return avaDiscountedAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcDiscPercent</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calculates the total discount percentage
+    /// </summary>
+    /// <returns>DiscPct</returns>
+    public DiscPct avaCalcDiscPercent()
+    {
+        DiscPct avaDiscPercent = this.Percent1 + this.Percent2;
+
+        return avaDiscPercent;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>relLineDisc</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_calculatedDate"></param>
+    /// <returns></returns>
+    public DiscPct relLineDisc(TransDate        _calculatedDate = this.ToDate)
+    {
+        PriceDiscParameters     parameters = PriceDiscParameters::construct();
+        parameters.parmModuleType(ModuleInventPurchSales::Purch);
+        parameters.parmInventDim(this.inventDim());
+        parameters.parmUnitID(this.UnitId);
+        parameters.parmPriceDiscDate(_calculatedDate);
+        parameters.parmQty(this.QuantityAmountFrom);
+        parameters.parmAccountNum(this.AccountRelation);
+        parameters.parmCurrencyCode(this.Currency);
+
+        PriceDisc priceDisc = PriceDisc::newFromPriceDiscParameters(parameters);
+        priceDisc.findLineDisc(InventTable::find(this.ItemRelation).purchLineDisc(), VendTable::find(this.AccountRelation).LineDisc);
+
+        return priceDisc.lineDiscPct();
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcDiscAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calculates the discount amount
+    /// </summary>
+    /// <param name = "_transDate">TransDate, today as default</param>
+    /// <returns>DiscAmount</returns>
+    public DiscAmount avaCalcDiscAmount(TransDate _transDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        DiscAmount avaDiscAmount =  this.avaCalcPricePerUnit(_transDate) * this.PriceUnit * (this.relLineDisc(_transDate)/100);
+
+        return avaDiscAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcChargedAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calculates the discount amount
+    /// </summary>
+    /// <param name = "_transDate">TransDate, today as default</param>
+    /// <returns>DiscAmount</returns>
+    public Amount avaCalcChargedAmount(TransDate _transDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        DiscAmount avaChargedAmount =  this.avaCalcPricePerUnit(_transDate) * this.priceUnit;
+
+        return avaChargedAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcPricePerUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calculates the price per single Unit
+    /// </summary>
+    /// <param name = "_transDate">TransDate, today as default</param>
+    /// <returns>Amount</returns>
+    public Amount  avaCalcPricePerUnit(TransDate _transDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        Amount avaPricePerUnit = this.Amount;
+        CurrencyCode avaAccountingCurrency = Ledger::accountingCurrency(CompanyInfo::current());
+
+        avaPricePerUnit = this.priceUnit != 0 ? this.Amount / this.PriceUnit :   this.Amount ;
+
+        if(this.Currency != avaAccountingCurrency)
+        {
+            avaPricePerUnit = CurrencyExchangeHelper::curAmount(avaPricePerUnit, avaAccountingCurrency, _transDate);
+        }
+
+        return avaPricePerUnit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcalcChargeAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>Amount</returns>
+    public Amount AVAcalcChargeAmount()
+    {
+        Amount                  chargeAmount, priceAmount, resultAmount;
+        AVAChargeSpecification  chargeSpecification;
+
+        chargeSpecification = AVAChargeSpecification::findChargeSpecifTradeAgreement(this);
+
+        PriceUnit      priceUnitPurch = UnitOfMeasureConverter::convert(chargeSpecification.PriceUnit,UnitOfMeasure::findBySymbol(chargeSpecification.CalculationUnit).RecId,UnitOfMeasure::findBySymbol(this.UnitId).RecId,NoYes::No,InventTable::find(this.AccountRelation).Product);
+
+        chargeAmount = priceUnitPurch !=0 ? chargeSpecification.Charge / priceUnitPurch : chargeSpecification.Charge;
+        priceAmount  = this.PriceUnit != 0 ? this.Amount / this.PriceUnit : this.Amount;
+
+        resultAmount = this.PriceUnit != 0 ? (chargeAmount + priceAmount)*this.PriceUnit : (chargeAmount + priceAmount);
+        return resultAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcHKCostPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calculates the HK purchase price based on PriceDiscTable
+    /// </summary>
+    /// <param name = "_priceDiscTable">PriceDiscTable</param>
+    /// <param name = "_calculatedDate">TransDate, _priceDiscTable.FromDate as default</param>
+    /// <returns>Amount</returns>
+    public static Amount avaCalcHKCostPrice(PriceDiscTable _priceDiscTable, TransDate   _calculatedDate = _priceDiscTable.FromDate)
+    {
+        Amount                  chargeAmount, priceAmount, resultAmount, discAmount;
+        AVAChargeSpecification  chargeSpecification;
+
+        chargeSpecification = AVAChargeSpecification::findChargeSpecifTradeAgreement(_priceDiscTable);
+
+        priceAmount  = _priceDiscTable.avaCalcPricePerUnit() * _priceDiscTable.priceUnit;
+        discAmount   = _priceDiscTable.avaCalcDiscountedAmount();               // adjust amount for calculation with percentage price discounts
+        chargeAmount = _priceDiscTable.avaCalcHKChargesAmount(discAmount,_calculatedDate);      // calculates charges
+
+        resultAmount = chargeAmount + discAmount;
+
+        return resultAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaHK2CostPriceInventUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_priceDiscTable">_priceDiscTable</param>
+    /// <param name = "_calculatedDate">_calculatedDate</param>
+    /// <returns></returns>
+    public static Amount avaHK2CostPriceInventUnit(PriceDiscTable  _priceDiscTable, TransDate   _calculatedDate = _priceDiscTable.FromDate)
+    {
+        Amount              HK2Amount, HK2AmountInventUnit;
+        InventTable         locInventTable = InventTable::find(_priceDiscTable.ItemRelation);
+        InventTableModule   inventTableModuleInvent = locInventTable.inventTableModuleInvent();
+        PriceUnit           priceUnitInvent;
+
+        priceUnitInvent  = UnitOfMeasureConverter::convert(_priceDiscTable.PriceUnit,UnitOfMeasure::findBySymbol(_priceDiscTable.UnitId).RecId,UnitOfMeasure::findBySymbol(inventTableModuleInvent.UnitId).RecId,NoYes::No,locInventTable.Product);
+        HK2Amount        = PriceDiscTable::avaCalcHKCostPrice(_priceDiscTable,_calculatedDate);
+        HK2AmountInventUnit =  priceUnitInvent != 0 ? (HK2Amount / priceUnitInvent)  * inventTableModuleInvent.PriceUnit : HK2Amount;
+      //  priceUnit
+      //  HK2AmountInventUnit = 
+
+        return HK2AmountInventUnit;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcHKChargesAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calculates HK charges for current record with proivided amount
+    /// </summary>
+    /// <param name = "_lineAmount">Amount, default is record.Amount</param>
+    /// <param name = "_validDate">TransDate, default is today</param>
+    /// <returns>Amount</returns>
+    public Amount avaCalcHKChargesAmount(
+        Amount _lineAmount = this.Amount,
+        TransDate _validDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        Amount                  locAmount;
+        MarkupAutoLine          avaAutoLine;
+        MarkupAutoTable         avaAutoTable;
+        VendGroupId             locVendGroupId;
+        ItemGroupId             locItemGroupId;
+        MarkupTrans             locMarkupTrans;
+        LineAmount              discountedAmount = this.avaCalcDiscountedAmount(_validDate);
+        ;
+
+        if(this.AccountCode == PriceDiscPartyCodeType::GroupId)
+        {
+            locVendGroupId  = this.AccountRelation;
+        }
+        else if(this.AccountCode == PriceDiscPartyCodeType::Table)
+        {
+            locVendGroupId  = VendTable::find(this.AccountRelation).VendGroup;
+        }
+
+        //if(this.ItemCode == PriceDiscProductCodeType::GroupId)
+        //{
+        //    locItemGroupId  = this.ItemRelation;
+        //}
+        if(this.ItemCode == PriceDiscProductCodeType::Table)
+        {
+            locItemGroupId  = InventTable::find(this.ItemRelation).inventTableModulePurch().MarkupGroupId;
+        }
+
+        while select * from avaAutoLine
+            join avaAutoTable
+            where avaAutoLine.TableTableId == avaAutoTable.TableId
+            && avaAutoLine.TableRecId == avaAutoTable.RecId
+            && avaAutoTable.ModuleType == MarkupModuleType::Vend
+            && (avaAutoTable.AccountCode == TableGroupAll::All
+                || (avaAutoTable.AccountCode == TableGroupAll::GroupId
+                    && avaAutoTable.AccountRelation == locVendGroupId)
+                || (avaAutoTable.AccountCode == TableGroupAll::Table
+                    && avaAutoTable.AccountRelation == this.AccountRelation))
+            && (avaAutoTable.ItemCode == TableGroupAll::All
+                || (avaAutoTable.ItemCode == TableGroupAll::GroupId
+                    && avaAutoTable.ItemRelation == locItemGroupId)
+                ||(avaAutoTable.ItemCode == TableGroupAll::Table
+                    && avaAutoTable.ItemRelation == this.ItemRelation))
+        {  
+            if((avaAutoTable.ModuleCategory == HeadingLine::Heading
+                    && (avaAutoLine.MarkupCategory != MarkupCategory::Percent
+                    || avaAutoLine.AVAFromDate > _validDate
+                    || (avaAutoLine.AVAToDate < _validDate
+                        && avaAutoLine.AVAToDate != dateNull())))
+                || (avaAutoTable.ModuleCategory == HeadingLine::Line
+                    && ((avaAutoLine.MarkupCategory != MarkupCategory::AVAMTZ
+                            && avaAutoLine.MarkupCategory != MarkupCategory::Pcs
+                            && avaAutoLine.MarkupCategory != MarkupCategory::Percent)
+                        || (avaAutoLine.AVAFromDate > _validDate  && _validDate != dateNull())
+                        || (avaAutoLine.AVAToDate < _validDate
+                            && avaAutoLine.AVAToDate != dateNull()))))
+            {
+                continue;
+            }
+
+            locMarkupTrans.initFromMarkupAutoLine(avaAutoLine);
+
+            AVAChargeSpecification chargeSpecificationLoc = AVAChargeSpecification::find(avaAutoTable.AccountCode, avaAutoTable.AccountRelation, avaAutoTable.ItemCode, avaAutoTable.ItemRelation, AVAChargeType::MTZ, _validDate);
+
+            switch (locMarkupTrans.MarkupCategory)
+            {
+                case MarkupCategory::AVAMTZ :
+                    if(chargeSpecificationLoc && !this.AVAEffectivePrice)
+                    {
+                        PriceUnit      priceUnitPurch = UnitOfMeasureConverter::convert(chargeSpecificationLoc.PriceUnit,UnitOfMeasure::findBySymbol(chargeSpecificationLoc.CalculationUnit).RecId,UnitOfMeasure::findBySymbol(this.UnitId).RecId,NoYes::No,InventTable::find(this.AccountRelation).Product);
+                        locMarkupTrans.Value = (priceUnitPurch != 0 ?  chargeSpecificationLoc.Charge / priceUnitPurch  : chargeSpecificationLoc.Charge) * this.PriceUnit;
+                        locMarkupTrans.AVACalcQty = chargeSpecificationLoc.CalcQty;
+                        locMarkupTrans.CurrencyCode = chargeSpecificationLoc.CurrencyCode;
+                        locAmount +=    locMarkupTrans.Value;
+                    }
+                    break;
+                    
+                case MarkupCategory::Pcs:
+                    InventTableModule          inventTableModulePurch = InventTable::find(this.ItemRelation).inventTableModulePurch();
+                    PriceUnit   purchPriceUnit =  inventTableModulePurch.priceUnit();
+                    UnitOfMeasureSymbol      purchUnitId    = inventTableModulePurch.UnitId;
+                    PriceUnit   tradeArgmPriceUnit;
+
+                    if (this.UnitId != purchUnitId)
+                    {
+                        tradeArgmPriceUnit = UnitOfMeasureConverter::convert(purchPriceUnit,UnitOfMeasure::findBySymbol(purchUnitId).RecId,UnitOfMeasure::findBySymbol(this.UnitId).RecId,NoYes::No,InventTable::find(this.AccountRelation).Product);
+                    }
+                    else
+                    {
+                        tradeArgmPriceUnit = purchPriceUnit;
+                    }
+                    locAmount += (tradeArgmPriceUnit != 0 ? locMarkupTrans.Value / tradeArgmPriceUnit : locMarkupTrans.Value) * this.priceUnit;
+                    break;
+                case MarkupCategory::Percent:
+                    locAmount += discountedAmount * avaAutoLine.value / 100;
+                    break;
+            }
+           
+        }
+
+        return locAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaFindActivePriceDiscTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds the active record for specified parameters and different date
+    /// </summary>
+    /// <param name = "_priceDiscTable">PriceDiscTable</param>
+    /// <param name = "_transDate">TransDate</param>
+    /// <returns>PriceDiscTable</returns>
+    static PriceDiscTable avaFindActivePriceDiscTable(
+        PriceDiscTable  _priceDiscTable,
+        TransDate       _transDate)
+    {
+        PriceDiscTable      priceDiscTableLoc;
+        
+        select firstonly priceDiscTableLoc
+            where priceDiscTableLoc.Relation                    == _priceDiscTable.Relation                                              &&
+                    priceDiscTableLoc.ItemCode                  == _priceDiscTable.ItemCode                                              &&
+                    priceDiscTableLoc.ItemRelation              == _priceDiscTable.ItemRelation                                          &&
+                    priceDiscTableLoc.AccountCode               == _priceDiscTable.AccountCode                                           &&
+                    priceDiscTableLoc.AccountRelation           == _priceDiscTable.AccountRelation                                       &&
+                    priceDiscTableLoc.UnitId                    == _priceDiscTable.UnitId                                                &&
+                    priceDiscTableLoc.InventDimId               == _priceDiscTable.InventDimId                                           &&
+                    priceDiscTableLoc.QuantityAmountFrom        == _priceDiscTable.QuantityAmountFrom                                    &&
+                    priceDiscTableLoc.QuantityAmountTo          == _priceDiscTable.QuantityAmountTo                                      &&
+                    //priceDiscTableLoc.QuantityAmountFrom           <= _priceDiscTable.QuantityAmountFrom                                    &&
+                    //((_priceDiscTable.QuantityAmountFrom < priceDiscTableLoc.QuantityAmountTo)   || !priceDiscTableLoc.QuantityAmountTo)    &&
+                    (_transDate                                 >= priceDiscTableLoc.FromDate  || ! priceDiscTableLoc.FromDate)          &&
+                    (_transDate                                 <= priceDiscTableLoc.ToDate    || ! priceDiscTableLoc.ToDate);
+
+        return priceDiscTableLoc;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaFindPriceDiscTablePurchLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds a PriceDiscTable record for specified Item and Account relation with a certain date
+    /// </summary>
+    /// <param name = "_purchLine">PurchLine</param>
+    /// <param name = "_selectForUpdate">boolean</param>
+    /// <returns>PriceDiscTable</returns>
+    public static PriceDiscTable avaFindPriceDiscTablePurchLine(
+        PurchLine   _purchLine,
+        boolean     _selectForUpdate = false)
+    {
+        PriceDiscTable avaPriceDiscTable;
+
+        if(_selectForUpdate)
+        {
+            avaPriceDiscTable.selectForUpdate(_selectForUpdate);
+        }
+
+        select firstonly avaPriceDiscTable
+            order by avaPriceDiscTable.FromDate desc
+            where   avaPriceDiscTable.Relation          == PriceType::PricePurch
+            &&      avaPriceDiscTable.ItemCode          == PriceDiscProductCodeType::Table
+            &&      avaPriceDiscTable.ItemRelation      == _purchLine.ItemId
+            &&      avaPriceDiscTable.AccountCode       == PriceDiscPartyCodeType::Table
+            &&      avaPriceDiscTable.AccountRelation   == _purchLine.VendAccount
+            &&      (avaPriceDiscTable.FromDate         <= DateTimeUtil::date(_purchLine.purchTable().CreatedDateTime)
+                ||  !avaPriceDiscTable.FromDate)
+            &&      (avaPriceDiscTable.ToDate          >= DateTimeUtil::date(_purchLine.purchTable().CreatedDateTime)
+                ||  !avaPriceDiscTable.ToDate);
+
+        return avaPriceDiscTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaItemDescription</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns the îtem description of name if the ItemCode is of PriceDiscProductCodeType::Table
+    /// </summary>
+    /// <param name = "_languageId">LanguageId</param>
+    /// <returns>Description</returns>
+    public Description avaItemDescription(LanguageId _languageId = CompanyInfo::languageId())
+    {
+        if(this.ItemCode == PriceDiscProductCodeType::Table)
+        {
+            return InventTable::find(this.ItemRelation).itemDescriptionOrName(_languageId);
+        }
+        else
+        {
+            return '';
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaItemModelNumber</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns the InventTable NDXModelNumber if the ItemCode is of PriceDiscProductCodeType::Table
+    /// </summary>
+    /// <returns>NDXModelNumber</returns>
+    public NDXModelNumber avaItemModelNumber()
+    {
+        if(this.ItemCode == PriceDiscProductCodeType::Table)
+        {
+            return InventTable::find(this.ItemRelation).NDXModelNumber;
+        }
+        else
+        {
+            return '';
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAdisplaychargedAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>Amount</returns>
+    display public Amount AVAdisplaychargedAmount()
+    {
+        return this.AVAchargeAmountInventUnit(this.ToDate);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

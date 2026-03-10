@@ -1,0 +1,343 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>AVAReplenishRawMaterial</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+/// <summary>
+/// AVAReplenishRawMaterial form
+/// </summary>
+[Form]
+public class AVAReplenishRawMaterial extends FormRun
+{
+    ProdTable   prodTableLoc;
+    ProdBOM     prodBOMLoc;
+    FormDataSource fdsLoc;
+    container   queryRangeLoc;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// init method for AVAReplenishRawMaterial form
+    /// </summary>
+    void init()
+    {
+        super();
+
+        if (element.args().record())
+        {
+            switch (element.args().record().TableId)
+            {
+                case tablenum(ProdTable):
+                    prodTableLoc      = element.args().record();
+            }
+
+            switch (element.args().callerName())
+            {
+                case 'ProdTableOverview':
+                    FormRun formRunLoc = element.args().caller();
+                    fdsLoc          = formRunLoc.datasource('ProdBOM');
+                    prodBOMLoc = fdsLoc.getFirst();
+
+                    while(prodBOMLoc)
+                    {
+                        if(!conFind(queryRangeLoc, prodBOMLoc.ItemId))
+                        {
+                            queryRangeLoc += queryValue(prodBOMLoc.ItemId);
+                        }
+
+                        prodBOMLoc = fdsLoc.getNext();
+                    }
+                    break;
+            }
+        }
+        else
+        {
+            Error::wrongUseOfFunction(funcName());
+        }  
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void closeOk()
+    {
+        super();
+
+        this.replenishRawMaterial();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>replenishRawMaterial</Name>
+				<Source><![CDATA[
+    public void replenishRawMaterial()
+    {
+        AVAReplenishRawMaterial replenishRawMaterial = AVAReplenishRawMaterial::construct();
+
+        replenishRawMaterial.parmProdTable(prodTableLoc);
+        replenishRawMaterial.parmItemId(ItemId.valueStr());
+        replenishRawMaterial.parmOprNum(OprNum.value());
+        replenishRawMaterial.parmQty(Quantity.realValue());
+
+        replenishRawMaterial.startOperation();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>ItemId</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Replaced normal with InventTable lookup
+        /// </summary>
+        public void lookup()
+        {
+            InventItemIdLookupSimple inventItemIdLookupSimple = InventItemIdLookupSimple::construct();
+
+            Query query = new Query();
+            QueryBuildDataSource qbds;
+            QueryBuildRange qbr;
+            SysTableLookup sysTableLookup = SysTableLookup::newParameters(tableNum(InventItemIdLookupSimpleView), this);
+            
+            sysTableLookup.addLookupField(fieldNum(InventItemIdLookupSimpleView, ItemId), true);
+            sysTableLookup.addLookupField(fieldNum(InventItemIdLookupSimpleView, NDXModelNumber));
+            sysTableLookup.addLookupField(fieldNum(InventItemIdLookupSimpleView, NameAlias));
+            sysTableLookup.addLookupField(fieldNum(InventItemIdLookupSimpleView, ProductName));
+            sysTableLookup.addLookupField(fieldNum(InventItemIdLookupSimpleView, ItemGroupId));
+            sysTableLookup.addLookupField(fieldNum(InventItemIdLookupSimpleView, KCS_KAOItemState));
+            sysTableLookup.addLookupField(fieldNum(InventItemIdLookupSimpleView, AVANetWeight));
+
+            qbds = query.addDataSource(tableNum(InventItemIdLookupSimpleView));
+            qbds.addOrderByField(fieldNum(InventItemIdLookupSimpleView, ItemId));
+
+            qbr = qbds.addRange(fieldNum(InventItemIdLookupSimpleView, ItemId));
+            qbr.value(con2Str(queryRangeLoc));
+
+            sysTableLookup.parmQuery(query);
+            sysTableLookup.performFormLookup();
+
+            //super();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// modified method
+        /// </summary>
+        /// <returns>boolean</returns>
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+
+            UnitId.text(InventTable::find(this.valueStr()).bomUnitId());
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>OprNum</Name>
+				<Type>Integer</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Lookup filtered prodRoute
+        /// </summary>
+        public void lookup()
+        {
+            Query query = new Query();
+            QueryBuildDataSource qbds;
+            QueryBuildRange qbr;
+            SysTableLookup sysTableLookup = SysTableLookup::newParameters(tableNum(ProdRoute), this);
+            
+            sysTableLookup.addLookupField(fieldNum(ProdRoute, ProdId));
+            sysTableLookup.addLookupField(fieldNum(ProdRoute, OprNum), true);
+            sysTableLookup.addLookupField(fieldNum(ProdRoute, OprPriority));
+            sysTableLookup.addLookupField(fieldNum(ProdRoute, OprNumNext));
+
+            qbds = query.addDataSource(tableNum(ProdRoute));
+            qbds.addOrderByField(fieldNum(ProdRoute, OprNum));
+
+            qbr = qbds.addRange(fieldNum(ProdRoute, ProdId));
+            qbr.value(queryValue(prodTableLoc.ProdId));
+
+            sysTableLookup.parmQuery(query);
+            sysTableLookup.performFormLookup();
+
+            //super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>OkButton</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// clicked method of Button OkButton
+        /// </summary>
+        public void clicked()
+        {
+            super();
+            element.closeOk();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>CancelButton</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// clicked method of Button CancelButton
+        /// </summary>
+        public void clicked()
+        {
+            super();
+            element.closeCancel();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<Caption xmlns="">@NDX:NXAReplenishRawMaterial</Caption>
+		<Pattern xmlns="">Dialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">Dialog</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>Parameters</Name>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Pattern>FieldsFieldGroups</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ItemId</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<FilterExpression>%1</FilterExpression>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>ItemId</ExtendedDataType>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>Quantity</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<AllowNegative>No</AllowNegative>
+						<ExtendedDataType>Qty</ExtendedDataType>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>UnitId</Name>
+						<AllowEdit>No</AllowEdit>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>BOMUnitId</ExtendedDataType>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormIntegerControl">
+						<Name>OprNum</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Integer</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>OprNum</ExtendedDataType>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+				</Controls>
+				<ColumnsMode>Fill</ColumnsMode>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<Type>ButtonGroup</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonControl">
+						<Name>OkButton</Name>
+						<Type>Button</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DefaultButton>Yes</DefaultButton>
+						<Text>@NDX:NXAOkButton</Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonControl">
+						<Name>CancelButton</Name>
+						<Type>Button</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Text>@NDX:NXACancelButton</Text>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

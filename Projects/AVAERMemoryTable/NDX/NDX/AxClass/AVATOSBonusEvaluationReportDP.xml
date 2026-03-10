@@ -1,0 +1,614 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVATOSBonusEvaluationReportDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     Data provider class for <c>AVATOSBonusEvaluationReport</c> SSRS report
+/// </summary>
+/// <remarks>
+///     This is the Data provider class for the <c>AVATOSBonusEvaluationReport</c> SSRS Report.
+/// </remarks>
+[
+    SRSReportQueryAttribute(queryStr(AVATOSBonusEvaluationReportQry)),
+    SRSReportParameterAttribute(classStr(AVATOSBonusEvaluationReportContract))
+]
+class AVATOSBonusEvaluationReportDP extends SrsReportDataProviderPreProcess //SRSReportDataProviderBase
+{
+    AVATOSBonusEvaluationReportHeaderTmp    clsHeaderTmp;
+    AVATOSBonusEvaluationReportHeaderTmp    clsHeaderTmpBase;
+    AVATOSBonusEvaluationReportDetailTmp    clsDetailTmp;
+    AVATOSBonusEvaluationReportDetailTmp    clsDetailTmpBase;
+
+    CompanyInfo                             clsCompanyInfo;
+    CompanyImage                            clsCompanyLogo;
+    Bitmap                                  clsCompanyLogoBitmap;
+    container                               clsAllBPCompanies;
+
+    SysUserId                               clsCurUserId;
+    DirPartyName                            clsCurUserName;
+
+    SysDocuBrandDetails                     clsSysDocuBrandDetails;
+    
+    AVATOSBonusEvaluationReportContract     clsReportContract;
+    RefRecId                                clsSalesQuotationTableRecId;
+
+    CustAccount                             contractCustAccount;
+    AVATOSId                                contractAVATOSId;
+    AVAEvaluationDateFrom                   contractAVAEvaluationDateFrom;
+    AVAEvaluationDateTo                     contractAVAEvaluationDateTo;
+    AVADetailedSummarized                   contractPrintMode;
+
+    KCS_BOSTrans_B                          clsKCS_BOSTrans_B;
+    KCS_TOSTable                            clsKCS_TOSTable;
+    CustTable                               clsCustTable;
+
+    int                                     clsAdditionalInfoLevel;
+
+    str                                     clsTransDateRange;
+    str                                     clsCustAccountRange;
+    str                                     clsAVATOSIdRange;
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initialize</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>initialize</c> method.
+    /// </summary>
+    /// <remarks>
+    ///     This method can be overridden by application developers to add any initialization logic needed.
+    ///     This method is invoked by framework before <c>processReport</c> report is invoked.
+    /// </remarks>
+    public void initialize()
+    {
+        this.setContractAndParamValues();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>processReport</c> method.
+    /// </summary>
+    public void processReport()
+    {
+        Query                   locQuery;
+        QueryBuildDataSource    locQBDSQuotation;
+        QueryRun                locQueryRun;
+        QueryBuildRange         locQueryBuildRange;
+        str                     locDateTimeRange;
+
+        QueryBuildDataSource    locQBDSRequest;
+        QueryBuildDataSource    locQBDSSalesGroup;
+
+        locQuery = this.parmQuery();
+
+        /*
+        locQuery            = new Query();
+        locQBDSQuotation    = locQuery.addDataSource(tableNum(SalesQuotationTable));
+        locQBDSRequest      = locQBDSQuotation.addDataSource(tableNum(KCS_KBVRequestTable));
+        locQBDSRequest.addLink(fieldnum(SalesQuotationTable, KCS_KBVRequestId), fieldnum(KCS_KBVRequestTable, KCS_KBVRequestId));
+
+        locQBDSRequest.fetchmode(QueryFetchMode::One2One);
+        locQBDSRequest.joinMode(JoinMode::InnerJoin);
+        //locQBDSRequest.relations(false);
+
+        locQBDSSalesGroup = locQBDSQuotation.addDataSource(tableNum(CommissionSalesGroup));
+        locQBDSSalesGroup.addLink(fieldnum(SalesQuotationTable, KCS_CommissSalesGroup), fieldnum(CommissionSalesGroup, GroupId));
+
+        locQBDSSalesGroup.fetchmode(QueryFetchMode::One2One);
+        locQBDSSalesGroup.joinMode(JoinMode::InnerJoin);
+
+        // SalesQuotationTable
+        if (clsQuotationId)
+        {
+            locQueryBuildRange  = locQuery.dataSourceTable(tableNum(SalesQuotationTable)).addRange(fieldNum(SalesQuotationTable, QuotationId));
+            locQueryBuildRange.value(SysQuery::value(clsQuotationId));
+        }
+        if (clsSmmBusRelAccount)
+        {
+            locQueryBuildRange  = locQuery.dataSourceTable(tableNum(SalesQuotationTable)).addRange(fieldNum(SalesQuotationTable, BusRelAccount));
+            locQueryBuildRange.value(SysQuery::value(clsSmmBusRelAccount));
+        }
+        if (clsCustAccount)
+        {
+            locQueryBuildRange  = locQuery.dataSourceTable(tableNum(SalesQuotationTable)).addRange(fieldNum(SalesQuotationTable, CustAccount));
+            locQueryBuildRange.value(SysQuery::value(clsCustAccount));
+        }
+        if (clsKCS_CommissSalesGroup)
+        {
+            locQueryBuildRange  = locQuery.dataSourceTable(tableNum(SalesQuotationTable)).addRange(fieldNum(SalesQuotationTable, KCS_CommissSalesGroup));
+            locQueryBuildRange.value(SysQuery::value(clsKCS_CommissSalesGroup));
+        }
+        if (clsKCS_CommissSalesGroupLike)
+        {
+            locQueryBuildRange  = locQuery.dataSourceTable(tableNum(CommissionSalesGroup)).addRange(fieldNum(CommissionSalesGroup, Name));
+            locQueryBuildRange.value(SysQuery::valueLike(clsKCS_CommissSalesGroupLike));
+        }
+        if (clsQuotationCreatedDateTime)
+        {
+            locQueryBuildRange  = locQuery.dataSourceTable(tableNum(SalesQuotationTable)).addRange(fieldNum(SalesQuotationTable, CreatedDateTime));
+            locDateTimeRange    = strFmt("(%1 >= %2)", fieldStr(SalesQuotationTable, CreatedDateTime), DateTimeUtil::toStr(clsQuotationCreatedDateTime));
+            locQueryBuildRange.value(locDateTimeRange);
+        }
+        // KCS_KBVRequestTable
+        if (clsRequestDirPartyId)
+        {
+            locQueryBuildRange  = locQuery.dataSourceTable(tableNum(KCS_KBVRequestTable)).addRange(fieldNum(KCS_KBVRequestTable, DirPartyId));
+            locQueryBuildRange.value(SysQuery::value(clsRequestDirPartyId));
+        }
+        if (    clsKCS_KBVReceiptDate   != dateNull()
+            &&  clsKCS_KBVReceiptDateTo != dateNull())
+        {
+            locQueryBuildRange  = locQuery.dataSourceTable(tableNum(KCS_KBVRequestTable)).addRange(fieldNum(KCS_KBVRequestTable, KCS_KBVReceiptDate));
+            locQueryBuildRange.value(SysQueryRangeUtil::dateRange(clsKCS_KBVReceiptDate, clsKCS_KBVReceiptDateTo));
+        }
+        else
+        {
+            if (clsKCS_KBVReceiptDate != dateNull())
+            {
+                locQueryBuildRange  = locQuery.dataSourceTable(tableNum(KCS_KBVRequestTable)).addRange(fieldNum(KCS_KBVRequestTable, KCS_KBVReceiptDate));
+                locQueryBuildRange.value(SysQueryRangeUtil::dateRange(clsKCS_KBVReceiptDate, dateMax()));
+            }
+            else if (clsKCS_KBVReceiptDateTo != dateNull())
+            {
+                locQueryBuildRange  = locQuery.dataSourceTable(tableNum(KCS_KBVRequestTable)).addRange(fieldNum(KCS_KBVRequestTable, KCS_KBVReceiptDate));
+                locQueryBuildRange.value(SysQueryRangeUtil::dateRange(dateNull(), clsKCS_KBVReceiptDateTo));
+            }
+        }
+        if (clsKCS_KBVRequestID)
+        {
+            locQueryBuildRange  = locQuery.dataSourceTable(tableNum(KCS_KBVRequestTable)).addRange(fieldNum(KCS_KBVRequestTable, KCS_KBVRequestID));
+            locQueryBuildRange.value(SysQuery::value(clsKCS_KBVRequestID));
+        }
+        if (clsKCS_KBVBuildingProjectID)
+        {
+            locQueryBuildRange  = locQuery.dataSourceTable(tableNum(KCS_KBVRequestTable)).addRange(fieldNum(KCS_KBVRequestTable, KCS_KBVBuildingProjectID));
+            locQueryBuildRange.value(SysQuery::value(clsKCS_KBVBuildingProjectID));
+        }
+        */
+        locQueryRun    = new queryRun(locQuery);
+
+        ttsbegin;
+
+        this.insertTmpTableDataHeader();
+
+        while (locQueryRun.next())
+        {
+            clsKCS_BOSTrans_B   = locQueryRun.get(tableNum(KCS_BOSTrans_B));
+            clsKCS_BOSTrans_B   = KCS_BOSTrans_B::findRecId(clsKCS_BOSTrans_B.RecId);
+
+            // insert data
+            if(clsKCS_BOSTrans_B.RecId)
+            {
+                this.insertTmpTableDataDetails();
+            }
+        }
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHeaderTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Gets the full data from the <c>AVATOSBonusEvaluationReportHeaderTmp</c> temporary table.
+    /// </summary>
+    /// <returns>
+    ///     The <c>AVATOSBonusEvaluationReportHeaderTmp</c> temporary table.
+    /// </returns>
+    [SRSReportDataSetAttribute(tableStr(AVATOSBonusEvaluationReportHeaderTmp))]
+    public AVATOSBonusEvaluationReportHeaderTmp getHeaderTmp()
+    {
+        AVATOSBonusEvaluationReportHeaderTmp locTmpTable;
+
+        this.setTransactionConnection(locTmpTable);
+
+        select locTmpTable;
+
+        return locTmpTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAVASalesQuotationRequestStatsReportDetailTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Gets the full data from the <c>AVATOSBonusEvaluationReportDetailTmp</c> temporary table.
+    /// </summary>
+    /// <returns>
+    ///     The <c>AVATOSBonusEvaluationReportDetailTmp</c> temporary table.
+    /// </returns>
+    [SRSReportDataSetAttribute(tableStr(AVATOSBonusEvaluationReportDetailTmp))]
+    public AVATOSBonusEvaluationReportDetailTmp getAVASalesQuotationRequestStatsReportDetailTmp()
+    {
+        AVATOSBonusEvaluationReportDetailTmp locTmpTable;
+
+        this.setTransactionConnection(locTmpTable);
+
+        select  locTmpTable;
+        
+        return locTmpTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setTransactionConnection</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Set the database transaction connection for a record from the connection associated with the report.
+    /// </summary>
+    /// <param name = "_reportRecord">
+    ///     A record to set database transaction for.
+    /// </param>
+    final protected void setTransactionConnection(Common _reportRecord)
+    {
+        var connection = this.parmUserConnection();
+
+        if (connection)
+        {
+            _reportRecord.setConnection(connection);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setContractAndParamValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>processReport</c> method.
+    /// </summary>
+    public void setContractAndParamValues()
+    {
+        Query                   locQuery;
+        QueryBuildDataSource    locQueryBuildDataSource;
+        QueryBuildRange         locQueryBuildRange;
+
+        CustTable               locCustTable;
+
+
+        clsCompanyInfo                  = CompanyInfo::find();
+        clsCompanyLogo                  = CompanyImage::findByRecord(clsCompanyInfo);
+        clsCompanyLogoBitmap            = clsCompanyLogo.Image;
+        clsAllBPCompanies               = AVAKBVBuildingProjectHelper::getAllBPCompanies();
+        clsSysDocuBrandDetails          = SysDocuBrandDetails::getBrandDocument(this.parmDocuBrandContract());
+        
+        clsCurUserId                    = curUserId();
+        clsCurUserName                  = DirPersonuser::userId2Name(clsCurUserId);
+        
+        clsReportContract               = this.parmDataContract() as AVATOSBonusEvaluationReportContract;
+        contractPrintMode               = clsReportContract.parmPrintMode();
+        contractCustAccount             = clsReportContract.parmCustAccount();
+        contractAVATOSId                = clsReportContract.parmTOSId();
+        contractAVAEvaluationDateFrom   = clsReportContract.parmEvaluationDateFrom();
+        contractAVAEvaluationDateTo     = clsReportContract.parmEvaluationDateTo();
+
+        locQuery = this.parmQuery();
+
+        // KCS_BOSTrans_B
+        // fix status value
+        locQueryBuildDataSource = locQuery.dataSourceTable(tableNum(KCS_BOSTrans_B));
+        locQueryBuildRange      = SysQuery::findOrCreateRange(locQueryBuildDataSource, fieldNum(KCS_BOSTrans_B, TransStatus));
+        locQueryBuildRange.value(SysQuery::value(AVACBSTransStatus::JournalPosted));
+
+        locQueryBuildRange = SysQuery::findOrCreateRange(locQueryBuildDataSource, fieldNum(KCS_BOSTrans_B, TransDate));
+        if (    contractAVAEvaluationDateFrom   != dateNull()
+            &&  contractAVAEvaluationDateTo     != dateNull())
+        {
+            locQueryBuildRange.value(SysQueryRangeUtil::dateRange(contractAVAEvaluationDateFrom, contractAVAEvaluationDateTo));
+        }
+        else
+        {
+            if (contractAVAEvaluationDateFrom != dateNull())
+            {
+                locQueryBuildRange.value(SysQueryRangeUtil::dateRange(contractAVAEvaluationDateFrom, dateMax()));
+            }
+            else if (contractAVAEvaluationDateTo != dateNull())
+            {
+                locQueryBuildRange.value(SysQueryRangeUtil::dateRange(dateNull(), contractAVAEvaluationDateTo));
+            }
+        }
+        
+        if (    contractAVAEvaluationDateFrom   == dateNull()
+            &&  contractAVAEvaluationDateTo     == dateNull())
+        {
+            if (locQueryBuildRange)
+            {
+                clsTransDateRange = locQueryBuildRange.value();
+            }
+        }
+
+        locQueryBuildRange = SysQuery::findOrCreateRange(locQueryBuildDataSource, fieldNum(KCS_BOSTrans_B, RecipientAC));
+        if (contractCustAccount)
+        {
+            locQueryBuildRange.value(SysQuery::value(contractCustAccount));
+        }
+        if (locQueryBuildRange)
+        {   // check if query multi value
+            clsCustAccountRange     = locQueryBuildRange.value();
+            locCustTable            = CustTable::find(clsCustAccountRange);
+            if(locCustTable.RecId)
+            {
+                contractCustAccount = locCustTable.AccountNum;
+                clsReportContract.parmCustAccount(contractCustAccount);
+                clsCustAccountRange = '';
+            }
+        }
+        
+        locQueryBuildRange = SysQuery::findOrCreateRange(locQueryBuildDataSource, fieldNum(KCS_BOSTrans_B, TOSId));
+        if (contractAVATOSId)
+        {
+            locQueryBuildRange.value(SysQuery::value(contractAVATOSId));
+        }
+        if (locQueryBuildRange)
+        {   // check if query multi value
+            clsAVATOSIdRange        = locQueryBuildRange.value();
+            clsKCS_TOSTable         = KCS_TOSTable::find(clsAVATOSIdRange);
+            if(clsKCS_TOSTable.RecId)
+            {
+                contractAVATOSId    = clsKCS_TOSTable.TosId;
+                clsReportContract.parmCustAccount(contractAVATOSId);
+                clsAVATOSIdRange    = '';
+            }
+        }
+
+        this.parmQuery(locQuery);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertTmpTableData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>insertTmpTableData</c> method.
+    /// </summary>
+    public void insertTmpTableData()
+    {
+        ttsbegin;
+        if(clsKCS_BOSTrans_B.RecId)
+        {
+            // Header infos
+            this.insertTmpTableDataHeader();
+            
+            if(clsReportContract.parmPrintMode() == AVADetailedSummarized::Detailed)
+            {
+                // perhaps more records to build
+            }
+            
+            // Detail infos
+            this.insertTmpTableDataDetails();
+        }
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initHeaderTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>initHeaderTmp</c> method.
+    /// </summary>
+    /// <param name="_avaReportLineType">
+    ///    <c>AVAReportLineType</c> as type
+    /// </param>
+    /// <param name="_additionalInfoNo">
+    ///    <c>int</c> as type
+    /// </param>
+    public void initHeaderTmp(  AVAReportLineType   _avaReportLineType  = AVAReportLineType::HeaderLine, 
+                                int                 _additionalInfoNo   = 0                             )
+    {
+        clsAdditionalInfoLevel                  = _additionalInfoNo;
+
+        this.setTransactionConnection(clsHeaderTmp);
+        
+        clsHeaderTmp.clear();
+        clsHeaderTmp.AVAReportLineType          = _avaReportLineType;
+        clsHeaderTmp.AdditionalInfoNo           = clsAdditionalInfoLevel;
+
+        clsHeaderTmp.HeaderRecId                = 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initDetailTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>initDetailTmp</c> method.
+    /// </summary>
+    /// <param name="_avaReportLineType">
+    ///    <c>AVAReportLineType</c> as type
+    /// </param>
+    /// <param name="_additionalInfoNo">
+    ///    <c>int</c> as type
+    /// </param>
+    public void initDetailTmp(  AVAReportLineType   _avaReportLineType  = AVAReportLineType::DetailLine, 
+                                int                 _additionalInfoNo   = 200                           )
+    {
+        clsAdditionalInfoLevel                  = _additionalInfoNo;
+        
+        this.setTransactionConnection(clsDetailTmp);
+
+        clsDetailTmp.clear();
+        clsDetailTmp.AVAReportLineType          = _avaReportLineType;
+        clsDetailTmp.AdditionalInfoNo           = _additionalInfoNo;
+
+        clsDetailTmp.DetailRecId                = clsKCS_BOSTrans_B.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertTmpTableDataHeader</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>insertTmpTableDataHeader</c> method.
+    /// </summary>
+    public void insertTmpTableDataHeader()
+    {
+        FreeTxt                     locFreeTxt;
+
+        locFreeTxt = '';
+
+        this.initHeaderTmp(AVAReportLineType::HeaderLine, 0);
+
+        clsHeaderTmp.CompanyLogo                        = clsCompanyLogoBitmap;
+        clsHeaderTmp.CompanyGroupLogo                   = clsSysDocuBrandDetails.Image1;
+        clsHeaderTmp.CompanyNotesLine1                  = clsSysDocuBrandDetails.NotesLine1;
+        clsHeaderTmp.CompanyPromotionImage              = clsSysDocuBrandDetails.Image2;
+        clsHeaderTmp.CompanyNotesLine2                  = clsSysDocuBrandDetails.NotesLine2;
+        clsHeaderTmp.CompanyFooterImage                 = clsSysDocuBrandDetails.Image3;
+        clsHeaderTmp.CompanyNotesLine3                  = clsSysDocuBrandDetails.NotesLine3;
+        clsHeaderTmp.CompanyAddressLine                 = clsSysDocuBrandDetails.AVASender;
+        clsHeaderTmp.CompanyName                        = clsCompanyInfo.name();
+        clsHeaderTmp.CompanyPostalAddressing            = clsCompanyInfo.postalAddress().Address;
+        clsHeaderTmp.CompanyPostalAddressingSingleLine  = AVAHelperClass::adress2singleLineFormat('', clsHeaderTmp.CompanyPostalAddressing);
+
+        clsHeaderTmp.CurUserId                          = clsCurUserId;
+        clsHeaderTmp.CurUserName                        = clsCurUserName;
+            
+        // parameter values
+        clsHeaderTmp.AVAEvaluationDateFrom              = contractAVAEvaluationDateFrom;
+        clsHeaderTmp.AVAEvaluationDateTo                = contractAVAEvaluationDateTo;
+        clsHeaderTmp.CustAccount                        = contractCustAccount;
+        clsHeaderTmp.TOSId                              = contractAVATOSId;
+        clsHeaderTmp.AVADetailedSummarized              = contractPrintMode;
+
+        // query ranges
+        clsHeaderTmp.TransDateRange                     = clsTransDateRange;
+        clsHeaderTmp.CustAccountRange                   = clsCustAccountRange;
+        clsHeaderTmp.TOSIdRange                         = clsAVATOSIdRange;
+
+
+        if(clsHeaderTmp.CustAccount)
+        {
+            clsCustTable            = CustTable::find(clsHeaderTmp.CustAccount);
+            if(clsCustTable.RecId)
+            {
+                clsHeaderTmp.CustAccountCustName    = clsCustTable.name();
+                clsHeaderTmp.CustAccountCustNames   = '';
+            }
+        }
+        
+        if(clsHeaderTmp.TOSId)
+        {
+            clsKCS_TOSTable                 = KCS_TOSTable::find(clsHeaderTmp.TOSId);
+            if(clsKCS_TOSTable.RecId)
+            {
+                clsHeaderTmp.TOSId          = clsKCS_TOSTable.TOSId;
+                clsHeaderTmp.TOSDescription = clsKCS_TOSTable.Description;
+            }
+        }
+        
+        clsHeaderTmp.TransDateRange         = clsTransDateRange;
+        clsHeaderTmp.CustAccountRange       = clsCustAccountRange;
+
+        clsHeaderTmp.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertTmpTableDataDetails</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>insertTmpTableDataDetails</c> method.
+    /// </summary>
+    public void insertTmpTableDataDetails()
+    {
+        CustTable               locCustTable;
+        InventSite              locInventSite;
+        InventTable             locInventTable;
+
+        smmBusRelTable          locsmmBusRelTable;
+        LogisticsPostalAddress  locLogisticsPostalAddress;
+        
+        NDXModelNumberHandler   locNDXModelNumberHandler;
+        
+        locNDXModelNumberHandler = NDXModelNumberHandler::construct();
+
+        this.initDetailTmp(AVAReportLineType::DetailLine, 400);
+
+        if (clsKCS_BOSTrans_B.CustAccount)
+        {
+            clsDetailTmp.CustAccount                = clsKCS_BOSTrans_B.CustAccount;
+            locCustTable                            = CustTable::find(clsDetailTmp.CustAccount);
+            clsDetailTmp.CustAccountCustName        = locCustTable.name();
+            locCustTable.clear();
+        }
+
+        if (clsKCS_BOSTrans_B.RecipientAC)
+        {
+            clsDetailTmp.RecipientAC                = clsKCS_BOSTrans_B.RecipientAC;
+            locCustTable                            = CustTable::find(clsDetailTmp.RecipientAC);
+            clsDetailTmp.RecipientACCustName        = locCustTable.name();
+            locCustTable.clear();
+        }
+
+        clsDetailTmp.InvoiceId                      = clsKCS_BOSTrans_B.SalesInvoiceId;
+        clsDetailTmp.InvoiceDate                    = clsKCS_BOSTrans_B.SalesInvoiceDate;
+        clsDetailTmp.InventSiteId                   = clsKCS_BOSTrans_B.InventSiteId;
+        if(clsDetailTmp.InventSiteId)
+        {
+            clsDetailTmp.InventSiteName             = InventSite::find(clsDetailTmp.InventSiteId).Name;
+        }
+                         
+        clsDetailTmp.ItemId                         = clsKCS_BOSTrans_B.ItemId;
+        if(clsDetailTmp.ItemId)
+        {
+            locInventTable                          = InventTable::find(clsDetailTmp.ItemId);
+            clsDetailTmp.ItemName                   = locInventTable.itemName();
+            clsDetailTmp.ItemNameAlias              = locInventTable.NameAlias;
+        }
+        clsDetailTmp.CurrencyCode                   = clsKCS_BOSTrans_B.CurrencyCode;
+        clsDetailTmp.AmountCur                      = clsKCS_BOSTrans_B.AmountCur;
+        clsDetailTmp.CalcRate                       = clsKCS_BOSTrans_B.CalcRate;
+        clsDetailTmp.AmountCurBase                  = clsKCS_BOSTrans_B.AmountCurBase;
+        clsDetailTmp.TypeID                         = clsKCS_BOSTrans_B.TypeID;
+        if(clsDetailTmp.TypeID)
+        {
+            clsDetailTmp.TypeDescription            = KCS_BOSTypeParameters::find(clsDetailTmp.TypeID, clsKCS_BOSTrans_B.RelationType).Description;
+        }
+        clsDetailTmp.ConditionModeID                = clsKCS_BOSTrans_B.ConditionModeID;
+        if(clsDetailTmp.ConditionModeID)
+        {
+            clsDetailTmp.ConditionModeDescription   = KCS_BOSConditionMode_B::find(clsDetailTmp.ConditionModeID).Description;
+        }
+        clsDetailTmp.ConditionTypeID                = clsKCS_BOSTrans_B.ConditionTypeID;
+        if(clsDetailTmp.ConditionTypeID)
+        {
+            clsDetailTmp.ConditionTypeDescription   = KCS_BOSConditionType::find(clsDetailTmp.ConditionTypeID).Description;
+        }
+        clsDetailTmp.TransDate                      = clsKCS_BOSTrans_B.TransDate;
+        clsDetailTmp.TransStatus                    = clsKCS_BOSTrans_B.TransStatus;
+        
+
+        clsDetailTmp.insert();
+            
+        clsAdditionalInfoLevel++;
+        
+        /*
+        // insert partitioner
+        this.initDetailTmp(AVAReportLineType::Partitioner, clsAdditionalInfoLevel);
+        clsDetailTmp.insert();
+        clsAdditionalInfoLevel++;
+        */
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

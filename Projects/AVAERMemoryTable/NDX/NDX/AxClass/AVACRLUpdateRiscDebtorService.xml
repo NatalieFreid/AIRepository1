@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACRLUpdateRiscDebtorService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extends class SysOperationServiceBase
+/// </summary>
+class AVACRLUpdateRiscDebtorService extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// process method
+    /// </summary>
+    /// <param name = "_contract">AVACRLUpdateRiscDebtorContract</param>
+    public void process(AVACRLUpdateRiscDebtorContract _contract)
+    {
+        CustAccount                     riscDebtor = _contract.parmRiscDebtor();
+        DataAreaId                      company = _contract.parmCompany();
+        Query                           query = new Query(SysOperationHelper::base64Decode(_contract.parmQuery()));
+        CredManCreditLimitCustGroup     creditLimitCustGroup;
+        QueryRun                        queryRun;
+
+        if (riscDebtor)
+        {
+            this.updateRiscDebtor(riscDebtor, company);
+        }
+        else
+        {
+            queryRun = new QueryRun(query);
+            while (queryRun.next())
+            {
+                creditLimitCustGroup = queryRun.get(tableNum(CredManCreditLimitCustGroup));
+                this.updateRiscDebtor(creditLimitCustGroup.AVARiscDebtor, creditLimitCustGroup.AVACompanyId);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateRiscDebtor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// updates specified risk debtor
+    /// </summary>
+    /// <param name = "_riscDebtor">CustAccount</param>
+    /// <param name = "_company">DataAreaId</param>
+ 
+    internal void updateRiscDebtor(CustAccount _riscDebtor, DataAreaId _company)
+    {
+        CredManCreditLimitCustGroupLine creditLimitCustGroupLine;
+        CredManCreditLimitCustGroup     creditLimitCustGroup;
+        CustTable                       memberCustTable, riscCustTable;
+
+        //riscCustTable   = CustTable::find(_riscDebtor);
+        riscCustTable = CustTable::findByCompany(_company, _riscDebtor);
+
+        ttsbegin;
+        //select forupdate creditLimitCustGroup where creditLimitCustGroup.AVARiscDebtor == _riscDebtor;
+        select forupdate firstonly creditLimitCustGroup where creditLimitCustGroup.AVARiscDebtor == _riscDebtor 
+                                                           && creditLimitCustGroup.AVACompanyId == _company;
+        if (creditLimitCustGroup)
+        {
+            creditLimitCustGroup.CreditMax = riscCustTable.AVAcredManCreditMax();
+            creditLimitCustGroup.update();
+        }
+        ttscommit;
+
+        while select creditLimitCustGroup where creditLimitCustGroup.AVARiscDebtor == _riscDebtor
+                                             && creditLimitCustGroup.AVACompanyId == _company
+            join creditLimitCustGroupLine where creditLimitCustGroupLine.CreditLimitCustGroup == creditLimitCustGroup.RecId
+                                             && creditLimitCustGroupLine.CustAccount != _riscDebtor
+        {
+            //select forupdate memberCustTable where memberCustTable.AccountNum == creditLimitCustGroupLine.CustAccount;
+            select forupdate firstonly memberCustTable where memberCustTable.AccountNum == creditLimitCustGroupLine.CustAccount
+                                                          && memberCustTable.DataAreaId == _company; 
+            if (memberCustTable)
+            {
+                if (memberCustTable.CreditMax != riscCustTable.CreditMax || memberCustTable.AVACRLCreditBlocked != riscCustTable.AVACRLCreditBlocked || memberCustTable.MandatoryCreditLimit != riscCustTable.MandatoryCreditLimit || memberCustTable.CredManCreditLimitExpiryDate != dateNull()
+                || memberCustTable.AVAcredManCreditMax() != riscCustTable.AVAcredManCreditMax())
+                {
+                    ttsbegin;
+                    memberCustTable.selectForUpdate();
+                    memberCustTable.CreditMax                       = riscCustTable.AVAcredManCreditMax();
+                    memberCustTable.AVACRLCreditBlocked             = riscCustTable.AVACRLCreditBlocked;
+                    memberCustTable.MandatoryCreditLimit            = riscCustTable.MandatoryCreditLimit;
+                    memberCustTable.CredManCreditLimitExpiryDate    = dateNull();
+                    memberCustTable.CredManGroupId                  = riscCustTable.CredManGroupId;
+                    memberCustTable.CreditRating                    = riscCustTable.CreditRating;
+                    memberCustTable.Update();
+                    ttscommit;
+                }
+                else
+                {
+                    ttsbegin;
+                    memberCustTable.selectForUpdate();
+                    memberCustTable.CredManGroupId                  = riscCustTable.CredManGroupId;
+                    memberCustTable.CreditRating                    = riscCustTable.CreditRating;
+                    memberCustTable.Update();
+                    ttscommit;
+                }
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

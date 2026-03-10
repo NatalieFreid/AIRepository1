@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAInventDataAdjSumUpCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN/2025/09/16 AVA_013109_InventSumTransfer
+/// </summary>
+[ExtensionOf(classStr(InventDataAdjSumUp))]
+final class AVAInventDataAdjSumUpCls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>AVApromptPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/09/16 AVA_013109_InventSumTransfer
+    /// </summary>
+    /// <param name = "tmpFormLookUp">TmpFormLookUp</param>
+    /// <returns>boolean</returns>
+    static boolean  AVApromptPrice(TmpFormLookUp tmpFormLookUp)
+    {
+        Dialog          dialog  = new Dialog("@NDX:NXAInventSumDateTrans");
+
+        TmpFormLookUp   tmp;
+        AVAInventSumType sumType;
+
+        tmp.setTmpData(tmpFormLookUp);
+        select firstonly tmp;
+        if (!tmp)
+        {
+            return checkFailed("@SYS2674");
+        }
+
+        DialogField dlgFldType = dialog.addFieldValue(enumStr(AVAInventSumType), AVAInventSumType::Final, "@NDX:NXAInventSumType");
+
+        if (! dialog.run())
+        {
+            return false;
+        }
+
+        if (dialog.closedOk())
+        {
+            sumType = dlgFldType.value();
+        }
+
+
+        InventDataAdjSumUp::AVAadjustAmountServer(tmp, sumType);
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAAdjustAmountServer</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/09/16 AVA_013109_InventSumTransfer
+    /// </summary>
+    /// <param name = "tmpFormLookUp">TmpFormLookUp</param>
+    /// <param name = "_sumType">AVAInventSumType</param>
+    static void AVAAdjustAmountServer(TmpFormLookUp tmpFormLookUp, AVAInventSumType _sumType = AVAInventSumType::Final)
+    {
+        InventDataAdjSumUp  inventDataAdjSumUp = InventDataAdjSumUp::construct();
+
+        inventDataAdjSumUp.setTmpFormLookUp(tmpFormLookUp);
+
+        inventDataAdjSumUp.AVAsetAdjustmentValue(_sumType);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAsetAdjustmentValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/09/16 AVA_013109_InventSumTransfer
+    /// </summary>
+    /// <param name = "_sumType">AVAInventSumType</param>
+    void AVAsetAdjustmentValue(AVAInventSumType _sumType = AVAInventSumType::Final)
+    {
+        TmpFormLookUp   tmp;
+        AVAInventSumDateTrans sumDateTrans;
+        InventDim InventDim;
+        Qty physQty;
+        Amount physValue, adj;
+
+        tmp.setTmpData(tmpFormLookUp);
+
+        while select forupdate tmp
+        {
+            select sum(PhysQty), sum(PhysValue) from sumDateTrans 
+                join InventDim 
+                where sumDateTrans.ItemId == tmp.itemId
+                                 && sumDateTrans.Type == _sumType
+                                 && InventDim.inventDimId == tmp.InventDimId
+                                 && InventDim.InventSiteId == sumDateTrans.InventSiteId
+                                 && InventDim.InventLocationId == sumDateTrans.InventLocationId
+                                 && InventDim.wMSLocationId == sumDateTrans.WMSLocationId;
+            physQty = sumDateTrans.PhysQty;
+            physValue = sumDateTrans.PhysValue;
+            if (physQty > 0)
+            {
+                adj = (physValue / PhysQty * tmp.qty) - tmp.postedValue;
+                this.setAdjustment(tmp,CurrencyExchangeHelper::amount(adj));
+            }
+            else
+            {
+                this.setAdjustment(tmp,0);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

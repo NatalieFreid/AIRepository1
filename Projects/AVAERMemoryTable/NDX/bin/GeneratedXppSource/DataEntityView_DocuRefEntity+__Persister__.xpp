@@ -1,0 +1,496 @@
+Private class __Persister__
+extends SysDataEntityPersister
+{
+    // Data source ID macros
+    #define.DocuRef_ID(1)
+    #define.DocuValue_ID(2)
+    
+    // Data source buffers
+    DocuRef m_DocuRef;
+    DocuValue m_DocuValue;
+    
+    protected void mapEntityToDataSources(DataEntityRuntimeContext _entityCtx)
+    {
+        this.validateFieldFailed = false;
+        this.mapEntityToDataSource(_entityCtx, _entityCtx.getRuntimeContextByName('DocuRef'));
+        this.mapEntityToDataSource(_entityCtx, _entityCtx.getRuntimeContextByName('DocuValue'));
+        this.mapEntityToDataSourcesExtensions(_entityCtx);
+        if(this.validateFieldFailed)
+        {
+            throw Exception::ViewDataSourceValidation;
+        }
+    }
+    private boolean isAnyFieldSet_DS2(DocuValue _docuValue, DataEntityDataSourceRuntimeContext _dataSourceCtx, DataEntityRuntimeContext _entityCtx)
+    {
+        boolean rtrn = false;
+        if(_docuValue.isFieldSet(fieldnum(DocuValue,Type)))
+        {
+            return true;
+        }
+        if(_docuValue.isFieldSet(fieldnum(DocuValue,StorageProviderId)))
+        {
+            return true;
+        }
+        rtrn = this.isAnyFieldSet_Extensions(_entityCtx, _dataSourceCtx, _docuValue) ? true : false;
+        return rtrn;
+    }
+    private void foreignKeyPropagation_DS1(DataEntityRuntimeContext _entityCtx, DocuRef _docuRef)
+    {
+        DocuValue docuValue_ = _entityCtx.getRuntimeContextByName('DocuValue').getBuffer();
+        // FK propagation of references to an optional read-only PK data source will be done if
+        //   1. conflict detection has been invoked against the PK data source, or
+        //   2. the PK data source buffer is not null.
+        if(_entityCtx.getRuntimeContextByName('DocuValue').conflictDetectionInvoked() || docuValue_)
+        {
+            // do not set foreign key values if they are same to make sure validation is not fired unless value changed
+            if(_docuRef.ValueRecId != docuValue_.RecId)
+            {
+                _docuRef.ValueRecId = docuValue_.RecId;
+            }
+        }
+        
+        // foreign key value validation
+        boolean validationFailed = false;
+        DataEntityDatabaseOperation dataSourceDBOperation = _entityCtx.getRuntimeContextByName('DocuRef').getDatabaseOperation();
+        DocuRefEntity dataEntityRecord = _entityCtx.getEntityRecord();
+        
+        if(!dataEntityRecord.skipDataSourceValidateField(fieldnum(DocuRefEntity, ValueRecId)))
+        {
+            if(!this.validateDataSourceField(dataSourceDBOperation, 'DocuRef.ValueRecId', _docuRef, fieldnum(DocuRef, ValueRecId), true/*disallowEditOnCreate*/, true/*disallowEdit*/, false/*callValidateField*/, 1))
+            {
+                validationFailed = true;
+            }
+        }
+        
+        if(validationFailed)
+        {
+            throw Exception::ViewDataSourceValidation;
+        }
+    }
+    protected boolean saveDataSources(DataEntityRuntimeContext _entityCtx)
+    {
+        boolean rtrn = true;
+        DataEntityDataSourceRuntimeContext _dataSourceCtx = null;
+        // save data sources in topological order.
+        {
+            // save/update data sources referenced by [DocuRef].
+            {
+                // handle datasources which are part of extensions and need to be saved before [DocuValue]
+                if(!this.preSaveDataSource(_entityCtx, 'DocuValue'))
+                {
+                    return false;
+                }
+                _dataSourceCtx = _entityCtx.getRuntimeContextByName('DocuValue');
+                // propagates foreign key values from referenced data sources which are part of extensions.
+                this.foreignKeyPropagationExtensions(_entityCtx, _dataSourceCtx);
+                if(this.isAnyFieldSet_DS2(_dataSourceCtx.getBuffer(),_dataSourceCtx,_entityCtx))
+                {
+                    // invoke conflict detection for read-only data source.
+                    DocuValue resolvedRecord = this.detectConflictForDataSource(_entityCtx, _dataSourceCtx);
+                    if(!resolvedRecord)
+                    {
+                        checkFailed(strfmt("@ApplicationPlatform:DataEntityReadonlyDataSourceNotFound", _dataSourceCtx.name()));
+                        throw Exception::ViewDataSourceValidation;
+                    }
+                    // marks the read-only data source as 'saved' and skips actual insert/update operation.
+                    _dataSourceCtx.setDataSaved(true);
+                }
+                // in case of update marks the read-only data source as 'saved' and skips actual insert/update operation.
+                else if(_dataSourceCtx.getDatabaseOperation() == DataEntityDatabaseOperation::Update)
+                {
+                    _dataSourceCtx.setDataSaved(true);
+                }
+                _dataSourceCtx.setDatabaseOperation(DataEntityDatabaseOperation::None);
+                // inserts/updates data source [DocuValue].
+                this.saveDataSource(_entityCtx, _dataSourceCtx);
+                this.postSaveDataSource();
+            }
+            // handle datasources which are part of extensions and need to be saved before [DocuRef]
+            if(!this.preSaveDataSource(_entityCtx, 'DocuRef'))
+            {
+                return false;
+            }
+            _dataSourceCtx = _entityCtx.getRuntimeContextByName('DocuRef');
+            // propagates foreign key values from referenced data sources which are part of extensions.
+            this.foreignKeyPropagationExtensions(_entityCtx, _dataSourceCtx);
+            // propagates foreign key values from referenced data sources.
+            this.foreignKeyPropagation_DS1(_entityCtx, _dataSourceCtx.getBuffer());
+            // inserts/updates data source [DocuRef].
+            if(!this.saveDataSource(_entityCtx, _dataSourceCtx))
+            {
+                // returns from here if the root data source fails to be saved.
+                return false;
+            }
+            this.postSaveDataSource();
+        }
+        // handle datasources which are part of extensions and need to be saved in last 
+        this.preSaveDataSource(_entityCtx, '');
+        return rtrn;
+    }
+    protected boolean deleteDataSources(DataEntityRuntimeContext _entityCtx)
+    {
+        boolean rtrn = true;
+        DataEntityDataSourceRuntimeContext _dataSourceCtx = null;
+        // delete data sources in reverse topological order.
+        {
+            // handle datasources which are part of extensions and need to be saved before [DocuRef]
+            if(!this.preSaveDataSource(_entityCtx, 'DocuRef'))
+            {
+                return false;
+            }
+            _dataSourceCtx = _entityCtx.getRuntimeContextByName('DocuRef');
+            // deletes data source [DocuRef].
+            if(!this.saveDataSource(_entityCtx, _dataSourceCtx))
+            {
+                // returns from here if the root data source fails to be saved.
+                return false;
+            }
+            this.postSaveDataSource();
+            // deletes data sources referenced by [DocuRef].
+            {
+                // handle datasources which are part of extensions and need to be saved before [DocuValue]
+                if(!this.preSaveDataSource(_entityCtx, 'DocuValue'))
+                {
+                    return false;
+                }
+                _dataSourceCtx = _entityCtx.getRuntimeContextByName('DocuValue');
+                // skips delete operation against read-only data source.
+                // marks the read-only data source as 'saved' and skips actual delete operation.
+                _dataSourceCtx.setDataSaved(true);
+                _dataSourceCtx.setDatabaseOperation(DataEntityDatabaseOperation::None);
+                // deletes data source [DocuValue].
+                this.saveDataSource(_entityCtx, _dataSourceCtx);
+                this.postSaveDataSource();
+            }
+        }
+        // handle datasources which are part of extensions and need to be saved in last 
+        this.preSaveDataSource(_entityCtx, '');
+        return rtrn;
+    }
+    private void mapToDataSource_DS1(DataEntityRuntimeContext _entityCtx, DataEntityDataSourceRuntimeContext _dataSourceCtx, DocuRef _docuRef, DocuRefEntity _docuRefEntity)
+    {
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRefEntity, fieldnum(DocuRefEntity, DocumentId), _docuRef, fieldnum(DocuRef, DocumentId), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRefEntity, fieldnum(DocuRefEntity, ActualCompanyId), _docuRef, fieldnum(DocuRef, ActualCompanyId), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRefEntity, fieldnum(DocuRefEntity, TypeId), _docuRef, fieldnum(DocuRef, TypeId), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRefEntity, fieldnum(DocuRefEntity, RefCompanyId), _docuRef, fieldnum(DocuRef, RefCompanyId), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRefEntity, fieldnum(DocuRefEntity, RefRecId), _docuRef, fieldnum(DocuRef, RefRecId), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRefEntity, fieldnum(DocuRefEntity, RefTableId), _docuRef, fieldnum(DocuRef, RefTableId), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRefEntity, fieldnum(DocuRefEntity, Name), _docuRef, fieldnum(DocuRef, Name), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRefEntity, fieldnum(DocuRefEntity, Restriction), _docuRef, fieldnum(DocuRef, Restriction), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRefEntity, fieldnum(DocuRefEntity, Notes), _docuRef, fieldnum(DocuRef, Notes), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRefEntity, fieldnum(DocuRefEntity, ValueRecId), _docuRef, fieldnum(DocuRef, ValueRecId), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRefEntity, fieldnum(DocuRefEntity, DefaultAttachment), _docuRef, fieldnum(DocuRef, DefaultAttachment), 1);
+        
+        this.mapToDataSourceExtensions(_dataSourceCtx, _docuRef, _docuRefEntity);
+        _docuRef.trackFieldExternallySet(false);
+    }
+    private void mapToDataSource_DS2(DataEntityRuntimeContext _entityCtx, DataEntityDataSourceRuntimeContext _dataSourceCtx, DocuValue _docuValue, DocuRefEntity _docuRefEntity)
+    {
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRefEntity, fieldnum(DocuRefEntity, DocuValueType), _docuValue, fieldnum(DocuValue, Type), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRefEntity, fieldnum(DocuRefEntity, StorageProviderId), _docuValue, fieldnum(DocuValue, StorageProviderId), 1);
+        
+        this.mapToDataSourceExtensions(_dataSourceCtx, _docuValue, _docuRefEntity);
+        _docuValue.trackFieldExternallySet(false);
+    }
+    protected void doMapEntityToDataSource(DataEntityRuntimeContext _entityCtx, DataEntityDataSourceRuntimeContext _dataSourceCtx)
+    {
+        switch(_dataSourceCtx.id())
+        {
+            case #DocuRef_ID:
+                this.mapToDataSource_DS1(_entityCtx, _dataSourceCtx, _dataSourceCtx.getBuffer(), _entityCtx.getEntityRecord());
+                break;
+            case #DocuValue_ID:
+                this.mapToDataSource_DS2(_entityCtx, _dataSourceCtx, _dataSourceCtx.getBuffer(), _entityCtx.getEntityRecord());
+                break;
+            default :
+                this.doMapEntityToDataSourceExtensions(_entityCtx, _dataSourceCtx);
+                break;
+        }
+    }
+    private void mapFromDataSource_DS1(DataEntityDataSourceRuntimeContext _dataSourceCtx, DocuRef _docuRef, DocuRefEntity _docuRefEntity)
+    {
+        this.mapDataSourceFieldToEntityField(_docuRef, fieldnum(DocuRef, DocumentId), _docuRefEntity, fieldnum(DocuRefEntity, DocumentId), false);
+        this.mapDataSourceFieldToEntityField(_docuRef, fieldnum(DocuRef, ActualCompanyId), _docuRefEntity, fieldnum(DocuRefEntity, ActualCompanyId), false);
+        this.mapDataSourceFieldToEntityField(_docuRef, fieldnum(DocuRef, TypeId), _docuRefEntity, fieldnum(DocuRefEntity, TypeId), false);
+        this.mapDataSourceFieldToEntityField(_docuRef, fieldnum(DocuRef, RefCompanyId), _docuRefEntity, fieldnum(DocuRefEntity, RefCompanyId), false);
+        this.mapDataSourceFieldToEntityField(_docuRef, fieldnum(DocuRef, RefRecId), _docuRefEntity, fieldnum(DocuRefEntity, RefRecId), false);
+        this.mapDataSourceFieldToEntityField(_docuRef, fieldnum(DocuRef, RefTableId), _docuRefEntity, fieldnum(DocuRefEntity, RefTableId), false);
+        this.mapDataSourceFieldToEntityField(_docuRef, fieldnum(DocuRef, Name), _docuRefEntity, fieldnum(DocuRefEntity, Name), false);
+        this.mapDataSourceFieldToEntityField(_docuRef, fieldnum(DocuRef, Restriction), _docuRefEntity, fieldnum(DocuRefEntity, Restriction), false);
+        this.mapDataSourceFieldToEntityField(_docuRef, fieldnum(DocuRef, Notes), _docuRefEntity, fieldnum(DocuRefEntity, Notes), false);
+        this.mapDataSourceFieldToEntityField(_docuRef, fieldnum(DocuRef, ValueRecId), _docuRefEntity, fieldnum(DocuRefEntity, ValueRecId), false);
+        this.mapDataSourceFieldToEntityField(_docuRef, fieldnum(DocuRef, DefaultAttachment), _docuRefEntity, fieldnum(DocuRefEntity, DefaultAttachment), false);
+        this.mapFromDataSourceExtensions(_dataSourceCtx, _docuRef, _docuRefEntity);
+        // map system fields (e.g. recid and recversion) from data source buffer to view record.
+        _docuRefEntity.fromViewDataSource(_dataSourceCtx.id(), _docuRef);
+    }
+    private void mapFromDataSource_DS2(DataEntityDataSourceRuntimeContext _dataSourceCtx, DocuValue _docuValue, DocuRefEntity _docuRefEntity)
+    {
+        this.mapDataSourceFieldToEntityField(_docuValue, fieldnum(DocuValue, Type), _docuRefEntity, fieldnum(DocuRefEntity, DocuValueType), false);
+        this.mapDataSourceFieldToEntityField(_docuValue, fieldnum(DocuValue, StorageProviderId), _docuRefEntity, fieldnum(DocuRefEntity, StorageProviderId), false);
+        this.mapFromDataSourceExtensions(_dataSourceCtx, _docuValue, _docuRefEntity);
+        // map system fields (e.g. recid and recversion) from data source buffer to view record.
+        _docuRefEntity.fromViewDataSource(_dataSourceCtx.id(), _docuValue);
+    }
+    protected void doMapDataSourceToEntity(DataEntityRuntimeContext _entityCtx, DataEntityDataSourceRuntimeContext _dataSourceCtx)
+    {
+        switch(_dataSourceCtx.id())
+        {
+            case #DocuRef_ID:
+                this.mapFromDataSource_DS1(_dataSourceCtx, _dataSourceCtx.getBuffer(), _entityCtx.getEntityRecord());
+                break;
+            case #DocuValue_ID:
+                this.mapFromDataSource_DS2(_dataSourceCtx, _dataSourceCtx.getBuffer(), _entityCtx.getEntityRecord());
+                break;
+            default :
+                this.doMapDataSourceToEntityExtensions(_entityCtx, _dataSourceCtx);
+                break;
+        }
+    }
+    protected Common doFindDataSource(DataEntityRuntimeContext _entityCtx, DataEntityDataSourceRuntimeContext _dataSourceCtx)
+    {
+        Common rtrn = null;
+        switch(_dataSourceCtx.id())
+        {
+            case #DocuRef_ID:
+                rtrn = this.LookForUniqueKeyMatch_DS1(_entityCtx.getEntityRecord(), _dataSourceCtx.getBuffer());
+                break;
+            case #DocuValue_ID:
+                rtrn = this.LookForUniqueKeyMatch_DS2(_entityCtx.getEntityRecord(), _dataSourceCtx.getBuffer());
+                break;
+            default :
+                rtrn = this.doFindDataSourceExtensions(_entityCtx, _dataSourceCtx);
+                break;
+        }
+        return rtrn;
+    }
+    protected boolean isAnyMappedDataSourceFieldSet_DS1(DocuRefEntity _docuRefEntity, str disabledConfigKey = null)
+    {
+        boolean rtrn = false;
+        if(_docuRefEntity.isFieldSet(fieldnum(DocuRefEntity, DocumentId)))
+        {
+            return true;
+        }
+        if(_docuRefEntity.isFieldSet(fieldnum(DocuRefEntity, ActualCompanyId)))
+        {
+            return true;
+        }
+        if(_docuRefEntity.isFieldSet(fieldnum(DocuRefEntity, TypeId)))
+        {
+            return true;
+        }
+        if(_docuRefEntity.isFieldSet(fieldnum(DocuRefEntity, RefCompanyId)))
+        {
+            return true;
+        }
+        if(_docuRefEntity.isFieldSet(fieldnum(DocuRefEntity, RefRecId)))
+        {
+            return true;
+        }
+        if(_docuRefEntity.isFieldSet(fieldnum(DocuRefEntity, RefTableId)))
+        {
+            return true;
+        }
+        if(_docuRefEntity.isFieldSet(fieldnum(DocuRefEntity, Name)))
+        {
+            return true;
+        }
+        if(_docuRefEntity.isFieldSet(fieldnum(DocuRefEntity, Restriction)))
+        {
+            return true;
+        }
+        if(_docuRefEntity.isFieldSet(fieldnum(DocuRefEntity, Notes)))
+        {
+            return true;
+        }
+        if(_docuRefEntity.isFieldSet(fieldnum(DocuRefEntity, ValueRecId)))
+        {
+            return true;
+        }
+        if(_docuRefEntity.isFieldSet(fieldnum(DocuRefEntity, DefaultAttachment)))
+        {
+            return true;
+        }
+        rtrn = this.isAnyMappedDataSourceExtensionFieldSet(_docuRefEntity, 'DocuRef', disabledConfigKey);
+        return rtrn;
+    }
+    protected boolean isAnyMappedDataSourceFieldSet_DS2(DocuRefEntity _docuRefEntity, str disabledConfigKey = null)
+    {
+        boolean rtrn = false;
+        if(_docuRefEntity.isFieldSet(fieldnum(DocuRefEntity, DocuValueType)))
+        {
+            return true;
+        }
+        if(_docuRefEntity.isFieldSet(fieldnum(DocuRefEntity, StorageProviderId)))
+        {
+            return true;
+        }
+        rtrn = this.isAnyMappedDataSourceExtensionFieldSet(_docuRefEntity, 'DocuValue', disabledConfigKey);
+        return rtrn;
+    }
+    protected boolean isAnyMappedDataSourceFieldSet(DataEntityRuntimeContext _entityCtx, DataEntityDataSourceRuntimeContext _dataSourceCtx)
+    {
+        boolean rtrn = false;
+        switch(_dataSourceCtx.id())
+        {
+            case #DocuRef_ID:
+                rtrn = this.isAnyMappedDataSourceFieldSet_DS1(_entityCtx.getEntityRecord());
+                break;
+            case #DocuValue_ID:
+                rtrn = this.isAnyMappedDataSourceFieldSet_DS2(_entityCtx.getEntityRecord());
+                break;
+            default :
+                rtrn = this.isAnyMappedDataSourceFieldSet_DSExtensions(_entityCtx, _dataSourceCtx);
+                break;
+        }
+        return rtrn;
+    }
+    private boolean validateDataSource_DS1(DataEntityRuntimeContext _entityCtx, DocuRefEntity _docuRefEntity, DataEntityDataSourceRuntimeContext _dataSourceCtx, DocuRef _docuRef)
+    {
+        boolean rtrn = true;
+        rtrn = this.validateMappedDataSourceField(_entityCtx, _dataSourceCtx, '', '', conNull(), _docuRefEntity, fieldnum(DocuRefEntity, DocumentId), 'DocuRefEntity.DocumentId', _docuRef, fieldnum(DocuRef, DocumentId), false/*disallowEditOnCreate*/, true/*disallowEdit*/, true/*callValidateField*/, 1) ? rtrn : false;
+        rtrn = this.validateMappedDataSourceField(_entityCtx, _dataSourceCtx, '', '', conNull(), _docuRefEntity, fieldnum(DocuRefEntity, ActualCompanyId), 'DocuRefEntity.ActualCompanyId', _docuRef, fieldnum(DocuRef, ActualCompanyId), false/*disallowEditOnCreate*/, false/*disallowEdit*/, true/*callValidateField*/, 1) ? rtrn : false;
+        rtrn = this.validateMappedDataSourceField(_entityCtx, _dataSourceCtx, '', '', conNull(), _docuRefEntity, fieldnum(DocuRefEntity, TypeId), 'DocuRefEntity.TypeId', _docuRef, fieldnum(DocuRef, TypeId), false/*disallowEditOnCreate*/, true/*disallowEdit*/, true/*callValidateField*/, 1) ? rtrn : false;
+        rtrn = this.validateMappedDataSourceField(_entityCtx, _dataSourceCtx, '', '', conNull(), _docuRefEntity, fieldnum(DocuRefEntity, RefCompanyId), 'DocuRefEntity.RefCompanyId', _docuRef, fieldnum(DocuRef, RefCompanyId), true/*disallowEditOnCreate*/, true/*disallowEdit*/, true/*callValidateField*/, 1) ? rtrn : false;
+        rtrn = this.validateMappedDataSourceField(_entityCtx, _dataSourceCtx, '', '', conNull(), _docuRefEntity, fieldnum(DocuRefEntity, RefRecId), 'DocuRefEntity.RefRecId', _docuRef, fieldnum(DocuRef, RefRecId), true/*disallowEditOnCreate*/, true/*disallowEdit*/, true/*callValidateField*/, 1) ? rtrn : false;
+        rtrn = this.validateMappedDataSourceField(_entityCtx, _dataSourceCtx, '', '', conNull(), _docuRefEntity, fieldnum(DocuRefEntity, RefTableId), 'DocuRefEntity.RefTableId', _docuRef, fieldnum(DocuRef, RefTableId), true/*disallowEditOnCreate*/, true/*disallowEdit*/, true/*callValidateField*/, 1) ? rtrn : false;
+        rtrn = this.validateMappedDataSourceField(_entityCtx, _dataSourceCtx, '', '', conNull(), _docuRefEntity, fieldnum(DocuRefEntity, Name), 'DocuRefEntity.Name', _docuRef, fieldnum(DocuRef, Name), false/*disallowEditOnCreate*/, false/*disallowEdit*/, true/*callValidateField*/, 1) ? rtrn : false;
+        rtrn = this.validateMappedDataSourceField(_entityCtx, _dataSourceCtx, '', '', conNull(), _docuRefEntity, fieldnum(DocuRefEntity, Restriction), 'DocuRefEntity.Restriction', _docuRef, fieldnum(DocuRef, Restriction), false/*disallowEditOnCreate*/, false/*disallowEdit*/, true/*callValidateField*/, 1) ? rtrn : false;
+        rtrn = this.validateMappedDataSourceField(_entityCtx, _dataSourceCtx, '', '', conNull(), _docuRefEntity, fieldnum(DocuRefEntity, Notes), 'DocuRefEntity.Notes', _docuRef, fieldnum(DocuRef, Notes), false/*disallowEditOnCreate*/, false/*disallowEdit*/, true/*callValidateField*/, 1) ? rtrn : false;
+        rtrn = this.validateMappedDataSourceField(_entityCtx, _dataSourceCtx, '', '', conNull(), _docuRefEntity, fieldnum(DocuRefEntity, DefaultAttachment), 'DocuRefEntity.DefaultAttachment', _docuRef, fieldnum(DocuRef, DefaultAttachment), false/*disallowEditOnCreate*/, false/*disallowEdit*/, true/*callValidateField*/, 1) ? rtrn : false;
+        rtrn = this.validateDataSourceExtensions(_entityCtx, _docuRefEntity, _dataSourceCtx, _docuRef) ? rtrn : false;
+        return rtrn;
+    }
+    protected boolean validateDataSource(DataEntityRuntimeContext _entityCtx, DataEntityDataSourceRuntimeContext _dataSourceCtx)
+    {
+        boolean rtrn = true;
+        switch(_dataSourceCtx.id())
+        {
+            case #DocuRef_ID:
+                rtrn = this.validateDataSource_DS1(_entityCtx,_entityCtx.getEntityRecord(),_dataSourceCtx,_dataSourceCtx.getBuffer());
+                break;
+            default :
+                rtrn = this.validateDataSourceExtensions_DSExtensions(_entityCtx, _dataSourceCtx);
+                break;
+        }
+        return rtrn;
+    }
+    private void mapToMatchingRecord_DS1(DataEntityDataSourceRuntimeContext _dataSourceCtx, DocuRef _docuRef, DocuRef _matchingRecord)
+    {
+        // map data changes in bound fields.
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRef, fieldnum(DocuRef, DocumentId), _matchingRecord, fieldnum(DocuRef, DocumentId), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRef, fieldnum(DocuRef, ActualCompanyId), _matchingRecord, fieldnum(DocuRef, ActualCompanyId), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRef, fieldnum(DocuRef, TypeId), _matchingRecord, fieldnum(DocuRef, TypeId), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRef, fieldnum(DocuRef, RefCompanyId), _matchingRecord, fieldnum(DocuRef, RefCompanyId), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRef, fieldnum(DocuRef, RefRecId), _matchingRecord, fieldnum(DocuRef, RefRecId), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRef, fieldnum(DocuRef, RefTableId), _matchingRecord, fieldnum(DocuRef, RefTableId), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRef, fieldnum(DocuRef, Name), _matchingRecord, fieldnum(DocuRef, Name), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRef, fieldnum(DocuRef, Restriction), _matchingRecord, fieldnum(DocuRef, Restriction), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRef, fieldnum(DocuRef, Notes), _matchingRecord, fieldnum(DocuRef, Notes), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRef, fieldnum(DocuRef, ValueRecId), _matchingRecord, fieldnum(DocuRef, ValueRecId), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuRef, fieldnum(DocuRef, DefaultAttachment), _matchingRecord, fieldnum(DocuRef, DefaultAttachment), 1);
+        this.mapToMatchingRecordExtensions(_dataSourceCtx, tablestr(DocuRefEntity), _docuRef, _matchingRecord);
+    }
+    private void mapToMatchingRecord_DS2(DataEntityDataSourceRuntimeContext _dataSourceCtx, DocuValue _docuValue, DocuValue _matchingRecord)
+    {
+        // map data changes in bound fields.
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuValue, fieldnum(DocuValue, Type), _matchingRecord, fieldnum(DocuValue, Type), 1);
+        this.mapEntityFieldToDataSourceField(_dataSourceCtx.getDatabaseOperation(), _docuValue, fieldnum(DocuValue, StorageProviderId), _matchingRecord, fieldnum(DocuValue, StorageProviderId), 1);
+        this.mapToMatchingRecordExtensions(_dataSourceCtx, tablestr(DocuRefEntity), _docuValue, _matchingRecord);
+    }
+    protected void mapDataSourceToMatchingRecord(DataEntityDataSourceRuntimeContext _dataSourceCtx, Common _matchingRecord)
+    {
+        switch(_dataSourceCtx.id())
+        {
+            case #DocuRef_ID:
+                this.mapToMatchingRecord_DS1(_dataSourceCtx, _dataSourceCtx.getBuffer(), _matchingRecord);
+                break;
+            case #DocuValue_ID:
+                this.mapToMatchingRecord_DS2(_dataSourceCtx, _dataSourceCtx.getBuffer(), _matchingRecord);
+                break;
+            default :
+                this.mapDataSourceToMatchingRecordExtensions(_dataSourceCtx, _matchingRecord);
+                break;
+        }
+    }
+    protected void validateConfigurationKeys(DataEntityRuntimeContext _entityCtx)
+    {
+    }
+    protected boolean hasDataSourceRecordChanged(int _dataSourceId, common _originalRecord, common _updatedRecord)
+    {
+        boolean hasDataSourceRecordChanged_ = true;
+        
+        // The method is called for OCC validation and only upon data sources that have One-to-Many relationships.
+        
+        switch (_dataSourceId)
+        {
+            case #DocuValue_ID:
+                hasDataSourceRecordChanged_ = this.hasDataSourceRecordChanged_DS2(_originalRecord, _updatedRecord);
+                break;
+        }
+        return hasDataSourceRecordChanged_;
+    }
+    protected void initializeDataSources(DataEntityRuntimeContext _entityCtx)
+    {
+        this.initializeDataSource(_entityCtx, 'DocuRef', m_DocuRef, this.getDataSourceId('DocuRef'), this.getDataSourceRuntimeId('DocuRef'), false/* optional */, false/* readonly */, false/* oneToMany */, false/* dateEffective */, false/* applyDateFilter */);
+        this.initializeDataSource(_entityCtx, 'DocuValue', m_DocuValue, this.getDataSourceId('DocuValue'), this.getDataSourceRuntimeId('DocuValue'), true/* optional */, true/* readonly */, true/* oneToMany */, false/* dateEffective */, false/* applyDateFilter */);
+        this.initializeDataSourcesExtensions(_entityCtx);
+    }
+    private boolean hasDataSourceRecordChanged_DS2(DocuValue _originalRecord, DocuValue _updatedRecord)
+    {
+        if (_originalRecord.Type != _updatedRecord.Type)
+        {
+            return true;
+        }
+        if (_originalRecord.StorageProviderId != _updatedRecord.StorageProviderId)
+        {
+            return true;
+        }
+        return false;
+    }
+    private DocuRef LookForUniqueKeyMatch_DS1(DocuRefEntity _docuRefEntity, DocuRef _docuRef)
+    {
+        DocuRef docuRef_ = null;
+        
+        select
+            forUpdate
+            firstOnly
+                docuRef_
+        where
+            docuRef_.RecId == _docuRef.RecId
+        ;
+        
+        if (docuRef_)
+        {
+            return docuRef_;
+        }
+        
+        return docuRef_;
+    }
+    private DocuValue LookForUniqueKeyMatch_DS2(DocuRefEntity _docuRefEntity, DocuValue _docuValue)
+    {
+        DocuValue docuValue_ = null;
+        
+        // Ensuring only fields in the selection list should be accessed for read-only data source.
+        docuValue_.checkInvalidFieldAccess(true);
+        
+        select
+            firstOnly
+                // Specify explicit field selection for read-only data source.
+                Type, StorageProviderId, RecId
+            from
+                docuValue_
+        where
+            docuValue_.RecId == _docuValue.RecId
+        ;
+        
+        if (docuValue_)
+        {
+            return docuValue_;
+        }
+        
+        return docuValue_;
+    }
+
+}
+

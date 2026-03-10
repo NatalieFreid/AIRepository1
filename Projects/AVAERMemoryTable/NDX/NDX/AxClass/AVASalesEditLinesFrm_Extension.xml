@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesEditLinesFrm_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>AVASalesEditLinesFrm_Extension</c> class is the extension of form <c>SalesEditLines</c>
+/// </summary>
+[ExtensionOf(formStr(SalesEditLines))]
+final public class AVASalesEditLinesFrm_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>init</c> method.
+    /// </summary>
+    public void init()
+    {
+        next init();
+
+        //if(salesEditLinesForm is SalesEditLinesForm_PackingSlip)
+       // {
+        //    salesEditLinesForm.parmAVADlvModeIdParmeterVisible(true);
+        //}
+
+        if(salesEditLinesForm is SalesEditLinesForm_Invoice)
+        {
+            SalesParmUpdate_AVAEDITransfer.visible(true);
+            if(salesFormLetter.parmCallerFormName() == '')
+            {
+                this.design().controlName(formControlStr(SalesEditLines,AVABatchProcessing_AVAInvoiceBackdatingDays)).visible(true);
+                this.design().controlName(formControlStr(SalesEditLines,AVABatchProcessing_AVAShiftDays)).visible(true);
+            }
+        }
+        else
+        {
+            SalesParmUpdate_AVAEDITransfer.visible(false);
+        }
+
+        SalesParmUpdate_AVADlvModeId.visible(salesEditLinesForm.parmAVADlvModeIdParmeterVisible());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>run</c> method.
+    /// </summary>
+    void run()
+    {
+        next run();
+
+    /*    if(salesEditLinesForm.parmAVADlvModeIdParmeterVisible())
+        {
+            SalesParmUpdate.AVADlvModeId = SalesParmTable.DlvMode;
+        }       */
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>specQtyChanged</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 26.04.24
+    /// </summary>
+    void  specQtyChanged()
+    {
+       if (salesParmUpdate.SumBy != AccountOrder::Journal && salesParmUpdate.SpecQty == SalesUpdate::PackingSlip)
+        {
+            salesParmUpdate.SumBy = AccountOrder::Journal;
+            sumBy.selection(salesEditLinesForm.sumByIndex2Selection(AccountOrder::Journal));
+         //   salesFormLetter.reArrange(false);
+            
+        }         
+        if (salesParmUpdate.SumBy == AccountOrder::Journal && (salesParmUpdate.SpecQty == SalesUpdate::All || SalesParmUpdate.SpecQty == SalesUpdate::DeliverNow))
+        {
+            salesParmUpdate.SumBy = AccountOrder::None;
+            sumBy.selection(salesEditLinesForm.sumByIndex2Selection(AccountOrder::None));
+            //   salesFormLetter.reArrange(false);
+            
+        }
+        next    specQtyChanged();
+
+    /*          */
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateQueryFromShiftDays</Name>
+				<Source><![CDATA[
+    void updateQueryFromShiftDays()
+    {
+        TransDate   lastPackingSlipDate;
+        salesFormLetter.initParameters(salesParmUpdate.data(),
+                                        print_Combo.selection(),
+                                        printFormletter.value(),
+                                        printCODLabelChoice,
+                                        printShippingLabelChoice,
+                                        usePrintManagement.value(),
+                                        true,
+                                        #PdsMRCEnabled ? pdsMRCPostingError.value(): NoYes::No,
+                                        #PdsMRCEnabled ? pdsMRCPrintOnPack.value(): NoYes::No,
+                                        fiscalDocType_PL.selection(),
+                                        printexciseformletter.value()
+                                        );
+
+        salesFormLetter.editLinesChanged(editLinesChanged);
+        salesFormLetter.reArrangeNow(reArrangeNow);
+        salesFormLetter.initLinesQuery();
+        Query   query = salesFormLetter.parmQueryUsed();
+        if(salesParmUpdate.AVAShiftDays != -1)
+        {
+            lastPackingSlipDate = systemDateGet() - salesParmUpdate.AVAShiftDays;
+
+            QueryBuildDataSource        salesTableDS = query.dataSourceTable(tableNum(SalesTable));
+            if(salesTableDS)
+            {
+                QueryBuildDataSource        salesPackingSlipLinkDS = salesTableDS.addDataSource(tableNum(custPackingSlipSalesLink));
+                salesPackingSlipLinkDS.joinMode(JoinMode::InnerJoin);
+                salesPackingSlipLinkDS.addLink(fieldnum(SalesTable,SalesId),fieldNum(CustPackingSlipSalesLink,OrigSalesId));
+
+                SysQuery::findOrCreateRange(salesPackingSlipLinkDS,fieldnum(custPackingSlipSalesLink,DeliveryDate)).value(SysQuery::range(datenull(),lastPackingSlipDate));
+            }
+
+            if (salesParmUpdate.LateSelection)
+            {
+                salesParmUpdate.LateSelectionQuery = query.pack();
+
+                this.initQuery();
+            }
+            else
+            {
+
+                salesParmUpdate.LateSelection = false;
+            }
+
+            this.chooseTable(true);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

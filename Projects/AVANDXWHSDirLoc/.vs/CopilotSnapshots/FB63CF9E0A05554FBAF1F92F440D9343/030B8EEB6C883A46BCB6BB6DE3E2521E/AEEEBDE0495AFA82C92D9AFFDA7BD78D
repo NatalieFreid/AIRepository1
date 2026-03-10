@@ -1,0 +1,275 @@
+﻿# D365FO WHSLocDirAction Copy2Batch Implementation
+
+## Overview
+This implementation provides functionality to create batch-enabled copies of Warehouse Location Directive Actions while preserving their custom query configurations (joins and filter ranges).
+
+## Problem Statement
+In D365FO, when the "Batch enabled" flag (isBatchEnabled) is toggled ON in Location Directive Actions (WHSLocDirAction table), the system automatically resets the underlying query (SysQuery/QueryRun), causing all custom table joins and filter values to be lost.
+
+## Solution
+The solution provides two main features:
+1. **Single Record Copy** - A "Copy2Batch" button on the Location Directive form
+2. **Mass Function** - A batch job to process multiple directives at once
+
+## Implementation Components
+
+### 1. Table Extension
+**File:** `AVAExtension/AVAExtension/AxTableExtension/WHSLocDirAction.AVAExtension.xml`
+
+Adds a new field to WHSLocDirAction:
+- **Field Name:** IsCopied
+- **Type:** NoYes (Boolean enum)
+- **Default Value:** No
+- **Purpose:** Marks source records that have been processed
+- **Labels:** "Copied" / "Kopiert"
+
+### 2. Form Extension
+**File:** `AVAExtension/AVAExtension/AxFormExtension/WHSLocDirTable.AVAExtension.xml`
+
+Extends the Location Directive form (WHSLocDirTable) to add:
+- **Copy2Batch button** in the Action Pane
+- **IsCopied field** in the WHSLocDirAction data source
+- Button is only enabled when the selected action has `isBatchEnabled = No`
+
+### 3. Query Helper Class
+**File:** `AVAExtension/AVAExtension/AxClass/AVAWHSLocDirActionQueryHelper.xml`
+
+**Purpose:** Handles query cloning and action record copying
+
+**Key Methods:**
+- `cloneQuery(WHSLocDirAction _action)` - Serializes the query using pack()
+- `applyClonedQuery(WHSLocDirAction _action, container _packedQuery)` - Deserializes and applies the query
+- `copyActionRecord(WHSLocDirAction _sourceAction)` - Complete copy workflow
+
+**Workflow:**
+1. Clone query BEFORE setting isBatchEnabled flag
+2. Create new record by copying all fields
+3. Set isBatchEnabled = Yes on new record
+4. Insert the new record
+5. Re-apply cloned query to override system reset
+6. Mark source record as copied (IsCopied = Yes)
+
+### 4. Event Handler Class
+**File:** `AVAExtension/AVAExtension/AxClass/AVAWHSLocDirCopy2BatchEventHandler.xml`
+
+**Purpose:** Handles form events for the Copy2Batch button
+
+**Event Handlers:**
+- `AVACopy2Batch_OnClicked` - Executes the copy operation
+- `AVACopy2Batch_OnInitialized` - Initializes button visibility
+- `WHSLocDirAction_OnActivated` - Updates button enabled state based on record
+
+### 5. Data Contract Class
+**File:** `AVAExtension/AVAExtension/AxClass/AVAGenBatchLocDirContract.xml`
+
+**Purpose:** Data contract for the mass function dialog
+
+**Properties:**
+- Query-based selection for WHSLocDir records
+- Uses SysOperationHelper for query serialization
+
+**Key Methods:**
+- `parmQuery()` - Gets/sets the location directive selection query
+- `getQuery()` - Returns QueryRun for execution
+- `setQuery()` - Sets the query with proper serialization
+
+### 6. Service Class
+**File:** `AVAExtension/AVAExtension/AxClass/AVAGenBatchLocDirService.xml`
+
+**Purpose:** Business logic for mass processing
+
+**Main Method:**
+- `processDirectives(AVAGenBatchLocDirContract _contract)`
+
+**Processing Logic:**
+1. Iterate through selected WHSLocDir records (from user query)
+2. For each directive, find all WHSLocDirAction records
+3. Filter: Only process if `isBatchEnabled == No AND isCopied == No`
+4. Clone and create new batch-enabled actions
+5. Track counts: directives processed, actions created, actions skipped
+6. Display results in Infolog
+
+**Features:**
+- Transactional integrity (ttsbegin/ttscommit)
+- Error handling with rollback
+- Idempotent (safe to run multiple times)
+
+### 7. UI Builder Class
+**File:** `AVAExtension/AVAExtension/AxClass/AVAGenBatchLocDirUIBuilder.xml`
+
+**Purpose:** Customizes the dialog appearance
+
+**Customizations:**
+- Adds query field for WHSLocDir selection
+- Sets appropriate labels and help text
+
+### 8. Controller Class
+**File:** `AVAExtension/AVAExtension/AxClass/AVAGenBatchLocDirController.xml`
+
+**Purpose:** Orchestrates the SysOperation framework
+
+**Key Features:**
+- Extends SysOperationServiceController
+- Entry point: `main(Args _args)` method
+- Execution mode: Synchronous
+- Initializes default query for WHSLocDir
+- Cannot run in new session (requires current company context)
+
+**Key Methods:**
+- `construct()` - Factory method
+- `main(Args)` - Entry point from menu item
+- `initializeQuery()` - Sets up default query
+- `canRunInNewSession()` - Returns false (company context required)
+
+### 9. Menu Item Action
+**File:** `AVAExtension/AVAExtension/AxMenuItemAction/AVAGenBatchLocDir.xml`
+
+**Purpose:** Provides access to the mass function
+
+**Properties:**
+- **Name:** AVAGenBatchLocDir
+- **Label:** @AVAExtension:GenBatchLocDir
+- **Object:** AVAGenBatchLocDirController
+- **ObjectType:** Class
+
+### 10. Label Files
+
+#### English Labels
+**File:** `AVAExtension/AVAExtension/AxLabelFile/LabelResources/en-US/AVAExtension.en-US.label.txt`
+
+**Metadata:** `AVAExtension/AVAExtension/AxLabelFile/AVAExtension_en-US.xml`
+
+#### German Labels
+**File:** `AVAExtension/AVAExtension/AxLabelFile/LabelResources/de/AVAExtension.de.label.txt`
+
+**Metadata:** `AVAExtension/AVAExtension/AxLabelFile/AVAExtension_de.xml`
+
+**Label Coverage:**
+- Field labels and help text
+- Button labels
+- Dialog titles and prompts
+- Info/Warning/Error messages
+
+## Technical Implementation Details
+
+### Query Cloning Pattern
+```xpp
+// 1. Clone BEFORE setting batch flag
+container packedQuery = AVAWHSLocDirActionQueryHelper::cloneQuery(sourceAction);
+
+// 2. Create new record with batch enabled
+newAction.data(sourceAction);
+newAction.IsBatchEnabled = NoYes::Yes;
+newAction.insert();
+
+// 3. Re-apply cloned query AFTER insert
+AVAWHSLocDirActionQueryHelper::applyClonedQuery(newAction, packedQuery);
+newAction.update();
+```
+
+### Error Handling
+- Try-catch blocks around query operations
+- Transaction rollback on errors
+- User-friendly error messages
+- Empty/corrupt container validation
+
+### Best Practices Applied
+- Extensions over modifications (no overlayering)
+- SysOperationFramework pattern for batch operations
+- Transactional integrity (ttsbegin/ttscommit)
+- Proper event handler subscription
+- Idempotent design (safe to re-run)
+- Multi-language support (EN/DE)
+
+## Usage Instructions
+
+### Single Record Copy (Copy2Batch Button)
+
+1. Navigate to **Warehouse management > Setup > Location directives**
+2. Select a location directive
+3. In the **Actions** grid, select an action with `Batch enabled = No`
+4. Click the **Copy2Batch** button
+5. A new action is created with:
+   - All fields copied from source
+   - `Batch enabled = Yes`
+   - Query preserved (joins and filters intact)
+6. Source action is marked with `Copied = Yes`
+
+### Mass Function (Generate Batch Location Directives)
+
+1. Launch via menu item: **AVAGenBatchLocDir**
+2. In the dialog, configure the query to select location directives:
+   - Filter by Warehouse
+   - Filter by Work Order Type
+   - Filter by Directive Code
+   - Or any other WHSLocDir field
+3. Click **OK** to execute
+4. The function processes all actions for selected directives
+5. Results displayed in Infolog:
+   - Number of directives processed
+   - Number of actions created
+   - Number of actions skipped
+
+### Idempotency
+Running the mass function multiple times is safe:
+- Already processed records (IsCopied = Yes) are automatically skipped
+- No duplicate records are created
+- Only new/unprocessed actions are copied
+
+## Deployment Checklist
+
+- [ ] Table extension synchronized to database
+- [ ] Form extension compiled
+- [ ] All classes compiled without errors
+- [ ] Label files generated (EN and DE)
+- [ ] Menu item accessible from appropriate menus
+- [ ] Security privileges configured
+- [ ] User testing completed:
+  - [ ] Single copy button works
+  - [ ] Query is preserved correctly
+  - [ ] Mass function processes multiple directives
+  - [ ] Idempotency verified
+  - [ ] Error handling tested
+
+## Known Limitations
+
+1. **Query Storage:** The implementation assumes D365FO stores queries using getQuery()/setQuery() methods on WHSLocDirAction. Verify this in your D365FO version.
+
+2. **Company Context:** The mass function runs in the current legal entity only. Cross-company operations are not supported.
+
+3. **Performance:** For very large datasets (thousands of actions), consider running in batch mode or adding progress indicators.
+
+## Troubleshooting
+
+### Query Not Preserved
+- Verify the cloneQuery() method is called BEFORE setting isBatchEnabled
+- Check that the packed query container is not null
+- Review error logs for query serialization issues
+
+### Button Not Visible
+- Check form extension is compiled
+- Verify event handler subscriptions are active
+- Confirm WHSLocDirAction data source includes IsCopied field
+
+### Mass Function Skips All Records
+- Check if records are already marked as Copied
+- Verify the query selection includes the intended directives
+- Ensure isBatchEnabled = No on source records
+
+## Future Enhancements
+
+1. Add batch execution support for mass function
+2. Implement preview/simulation mode
+3. Add undo functionality
+4. Support cross-company operations
+5. Add detailed logging/audit trail
+6. Create report showing copied vs. original actions
+
+## Support and Maintenance
+
+**Model:** AVAExtension
+**Prefix:** AVA
+**Created:** 2024
+**Last Updated:** 2024
+
+For questions or issues, refer to the D365FO development team.

@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAReqPODbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extends table ReqPO
+/// </summary>
+[ExtensionOf(tableStr(ReqPO))]
+final class AVAReqPODbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// modifiedField method
+    /// </summary>
+    /// <param name = "_fieldId">FieldId</param>
+    public void modifiedField(FieldId _fieldId)
+    {
+        next modifiedField(_fieldId);
+
+        switch (_fieldId)
+        {
+            case fieldNum(ReqPO, VendId):
+                this.AVAAgreementLineRecId = 0;
+                this.AVAAgreementAvailable = this.avaExistAgreement();
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Fills in the ID of the order and updates various fields on the planned order when the planned order
+    /// record is created.
+    /// </summary>
+    /// <param name="_reqPlanData">
+    /// A <c>ReqPLanData</c> object that is used for caching in master planning runs.
+    /// </param>
+    public void insert(ReqPlanData _reqPlanData)
+    {
+        this.AVAAgreementAvailable = this.avaExistAgreement();
+
+        next insert(_reqPlanData);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaExistAgreement</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// checks if an agreementLine exists for this VendId and ItemId that is not stopped or deleted and still in Effect
+    /// </summary>
+    /// <returns>NoYes</returns>
+    public NoYes avaExistAgreement()
+    {
+        #AgreementsRemains
+
+        PurchAgreementHeader purchAgreementHeaderLoc;
+        AgreementLine agreementLineLoc;
+        AVAReleaseAgreementItemMapping releaseAgreementItemLoc;
+
+        container fulfillmentValuesLoc;
+        real remainingLoc;
+
+        while select agreementLineLoc
+            join purchAgreementHeaderLoc
+            join releaseAgreementItemLoc
+            where purchAgreementHeaderLoc.RecId == agreementLineLoc.Agreement
+            && purchAgreementHeaderLoc.VendAccount == this.VendId
+            && purchAgreementHeaderLoc.AgreementState == AgreementState::Effective
+            && purchAgreementHeaderLoc.IsDeleted == NoYes::No
+            && agreementLineLoc.AVAStopped == NoYes::No
+            && agreementLineLoc.IsDeleted == NoYes::No
+            && agreementLineLoc.ItemId == releaseAgreementItemLoc.AgreementItem
+            && releaseAgreementItemLoc.ReleaseItem == this.ItemId
+        {
+            fulfillmentValuesLoc = AgreementLine::calculateFulfillmentForLine(agreementLineLoc);
+            remainingLoc = conPeek(fulfillmentValuesLoc, #RemainingIndex);
+
+            if(remainingLoc > 0)
+            {
+                this.AVAAgreementLineRecId = agreementLineLoc.RecId;
+                return NoYes::Yes;
+            }
+        }
+
+        return NoYes::No;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaEditAgreementLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// edit function for PurchAgreementId
+    /// </summary>
+    /// <param name = "_set">boolean</param>
+    /// <param name = "_purchAgreementId">PurchAgreementId</param>
+    /// <returns>PurchAgreementId</returns>
+    public edit PurchAgreementId avaEditAgreementLine(  boolean             _set,
+                                                        PurchAgreementId    _purchAgreementId)
+    {
+        PurchAgreementId    retVal = _purchAgreementId;
+
+        if(this.AVAAgreementLineRecId)
+        {
+            retVal = AgreementLine::find(this.AVAAgreementLineRecId).getPurchAgreementId();
+        }
+      
+        return retVal;   
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaLookupPurchAgreement</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// method to perform purch agreement line lookup
+    /// </summary>
+    /// <param name = "_ctrl">FormInt64Control</param>
+    /// <param name = "_reqPo">ReqPo</param>
+    /// <param name = "_nameControl">FormStringControl</param>
+    public static void avaLookupPurchAgreement( FormInt64Control    _ctrl,
+                                                ReqPo               _reqPo,
+                                                FormStringControl   _nameControl)
+    {
+        Args args = new Args();
+        args.name(formStr(AVAPurchAgreementLookup));
+        args.caller(_nameControl);
+        args.lookupValue(_reqPo.ItemId);
+
+        Object formRun = classfactory.formRunClass(args);
+        formRun.reqPoRecord(_reqPo);
+        formRun.callingNameControl(_nameControl);
+        formRun.callingIdControl(_ctrl);
+        formRun.init();
+
+        _nameControl.performFormLookup(formRun);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayItemState</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN 2024/05/17     AVA_011929_ShowItemStateInProdForms
+    /// </summary>
+    /// <returns>AVASCMItemState</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AVASCMItemState avaDisplayItemState()
+    {
+        return InventTable::find(this.ItemId).KCS_KAOItemState;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

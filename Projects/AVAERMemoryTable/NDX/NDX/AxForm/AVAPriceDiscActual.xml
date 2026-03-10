@@ -1,0 +1,2438 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>AVAPriceDiscActual</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class AVAPriceDiscActual extends FormRun
+{
+    CustTable               callCustTable;
+    InventTable             inventTable;
+    [FormObservable]
+    KCS_PriceDate           priceDate;
+    smmBusRelChainGroup     smmBusRelChainGroup;
+    [FormObservable]
+    Percent                 calcLineDiscGrpPct;
+    [FormObservable]
+    Percent                 calcLineDiscAllPct;
+    [FormObservable]
+    SalesPrice              calcDiscountedPrice;
+    [FormObservable]
+    SalesPrice              calcNettoPG1Price;
+    [FormObservable]
+    SalesPrice              calcNettoPG2Price;
+    [FormObservable]
+    SalesPrice              calcSalesPrice;
+    [FormObservable]
+    SalesPrice              calcBestPrice;                                                                                                          
+    boolean                 availableRankDisc;
+    AVARackDiscItems        custrackDiscItems;
+    AVARackDiscItems        chainRackDiscItems;
+    AVAPriceSurchargeValues priceSurchargesValues;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void init()
+    {
+        super();
+        if(element.args().dataset() == tableNum(CustTable))
+        {
+            callCustTable = element.args().record();
+        }
+        priceDate  = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>editItemId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_set">_set</param>
+    /// <param name = "_itemId">_itemId</param>
+    /// <returns>itemId</returns>
+    edit itemId editItemId(boolean _set , ItemId _itemId)
+    {
+        if(_set)
+        {
+            inventTable = InventTable::find(_itemId);
+            CustTable_ds.executeQuery();
+            
+            select firstonly custrackDiscItems
+                where custrackDiscItems.CustAccount ==  custTable.AccountNum
+                   && custrackDiscItems.ItemId      == _itemId;
+
+            select firstonly chainRackDiscItems
+                where chainRackDiscItems.smmChainId == CustTable.CompanyChainId
+                   && chainRackDiscItems.ItemId     == _itemId;
+
+            select firstonly priceSurchargesValues
+                where priceSurchargesValues.AVAPriceSurchargeCode == inventTable.AVAPriceSurchargeCode
+                   && priceSurchargesValues.ValidFromDate <=  DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())
+                   && (priceSurchargesValues.ValidToDate == dateNull() || priceSurchargesValues.ValidToDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())) ;
+        }
+        return inventTable.itemId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>itemName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>itemName</returns>
+    display ItemName itemName()
+    {
+        return  EcoResProductTranslation::findByProductLanguage(inventTable.Product,SystemParameters::getSystemLanguageId()).NDXProductName1;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>editPriceDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_set">_set</param>
+    /// <param name = "_priceDate">_priceDate</param>
+    /// <returns>priceDate</returns>
+    edit KCS_PriceDate editPriceDate(boolean _set , KCS_PriceDate _priceDate)
+    {
+        if(_set)
+        {
+            priceDate = _priceDate;
+            custTable_ds.executeQuery();
+        }
+        return priceDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>itemPriceUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>PriceUnit</returns>
+    display PriceUnit itemPriceUnit()
+    {
+        return inventTable.salesPriceUnit();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>emptyStr</Name>
+				<Source><![CDATA[
+    display String20 emptyStr()
+    {
+        return  '';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>priceTxt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>priceTxt</returns>
+    display String20 priceTxt()
+    {
+        return  "@NDX:NXAPrice";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>discGroupTxt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>priceTxt</returns>
+    display String20 discGroupTxt()
+    {
+        return  "@NDX:NXADiscPrcGrp";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>discAllTxt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>priceTxt</returns>
+    display String20 discAllTxt()
+    {
+        return  "@NDX:NXADiscPrcAll";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>discountedPrcTxt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>priceTxt</returns>
+    display String20 discountedPrcTxt()
+    {
+        return  "@NDX:NXADiscountedPrice";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>nettoPG1Txt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>priceTxt</returns>
+    display String20 nettoPG1Txt()
+    {
+        return  "@NDX:NXANetPG1";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>nettoPG2Txt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>priceTxt</returns>
+    display String20 nettoPG2Txt()
+    {
+        return  "@NDX:NXANetPG2";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>bestPriceTxt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>priceTxt</returns>
+    display String20 bestPriceTxt()
+    {
+        return  "@NDX:NXABestPrice";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>rankDiscTxt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>priceTxt</returns>
+    display String20 rankDiscTxt()
+    {
+        return  "@NDX:NXARackDiscount";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>priceSurchaseTxt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>priceTxt</returns>
+    display String20 priceSurchaseTxt()
+    {
+        return  priceSurchargesValues.AVAPriceSurchargeCode;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>priceSurchasePct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>priceTxt</returns>
+    display String20 priceSurchasePct()
+    {
+        return  num2Str(priceSurchargesValues.Percentage,-1,-1,-1,-1) + '%';
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>CustTable</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        public void init()
+        {
+            super();
+            SysQuery::findOrCreateRange(CustTable_ds.query().dataSourceTable(tableNum(CustTable)),fieldnum(CustTable,AccountNum)).value(callCustTable.AccountNum);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>custPriceGroupPrice</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        /// <returns>SalesPrice</returns>
+        display public SalesPrice custPriceGroupPrice()
+        {
+            return AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,CustTable.PriceGroup,'',inventTable.ItemId, priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),CustTable.Currency).Amount;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>custNettoPG1Price</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// desigend from AVA
+        /// </summary>
+        /// <returns>SalesPrice</returns>
+        display public SalesPrice custNettoPG1Price()
+        {
+            return AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,CustTable.AVANetPG1,'',inventTable.ItemId, priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),CustTable.Currency).Amount;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>custNettoPG2Price</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// desigend fron AVA
+        /// </summary>
+        /// <returns>SalesPrice</returns>
+        display public SalesPrice custNettoPG2Price()
+        {
+            return AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,CustTable.AVANetPG2,'',inventTable.ItemId, priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),CustTable.Currency).Amount;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>custLineDiscGrpPctSearch</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// desigend from AVA
+        /// </summary>
+        /// <returns>search</returns>
+        public Percent custLineDiscGrpPctSearch()
+        {
+            Percent     lineDiscPct;
+
+            PriceDiscTable     priceDiscTable = AVAPriceDiscGroupSearch::searchDiscCodeRelation(PriceDiscPartyCodeType::GroupId,
+                                                                                      CustTable.LineDisc,
+                                                                                      PriceDiscProductCodeType::Table,
+                                                                                      inventTable.ItemId,
+                                                                                      priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                                      PriceType::LineDiscSales);
+
+            if  (!priceDiscTable.RecId)
+            {
+                priceDiscTable = AVAPriceDiscGroupSearch::searchDiscCodeRelation(PriceDiscPartyCodeType::GroupId,
+                                                                                      CustTable.LineDisc,
+                                                                                      PriceDiscProductCodeType::GroupId,
+                                                                                      InventTableModule::find(inventTable.ItemId,ModuleInventPurchSales::Sales).LineDisc,
+                                                                                      priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                                      PriceType::LineDiscSales);
+            }
+
+            lineDiscPct = priceDiscTable.Percent1;
+            return lineDiscPct;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>custLineDiscGrpPct</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        /// <returns>persent str</returns>
+        display public String20 custLineDiscGrpPct()
+        {
+            Percent     lineDiscPct;
+
+            lineDiscPct = this.custLineDiscGrpPctSearch();
+           
+            return lineDiscPct ? num2Str(lineDiscPct,-1,-1,-1,-1) + '%' : '';
+
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>custLineDiscAllPctSearch</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// desigend from AVA
+        /// </summary>
+        /// <returns>search</returns>
+        public Percent custLineDiscAllPctSearch()
+        {
+            Percent     lineDiscPct;
+         
+            PriceDiscTable     priceDiscTable = AVAPriceDiscGroupSearch::searchDiscCodeRelation(PriceDiscPartyCodeType::GroupId,
+                                                                                      CustTable.LineDisc,
+                                                                                      PriceDiscProductCodeType::All,
+                                                                                      '',
+                                                                                      priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                                      PriceType::LineDiscSales);
+
+            lineDiscPct = priceDiscTable.Percent1;
+            return lineDiscPct;
+        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>custLineDiscAllPct</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        /// <returns>persent str</returns>
+        display public String20 custLineDiscAllPct()
+        {
+            Percent     lineDiscPct;
+
+            
+            if (this.custLineDiscGrpPctSearch() == 0)
+            {
+                lineDiscPct= this.custLineDiscAllPctSearch();
+            }
+          
+
+            return lineDiscPct != 0 ? num2Str(lineDiscPct,-1,-1,-1,-1) + '%' : '';
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>chainPriceGroup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// deisgned from AVA
+        /// </summary>
+        /// <returns>true</returns>
+        display public String20 chainPriceGroup()
+        {
+            return smmBusRelChainGroup.AVAPriceGroupId;        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>chainLineDiscGroup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// deisgned from AVA
+        /// </summary>
+        /// <returns>true</returns>
+        display public String20 chainLineDiscGroup()
+        {
+            return smmBusRelChainGroup.AVALineDisc;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>chainNettoPG1Group</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// deisgned from AVA
+        /// </summary>
+        /// <returns>true</returns>
+        display public String20 chainNettoPG1Group()
+        {
+            return smmBusRelChainGroup.AVANetPG1;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>chainNettoPG2Group</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// deisgned from AVA
+        /// </summary>
+        /// <returns>true</returns>
+        display public String20 chainNettoPG2Group()
+        {
+            return smmBusRelChainGroup.AVANetPG2;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>chainPriceGroupPrice</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// deisgned from AVA
+        /// </summary>
+        /// <returns>true</returns>
+        display public SalesPrice chainPriceGroupPrice()
+        {
+            return AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,smmBusRelChainGroup.AVAPriceGroupId,'',inventTable.ItemId, priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),CustTable.Currency).Amount;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>chainLineDiscGrpPctSearch</Name>
+						<Source><![CDATA[
+        public Percent chainLineDiscGrpPctSearch()
+        {
+            Percent     lineDiscPct;
+
+            PriceDiscTable     priceDiscTable = AVAPriceDiscGroupSearch::searchDiscCodeRelation(PriceDiscPartyCodeType::GroupId,
+                                                                                      smmBusRelChainGroup.AVALineDisc,
+                                                                                      PriceDiscProductCodeType::Table,
+                                                                                      inventTable.ItemId,
+                                                                                      priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                                      PriceType::LineDiscSales);
+
+            if  (!priceDiscTable.RecId)
+            {
+                priceDiscTable = AVAPriceDiscGroupSearch::searchDiscCodeRelation(PriceDiscPartyCodeType::GroupId,
+                                                                                      smmBusRelChainGroup.AVALineDisc,
+                                                                                      PriceDiscProductCodeType::GroupId,
+                                                                                      InventTableModule::find(inventTable.ItemId,ModuleInventPurchSales::Sales).LineDisc,
+                                                                                      priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                                      PriceType::LineDiscSales);
+            }
+
+            lineDiscPct = priceDiscTable.Percent1;
+            return lineDiscPct;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>chainLineDiscGrpPct</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        /// <returns>persent str</returns>
+        display public str chainLineDiscGrpPct()
+        {
+          
+            Percent     lineDiscPct = this.chainLineDiscGrpPctSearch();
+
+         
+            return lineDiscPct ? num2Str(lineDiscPct,-1,-1,-1,-1) + '%' : '';
+
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>chainLineDiscAllPctSearch</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        /// <returns>serach</returns>
+        public Percent chainLineDiscAllPctSearch()
+        {
+            Percent            lineDiscPct;
+            PriceDiscTable     priceDiscTable = AVAPriceDiscGroupSearch::searchDiscCodeRelation(PriceDiscPartyCodeType::GroupId,
+                                                                                      smmBusRelChainGroup.AVALineDisc,
+                                                                                      PriceDiscProductCodeType::All,
+                                                                                      '',
+                                                                                      priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                                      PriceType::LineDiscSales);
+            lineDiscPct = priceDiscTable.Percent1;
+            return lineDiscPct;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>chainLineDiscAllPct</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        /// <returns>persent str</returns>
+        display public str chainLineDiscAllPct()
+        {
+            Percent            lineDiscPct;
+            
+            if(this.chainLineDiscGrpPctSearch() == 0)
+            {
+                lineDiscPct= this.chainLineDiscAllPctSearch();
+            }
+
+            return lineDiscPct ? num2Str(lineDiscPct,-1,-1,-1,-1) + '%' : '';
+
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>chainNettoPG1Price</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// deisgned from AVA
+        /// </summary>
+        /// <returns>true</returns>
+        display public SalesPrice chainNettoPG1Price()
+        {
+            return AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,smmBusRelChainGroup.AVANetPG1,'',inventTable.ItemId, priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),CustTable.Currency).Amount;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>chainNettoPG2Price</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// deisgned from AVA
+        /// </summary>
+        /// <returns>true</returns>
+        display public SalesPrice chainNettoPG2Price()
+        {
+            return AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,smmBusRelChainGroup.AVANetPG2,'',inventTable.ItemId, priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),CustTable.Currency).Amount;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///  desigemd from AVA
+        /// </summary>
+        /// <returns>int</returns>
+        public int active()
+        {
+            int ret;
+        
+            ret = super();
+            smmBusRelChainGroup = smmBusRelChainGroup::avaFindChainId(CustTable.CompanyChainId);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>calcPriceGroupPrice</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        /// <returns>salesPrice</returns>
+        display public SalesPrice calcPriceGroupPrice()
+        {
+ 
+            calcsalesPrice = AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,CustTable.PriceGroup,'',inventTable.ItemId, priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),CustTable.Currency).Amount;
+
+            if (calcsalesPrice == 0)
+            {
+                calcsalesPrice = AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,smmBusRelChainGroup.AVAPriceGroupId,'',inventTable.ItemId, priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),CustTable.Currency).Amount;
+            }
+            return calcsalesPrice;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>calcLineDiscGrpPct</Name>
+						<Source><![CDATA[
+       /// <summary>
+       /// designed from AVA
+       /// </summary>
+       /// <returns>str</returns>
+        display public String20 calcLineDiscGrpPct()
+        {
+            calcLineDiscGrpPct = this.custLineDiscGrpPctSearch();
+            if (calcLineDiscGrpPct == 0)
+            {
+                calcLineDiscGrpPct =  this.chainLineDiscGrpPctSearch();
+            }
+            return calcLineDiscGrpPct ? num2Str(calcLineDiscGrpPct,-1,-1,-1,-1) + '%' : '';
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>calcLineDiscAllPct</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        /// <returns>str</returns>
+        display public String20 calcLineDiscAllPct()
+        {
+            calcLineDiscAllPct = 0;
+            if (calcLineDiscGrpPct == 0)
+            {
+                calcLineDiscAllPct = this.custLineDiscAllPctSearch();
+                if (calcLineDiscAllPct == 0)
+                {
+                    calcLineDiscAllPct =  this.chainLineDiscAllPctSearch();
+                }
+            }
+            
+            return calcLineDiscAllPct ? num2Str(calcLineDiscAllPct,-1,-1,-1,-1) + '%' : '';
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>calcDiscountedPrice</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        /// <returns>SAlesPrice</returns>
+        display public SalesPrice   calcDiscountedPrice()
+        {
+            Percent             discount;
+
+            discount = calcLineDiscGrpPct ? calcLineDiscGrpPct : calcLineDiscAllPct;
+
+            calcDiscountedPrice = discount != 0 ? calcSalesPrice * (100-discount) / 100 : calcSalesPrice;
+
+            return calcDiscountedPrice;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>calcNettoPG1Price</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        /// <returns>SAlesPrice</returns>
+        display public SalesPrice calcNettoPG1Price()
+        {
+            calcNettoPG1Price = AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,CustTable.AVANetPG1,'',inventTable.ItemId, priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),CustTable.Currency).Amount;
+            if (calcNettoPG1Price == 0)
+            {
+                calcNettoPG1Price =  AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,smmBusRelChainGroup.AVANetPG1,'',inventTable.ItemId, priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),CustTable.Currency).Amount;
+            }
+            return calcNettoPG1Price;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>calcNettoPG2Price</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        /// <returns>SAlesPrice</returns>
+        display public SalesPrice calcNettoPG2Price()
+        {
+            calcNettoPG2Price = AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,CustTable.AVANetPG2,'',inventTable.ItemId, priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),CustTable.Currency).Amount;
+            if (calcNettoPG2Price == 0)
+            {
+                calcNettoPG2Price =  AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,smmBusRelChainGroup.AVANetPG2,'',inventTable.ItemId, priceDate != dateNull() ? priceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),CustTable.Currency).Amount;
+            }
+            return calcNettoPG2Price;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>calcBestPrice</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        /// <returns>SAlesPrice</returns>
+        display public SalesPrice calcBestPrice()
+        {
+        
+            calcBestPrice = calcDiscountedPrice;
+            calcBestPrice = calcNettoPG1Price > 0 ? (calcBestPrice > 0  ? min( calcbestPrice, calcNettoPG1Price) : calcNettoPG1Price) :   calcbestPrice;
+            calcbestPrice = calcNettoPG2Price > 0 ? (calcbestPrice > 0  ? min( calcbestPrice, calcNettoPG2Price) : calcNettoPG2Price) :   calcbestPrice;
+            return calcBestPrice;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>rankCustDiscQtyStr</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        /// <returns>str</returns>
+        display public String20 rankCustDiscQtyStr()
+        {
+            EcoResProductRecId              ecoResProduct = inventTable.Product;
+            UnitOfMeasure                   unitOfMeasure;
+            UnitOfMeasureConversion         conversion;
+            Qty                             rackQty;
+
+
+            select firstonly conversion where conversion.Product == ecoResProduct
+                join unitOfMeasure where unitOfMeasure.RecId == conversion.FromUnitOfMeasure
+                && unitOfMeasure.AVARackDiscAble == NoYes::Yes;
+            rackQty = conversion.Factor;
+            return  rackQty != 0 ?  num2Str(rackQty,-1,0,-1,-1) : '';
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>rankChainDiscQtyStr</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        /// <returns>str</returns>
+        display public String20 rankChainDiscQtyStr()
+        {
+            EcoResProductRecId              ecoResProduct = inventTable.Product;
+            UnitOfMeasure                   unitOfMeasure;
+            UnitOfMeasureConversion         conversion;
+            Qty                             rackQty;
+
+
+            select firstonly conversion where conversion.Product == ecoResProduct
+                join unitOfMeasure where unitOfMeasure.RecId == conversion.FromUnitOfMeasure
+                && unitOfMeasure.AVARackDiscAble == NoYes::Yes;
+            rackQty = conversion.Factor;
+
+            return  rackQty != 0 ?  num2Str(rackQty,-1,0,-1,-1) : '';
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>rankCustDiscStr</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        /// <returns>str</returns>
+        display public String20 rankCustDiscStr()
+        {
+            return custrackDiscItems.RecId ? num2Str(CustTable.AVARackDiscount,-1,-1,-1,-1) + '%' : '';
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>rankChainDiscStr</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        /// <returns>str</returns>
+        display public String20 rankChainDiscStr()
+        {
+            return chainRackDiscItems.RecId ? num2Str(smmBusRelChainGroup.AVARackDiscount,-1,-1,-1,-1) + '%' : '';
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>InventOnHand</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// designed from AVA
+        /// </summary>
+        public void clicked()
+        {
+            super();
+            args args;
+   
+            args = new args();
+            args.record(inventTable);
+            args.formViewOption(FormViewOption::Grid);
+   
+            menuFunction::runClient(identifierStr(InventOnhandItemAction), MenuItemType::Display, false, args);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>CustTable</Name>
+			<Table>CustTable</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AccountNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AccountStatement</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Affiliated_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgencyLocationCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AuthorityOffice_IT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAEDICentralRegulator</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAMDU_PartyType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVANetPG1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVANetPG2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVARackDiscount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVASendExcel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankCentralBankPurposeCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankCentralBankPurposeText</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankCustPaymIdTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BirthCountyCode_IT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BirthDate_IT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BirthPlace_IT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Blocked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BlockFloorLimitUseInChannel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscBaseDays</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CCMNum_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CFDIEnabled_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CFDISkipIEPSTaxes_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ClearingPeriod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CNAE_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CNPJCPFNum_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CollectionLetterCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CommercialRegister</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CommercialRegisterInsetNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CommercialRegisterSection</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CommissionGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CompanyChainId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CompanyIdSiret</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CompanyNAFCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CompanyType_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ConsDay_JP</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactPersonId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditCardAddressVerification</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditCardAddressVerificationLevel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditCardAddressVerificationVoid</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditCardCVC</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditMax</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditRating</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Curp_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Currency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustClassificationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustExcludeCollectionFee</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustExcludeInterestCharges</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustFinalUser_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustItemGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustTradingPartnerCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustWhtContributionType_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustWriteOffRefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDirectDebitMandate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultInventStatusId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DestinationCodeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvMode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvReason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvTerm</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EInvoice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EInvoiceAttachment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EinvoiceEANNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EInvoiceRegister_IT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EndDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EnterpriseCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EnterpriseNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EntryCertificateRequired_W</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExportSales_PL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExpressBillOfLading</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FactoringAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FederalComments</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FedNonFedIndicator</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FineCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FiscalCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FiscalDocType_PL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ForecastDMPInclude</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ForeignerId_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ForeignResident_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ForeignTaxRegistration_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ForeignTrade_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FreeNotesGroup_IT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FreightZone</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GenerateIncomingFiscalDocument_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GiroType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GiroTypeAccountStatement</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GiroTypeCollectionletter</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GiroTypeFreeTextInvoice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GiroTypeInterestNote</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GiroTypeProjInvoice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ICMSContributor_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IdentificationNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IENum_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InclTax</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>INSSCEI_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntBank_LV</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterCompanyAllowIndirectCreation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterCompanyAutoCreateOrders</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterCompanyDirectDelivery</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterestCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventProfileId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventProfileType_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventSiteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceAddress</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoicePostingType_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceType_W</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IRS1099CIndicator</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsExternallyMaintained</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsPublicSector_IT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsResident_LV</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IssueOwnEntryCertificate_W</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IssuerCountry_HU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_BOSAllianceID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_BOSCustCreditTaxGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_BOSSpecialPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_CentralWarehouse</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_CollComp</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_CollectionCommisionPerc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KMSDoSync</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_KMSSyncBlocked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_LimitGroupName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_MaxBonusAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_NoUseQuotPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_QuotCentralEmail</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineOfBusinessId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LvPaymTransCodes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MainContactWorker</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MandatoryCreditLimit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MandatoryVatDate_PL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MarkupGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRMergedParent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRMergedRoot</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Memo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MultiLineDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NDX_ShowEANOnInvoice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NIT_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>numberSequenceGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OneTimeCustomer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderEntryDeadlineGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrgId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OurAccountNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OverrideSalesTax</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PackageDepositExcempt_PL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PackedExtensions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PackMaterialFeeLicenseNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Party</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PartyCountry</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PartyState</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PassportNo_HU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymDayId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymentReference_EE</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymIdType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymMode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymSched</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymSpec</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymTermId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCustRebateGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsFreightAccrued</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsRebateTMAGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PresenceType_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PriceGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrintDynamicQRCode_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RegNum_W</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ResidenceForeignCountryRegionId_IT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RevRecDisableIntercompany</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Rfc_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RFIDCaseTagging</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RFIDItemTagging</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RFIDPalletTagging</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesCalendarId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesDistrictId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesPoolId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SATPaymMethod_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SATPurpose_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SegmentId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ServiceCodeOnDlvAddress_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ShipCarrierAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ShipCarrierAccountCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ShipCarrierBlindShipment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ShipCarrierFuelSurcharge</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ShipCarrierId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SimpleNational_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SimplifyTaxIntgrExportDocValidation_CN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SimplifyTaxIntgrExportTaxRegValidation_CN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StateInscription_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StatisticsGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SubsegmentId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SuframaNumber_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SuframaPISCOFINS_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Suframa_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SuppItemGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxBorderNumber_FI</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxGSTReliefGroupHeading_MY</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxLicenseNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxPeriodPaymentCode_PL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxWithholdCalculate_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxWithholdCalculate_TH</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxWithholdGroup_TH</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UnitedVATInvoice_LT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UseCashDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UseOriginalDocumentAsFacture_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>usePurchRequest</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UsualExporter_IT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VATNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VATNumRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VATNumTableType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VendAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WebSalesOrderDisplay</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WorkflowState</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@NDX:NXAPriceQuickOverview</Caption>
+		<Pattern xmlns="">Custom</Pattern>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>ButtonGrp</Name>
+				<Type>Group</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonControl">
+						<Name>InventOnHand</Name>
+						<Type>Button</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Text>@SYS7092</Text>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>Customer</Name>
+				<Type>Group</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>CustTable_AccountNum</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AccountNum</DataField>
+						<DataSource>CustTable</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>CustName</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<CacheDataMethod>Yes</CacheDataMethod>
+						<DataMethod>name</DataMethod>
+						<DataSource>CustTable</DataSource>
+						<Label>@SYS319533</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>CustTable_CompanyChainId</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>CompanyChainId</DataField>
+						<DataSource>CustTable</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>CustTable_Currency</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Currency</DataField>
+						<DataSource>CustTable</DataSource>
+					</AxFormControl>
+				</Controls>
+				<Columns>4</Columns>
+				<Caption>@SYS11779</Caption>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>Item</Name>
+				<Type>Group</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ItemId</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataMethod>editItemId</DataMethod>
+						<LabelPosition>Above</LabelPosition>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ItemName</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<CacheDataMethod>Yes</CacheDataMethod>
+						<DataMethod>itemName</DataMethod>
+						<Label>@SYS319533</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>PriceUnit</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<CacheDataMethod>Yes</CacheDataMethod>
+						<DataMethod>itemPriceUnit</DataMethod>
+						<ShowZero>No</ShowZero>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>PriceDate</Name>
+						<Type>Date</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataMethod>editPriceDate</DataMethod>
+					</AxFormControl>
+				</Controls>
+				<Columns>4</Columns>
+				<Caption>@SYS7407</Caption>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>Prices</Name>
+				<Type>Group</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Labels</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStaticTextControl">
+								<Name>EmptyLabel</Name>
+								<Type>StaticText</Type>
+								<Visible>No</Visible>
+								<FormControlExtension
+									i:nil="true" />
+								<Text></Text>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>PriceLbl</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>priceTxt</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>DiscGroupLbl</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>discGroupTxt</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>DsctedPrcLable</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>discAllTxt</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>DiscountedPriceLbl</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>discountedPrcTxt</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>NettoPG1Lbl</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>nettoPG1Txt</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>NettoPG2lbl</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>nettoPG2Txt</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>BestPriceLbl</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>bestPriceTxt</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS38370</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>CustomerPriceGroups</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>CustTable_PriceGroup</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Alignment>Right</Alignment>
+								<DataField>PriceGroup</DataField>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>CustTable_LineDisc</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>LineDisc</DataField>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>EmptyStrGP</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>emptyStr</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>EmptyStrGP1</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>emptyStr</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>CustTable_AVANetPG1</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>AVANetPG1</DataField>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>CustTable_AVANetPG2</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>AVANetPG2</DataField>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>EmptyStrgr2</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>emptyStr</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+						</Controls>
+						<Caption>@NDX:NXACustomerPGs</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>CustomerPrices</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>PriceGroupCustomerPrice</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>custPriceGroupPrice</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+								<ShowZero>No</ShowZero>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>DiscPcrGroupCustomerPrc</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>custLineDiscGrpPct</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>DiscAllCustomerPrc</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>custLineDiscAllPct</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>EmptyCP1</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>emptyStr</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>CustPG1Price</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>custNettoPG1Price</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+								<ShowZero>No</ShowZero>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>CustPG2Price</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>custNettoPG2Price</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+								<ShowZero>No</ShowZero>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>EmptyCP2</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>emptyStr</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+						</Controls>
+						<Caption>@NDX:NXACustPrice</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>ChainPriceGroup</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ChainPriceGr</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>chainPriceGroup</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ChainLineDiscGr</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>chainLineDiscGroup</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>EmptyChainGr1</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>emptyStr</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>EmptyChainGr2</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>emptyStr</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ChainNettoPG1</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>chainNettoPG1Group</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ChainNettoPG2</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>chainNettoPG2Group</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>EmptyChainGr3</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>emptyStr</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+						</Controls>
+						<Caption>@NDX:NXAChainPriceGrp</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>ChainPrice</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>ChainPriceGrPrice</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>chainPriceGroupPrice</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+								<ShowZero>No</ShowZero>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ChainLineDiscGrpPct</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>chainLineDiscGrpPct</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ChainLineDiscAllPct</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>chainLineDiscAllPct</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>EmptyChainPrice1</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>emptyStr</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>ChainNettoPG1Price</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>chainNettoPG1Price</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+								<ShowZero>No</ShowZero>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>ChainNettoPG2Price</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>chainNettoPG2Price</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+								<ShowZero>No</ShowZero>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>EmptyChainPrice2</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>emptyStr</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+						</Controls>
+						<Caption>@NDX:NXAChainPreis</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>CalcPrice</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>calcSalesPrice</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>calcPriceGroupPrice</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+								<ShowZero>No</ShowZero>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>calcLineDiscGrpPct</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>calcLineDiscGrpPct</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>calcLineDiscAllPct</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>calcLineDiscAllPct</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>calcDiscountedPrice</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>calcDiscountedPrice</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+								<ShowZero>No</ShowZero>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>calcNettoPG1Price</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>calcNettoPG1Price</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+								<ShowZero>No</ShowZero>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>calcNettoPG2Price</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>calcNettoPG2Price</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+								<ShowZero>No</ShowZero>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>calcBestPrice</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>calcBestPrice</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+								<ShowZero>No</ShowZero>
+							</AxFormControl>
+						</Controls>
+						<Caption>@NDX:NXACalcPrice</Caption>
+					</AxFormControl>
+				</Controls>
+				<Columns>6</Columns>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>PriceSurchaseGrp</Name>
+				<Type>Group</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>PriceSurchaseLblGrp</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStaticTextControl">
+								<Name>PriceSurchseLblGrp</Name>
+								<Type>StaticText</Type>
+								<Visible>No</Visible>
+								<FormControlExtension
+									i:nil="true" />
+								<Text></Text>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>PriceSurchaseLbl</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>priceSurchaseTxt</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+						</Controls>
+						<Caption>@NDX:NXAVKTZ</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>PriceSurchasePctGp</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>PriceSurchasePctValue</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>priceSurchasePct</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS15774</Caption>
+					</AxFormControl>
+				</Controls>
+				<Columns>2</Columns>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>RankDiscount</Name>
+				<Type>Group</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>RankDiscLbl</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStaticTextControl">
+								<Name>RankDiscEmptyLabelCopy</Name>
+								<Type>StaticText</Type>
+								<Visible>No</Visible>
+								<FormControlExtension
+									i:nil="true" />
+								<Text></Text>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>RankDiskTxt</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataMethod>rankDiscTxt</DataMethod>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+						</Controls>
+						<Caption>@NDX:NXARackDiscount</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>RankCustDiscQty</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>RankDiscQtyStr</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>rankCustDiscQtyStr</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS3065</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>RankCustDiscPct</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>RankCustDiscPctValue</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>rankCustDiscStr</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS15774</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>RankChainDiscQty</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>RankChainDiscQtyValue</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>rankChainDiscQtyStr</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS3065</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>RankChainDiscPct</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>RankChainDiscPctValue</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>rankChainDiscStr</DataMethod>
+								<DataSource>CustTable</DataSource>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS15774</Caption>
+					</AxFormControl>
+				</Controls>
+				<Columns>5</Columns>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

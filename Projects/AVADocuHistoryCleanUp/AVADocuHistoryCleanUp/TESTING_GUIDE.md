@@ -1,0 +1,388 @@
+# DocuHistory Cleanup - Testing Guide
+
+## Pre-Testing Setup
+
+### 1. Prepare Test Data
+
+Before testing, ensure you have DocuHistory records with various dates:
+
+```xpp
+// X++ Job to create test data
+static void CreateTestDocuHistoryData(Args _args)
+{
+    DocuHistory docuHistory;
+    int i;
+    
+    ttsbegin;
+    
+    for (i = 1; i <= 150; i++)
+    {
+        docuHistory.clear();
+        docuHistory.RefTableId = tableNum(CustTable);
+        docuHistory.RefRecId = 1;
+        docuHistory.RefCompanyId = curext();
+        docuHistory.CreatedDateTime = DateTimeUtil::addDays(DateTimeUtil::utcNow(), -i);
+        docuHistory.insert();
+    }
+    
+    ttscommit;
+    
+    info(strFmt("%1 test records created", i));
+}
+```
+
+### 2. Verify Initial Record Count
+
+```sql
+-- SQL Query to check initial count
+SELECT COUNT(*) as RecordCount
+FROM DocuHistory
+WHERE CREATEDATETIME < GETDATE()
+```
+
+## Test Cases
+
+### Test Case 1: Dialog Display
+**Objective**: Verify the dialog appears with correct parameters
+
+**Steps**:
+1. Navigate to the menu item location or use navigation search
+2. Click on "DocuHistory cleanup"
+
+**Expected Results**:
+- Dialog opens successfully
+- Query parameter field is visible
+- Query name shows "AVADocuHistoryCleanupQuery"
+- Lookup button is available next to query field
+- Batch tab is visible
+- OK and Cancel buttons are present
+
+**Status**: ? Pass ? Fail
+
+**Notes**: _______________________
+
+---
+
+### Test Case 2: Query Dialog Interaction
+**Objective**: Verify users can open and modify the query
+
+**Steps**:
+1. Open the DocuHistory cleanup dialog
+2. Click the lookup button next to the Query field
+3. Query dialog should open
+4. Verify DocuHistory is the data source
+5. Locate the "Created date/time" range field
+
+**Expected Results**:
+- Query dialog opens
+- DocuHistory table is shown as data source
+- CreatedDateTime range is visible and can be modified
+- Can add additional ranges if needed
+- Can select which fields to display
+
+**Status**: ? Pass ? Fail
+
+**Notes**: _______________________
+
+---
+
+### Test Case 3: Date Range Filter - Specific Date
+**Objective**: Delete records older than a specific date
+
+**Steps**:
+1. Open the cleanup dialog
+2. Click query lookup
+3. Set CreatedDateTime range to: `..12/31/2023 23:59:59`
+4. Click OK on query dialog
+5. Click OK on main dialog
+
+**Expected Results**:
+- Records with CreatedDateTime <= 12/31/2023 are deleted
+- Info message shows: "X records deleted"
+- Completion message appears
+- Only records within the range are deleted
+
+**Verification Query**:
+```sql
+SELECT COUNT(*) FROM DocuHistory 
+WHERE CREATEDATETIME <= '2023-12-31 23:59:59'
+-- This should return 0 after cleanup
+```
+
+**Status**: ? Pass ? Fail
+
+**Deleted Count**: _______
+
+**Notes**: _______________________
+
+---
+
+### Test Case 4: Date Range Filter - Relative Date
+**Objective**: Delete records older than 30 days
+
+**Steps**:
+1. Calculate date 30 days ago
+2. Open cleanup dialog
+3. Set CreatedDateTime range to that date
+4. Execute cleanup
+
+**Expected Results**:
+- Records older than 30 days are deleted
+- Newer records remain
+- Correct count displayed
+
+**Verification Query**:
+```sql
+SELECT COUNT(*) FROM DocuHistory 
+WHERE CREATEDATETIME <= DATEADD(DAY, -30, GETUTCDATE())
+-- Should return 0 after cleanup
+```
+
+**Status**: ? Pass ? Fail
+
+**Deleted Count**: _______
+
+**Notes**: _______________________
+
+---
+
+### Test Case 5: Batch Processing
+**Objective**: Verify batch job execution works correctly
+
+**Steps**:
+1. Open cleanup dialog
+2. Set query criteria
+3. Go to "Batch" tab
+4. Check "Batch processing"
+5. Set batch group (optional)
+6. Click OK
+7. Navigate to System administration > Inquiries > Batch jobs
+8. Locate the cleanup batch job
+9. Monitor execution
+
+**Expected Results**:
+- Batch job is created
+- Status changes from "Waiting" to "Executing" to "Ended"
+- Records are deleted
+- Batch job log shows completion message
+- No errors in batch job log
+
+**Status**: ? Pass ? Fail
+
+**Batch Job ID**: _______
+
+**Notes**: _______________________
+
+---
+
+### Test Case 6: Transaction Safety (100-Record Batches)
+**Objective**: Verify records are committed in batches of 100
+
+**Steps**:
+1. Create 250 test records
+2. Set query to delete all 250 records
+3. Add a breakpoint or debug logging in the service class at the commit point
+4. Execute cleanup
+5. Observe commit pattern
+
+**Expected Results**:
+- First commit after 100 records
+- Second commit after 200 records
+- Final commit after 250 records
+- Total 3 commits occur
+
+**Status**: ? Pass ? Fail
+
+**Notes**: _______________________
+
+---
+
+### Test Case 7: Empty Result Set
+**Objective**: Verify behavior when no records match the query
+
+**Steps**:
+1. Set query criteria that won't match any records
+2. Example: CreatedDateTime > future date
+3. Execute cleanup
+
+**Expected Results**:
+- No errors occur
+- Info message: "0 records deleted"
+- Completion message appears
+- No records are affected
+
+**Status**: ? Pass ? Fail
+
+**Notes**: _______________________
+
+---
+
+### Test Case 8: Security Privilege
+**Objective**: Verify security privilege controls access
+
+**Steps**:
+1. Create a test user without the privilege
+2. Login as that user
+3. Try to access the menu item
+4. Assign privilege AVADocuHistoryCleanupMaintain to user's role
+5. Verify access is granted
+
+**Expected Results**:
+- Without privilege: Menu item is not accessible or shows security error
+- With privilege: Menu item opens successfully and can execute
+
+**Status**: ? Pass ? Fail
+
+**Notes**: _______________________
+
+---
+
+### Test Case 9: Error Handling - Invalid Query
+**Objective**: Verify error handling for invalid scenarios
+
+**Steps**:
+1. Modify contract in debugger to return null query
+2. Try to execute
+3. Verify error message
+
+**Expected Results**:
+- Appropriate error message is shown
+- No records are deleted
+- Transaction is rolled back
+- System remains stable
+
+**Status**: ? Pass ? Fail
+
+**Notes**: _______________________
+
+---
+
+### Test Case 10: Large Dataset Performance
+**Objective**: Verify performance with large number of records
+
+**Steps**:
+1. Create 10,000 test records
+2. Set query to delete all 10,000 records
+3. Execute cleanup
+4. Monitor execution time
+5. Verify all records are deleted
+
+**Expected Results**:
+- All records are deleted successfully
+- Execution completes within reasonable time
+- 100 commits occur (10,000 / 100)
+- No timeout errors
+- No transaction lock issues
+
+**Status**: ? Pass ? Fail
+
+**Execution Time**: _______
+
+**Deleted Count**: _______
+
+**Notes**: _______________________
+
+---
+
+### Test Case 11: Query Persistence
+**Objective**: Verify query modifications are saved in the contract
+
+**Steps**:
+1. Open cleanup dialog
+2. Modify query (add range)
+3. Save as batch job
+4. Close dialog
+5. Reopen the batch job
+6. Verify query modifications are preserved
+
+**Expected Results**:
+- Query modifications are saved
+- Reloaded query shows the same ranges
+- Batch job executes with correct query
+
+**Status**: ? Pass ? Fail
+
+**Notes**: _______________________
+
+---
+
+### Test Case 12: Concurrent Execution
+**Objective**: Verify behavior with concurrent cleanup jobs
+
+**Steps**:
+1. Start first cleanup job targeting specific date range
+2. Immediately start second cleanup job targeting different date range
+3. Monitor both jobs
+
+**Expected Results**:
+- Both jobs complete successfully
+- No deadlocks occur
+- Each job deletes only its targeted records
+- Correct counts for each job
+
+**Status**: ? Pass ? Fail
+
+**Notes**: _______________________
+
+---
+
+## Post-Testing Validation
+
+### Data Integrity Check
+```sql
+-- Verify no orphaned records
+-- Verify referential integrity is maintained
+SELECT * FROM DocuHistory WHERE RefRecId = 0 OR RefTableId = 0
+-- Should return no results
+```
+
+### Performance Metrics
+- Average execution time: _______
+- Records processed per second: _______
+- Peak memory usage: _______
+
+### Logging Verification
+- Check infolog messages: ? Complete
+- Check batch job history: ? Complete
+- Check system event log: ? Complete
+
+## Test Summary
+
+| Test Case | Status | Notes |
+|-----------|--------|-------|
+| 1. Dialog Display | ? | |
+| 2. Query Interaction | ? | |
+| 3. Date Range - Specific | ? | |
+| 4. Date Range - Relative | ? | |
+| 5. Batch Processing | ? | |
+| 6. Transaction Safety | ? | |
+| 7. Empty Result Set | ? | |
+| 8. Security Privilege | ? | |
+| 9. Error Handling | ? | |
+| 10. Large Dataset | ? | |
+| 11. Query Persistence | ? | |
+| 12. Concurrent Execution | ? | |
+
+**Overall Status**: ? Pass ? Fail
+
+**Tested By**: _______________________
+
+**Date**: _______________________
+
+**Environment**: _______________________
+
+**Build Version**: _______________________
+
+## Known Issues
+
+| Issue | Severity | Workaround | Status |
+|-------|----------|------------|--------|
+| | | | |
+
+## Sign-Off
+
+**Developer**: _______________________ Date: _______
+
+**QA Lead**: _______________________ Date: _______
+
+**Business Owner**: _______________________ Date: _______

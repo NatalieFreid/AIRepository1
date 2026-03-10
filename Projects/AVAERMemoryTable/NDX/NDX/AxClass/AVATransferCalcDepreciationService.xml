@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVATransferCalcDepreciationService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA_007513_TransferJournalsDepreciation
+/// </summary>
+internal final class AVATransferCalcDepreciationService extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_007513_TransferJournalsDepreciation
+    /// </summary>
+    /// <param name = "_contract">AVATransferCalcDepreciationContract</param>
+    public void process(AVATransferCalcDepreciationContract _contract)
+    {
+        FromDate            fromDate;
+        ToDate              toDate;
+        LedgerJournalNameId journalName;
+        TransDate           postingDate;
+
+        System.Exception ex;
+        #OCCRetryCount
+
+        fromDate    = _contract.parmFromDate();
+        toDate      = _contract.parmToDate();
+        journalName = _contract.parmJournalName();
+        postingDate = _contract.parmPostingDate();
+
+        try
+        {
+            this.processOperation(fromDate, toDate, journalName, postingDate);
+        }
+
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+
+        catch (Exception::Error)
+        {
+            error("@NDX:NXAErrorOccured");
+            retry;
+        }
+
+        catch (Exception::CLRError)
+        {
+            ex = ClrInterop::getLastException();
+
+            if (ex != null)
+            {
+                ex = ex.get_InnerException();
+                if (ex != null)
+                {
+                    error("@NDX:NXAErrorOccured");
+                }
+            }
+
+            retry;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processOperation</Name>
+				<Source><![CDATA[
+    private void processOperation(FromDate _fromDate, ToDate _toDate, LedgerJournalNameId _journalNameId, transDate _postingDate)
+    {
+        LedgerJournalTable      jourTable; 
+        AssetTrans              assetTrans;
+        Query                   query;
+        QueryRun                qr;
+        QueryBuildDataSource    qbdsAssetTrans, qbdsAssetTable, qbdsDimSetItem, qbdsDimAttributeValue, qbdsDimAttribute;
+        AssetParameters         assetParameters = AssetParameters::find();
+        AssetTable              assetTable;
+
+        jourTable = this.createJourTable(_journalNameId);
+
+        query = new Query();
+        query.allowCrossCompany(true);
+        qbdsAssetTrans = query.addDataSource(tableNum(AssetTrans));
+        SysQuery::findOrCreateRange(qbdsAssetTrans, fieldNum(AssetTrans, BookId)).value(assetParameters.AVACalculationAssetBookId);
+        SysQuery::findOrCreateRange(qbdsAssetTrans, fieldNum(AssetTrans, TransDate)).value(SysQueryRangeUtil::dateRange(_fromDate, _toDate));
+        SysQuery::findOrCreateRange(qbdsAssetTrans, fieldNum(AssetTrans, TransType)).value(SysQuery::value(AssetTransType::Depreciation));
+        qbdsAssetTable = qbdsAssetTrans.addDataSource(tableNum(AssetTable));
+        qbdsAssetTable.relations(true);
+        //qbdsDimSetItem = qbdsAssetTrans.addDataSource(tableNum(DimensionAttributeValueSetItem));
+        //qbdsDimSetItem.relations(false);
+        //qbdsDimSetItem.addLink(fieldNum(AssetTrans, DefaultDimension), fieldNum(DimensionAttributeValueSetItem, DimensionAttributeValueSet));
+        //qbdsDimSetItem.joinMode(JoinMode::InnerJoin);
+        qbdsDimSetItem = qbdsAssetTable.addDataSource(tableNum(DimensionAttributeValueSetItem));
+        qbdsDimSetItem.addLink(fieldNum(AssetTable, KCS_FABDefaultDimension), fieldNum(DimensionAttributeValueSetItem, DimensionAttributeValueSet));
+        qbdsDimSetItem.joinMode(JoinMode::InnerJoin);
+        qbdsDimAttributeValue = qbdsDimSetItem.addDataSource(tableNum(DimensionAttributeValue));
+        qbdsDimAttributeValue.relations(false);
+        qbdsDimAttributeValue.addLink(fieldNum(DimensionAttributeValueSetItem, DimensionAttributeValue), fieldNum(DimensionAttributeValue, RecId));
+        qbdsDimAttributeValue.joinMode(JoinMode::InnerJoin);
+        qbdsDimAttribute = qbdsDimAttributeValue.addDataSource(tableNum(DimensionAttribute));
+        qbdsDimAttribute.relations(false);
+        qbdsDimAttribute.addLink(fieldNum(DimensionAttributeValue, DimensionAttribute), fieldNum(DimensionAttribute, RecId));
+        qbdsDimAttribute.joinMode(JoinMode::InnerJoin);
+        SysQuery::findOrCreateRange(qbdsDimAttribute, fieldNum(DimensionAttribute, Name)).value(assetParameters.AVACalcDimAttributeName);
+        SysQuery::findOrCreateRange(qbdsDimSetItem, fieldNum(DimensionAttributeValueSetItem, DisplayValue)).value(assetParameters.AVACalculationDimensionValue);
+
+        qr = new QueryRun(query);
+
+        while (qr.next())
+        {
+            assetTrans = qr.get(tableNum(AssetTrans));
+            assetTable = qr.get(tableNum(AssetTable));
+            this.createLedgerJournalTrans(jourTable, assetTrans, assetTable, _postingDate);
+        }
+        info(strFmt("@NDX:NXAJournalCreated", jourTable.JournalNum));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createJourTable</Name>
+				<Source><![CDATA[
+    private LedgerJournalTable createJourTable(LedgerJournalNameId _journalNameId)
+    {
+        LedgerJournalTable  journalTable;
+
+        journalTable.JournalNum  = JournalTableData::newTable(journalTable).nextJournalId();
+        journalTable.JournalName = _journalNameId;
+        journalTable.initFromLedgerJournalName();
+        journalTable.CurrencyCode   = Ledger::accountingCurrency();
+
+        journalTable.insert();
+
+        return journalTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createLedgerJournalTrans</Name>
+				<Source><![CDATA[
+    private void createLedgerJournalTrans(LedgerJournalTable    _journalTable, AssetTrans _assetTrans, AssetTable _assetTable, TransDate _postingDate)
+    {
+        Voucher             voucher;
+        LedgerJournalTrans  journalTrans;
+        JournalVoucherNum   journalVoucherNum;
+        //AssetTable          assetTable = AssetTable::find(_assetTrans.AssetId);
+        AVAAssetCalcAccountAssignment   accAssignment;
+        LedgerDimensionDefaultAccount   defaultAccount;
+        DimensionHierarchyId            dimensionHierarchyId;
+
+        journalVoucherNum = new JournalVoucherNum(JournalTableData::newTable(LedgerJournalTable::find(_journalTable.JournalNum)));
+        voucher = journalVoucherNum.getNew(true);
+
+        journalTrans.JournalNum  = _journalTable.JournalNum;
+        journalTrans.initForCurrency(_journalTable);
+
+        if (! voucher)
+        {
+            info("@SYS26396");
+        }
+        else
+        {
+            journalTrans.Voucher = voucher;
+            //journalTrans.TransDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+            journalTrans.TransDate = _postingDate ? _postingDate : DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+        }
+
+        journalTrans.Approved = NoYes::Yes;
+        journalTrans.Approver = HcmWorker::userId2Worker(curUserId());
+
+        journalTrans.TaxItemGroup      = TaxParameters::find().TaxItemGroup;
+        journalTrans.OffsetAccountType      = _journalTable.OffsetAccountType;
+        journalTrans.OffsetLedgerDimension  = _journalTable.OffsetLedgerDimension;
+        //journaltrans.OffsetLedgerDimension  = LedgerDefaultAccountHelper::getDefaultAccountFromMainAccountId();
+        journalTrans.OffsetDefaultDimension =
+                LedgerDimensionFacade::getDefaultDimensionFromLedgerDimension(journalTrans.OffsetLedgerDimension);
+
+        journalTrans.OffsetLedgerDimension = LedgerDimensionFacade::serviceCreateLedgerDimension(
+                    journalTrans.OffsetLedgerDimension, journalTrans.OffsetLedgerDimension);
+
+        journalTrans.OffsetLedgerDimension = LedgerDimensionFacade::serviceApplyFixedAndRecreateLedgerDimension(journalTrans.OffsetLedgerDimension, Ledger::current());
+
+        select firstonly accAssignment where accAssignment.AssetBookId == _assetTrans.BookId && accAssignment.AssetGroupId == _assetTrans.AssetGroup;
+        if (! accAssignment.LedgerAccount)
+        {
+            info(strFmt("@NDX:NXANoAssetGroupBookComb", _assetTrans.BookId, _assetTrans.AssetGroup));
+        }
+        else
+        {
+            //defaultAccount = LedgerDefaultAccountHelper::getDefaultAccountFromMainAccountId(accAssignment.LedgerAccount);
+            dimensionHierarchyid = dimensionHierarchy::findByTypeAndName(DimensionHierarchyType::AccountStructure, accAssignment.DimensionHierarchyName).RecId;
+            if (!dimensionHierarchyid)
+            {
+                dimensionHierarchyid = DimensionHierarchy::getAccountStructure(MainAccount::findByMainAccountId(accAssignment.LedgerAccount).RecId);
+            }
+            defaultAccount = LedgerDimensionDefaultingEngine::getLedgerDimensionFromAccountAndDim(MainAccount::findByMainAccountId(accAssignment.LedgerAccount).RecId,
+                DimensionHierarchyId);
+        }
+        journalTrans.AccountType = LedgerJournalACType::Ledger;
+        journalTrans.LedgerDimension = defaultAccount;
+        journalTrans.DefaultDimension = _assetTable.KCS_FABDefaultDimension;
+        journalTrans.LedgerDimension = LedgerDimensionFacade::serviceCreateLedgerDimension(journalTrans.LedgerDimension, journalTrans.DefaultDimension);
+        journalTrans.AmountCurDebit = -_assetTrans.AmountCur;
+
+        journalTrans.DocumentNum       = _journalTable.DocumentNum;
+
+        journalTrans.CurrencyCode      = _journalTable.CurrencyCode;
+        journalTrans.ExchRate          = _journalTable.ExchRate;
+        if (!journalTrans.ExchRate)
+        {
+            journalTrans.ExchRate = 100;
+        }
+        journalTrans.ExchRateSecond    = _journalTable.ExchrateSecondary;
+        journalTrans.Triangulation     = _journalTable.EUROTriangulation;
+
+        Journaltrans.Txt               = _assetTrans.Txt;
+        journalTrans.TransactionType   = LedgerTransType::GeneralJournal;
+
+        journalTrans.insert();
+        journalVoucherNum.used(voucher);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

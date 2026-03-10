@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPurchAgreementHeaderDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of table PurchAgreementHeader
+/// </summary>
+[ExtensionOf(tableStr(PurchAgreementHeader))]
+final class AVAPurchAgreementHeaderDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public void insert()
+    {
+        next insert();
+
+        this.avaCreateMarkupTrans(false);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    public void update()
+    {
+        PurchAgreementHeader avaAgreementHeaderOrig = this.orig();
+        AgreementHeaderDefault avaHeaderDefaultOrig = this.agreementHeaderDefault().orig();
+        next update();
+
+        if (this.VendAccount != avaAgreementHeaderOrig.VendAccount ||
+            this.agreementHeaderDefault().MiscChargeGroup  != avaHeaderDefaultOrig.MiscChargeGroup)
+        {
+            this.avaCreateMarkupTrans();
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateAgreementLineOrderConfirmation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// updates AVAOrderConfirmation field in related AgreementLine records
+    /// </summary>
+    public void avaUpdateAgreementLineOrderConfirmation()
+    {
+        AgreementLine agreementLine;
+
+        ttsbegin;
+
+        while select forupdate agreementLine
+            where agreementLine.Agreement == this.RecId
+            && agreementLine.IsDeleted == NoYes::No
+        {
+            agreementLine.AVAOrderConfirmation = this.AVAOrderConfirmation;
+
+            agreementLine.doUpdate();
+        }
+
+        ttscommit;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateALineEffectivePrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the effective price of all related agreement lines
+    /// </summary>
+    public void avaUpdateALineEffectivePrice()
+    {
+        AgreementLine avaAgreementLine;
+
+        ttsbegin;
+
+        update_recordset avaAgreementLine
+            setting AVAEffectivePrice = this.AVAEffectivePrice
+            where avaAgreementLine.Agreement == this.RecId
+               && avaAgreementLine.IsDeleted == NoYes::No;
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaModifiedMarkupGroup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates MarkupTrans for lines
+    /// </summary>
+    void avaModifiedMarkupGroup()
+    {
+        AgreementLine  avaAgreementLine;
+
+        while select avaAgreementLine
+            index hint AgreementHeaderIdx
+            where avaAgreementLine.Agreement    == this.RecId
+               && !avaAgreementLine.IsDeleted
+        {
+            avaAgreementLine.avaCreateMarkupTrans(this, true);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCreateMarkupTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Create <c>MarkupTrans</c> records
+    /// </summary>
+    /// <param name = "_deleteExistingMarkupTrans">boolean</param>
+    void  avaCreateMarkupTrans(
+        boolean _deleteExistingMarkupTrans = true
+    )
+    {
+        AgreementHeaderDefault avaHeaderDefault = this.agreementHeaderDefault();
+
+        if (avaHeaderDefault.AVASkipCreateMarkup == NoYes::No)
+        {
+
+            Markup::insertMarkupTrans(HeadingLine::Heading,
+                                    MarkupModuleType::Vend,
+                                    this,
+                                    this.VendAccount,
+                                    avaHeaderDefault.MiscChargeGroup,
+                                    this.Currency,
+                                    this.Language,
+                                    '',
+                                    avaHeaderDefault.MiscChargeGroup,
+                                    false,
+                                    _deleteExistingMarkupTrans,
+                                    avaHeaderDefault.DeliveryMode,
+                                    DlvMode::find(avaHeaderDefault.DeliveryMode).MarkupGroup);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

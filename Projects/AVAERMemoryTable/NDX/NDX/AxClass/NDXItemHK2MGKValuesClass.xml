@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXItemHK2MGKValuesClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Class vor HK2 Import 
+/// </summary>
+internal final class NDXItemHK2MGKValuesClass
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initNDXItemHK2MGKValuesTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// initalize NDXItemHK2MGKValues table
+    /// </summary>
+    public void initNDXItemHK2MGKValuesTable()
+    {
+        NDXItemHK2MGKValues lNDXItemHK2MGKValues;
+        InventTable lInventTabe;
+
+        if(Box::okCancel("@NDX:NDXReinitilize", DialogButton::Cancel) == DialogButton::Ok)
+        {
+            delete_from lNDXItemHK2MGKValues;
+
+            insert_recordset lNDXItemHK2MGKValues (InventTableRefRecId)
+                select RecId from lInventTabe;
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setValuesIntoInventTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// sets the new HK2GroupId on inventtable record
+    /// </summary>
+    /// <param name = "_NDXItemHK2MGKValues">NDXItemHK2MGKValues record</param>
+    public void setValuesIntoInventTable(NDXItemHK2MGKValues _NDXItemHK2MGKValues)
+    {
+        InventTable lInventTable = InventTable::findByRecId(_NDXItemHK2MGKValues.InventTableRefRecId, true);
+
+        if(lInventTable)
+        {
+            ttsbegin;
+
+            //Do not import empty values
+            if(_NDXItemHK2MGKValues.HK2GroupNewRefRecId != 0 && _NDXItemHK2MGKValues.HK2GroupNewRefRecId != lInventTable.NDXHK2GroupRefRecId)
+            {
+                lInventTable.NDXHK2GroupRefRecId = _NDXItemHK2MGKValues.HK2GroupNewRefRecId;
+                lInventTable.update();
+                
+                NDXHK2GroupHistory::updateComment(lInventTable.RecId, _NDXItemHK2MGKValues.Comment);
+                
+            }
+
+            this.setValuesIntoInventTableModule(lInventTable, _NDXItemHK2MGKValues);
+            ttscommit;
+        }
+        this.clearTransfered(_NDXItemHK2MGKValues);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setValuesIntoInventTableModule</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// sets the MGKGroupId on InventTablemodule record
+    /// </summary>
+    /// <param name = "_inventTable">inventTable record</param>
+    /// <param name = "_NDXItemHK2MGKValues">NDXItemHK2MGKValues record</param>
+    private void setValuesIntoInventTableModule(InventTable _inventTable, NDXItemHK2MGKValues _NDXItemHK2MGKValues)
+    {
+        InventTableModule lInventTableModule = InventTableModule::find(_inventTable.ItemId, ModuleInventPurchSales::Invent, true);
+
+        if(lInventTableModule)
+        {
+            ttsbegin;
+
+            //Do not import empty values
+            if(_NDXItemHK2MGKValues.MGKGroupNewRefRecId != 0 && _NDXItemHK2MGKValues.MGKGroupNewRefRecId !=  lInventTableModule.NDXMGKGroupRefRecId)
+            {
+                lInventTableModule.NDXMGKGroupRefRecId = _NDXItemHK2MGKValues.MGKGroupNewRefRecId;
+                lInventTableModule.update();
+            }
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>clearTransfered</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Clear the new RefRecIds
+    /// </summary>
+    /// <param name = "_NDXItemHK2MGKValues">NDXItemHK2MGKValues record</param>
+    private void clearTransfered(NDXItemHK2MGKValues _NDXItemHK2MGKValues)
+    {
+        _NDXItemHK2MGKValues.selectForUpdate(true);
+        ttsbegin;
+        _NDXItemHK2MGKValues.HK2GroupNewRefRecId = 0;
+        _NDXItemHK2MGKValues.MGKGroupNewRefRecId = 0;
+        _NDXItemHK2MGKValues.Comment = '';
+        _NDXItemHK2MGKValues.Active = NoYes::No;
+        _NDXItemHK2MGKValues.update();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>InventTable_onInserted</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// EventHandler on InventTable inserted
+    /// </summary>
+    /// <param name="sender">InventTable record</param>
+    /// <param name="e">Inserted event</param>
+    [DataEventHandler(tableStr(InventTable), DataEventType::Inserted),
+        SuppressBPWarning('BPParameterNotUsed',"'e' is not used")]
+    public static void InventTable_onInserted(Common sender, DataEventArgs e)
+    {
+        InventTable lInventTable = sender;
+        NDXItemHK2MGKValues::findOrCreateByInvenTableRecId(lInventTable.RecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateByHK2Import</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Update NDXItemHK2MGKValues record by NDXHK2Import record
+    /// </summary>
+    /// <param name = "_ndxHK2Import">NDXHK2Import record</param>
+    public static void updateByHK2Import(NDXHK2Import _ndxHK2Import)
+    {
+        InventTable lInventTable = InventTable::find(_ndxHK2Import.ItemId);
+
+        if(!lInventTable)
+        {
+            return;
+        }
+        
+        NDXItemHK2MGKValues lNDXItemHK2MGKValues = NDXItemHK2MGKValues::findOrCreateByInvenTableRecId(lInventTable.RecId, true);
+
+        ttsbegin;
+        lNDXItemHK2MGKValues.HK2GroupNewRefRecId = KCS_HK2FactorGroup::find(_ndxHK2Import.HK2GroupId).RecId;
+        lNDXItemHK2MGKValues.MGKGroupNewRefRecId = AVAMGKFactors::findGroupId(_ndxHK2Import.MGKGroupId).RecId;
+        lNDXItemHK2MGKValues.Comment = _ndxHK2Import.Comment;
+        lNDXItemHK2MGKValues.update();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        NDXItemHK2MGKValues lNDXItemHK2MGKValues;
+        NDXItemHK2MGKValuesClass lNDXItemHK2MGKValuesClass;
+
+        lNDXItemHK2MGKValuesClass = new NDXItemHK2MGKValuesClass();
+
+        switch(_args.menuItemName())
+        {
+            case menuItemActionStr(NDXItemHK2MGKValuesInit):
+                lNDXItemHK2MGKValuesClass.initNDXItemHK2MGKValuesTable();
+                break;
+            case menuItemActionStr(NDXItemHK2MGKUpdateHK2MGKGroups):
+                if(_args.dataset() == tableNum(NDXItemHK2MGKValues) && _args.record() != null)
+                {
+                    lNDXItemHK2MGKValues = _args.record();
+                    lNDXItemHK2MGKValuesClass.setValuesIntoInventTable(lNDXItemHK2MGKValues);
+                }
+                break;
+
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVALedgerAllocationBasisRuleSourceDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA
+/// </summary>
+[ExtensionOf(tableStr(LedgerAllocationBasisRuleSource))]
+final class AVALedgerAllocationBasisRuleSourceDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>existChild</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_basisId">LedgerAllocationBasisNum</param>
+    /// <param name = "_parentLineNum">LineNum</param>
+    /// <returns>boolean</returns>
+    public static boolean existChild(LedgerAllocationBasisNum _basisId, LineNum _parentLineNum)
+    {
+        ledgerAllocationBasisRuleSource ledgerAllocationBasisRuleSource;
+
+        return (select firstonly RecId from ledgerAllocationBasisRuleSource
+                    where ledgerAllocationBasisRuleSource.BasisId == _basisId &&
+                        ledgerAllocationBasisRuleSource.AVAParentLineNum == _parentLineNum).RecId != 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findChild</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_basisId">LedgerAllocationBasisNum</param>
+    /// <param name = "_parentLineNum">LineNum</param>
+    /// <param name = "_forupdate">boolean</param>
+    /// <returns>ledgerAllocationBasisRuleSource</returns>
+    public static ledgerAllocationBasisRuleSource findChild(
+        LedgerAllocationBasisNum _basisId,
+        LineNum _parentLineNum,
+        boolean _forupdate = false)
+    {
+        LedgerAllocationbasisRuleSource ledgerAllocationBasisRuleSource;
+
+        ledgerAllocationBasisRuleSource.selectForUpdate(_forupdate);
+
+        select firstonly * from ledgerAllocationBasisRuleSource
+            where ledgerAllocationBasisRuleSource.BasisId == _basisId &&
+                ledgerAllocationBasisRuleSource.LineNum == _parentLineNum;
+
+        return ledgerAllocationBasisRuleSource;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AccountNumbersFromSumAccount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_sumAccount">MainAccountNum</param>
+    /// <param name = "_accountNumbersFromSum">Description255</param>
+    /// <param name = "_usedAccounts">set(types::string)</param> 
+    /// <returns>Description255</returns>
+ 
+    public static DimensionsAccountCriteria AccountNumbersFromSumAccount(MainAccountNum _sumAccount, DimensionsAccountCriteria _accountNumbersFromSum = Global::strMin(), Set _usedAccounts = new Set(Types::String))
+    {
+        DimensionsAccountCriteria                   ret = _accountNumbersFromSum;
+
+        MainAccount                                 mainAccount, criteriaAccount;
+        DimensionAttributeValueTotallingCriteria    totallingCriteria;
+        DimensionAttributeValue                     dimensionAttributeValue;
+        //Set                                         usedAccounts = new Set(Types::String);
+
+        mainAccount = MainAccount::findByMainAccountId(_sumAccount);
+
+        if (mainAccount.Type == DimensionLedgerAccountType::Total)
+        {
+            _usedAccounts.add(mainAccount.MainAccountId);
+            while select totallingCriteria
+                join criteriaAccount where criteriaAccount.MainAccountId >= totallingCriteria.FromValue
+                    && criteriaAccount.MainAccountId <= totallingCriteria.ToValue
+            exists join dimensionAttributeValue
+             where dimensionAttributeValue.RecId == totallingCriteria.DimensionAttributeValue
+                && dimensionAttributeValue.DimensionAttribute == DimensionAttribute::getWellKnownDimensionAttribute(DimensionAttributeType::MainAccount)
+                && dimensionAttributeValue.EntityInstance == mainAccount.RecId
+            {
+                if (criteriaAccount.Type == DimensionLedgerAccountType::Total  && !_usedAccounts.in(criteriaAccount.MainAccountId))
+                {
+                    ret = LedgerAllocationBasisRuleSource::AccountNumbersFromSumAccount(criteriaAccount.MainAccountId, ret, _usedAccounts);
+                    _usedAccounts.add(criteriaAccount.MainAccountId);
+                }
+                else if (criteriaAccount.Type != DimensionLedgerAccountType::Total)
+                {
+                    ret += ret ? "@NDX:NXAComma" : Global::strMin();
+                    ret += criteriaAccount.MainAccountId;
+                }
+            }
+
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>lookupSumMainAccounts</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_ctrl">FormStringControl</param>
+    public static void lookupSumMainAccounts(FormStringControl _ctrl)
+    {
+        SysTableLookup sysTableLookup = SysTableLookup::newParameters(tableNum(MainAccount), _ctrl);
+        Query                   lookupQuery;
+        QueryBuildDataSource    qbds;
+
+        lookupQuery = new Query();
+        qbds = lookupQuery.addDataSource(tableNum(MainAccount));
+        qbds.addRange(fieldNum(MainAccount, Type)).value(queryValue(DimensionLedgerAccountType::Total));
+        MainAccount::addSecureRangeForChartOfAccounts(qbds);
+
+        // Display the MainAccountId, Name, and Type fields in the lookup form.
+        sysTableLookup.addLookupfield(fieldNum(MainAccount, MainAccountId));
+        sysTableLookup.addLookupMethod(tableMethodStr(MainAccount, localizedName));
+        sysTableLookup.addLookupfield(fieldNum(MainAccount, Type));
+
+        sysTableLookup.parmQuery(lookupQuery);
+
+        sysTableLookup.performFormLookup();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertSumAccountsLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    public void insertSumAccountsLine()
+    {
+        LedgerAllocationBasisRuleSource  newAccountRecord;
+
+        if (this.FieldSetting == LedgerAllocationAccountDimension::SumAccount)
+        {
+            ttsbegin;
+            newAccountRecord.Company            = this.Company;
+            newAccountRecord.BasisId            = this.BasisId;
+            newAccountRecord.FieldSetting       = LedgerAllocationAccountDimension::Account;
+            newAccountRecord.LineNum            = LedgerAllocationbasisRuleSources::lastSourceLineNum(this.BasisId) + 1;
+            newAccountRecord.BasisCriteria      = LedgerAllocationBasisRuleSource::AccountNumbersFromSumAccount(this.BasisCriteria);
+            newAccountRecord.AVAParentLineNum   = this.LineNum;
+            newAccountRecord.insert();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    public void update()
+    {
+        LineNum parentLineNum = this.orig().LineNum;
+        LedgerAllocationBasisNum basisNum = this.BasisId;
+        LedgerAllocationBasisRuleSource  childRuleSource;
+
+        next update();
+        if (LedgerAllocationBasisRuleSource::existChild(basisNum, parentLineNum))
+        {
+            ttsbegin;
+            select forupdate firstonly childRuleSource where childRuleSource.basisid == basisNum
+                                                && childRuleSource.AVAParentLineNum == parentlineNum;
+            if (childRuleSource)
+            {
+                childRuleSource.BasisCriteria  = LedgerAllocationBAsisRuleSource::AccountNumbersFromSumAccount(this.BasisCriteria);
+                childRuleSource.AVAParentLineNum = this.LineNum;
+                childRuleSource.doupdate();
+            }
+            ttscommit;
+        }
+        else
+        {
+            this.insertSumAccountsLine();
+        }
+        if(FormDataUtil::isFormDataSource(this))
+        {
+            FormDataUtil::getFormDataSource(this).research(true);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public void insert()
+    {
+        next insert();
+        this.insertSumAccountsLine();
+        if(FormDataUtil::isFormDataSource(this))
+        {
+            FormDataUtil::getFormDataSource(this).research(true);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>delete</Name>
+				<Source><![CDATA[
+    public void delete()
+    {
+        LedgerAllocationBasisRuleSource  childRuleSource;
+        delete_from childRuleSource where childRuleSource.BasisId == this.BasisId && childruleSource.AVAParentLineNum == this.LineNum;
+
+        next delete();
+
+        if(FormDataUtil::isFormDataSource(this))
+        {
+            FormDataUtil::getFormDataSource(this).research(true);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

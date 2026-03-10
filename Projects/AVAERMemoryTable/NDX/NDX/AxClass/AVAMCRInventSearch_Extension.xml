@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAMCRInventSearch_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// desgend from AVA
+/// </summary>
+[ExtensionOf(classStr(MCRInventSearch))]
+final class AVAMCRInventSearch_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>searchProduct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_common">_common</param>
+    /// <param name = "_mcrItemIdSearch">_mcrItemIdSearch</param>
+    /// <returns>contaciner</returns>
+    public static container searchProduct(Common     _common,
+                                          MCRItemIdSearch _mcrItemIdSearch)
+    {
+        EcoResProductRecId              productRecId;
+        EcoResProductRecId              standardProductRecId;
+        EcoResProduct                   ecoResProduct;
+        EcoResProductTranslation        productTranslation;
+        boolean                         recordsCreated;
+        CustVendExternalItem            custVendExternalItem;
+        InventItemBarcode               inventItemBarcode;
+        NDXEldas                        ndxEldas;
+        InventTable                     inventTable;
+        SalesQuotationLine              salesQuotationLine;
+        SalesQuotationLine              updatedSalesQuotationLine;
+        
+        MCRItemIdSearch         mcrItemIdSearch = _mcrItemIdSearch;
+        KCS_QLLVPosition        qllPosition;
+        KCS_QLInternalPosition  qllIntPosition;
+
+        productRecId = InventTable::find(mcrItemIdSearch).Product;
+
+        if (_common.TableId == tableNum(SalesQuotationLine))
+        {
+            qllPosition    = salesQuotationLine.KCS_QLLVPosition;
+            qllIntPosition = salesQuotationLine.KCS_QLInternalPosition;
+        }
+
+        if (!productRecId)
+        {
+            select firstonly RecId, SearchName from ecoResProduct
+                where ecoResProduct.SearchName == mcrItemIdSearch;
+            productRecId = ecoResProduct.RecId;
+        }
+
+        if (!productRecId)
+        {
+            select firstonly productTranslation
+                where  productTranslation.NDXProductName1 == mcrItemIdSearch;
+            productRecId = productTranslation.Product;
+        }
+
+        if(!productRecId)
+        {
+            select firstonly ItemId, NDXModelNumber, Product from    inventTable
+                where inventTable.NDXModelNumber == mcrItemIdSearch;
+            productRecId = inventTable.Product;
+        }
+
+        if (!productRecId)
+        {
+            select firstonly ItemId   from custVendExternalItem
+                where custVendExternalItem.ExternalItemId == mcrItemIdSearch;
+            productRecId = InventTable::find(custVendExternalItem.ItemId).Product;
+        }
+
+        if (!productRecId)
+        {
+            select firstonly ItemId from InventItemBarcode
+                where inventItemBarcode.itemBarCode == mcrItemIdSearch;
+            productRecId =  InventTable::find(inventItemBarcode.itemId).Product;
+        }
+
+        if (!productRecId)
+        {
+            select firstonly ItemId from  ndxEldas
+                where ndxEldas.EldasENo == mcrItemIdSearch;
+            productRecId = InventTable::find(ndxEldas.ItemId).Product;
+        }
+
+        //if (productRecId != 0)
+        //{
+        mcrItemIdSearch = '';
+        //}
+
+        [standardProductRecId,recordsCreated] = next searchProduct(_common,mcrItemIdSearch);
+
+        if (productRecId == 0)
+        {
+            productRecId = standardProductRecId;
+        }
+
+        if (recordsCreated && _common.TableId == tableNum(SalesQuotationLine))
+        {
+            updatedSalesQuotationLine = SalesQuotationLine::findRecId(_common.RecId);
+            if (updatedSalesQuotationLine.RecId)
+            {
+                updatedSalesQuotationLine.KCS_QLLVPosition       = qllPosition;
+                updatedSalesQuotationLine.KCS_QLInternalPosition = qllIntPosition;
+                updatedSalesQuotationLine.selectForUpdate(true);
+                ttsbegin;
+                updatedSalesQuotationLine.update();
+                ttscommit;
+
+                FormDataSource dataSource = FormDataUtil::getFormDataSource(_common);
+                if (dataSource)
+                {
+                    dataSource.research(true);
+                }
+            }
+        }
+
+        
+       
+        return [productRecId,recordsCreated];
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

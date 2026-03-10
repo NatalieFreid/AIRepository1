@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesTableDbt_EventHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVASalesTableDbt_EventHandler
+/// </summary>
+class AVASalesTableDbt_EventHandler
+{
+    
+   
+
+    
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>SalesTable_onInserted</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// SalesTable_onInserted
+    /// </summary>
+    /// <param name="sender">salesTable</param>
+    /// <param name="e">DataEventArgs</param>
+    [SuppressBPWarning('BPParameterNotUsed', 'Parameter e required in signature'),
+        DataEventHandler(tableStr(SalesTable), DataEventType::Inserted)]
+    public static void SalesTable_onInserted(Common sender, DataEventArgs e)
+    {
+        /*SalesTable salesTable = sender as salesTable;
+        KCS_SOCSalesTableInfoFields salesTableInfoFields = KCS_SOCSalesTableInfoFields::find(salesTable.SalesId, true);
+
+        salesTableInfoFields.initInfoFields(salesTable);*/
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesTable_onModifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// SalesTable_onModifiedField
+    /// </summary>
+    /// <param name="sender">SalesTable</param>
+    /// <param name="e">ModifyFieldEventArgs</param>
+    [DataEventHandler(tableStr(SalesTable), DataEventType::ModifiedField)]
+    public static void SalesTable_onModifiedField(Common sender, DataEventArgs e)
+    {
+        ModifyFieldEventArgs    event = e as DataEventArgs;
+        FieldId                 fieldId = event.parmFieldId();
+        SalesTable              salesTable = sender as salesTable;
+        SalesLine               salesLine;
+
+        switch(fieldId)
+        {
+            case fieldNum(SalesTable, CustAccount):
+                if (salesTable.RecId)
+                {
+                    KCS_SOCSalesTableInfoFields salesTableInfoFields = KCS_SOCSalesTableInfoFields::find(AVATableInfoFieldTypes::Sales, salesTable.SalesId, true);
+
+                    salesTableInfoFields.initInfoFields(salesTable);
+                }
+                break;
+
+            case fieldNum(SalesTable,KCS_PriceDate) :
+                while select  salesLine
+                    where salesLine.SalesId == salesTable.SalesId
+                {
+                    salesLine.AVApriceCalculation();
+                    if (salesLine.PriceUnit == 0)
+                    {
+                        salesLine.PriceUnit = salesLine.inventTable().salesPriceUnit();
+                    }
+                    salesLine.LineAmount = salesLine.calcLineAmountForced();
+                    salesLine.selectForUpdate(true);
+                    ttsbegin;
+                    salesLine.doUpdate();
+                    ttscommit;
+                }
+                break;
+
+            case fieldNum(SalesTable,PriceGroupId) :
+                while select  salesLine
+                    where salesLine.SalesId == salesTable.SalesId
+                {
+                    salesLine.AVApriceCalculation(true,false,false,false);
+                    if (salesLine.PriceUnit == 0)
+                    {
+                        salesLine.PriceUnit = salesLine.inventTable().salesPriceUnit();
+                    }
+                    salesLine.LineAmount = salesLine.calcLineAmountForced();
+                    salesLine.selectForUpdate(true);
+                    ttsbegin;
+                    salesLine.doUpdate();
+                    ttscommit;
+                }
+                break;
+
+            case fieldNum(SalesTable,AVANetPG1) :
+                while select  salesLine
+                    where salesLine.SalesId == salesTable.SalesId
+                {
+                    salesLine.AVApriceCalculation(false,false,true,false);
+                    if (salesLine.PriceUnit == 0)
+                    {
+                        salesLine.PriceUnit = salesLine.inventTable().salesPriceUnit();
+                    }
+                    salesLine.LineAmount = salesLine.calcLineAmountForced();
+                    salesLine.selectForUpdate(true);
+                    ttsbegin;
+                    salesLine.doUpdate();
+                    ttscommit;
+                }
+                break;
+
+            case fieldNum(SalesTable,AVANetPG2) :
+                while select  salesLine
+                    where salesLine.salesId == salesTable.SalesId
+                {
+                    salesLine.AVApriceCalculation(false,false,false,true);
+                    if (salesLine.PriceUnit == 0)
+                    {
+                        salesLine.PriceUnit = salesLine.inventTable().salesPriceUnit();
+                    }
+                    salesLine.LineAmount = salesLine.calcLineAmountForced();
+                    salesLine.selectForUpdate(true);
+                    ttsbegin;
+                    salesLine.doUpdate();
+                    ttscommit;
+                }
+                break;
+
+            case fieldNum(SalesTable,PurchOrderFormNum):
+                if(!salesTable.AVACheckPODublicate())
+                {
+                    salesLine.PurchOrderFormNum = '';
+                }
+                break;
+
+            case fieldNum(SalesTable,AVARepPckSlipNum) :
+                salesTable.AVACheckPODublicate();
+                break;
+
+            default : 
+                break;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesTable_onUpdated</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  defined from AVA
+    /// </summary>
+    /// <param name="sender">sender</param>
+    /// <param name="e">e</param>
+    [SuppressBPWarning('BPParameterNotUsed', 'Parameter e required in signature'),
+        DataEventHandler(tableStr(SalesTable), DataEventType::Updated)]
+    public static void SalesTable_onUpdated(Common sender, DataEventArgs e)
+    {
+        SalesTable     salesTable = sender;
+        salesTable     salesTableOrig = salesTable.orig();
+        SalesLine      salesLine;
+
+        boolean                 updateSalesPrice = salesTable.PriceGroupId != salesTableOrig.PriceGroupId  ||
+                                                    salesTable.KCS_PriceDate != salesTableOrig.KCS_PriceDate;
+
+        boolean                 updatePriceDiscount = salesTable.LineDisc != salesTableOrig.LineDisc  ||
+                                                       salesTable.KCS_PriceDate != salesTableOrig.KCS_PriceDate;
+
+        boolean                 updatePG1Price = salesTable.AVANetPG1 != salesTableOrig.AVANetPG1  ||
+                                                    salesTable.KCS_PriceDate != salesTableOrig.KCS_PriceDate;
+
+        boolean                 updatePG2Price = salesTable.AVANetPG2 != salesTableOrig.AVANetPG2  ||
+                                                    salesTable.KCS_PriceDate != salesTableOrig.KCS_PriceDate;
+
+        boolean                 updateReqQuotationId = (salesTable.AVAQuotationId != salesTableOrig.AVAQuotationId && salesTable.KCS_NoUseQuotPrice == NoYes::No);
+
+        boolean                 updateNoUseQuotPrice = salesTable.KCS_NoUseQuotPrice != salesTableOrig.KCS_NoUseQuotPrice;
+
+        boolean                 updateICDiscount = salesTable.InterCompanyDirectDelivery && (salesTable.KCS_IC_Reduction != salesTableOrig.KCS_IC_Reduction);
+
+        if ( updateSalesPrice ||   updatePriceDiscount ||  updatePG1Price ||  updatePG2Price || updateReqQuotationId || updateNoUseQuotPrice)
+        {
+            while select salesLine
+                where salesLine.SalesId == salesTable.SalesId
+            {
+                salesLine.selectForUpdate(true);
+                salesLine.KCS_PriceDate =   salesTable.KCS_PriceDate != salesTableOrig.KCS_PriceDate ? salesTable.KCS_PriceDate : salesLine.KCS_PriceDate;
+                salesLine.AVApriceCalculation(true,true,true,true);
+                if (salesLine.PriceUnit == 0)
+                {
+                    salesLine.PriceUnit = salesLine.inventTable().salesPriceUnit();
+                }
+
+                salesLine.LineAmount = salesLine.calcLineAmountForced();
+                salesLine.doUpdate();
+
+                if (updateNoUseQuotPrice)
+                {
+                    if(salesTable.KCS_NoUseQuotPrice == NoYes::Yes)
+                    {
+                        AVASpecialDiscSalesLine             locSpecialDiscSalesLine;
+                        update_recordset locSpecialDiscSalesLine
+                            setting   SpecialDiscountPct1 = 0,
+                                      SpecialDiscountPct2 = 0,
+                                      SpecialDiscountPct3 = 0
+                        where locSpecialDiscSalesLine.InventTransId == salesLine.InventTransId;
+                    }
+                    else
+                    {
+                        AVASpecialDiscSalesLine::copyFromQuotationJour(salesLine.AVAQuotationId,salesLine);
+                    }
+                }
+            }
+        }
+
+        if (updateICDiscount)
+        {
+            while select salesLine
+                where salesLine.SalesId == salesTable.SalesId
+            {
+                salesLine.selectForUpdate(true);
+                salesLine.update();
+            }
+        }
+       
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesTable_onUpdating</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// desigend from AVA
+    /// </summary>
+    /// <param name="sender">sender</param>
+    /// <param name="e">e</param>
+    [DataEventHandler(tableStr(SalesTable), DataEventType::Updating),
+      SuppressBPWarning('BPParameterNotUsed', 'False positive')]
+    public static void SalesTable_onUpdating(Common sender, DataEventArgs e)
+    {
+        SalesTable     salesTable = sender;
+        salesTable     salesTableOrig = salesTable.orig();
+
+        if (salesTableOrig.SalesType == SalesType::Journal && salesTable.SalesType == SalesType::Sales)
+        {
+            salesTable.KCS_SalesActivation = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

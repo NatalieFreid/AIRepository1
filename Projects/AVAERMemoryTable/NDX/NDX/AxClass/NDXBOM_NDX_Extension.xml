@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXBOM_NDX_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 01.02.23
+/// </summary>
+[ExtensionOf(classStr(NDXBOM))]
+final class NDXBOM_NDX_Extension
+{
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>checkItemInBOMAll</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 01.02.23
+    /// check all items if they have itemid2check included in their bom
+    /// </summary>
+    /// <param name = "_itemId2Check">ItemId</param>
+    /// <param name = "_updatedUTC">NDXUpdatedUTCDateTime</param>
+    /// <param name = "_itemIdFilter">ItemId</param>
+    /// <returns>int</returns>
+    static int checkItemInBOMAll(ItemId _itemId2Check, NDXUpdatedUTCDateTime _updatedUTC = DateTimeUtil::utcNow(), ItemId _itemIdFilter = '')
+    {
+        NDXProdIdentBoxLabel nDX_ProdIdentBoxLabel;
+        BOMVersion bOMVersion;
+        InventTable inventTable;
+        NDXBOMArgs nDX_BOMArgs;
+        int countAll = 0;
+        Query   q = new Query();
+        QueryRun    qr;
+        QueryBuildDataSource    qbds1, qbds2;
+
+        ;
+        qbds1 = q.addDataSource(tablenum(BOMVersion));
+        qbds1.addRange(fieldnum(BOMVersion, Approved)).value(QueryValue(NoYes::Yes));
+        qbds1.addRange(fieldnum(BOMVersion, Active)).value(QueryValue(NoYes::Yes));
+        if (_itemIdFilter)
+        {
+            qbds1.addRange(fieldnum(BOMVersion, ItemId)).value(QueryValue(_itemIdFilter));
+        }
+        qbds2 = qbds1.addDataSource(tablenum(InventTable));
+        qbds2.relations(true);
+        qbds2.fetchMode(QueryFetchMode::One2One);
+        // AX2009
+        //qbds2.addRange(fieldnum(InventTable, KCS_PRCBomTypeId)).value(QueryValue(KCSPRCBomType::None));
+        //qbds2.addRange(fieldNum(InventTable, PmfProductType)).value(queryValue(PmfProductType::None));
+        qr = new QueryRun(q);
+        while (qr.next())
+        {
+            inventTable = qr.get(tablenum(InventTable));
+            bOMVersion = qr.get(tablenum(BOMVersion));
+
+            nDX_BOMArgs = NDXBOMArgs::construct(_itemId2Check);
+            NDXBOM::checkItemInBom(bOMVersion.BOMId, nDX_BOMArgs);
+            if (nDX_BOMArgs.parmFoundOnLevel())
+            {
+                ++countAll;
+                nDX_ProdIdentBoxLabel = NDXProdIdentBoxLabel::findOrCreate(_itemId2Check, bOMVersion.ItemId, false);
+                nDX_ProdIdentBoxLabel.CartonLevelPackaging = nDX_BOMArgs.parmFoundOnLevel();
+                nDX_ProdIdentBoxLabel.UpdatedUTC = _updatedUTC;
+                //nDX_ProdIdentBoxLabel.route
+                ttsbegin;
+                nDX_ProdIdentBoxLabel.write();
+                ttscommit;
+            }
+        }
+        return countAll;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

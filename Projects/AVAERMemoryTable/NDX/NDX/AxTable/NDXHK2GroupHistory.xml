@@ -1,0 +1,408 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXHK2GroupHistory</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class NDXHK2GroupHistory extends common
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>findLast</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// find last created record by item rec id
+    /// </summary>
+    /// <param name = "_inventTableRefRecId">Rec Id of invent table record</param>
+    /// <param name = "_lastDateTime">upper limit dateTime</param>
+    /// <param name = "_forupdate">for update</param>
+    /// <returns>NDXHK2MGKHistory record</returns>
+    public static NDXHK2GroupHistory findLast(RefRecId _inventTableRefRecId, utcdatetime _lastDateTime = DateTimeUtil::minValue(), boolean _forupdate = false)
+    {
+        NDXHK2GroupHistory lNDXHK2GroupHistory;
+
+        lNDXHK2GroupHistory.selectForUpdate(_forupdate);
+
+        if(_lastDateTime > DateTimeUtil::minValue())
+        {
+            select firstonly lNDXHK2GroupHistory order by lNDXHK2GroupHistory.CreatedDateTime desc
+            where lNDXHK2GroupHistory.InventTableRefRecId == _inventTableRefRecId
+                && lNDXHK2GroupHistory.CreatedDateTime <= _lastDateTime;
+        }
+        else
+        {
+            select firstonly lNDXHK2GroupHistory order by lNDXHK2GroupHistory.CreatedDateTime desc
+                where lNDXHK2GroupHistory.InventTableRefRecId == _inventTableRefRecId;
+        }
+
+        return lNDXHK2GroupHistory;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findFirst</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// find last created record by item rec id
+    /// </summary>
+    /// <param name = "_inventTableRefRecId">Rec Id of invent table record</param>
+    /// <param name = "_lastDateTime">lower limit dateTime</param>
+    /// <param name = "_forupdate">for update</param>
+    /// <returns>NDXHK2MGKHistory record</returns>
+    public static NDXHK2GroupHistory findFirst(RefRecId _inventTableRefRecId, utcdatetime _lastDateTime = DateTimeUtil::minValue(), boolean _forupdate = false)
+    {
+        NDXHK2GroupHistory lNDXHK2GroupHistory;
+
+        lNDXHK2GroupHistory.selectForUpdate(_forupdate);
+
+        if(_lastDateTime > DateTimeUtil::minValue())
+        {
+            select firstonly lNDXHK2GroupHistory order by lNDXHK2GroupHistory.CreatedDateTime asc
+            where lNDXHK2GroupHistory.InventTableRefRecId == _inventTableRefRecId
+                && lNDXHK2GroupHistory.CreatedDateTime >= _lastDateTime;
+
+            //if there is no record
+        }
+        else
+        {
+            select firstonly lNDXHK2GroupHistory order by lNDXHK2GroupHistory.CreatedDateTime asc
+                where lNDXHK2GroupHistory.InventTableRefRecId == _inventTableRefRecId;
+        }
+
+        return lNDXHK2GroupHistory;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createByKCS_HK2FactorGroup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Inserts history records for all items with the same HK2 group id 
+    /// </summary>
+    /// <param name = "_hk2FactorGroup">KCS_HK2FactorGroup record</param>
+    public static void createByKCS_HK2FactorGroup(KCS_HK2FactorGroup _hk2FactorGroup)
+    {
+        NDXHK2GroupHistory lNDXHK2GroupHistory;
+        InventTable lInvantTable;
+
+        KCS_HK2GroupId groupId = _hk2FactorGroup.HK2GroupId;
+        KCS_HK2Factor factor = _hk2FactorGroup.HK2Factor;
+
+        insert_recordset lNDXHK2GroupHistory(InventTableRefRecId, HK2GroupIdTo, HK2FactorTo)
+            select RecId, groupId, factor from lInvantTable
+                where lInvantTable.NDXHK2GroupRefRecId == _hk2FactorGroup.RecId;
+            
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createByInventTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Create history record by an inventTable record 
+    /// </summary>
+    /// <param name = "_inventTable">current recor</param>
+    /// <param name = "_orig">original record</param>
+    public static void createByInventTable(InventTable _inventTable, InventTable _orig)
+    {
+        NDXHK2GroupHistory lNDXHK2GroupHistory = NDXHK2GroupHistory::findLast(_inventTable.RecId, DateTimeUtil::minValue());
+        
+        KCS_HK2FactorGroup lKCS_HK2FactorGroup = KCS_HK2FactorGroup::findByRecId(_inventTable.NDXHK2GroupRefRecId);
+        KCS_HK2FactorGroup lKCS_HK2FactorGroupOrig;
+
+        NDXHK2GroupHistory newNDXHK2GroupHistory;
+
+        NDXItemHK2MGKValues lNDXItemHK2MGKValues = NDXItemHK2MGKValues::find(_inventTable.RecId);
+
+        //the HK2 changed
+        if(_orig.NDXHK2GroupRefRecId != _inventTable.NDXHK2GroupRefRecId)
+        {
+            newNDXHK2GroupHistory.InventTableRefRecId = _inventTable.RecId;
+            newNDXHK2GroupHistory.HK2GroupIdFrom = lNDXHK2GroupHistory.HK2GroupIdTo;
+            newNDXHK2GroupHistory.HK2FactorFrom = lNDXHK2GroupHistory.HK2FactorTo;
+
+            newNDXHK2GroupHistory.HK2GroupIdTo = lKCS_HK2FactorGroup.HK2GroupId;
+            newNDXHK2GroupHistory.HK2FactorTo = lKCS_HK2FactorGroup.HK2Factor;
+            
+            newNDXHK2GroupHistory.Comment = lNDXItemHK2MGKValues.Comment;
+
+            if(_orig)
+            {
+                lKCS_HK2FactorGroupOrig = KCS_HK2FactorGroup::findByRecId(_orig.NDXHK2GroupRefRecId);
+                newNDXHK2GroupHistory.HK2GroupIdFrom = lKCS_HK2FactorGroupOrig.HK2GroupId;
+                newNDXHK2GroupHistory.HK2FactorFrom = lKCS_HK2FactorGroupOrig.HK2Factor;
+            }
+
+            newNDXHK2GroupHistory.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public void insert()
+    {
+        NDXHK2GroupHistory lNDXHK2GroupHistory = NDXHK2GroupHistory::findLast(this.InventTableRefRecId, DateTimeUtil::minValue());
+
+        //Set the From value
+        if(lNDXHK2GroupHistory && (this.HK2GroupIdTo != lNDXHK2GroupHistory.HK2GroupIdTo || this.HK2FactorTo != lNDXHK2GroupHistory.HK2FactorTo))
+        {
+            this.HK2GroupIdFrom = lNDXHK2GroupHistory.HK2GroupIdTo;
+            this.Hk2FactorFrom = lNDXHK2GroupHistory.HK2FactorTo;
+        }
+
+        super();
+
+        //Set the 
+        NDXHK2MGKHistory::createByHK2GroupHistory(this);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHK2HistoryFactor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Get the correct HK2 factor
+    /// </summary>
+    /// <param name = "_inventTableRefRecId">Reference to inventTable record</param>
+    /// <param name = "_lastDateTime">upper limit date time of the factor</param>
+    /// <returns>KCS_HK2Factor record</returns>
+    public static KCS_HK2Factor getHK2HistoryFactor(RefRecId _inventTableRefRecId, utcdatetime _lastDateTime = DateTimeUtil::minValue())
+    {
+        NDXHK2GroupHistory lNDXHK2GroupHistory;
+        KCS_HK2Factor factor = 1;
+
+        lNDXHK2GroupHistory = NDXHK2GroupHistory::findLast(_inventTableRefRecId, _lastDateTime);
+
+        if(lNDXHK2GroupHistory)
+        {
+            factor = lNDXHK2GroupHistory.HK2FactorTo;
+        }
+
+        //if there is no history record for the date, get the first record
+        if(!lNDXHK2GroupHistory)
+        {
+            //the history record exists but the date we are looking for was before the record was created, so the factor is the "from"" factor
+            lNDXHK2GroupHistory = NDXHK2GroupHistory::findFirst(_inventTableRefRecId, _lastDateTime);
+            factor = lNDXHK2GroupHistory.HK2FactorFrom;
+        }
+
+        //if record still does mot exist the we take the current factor
+        if(!lNDXHK2GroupHistory)
+        {
+            InventTable lInventTable = InventTable::findByRecId(_inventTableRefRecId);
+            factor = lInventTable.avaGetHK2Factor();
+        }
+
+        return factor;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateComment</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Update comment
+    /// </summary>
+    /// <param name = "_inventTableRecId">RecId of InventTable record</param>
+    /// <param name = "_comment">comment</param>
+    public static void updateComment(RefRecId _inventTableRecId, NDXComment _comment)
+    {
+        NDXHK2GroupHistory lNDXHK2GroupHistory;
+
+        lNDXHK2GroupHistory = NDXHK2GroupHistory::findLast(_inventTableRecId, DateTimeUtil::minValue(), true);
+        ttsbegin;
+        lNDXHK2GroupHistory.Comment = _comment;
+        lNDXHK2GroupHistory.update();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NDXHK2GroupHistory_Dev</DeveloperDocumentation>
+	<Label>@NDX:NDXHK2GroupHistory</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>InventTableRefRecId</TitleField1>
+	<AllowRowVersionChangeTracking>Yes</AllowRowVersionChangeTracking>
+	<CreatedBy>Yes</CreatedBy>
+	<CreatedDateTime>Yes</CreatedDateTime>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>InventTableRefRecId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HK2GroupIdFrom</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HK2FactorFrom</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Comment</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Created</Name>
+			<Label>@NDX:ModifiedCreated</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>CreatedDateTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CreatedBy</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>History</Name>
+			<Label>@NDX:NDXHK2MGKHistory</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>HK2GroupIdFrom</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HK2FactorFrom</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HK2GroupIdTo</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HK2FactorTo</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Comment</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CreatedDateTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CreatedBy</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>InventTableRefRecId</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>NDXInventTableRefRecId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>HK2GroupIdFrom</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>KCS_HK2GroupId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:HK2GroupIdFrom</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>HK2FactorFrom</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>KCS_HK2Factor</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:HK2FactorFrom</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>HK2GroupIdTo</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>KCS_HK2GroupId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:HK2GroupIdTo</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>HK2FactorTo</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>KCS_HK2Factor</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:HK2FactorTo</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Comment</Name>
+			<ExtendedDataType>NDXComment</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes />
+	<Mappings />
+	<Relations>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>InventTableRelationForeignKey</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>InventTable</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>InventTableRefRecId</Name>
+					<Field>InventTableRefRecId</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>NDXItemHK2MGKValuesRelation</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>NDXItemHK2MGKValues</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>InventTableRefRecId</Name>
+					<Field>InventTableRefRecId</Field>
+					<RelatedField>InventTableRefRecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

@@ -1,0 +1,735 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>NDXItemScopeHistory</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class NDXItemScopeHistory extends FormRun
+{
+    FormListControl _list, _listYear;
+    ItemId          itemId;
+    ReqTrans        callerReqTrans;
+    InventTransferLine  callerInventTransferLine;                              
+    yr              curYear;
+
+    [FormObservable]
+    QtyAverage      ConsumpCurMonth, ConsumpMedian;
+
+    [FormObservable]
+    Qty             PhysOnHand, PhysScope, AvailOnHand, AvailScope;
+
+    [FormObservable]
+    QtyAverage      ConsumpCurMonthInventSite;
+
+    [FormObservable]
+    Qty             PhysScopeInventSite, AvailScopeInventSite;
+    
+    [FormObservable]
+    InventUnitId    unitId;
+    [FormObservable]
+    InventSiteId    inventSiteId;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setListViewMonthlyValues</Name>
+				<Source><![CDATA[
+    void setListViewMonthlyValues()
+    {
+        KCS_ItemScopeHistory    curScopeHistory, prevScopeHistory;
+        int                     monthCounter;
+        yr                      prevYear;
+        FormListItem            fli;
+        int                     idx;
+        ;
+
+        ListViewMonthlyValues.deleteAll();
+
+        prevYear    = curYear - 1;
+
+        for(monthCounter = 1; monthCounter <= 12; monthCounter++)
+        {
+            curScopeHistory     = KCS_ItemScopeHistory::find(ItemId, curYear, monthCounter);
+            prevScopeHistory    = KCS_ItemScopeHistory::find(ItemId, prevYear, monthCounter);
+
+            fli = new FormListItem(mthname(monthCounter),1);
+            fli.idx(monthCounter);
+            idx = ListViewMonthlyValues.addItem(fli);
+            ListViewMonthlyValues.setText(idx, num2str(abs(prevScopeHistory.ConsumpSum),0,2,2,1), 1);
+            ListViewMonthlyValues.setText(idx, num2str(abs(curScopeHistory.ConsumpSum),0,2,2,1), 2);
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setListViewYearlyValues</Name>
+				<Source><![CDATA[
+    void setListViewYearlyValues()
+    {
+        KCS_ItemScopeHistory    curScopeHistory;
+        yr                      minYear;
+        FormListItem            fli;
+        int                     idx;
+        ;
+
+        ListViewYearlyValues.deleteAll();
+
+        select firstOnly curScopeHistory order by HistoryDate                                  
+                                    where curScopeHistory.ItemId == ItemId;
+        
+        minYear = year(curScopeHistory.HistoryDate);
+        if (!curScopeHistory.RecId)
+        {
+            minYear = curYear;
+        }
+
+        if ((curYear - 6) > minYear)
+        {
+            minYear = curYear - 6;
+        }
+
+        while (minYear <= curYear)
+        {
+            select sum(ConsumpSum) from curScopeHistory where curScopeHistory.ItemId == ItemId
+                                                       && curScopeHistory.Year   == minYear;
+
+            fli = new FormListItem(int2str(minYear),1);
+            fli.idx(minYear);
+            idx = ListViewYearlyValues.addItem(fli);
+            ListViewYearlyValues.setText(idx, num2str(abs(curScopeHistory.ConsumpSum),0,2,2,1), 1);
+            minYear++;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ConsumpCurMonthInventSite</Name>
+				<Source><![CDATA[
+    display QtyAverage ConsumpCurMonthInventSite()
+    {
+        return ConsumpCurMonthInventSite;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>PhysScopeInventSite</Name>
+				<Source><![CDATA[
+    display Qty PhysScopeInventSite()
+    {
+        return PhysScopeInventSite;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AvailScopeInventSite</Name>
+				<Source><![CDATA[
+    display Qty AvailScopeInventSite()
+    {
+        return AvailScopeInventSite;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AvailScope</Name>
+				<Source><![CDATA[
+    display Qty AvailScope()
+    {
+        return AvailScope;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AvailOnHand</Name>
+				<Source><![CDATA[
+    display Qty AvailOnHand()
+    {
+        return AvailOnHand;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>PhysScope</Name>
+				<Source><![CDATA[
+    display Qty PhysScope()
+    {
+        return PhysScope;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>PhysOnHand</Name>
+				<Source><![CDATA[
+    display Qty PhysOnHand()
+    {
+        return PhysOnHand;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ConsumpMedian</Name>
+				<Source><![CDATA[
+    display QtyAverage ConsumpMedian()
+    {
+        return ConsumpMedian;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ConsumpCurMonth</Name>
+				<Source><![CDATA[
+    display QtyAverage ConsumpCurMonth()
+    {
+        return ConsumpCurMonth;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setCurrentValues</Name>
+				<Source><![CDATA[
+    void setCurrentValues()
+    {
+        NDXItemScopeHistory        itemScopeHistory = NDXItemScopeHistory::construct();
+        ;
+
+        if (callerReqTrans)
+        {
+            itemScopeHistory.initFromReqTrans(callerReqTrans);
+        }
+        else if (callerInventTransferLine)
+        {            
+            itemScopeHistory.initFromInventTransferLine(callerInventTransferLine);
+        }
+        itemScopeHistory.parmCurYear(curYear);
+
+        [ConsumpCurMonth,
+         ConsumpMedian,
+         PhysOnHand,
+         AvailOnHand,
+         PhysScope,
+         AvailScope,
+         ConsumpCurMonthInventSite,
+         PhysScopeInventSite,
+         AvailScopeInventSite] = itemScopeHistory.setCurrentValues();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Unit</Name>
+				<Source><![CDATA[
+    display InventUnitId  Unit()
+    {
+        return unitId;    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>inventSite</Name>
+				<Source><![CDATA[
+    display InventSiteId    inventSite()
+    {
+        return inventSiteId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>itemId</Name>
+				<Source><![CDATA[
+    display itemId itemId()
+    {
+        return  callerReqTrans ? callerReqTrans.ItemId : callerInventTransferLine.ItemId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+
+        KCS_ItemScopeHistory    itemScopeHistory;                                
+        ;
+         
+        super(); 
+
+        curYear     = year(DateTimeUtil::date(DateTimeUtil::getSystemDateTime()));
+
+        if (!element.args()             ||
+        !element.args().record()    ||
+         (element.args().record().TableId != tablenum(ReqTrans)
+         && element.args().record().TableId != tablenum(InventTransferLine)))    
+        {
+            throw Error("@NDX:NDXIncorrectFormCall");
+        }
+        else
+        {
+            if (element.args().record().TableId == tablenum(ReqTrans))
+            {
+                callerReqTrans  = element.args().record();
+                itemId = callerReqTrans.ItemId;
+            }
+            else if (element.args().record().TableId == tablenum(InventTransferLine))
+            {
+                callerInventTransferLine = element.args().record();
+                itemId = callerInventTransferLine.ItemId;
+            }
+            inventSiteId = callerReqTrans ? callerReqTrans.inventDim().inventSiteId : InventLocation::find(callerInventTransferLine.inventTransferTable().InventLocationIdTo).InventSiteId;
+        }
+
+        unitId = callerReqTrans ? callerReqTrans.inventUnitId() : callerInventTransferLine.UnitId;
+
+        _list = ListViewMonthlyValues;
+
+        _list.addColumn(1,new FormListColumn("@NDX:NDXConsump",1, 100));
+        _list.addColumn(2,new FormListColumn("@NDX:NDXLastYear",2, 100));
+        _list.addColumn(3,new FormListColumn("@NDX:NDXCurrent",3, 100));
+
+        _listYear   = ListViewYearlyValues;
+
+        _listYear.addColumn(1, new FormListColumn("@NDX:NDXYear",1));
+        _listYear.addColumn(2, new FormListColumn("@NDX:NDXConsump",2, 100));
+
+        select firstOnly itemScopeHistory order by itemScopeHistory.modifiedDateTime desc;
+        
+        if(DateTimeUtil::year(itemScopeHistory.modifiedDateTime) != year(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())) || DateTimeUtil::month(itemScopeHistory.modifiedDateTime) != mthofyr(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())))
+        {
+            Warning("@NDX:NDXItemScopeNotUpToDate");
+        }        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setDesign</Name>
+				<Source><![CDATA[
+    void setDesign()
+    {
+        element.setListViewMonthlyValues();
+        element.setListViewYearlyValues();
+        element.setCurrentValues();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>KCS_ItemScopeHistory</Name>
+				<Methods>
+					<Method>
+						<Name>linkActive</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// DebuC 27.03.24
+        /// </summary>
+        public void linkActive()
+        {
+            super();
+
+            if (element.args().record().TableId == tablenum(ReqTrans))
+            {
+                callerReqTrans  = element.args().record();
+                itemId = callerReqTrans.ItemId;
+            }            
+            else if (element.args().record().TableId == tablenum(InventTransferLine))
+            {
+                callerInventTransferLine = element.args().record();
+                itemId = callerInventTransferLine.ItemId;
+            }  
+            inventSiteId = callerReqTrans ? callerReqTrans.inventDim().inventSiteId : InventLocation::find(callerInventTransferLine.inventTransferTable().InventLocationIdTo).InventSiteId;
+            element.setDesign();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>NDXBatchJobFormPartControl</Name>
+				<Type>Container</Type>
+				<Methods>
+					<Method>
+						<Name>initPartForm</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// DebuC 16.04.24
+        /// </summary>
+        public void initPartForm()
+        {            
+            super();
+
+            this.createFieldValueLink(int2Str(classNum(NDXFillItemScopeHistory)),
+                                        formDataSourceStr(NDXBatchJobFormPart,BatchExists),
+                                        fieldId2Name(tableNum(Batch),fieldNum(Batch, ClassNumber)));
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>KCS_ItemScopeHistory</Name>
+			<Table>KCS_ItemScopeHistory</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>ConsumpAverage</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ConsumpProd</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ConsumpSales</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ConsumpSum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EndQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HistoryDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MonthOfYear</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StartQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SysRowVersionNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Year</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@NDX:NDXItemScopeHistory</Caption>
+		<Pattern xmlns="">SimpleDetails-FastTabsContainer</Pattern>
+		<PatternVersion xmlns="">1.4</PatternVersion>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>ApplicationBar</Name>
+				<Type>ActionPane</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>HeaderGroup</Name>
+				<AllowEdit>No</AllowEdit>
+				<Pattern>FieldsFieldGroups</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ItemId</Name>
+						<AllowEdit>No</AllowEdit>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataMethod>itemId</DataMethod>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>InventSiteId</Name>
+						<AllowEdit>No</AllowEdit>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataMethod>inventSite</DataMethod>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>UnitId</Name>
+						<AllowEdit>No</AllowEdit>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataMethod>Unit</DataMethod>
+					</AxFormControl>
+				</Controls>
+				<ColumnsMode>Fill</ColumnsMode>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormTabControl">
+				<Name>BodyTab</Name>
+				<AllowEdit>No</AllowEdit>
+				<Type>Tab</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>tpMonthlyValues</Name>
+						<Pattern>ToolbarList</Pattern>
+						<PatternVersion>1.2</PatternVersion>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormListViewControl">
+								<Name>ListViewMonthlyValues</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<HeightMode>SizeToAvailable</HeightMode>
+								<Type>ListView</Type>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<GridLines>Yes</GridLines>
+							</AxFormControl>
+						</Controls>
+						<Caption>@NDX:NDXScopMonthly</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>tpYearlyValues</Name>
+						<Pattern>ToolbarList</Pattern>
+						<PatternVersion>1.2</PatternVersion>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormListViewControl">
+								<Name>ListViewYearlyValues</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<HeightMode>SizeToAvailable</HeightMode>
+								<Type>ListView</Type>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<GridLines>Yes</GridLines>
+							</AxFormControl>
+						</Controls>
+						<Caption>@NDX:NDXScopeYearly</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>tpDisplayFields</Name>
+						<Pattern>FieldsFieldGroups</Pattern>
+						<PatternVersion>1.1</PatternVersion>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>Group1</Name>
+								<Type>Group</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>REConsumpCurMonthInventSite</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>ConsumpCurMonthInventSite</DataMethod>
+										<Label>@NDX:NDXConsumpCurMonthInventSite</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>REConsumpCurMonth</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>ConsumpCurMonth</DataMethod>
+										<Label>@NDX:NDXComsumpCurMonth</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>REConsumpMedian</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>ConsumpMedian</DataMethod>
+										<Label>@NDX:NDXConsumpMedian</Label>
+									</AxFormControl>
+								</Controls>
+								<Caption>@NDX:NDXConsumption</Caption>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>Group2</Name>
+								<Type>Group</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>REPhysOnHand</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>PhysOnHand</DataMethod>
+										<Label>@NDX:NDXPhysOnHand</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>REPhysScopeInventSite</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>PhysScopeInventSite</DataMethod>
+										<Label>@NDX:NDXPhysScopeInventSite</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>REPhysScope</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>PhysScope</DataMethod>
+										<Label>@NDX:NDXPhysScope</Label>
+									</AxFormControl>
+								</Controls>
+								<Caption>@NDX:NDXPhysicalScope</Caption>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>Group3</Name>
+								<Type>Group</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>REAvailOnHand</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>AvailOnHand</DataMethod>
+										<Label>@NDX:NDXAvailOnHand</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>RREAvailScopeInventSite</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>AvailScopeInventSite</DataMethod>
+										<Label>@NDX:NDXAvailScopeInventSite</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>REAvailScope</Name>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>AvailScope</DataMethod>
+										<Label>@NDX:NDXAvailScope</Label>
+									</AxFormControl>
+								</Controls>
+								<Caption>@NDX:NDXAvailableQty</Caption>
+							</AxFormControl>
+						</Controls>
+						<ColumnsMode>Fill</ColumnsMode>
+						<Caption>@NDX:NDXConsumptionReachAvailableQty</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>tpBatch</Name>
+						<NeededPermission>Manual</NeededPermission>
+						<Pattern>Custom</Pattern>
+						<Type>TabPage</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormContainerControl">
+								<Name>NDXBatchJobFormPartControl</Name>
+								<Type>Container</Type>
+								<FormControlExtension>
+									<Name>FormPartControl</Name>
+									<ExtensionComponents>
+										<AxFormControlExtensionComponent xmlns=""
+											i:type="AxFormControlExtensionComponentComposite">
+											<Name>dataLinks</Name>
+											<ExtensionComponents />
+										</AxFormControlExtensionComponent>
+									</ExtensionComponents>
+									<ExtensionProperties>
+										<AxFormControlExtensionProperty>
+											<Name>targetName</Name>
+											<Type>String</Type>
+											<Value>NDXBatchJobFormPart</Value>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>autoRefreshInterval</Name>
+											<Type>Int32</Type>
+											<Value>0</Value>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>parmRunMode</Name>
+											<Type>Enum</Type>
+											<TypeName>FormPartControlRunMode</TypeName>
+											<Value>Remote</Value>
+										</AxFormControlExtensionProperty>
+									</ExtensionProperties>
+								</FormControlExtension>
+								<Controls />
+							</AxFormControl>
+						</Controls>
+						<ColumnsMode>Fill</ColumnsMode>
+						<Caption>@NDX:NDXAdministration</Caption>
+					</AxFormControl>
+				</Controls>
+				<Style>FastTabs</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

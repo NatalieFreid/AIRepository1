@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADeleteNotReleasedProductMaster</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+internal final class AVADeleteNotReleasedProductMaster
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args   _args)
+    {
+        EcoResProduct           ecoResProduct;
+        EcoResProductMaster     ecoResProductMaster;
+        EcoResProductCategory   ecoResProductCategory;
+        InventTable             inventTable;
+        str                     notReleasedProdStr;
+        EcoResDistinctProduct   EcoResDistinctProduct;
+        Query                   query = new Query(queryStr(EcoResProductListPage));
+        QueryRun                queryRun;
+       // QueryRun                queryRun = new QueryRun(queryStr(EcoResProductListPage));
+        QueryBuildDataSource    qbds,qbdsProductDimension;
+        Range                   range;
+        Set                     prodMasterToDelete = new Set(Types::Int64);
+
+
+        while select ecoResProductMaster
+        {
+            select firstonly crosscompany  Product from inventTable
+                where inventTable.Product == ecoResProductMaster.RecId;
+            if (!inventTable.Product)
+            {
+                if (notReleasedProdStr != '')
+                {
+                    notReleasedProdStr += '; ';
+                }
+                notReleasedProdStr += ecoResProductMaster.DisplayProductNumber;
+                prodMasterToDelete.add(ecoResProductMaster.RecId);
+            }
+        }
+
+        if (notReleasedProdStr)
+        {
+            Info(notReleasedProdStr);
+        }
+
+        if (notReleasedProdStr != '')
+        {
+            SetIterator     prodMasterToDeleteIterator = new SetIterator(prodMasterToDelete);
+            if (Box::yesNo('Wollen sie diese Produkte löschen?', DialogButton::No) == DialogButton::Yes)
+            {
+                info('Gelöschte Artikeln');
+                while (prodMasterToDeleteIterator.more())
+                {
+                    select firstonly crosscompany  Product from inventTable
+                        where inventTable.Product == prodMasterToDeleteIterator.value();
+ 
+                    if (!inventTable.RecId)
+                    {
+                        select firstonly forupdate ecoResProductMaster
+                            where ecoResProductMaster.RecId == prodMasterToDeleteIterator.value();
+
+                        if (ecoResProductMaster.RecId)
+                        {
+                            info(ecoResProductMaster.DisplayProductNumber);
+                            ttsbegin;
+                            ecoResProductMaster.delete();
+                            ttscommit;
+                        }
+                    }
+                    prodMasterToDeleteIterator.next();
+                }
+            }
+        }
+     
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

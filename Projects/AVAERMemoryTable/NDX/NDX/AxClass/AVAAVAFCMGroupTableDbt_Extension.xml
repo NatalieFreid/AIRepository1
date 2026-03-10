@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAAVAFCMGroupTableDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN 2024/21/03
+/// </summary>
+[ExtensionOf(tableStr(AVAFCMGroupTable))]
+final class AVAAVAFCMGroupTableDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getInvoicedAmountWithoutTaxesWithMarkupsByCustTable</Name>
+				<Source><![CDATA[
+        public static amountMST getInvoicedAmountWithoutTaxesWithMarkupsByCustTable(CustTable _custTable)
+    {
+        AmountMST              balanceMST;
+        CustInvoiceTrans       custInvoiceTrans;
+        SalesTable             salesTable;
+        CustTrans              custTrans;
+        CustInvoiceTable       custInvoiceTable;
+        MarkupTrans            markupTrans;
+        CurrencyCode           fromCurrencyCode;
+        CurrencyCode           toCurrencyCode = CompanyInfoHelper::standardCurrency();
+        CurrencyExchangeHelper currencyExchangeHelper = CurrencyExchangeHelper::newExchangeDate(Ledger::current(), DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+                    
+        changeCompany(_custTable.dataAreaId)
+        {
+            while select InvoiceAccount, SalesId from salesTable
+                where SalesTable.InvoiceAccount == _custTable.AccountNum
+                join custInvoiceTrans where custInvoiceTrans.SalesId == salesTable.SalesId
+                join custTrans where custTrans.Invoice == custInvoiceTrans.InvoiceId
+                && !custTrans.Closed
+            {
+                fromCurrencyCode = custInvoiceTrans.CurrencyCode;
+                balanceMST +=   currencyExchangeHelper.calculateCurrencyToCurrency(fromCurrencyCode, toCurrencyCode, custInvoiceTrans.LineAmount - custTrans.SettleAmountMST, true);
+                select sum(CalculatedAmount) from markupTrans where markupTrans.Voucher == custTrans.Voucher;
+                balanceMST += currencyExchangeHelper.calculateCurrencyToCurrency(fromCurrencyCode, toCurrencyCode,markupTrans.CalculatedAmount, true);
+            }
+
+            while select OrderAccount, InvoiceId from custInvoiceTable
+                where custInvoiceTable.OrderAccount == _custTable.AccountNum
+                join custInvoiceTrans where custInvoiceTrans.InvoiceId == custInvoiceTable.InvoiceId
+                join custTrans where custTrans.Invoice == custInvoiceTable.InvoiceId
+                && !custTrans.Closed
+            {
+                fromCurrencyCode = custInvoiceTrans.CurrencyCode;
+                balanceMST +=   currencyExchangeHelper.calculateCurrencyToCurrency(fromCurrencyCode, toCurrencyCode, custInvoiceTrans.LineAmount, true);
+                select sum(CalculatedAmount) from markupTrans where markupTrans.Voucher == custTrans.Voucher;
+                balanceMST += currencyExchangeHelper.calculateCurrencyToCurrency(fromCurrencyCode, toCurrencyCode, markupTrans.CalculatedAmount, true);
+            }
+        }
+
+        while select AmountMST, CurrencyCode from custTrans
+            where custTrans.OrderAccount == _custTable.AccountNum
+            && !custTrans.Closed
+            && !custTrans.Invoice
+        {
+            fromCurrencyCode = custTrans.CurrencyCode;
+            balanceMST +=   currencyExchangeHelper.calculateCurrencyToCurrency(fromCurrencyCode, toCurrencyCode, custTrans.AmountMST, true);
+            select sum(CalculatedAmount) from markupTrans where markupTrans.Voucher == custTrans.Voucher;
+            balanceMST += currencyExchangeHelper.calculateCurrencyToCurrency(fromCurrencyCode, toCurrencyCode, markupTrans.CalculatedAmount, true);
+        }
+        
+        return balanceMST;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getnotInvoicedAmountWithoutTaxesWithMarkupsByCustTable</Name>
+				<Source><![CDATA[
+    public static amountMST getnotInvoicedAmountWithoutTaxesWithMarkupsByCustTable(CustTable _custTable)
+    {
+        CustCreditLimit        CustCreditLimit;
+        AmountMST              netEstimate;
+        CurrencyCode           fromCurrencyCode;
+        CurrencyCode           toCurrencyCode = CompanyInfoHelper::standardCurrency();
+        CurrencyExchangeHelper currencyExchangeHelper = CurrencyExchangeHelper::newExchangeDate(Ledger::current(), DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+            
+        changeCompany(_custTable.dataAreaId)
+        {
+            CustCreditLimit = CustCreditLimit::construct(_custTable);
+    
+            CustCreditLimit.mcrDisplayMessage(false);                   // Don't display default message
+            CustCreditLimit.parmavaCheckEmptyOrderBalance(NoYes::Yes); // Ignore empty orderBalance in class CustCreditLimit
+    
+            fromCurrencyCode = _custTable.Currency;
+            netEstimate = CustCreditLimit.netEstimateNotInvoiced();
+            //netEstimate += CustCreditLimit.AVAtotalMarkups();
+            netEstimate = currencyExchangeHelper.calculateCurrencyToCurrency(fromCurrencyCode, toCurrencyCode, netEstimate, true);
+        }
+        return netEstimate;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

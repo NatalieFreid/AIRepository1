@@ -1,0 +1,322 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAMarkupTransTmp</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// temporary table AVAMarkupTransTmp
+/// </summary>
+public class AVAMarkupTransTmp extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initFromMarkupTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// initialize from MarkupTrans record
+    /// </summary>
+    /// <param name = "_markupTrans">MarkupTrans</param>
+    public void initFromMarkupTrans(MarkupTrans _markupTrans)
+    {
+        this.CalcQty        = _markupTrans.AVACalcQty;
+        this.CurrencyCode   = _markupTrans.CurrencyCode;
+        this.MarkupCategory = _markupTrans.MarkupCategory;
+        this.MarkupCode     = _markupTrans.MarkupCode;
+        this.ModuleCategory = _markupTrans.ModuleCategory;
+        this.ModuleType     = _markupTrans.ModuleType;
+        this.Txt            = _markupTrans.Txt;
+        this.Value          = _markupTrans.Value;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setCalculatedAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// set the field CalculatedAmount and its ratio to the original Amount 
+    /// </summary>
+    /// <param name = "_calculatedAmount">AmountCur</param>
+    /// <param name = "_lineAmount">Original Amount, calculation is based on</param>
+    public void setCalculatedAmount(AmountCur _calculatedAmount, AmountCur _lineAmount)
+    {
+        this.CalculatedAmount   = _calculatedAmount;
+        this.Percent            = _calculatedAmount/_lineAmount*100;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createRecordsFromPriceDiscTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// initializes the Tmp records for the from AVAHKPurchPriceInfo based on a PriceDiscTable record and TransDate
+    /// </summary>
+    /// <param name = "_markupTransTmp">AVAMarkupTransTmp</param>
+    /// <param name = "_priceDiscTable">PriceDiscTable</param>
+    /// <param name = "_transDate">TransDate</param>
+    public static void createRecordsFromPriceDiscTable(AVAMarkupTransTmp   _markupTransTmp, PriceDiscTable _priceDiscTable, TransDate _transDate)
+    {
+        Amount                  lineAmount;
+        MarkupAutoLine          avaAutoLine;
+        MarkupAutoTable         avaAutoTable;
+        VendGroupId             locVendGroupId;
+        ItemGroupId             locItemGroupId;
+        MarkupTrans             locMarkupTrans;
+
+        lineAmount = _priceDiscTable.avaCalcDiscountedAmount(_transDate);
+
+        if(_priceDiscTable.AccountCode == PriceDiscPartyCodeType::GroupId)
+        {
+            locVendGroupId  = _priceDiscTable.AccountRelation;
+        }
+        else if(_priceDiscTable.AccountCode == PriceDiscPartyCodeType::Table)
+        {
+            locVendGroupId  = VendTable::find(_priceDiscTable.AccountRelation).VendGroup;
+        }
+
+        //if(_priceDiscTable.ItemCode == PriceDiscProductCodeType::GroupId)
+        //{
+        //    locItemGroupId  = _priceDiscTable.ItemRelation;
+        //}
+        if(_priceDiscTable.ItemCode == PriceDiscProductCodeType::Table)
+        {
+            locItemGroupId  = InventTable::find(_priceDiscTable.ItemRelation).inventTableModulePurch().MarkupGroupId;
+        }
+
+        delete_from _markupTransTmp;
+
+        while select * from avaAutoLine
+        join avaAutoTable
+        where avaAutoLine.TableTableId == avaAutoTable.TableId
+        && avaAutoLine.TableRecId == avaAutoTable.RecId
+        && avaAutoTable.ModuleType == MarkupModuleType::Vend
+        && (avaAutoTable.AccountCode == TableGroupAll::All
+            || (avaAutoTable.AccountCode == TableGroupAll::GroupId
+                && avaAutoTable.AccountRelation == locVendGroupId)
+            || (avaAutoTable.AccountCode == TableGroupAll::Table
+                && avaAutoTable.AccountRelation == _priceDiscTable.AccountRelation))
+        && (avaAutoTable.ItemCode == TableGroupAll::All
+            || (avaAutoTable.ItemCode == TableGroupAll::GroupId
+                && avaAutoTable.ItemRelation == locItemGroupId)
+            ||(avaAutoTable.ItemCode == TableGroupAll::Table
+                && avaAutoTable.ItemRelation == _priceDiscTable.ItemRelation))
+        {
+            if((avaAutoTable.ModuleCategory == HeadingLine::Heading
+                    && (avaAutoLine.MarkupCategory != MarkupCategory::Percent
+                    || avaAutoLine.AVAFromDate > _transDate
+                    || (avaAutoLine.AVAToDate < _transDate
+                        && avaAutoLine.AVAToDate != dateNull())))
+                || (avaAutoTable.ModuleCategory == HeadingLine::Line
+                    && ((avaAutoLine.MarkupCategory != MarkupCategory::AVAMTZ
+                            && avaAutoLine.MarkupCategory != MarkupCategory::Pcs
+                            && avaAutoLine.MarkupCategory != MarkupCategory::Percent)
+                        || avaAutoLine.AVAFromDate > _transDate
+                        || (avaAutoLine.AVAToDate < _transDate
+                            && avaAutoLine.AVAToDate != dateNull()))))
+            {
+                continue;
+            }
+
+            _markupTransTmp.clear();
+            AVAChargeSpecification chargeSpecificationLoc = AVAChargeSpecification::find(avaAutoTable.AccountCode, avaAutoTable.AccountRelation, avaAutoTable.ItemCode, avaAutoTable.ItemRelation, AVAChargeType::MTZ, _transDate);
+
+            locMarkupTrans.initFromMarkupAutoLine(avaAutoLine);
+            _markupTransTmp.initFromMarkupTrans(locMarkupTrans);
+            switch (locMarkupTrans.MarkupCategory)
+            {
+                case MarkupCategory::AVAMTZ : 
+                    if (!_PriceDiscTable.AVAEffectivePrice)
+                    {
+                        PriceUnit      priceUnitPurch = UnitOfMeasureConverter::convert(chargeSpecificationLoc.PriceUnit,UnitOfMeasure::findBySymbol(chargeSpecificationLoc.CalculationUnit).RecId,UnitOfMeasure::findBySymbol(_priceDiscTable.UnitId).RecId,NoYes::No,InventTable::find(_priceDiscTable.AccountRelation).Product);
+                        _markupTransTmp.Value = (priceUnitPurch != 0 ?  chargeSpecificationLoc.Charge / priceUnitPurch  : chargeSpecificationLoc.Charge) * _priceDiscTable.PriceUnit;
+                        _markupTransTmp.CalcQty      = chargeSpecificationLoc.CalcQty;
+                        _markupTransTmp.CurrencyCode = chargeSpecificationLoc.CurrencyCode;
+                        if (lineAmount != 0)
+                        {
+                            _markupTransTmp.Percent       = (_markupTransTmp.Value  / (lineAmount))  * 100;
+                        }
+                    }
+                    else
+                    {
+                        _markupTransTmp.Value = 0;
+                    }
+                    break;
+                case MarkupCategory::Pcs:
+                    InventTableModule          inventTableModulePurch = InventTable::find(_priceDiscTable.ItemRelation).inventTableModulePurch();
+                    PriceUnit   purchPriceUnit =  inventTableModulePurch.priceUnit();
+                    UnitOfMeasureSymbol      purchUnitId    = inventTableModulePurch.UnitId;
+                    PriceUnit   tradeArgmPriceUnit;
+
+                    if (_priceDiscTable.UnitId != purchUnitId)
+                    {
+                        tradeArgmPriceUnit = UnitOfMeasureConverter::convert(purchPriceUnit,UnitOfMeasure::findBySymbol(purchUnitId).RecId,UnitOfMeasure::findBySymbol(_priceDiscTable.UnitId).RecId,NoYes::No,InventTable::find(_priceDiscTable.AccountRelation).Product);
+                    }
+                    else
+                    {
+                        tradeArgmPriceUnit = purchPriceUnit;
+                    }
+                   
+                    _markupTransTmp.Value = (tradeArgmPriceUnit != 0 ? avaAutoLine.Value / tradeArgmPriceUnit : avaAutoLine.Value) * _priceDiscTable.priceUnit;
+                    if (lineAmount != 0)
+                        {
+                            _markupTransTmp.Percent = (_markupTransTmp.Value / (lineAmount))  * 100;
+                        }
+                    break;
+                case MarkupCategory::Percent:
+                    _markupTransTmp.Value = lineAmount * avaAutoLine.Value / 100;
+                    _markupTransTmp.Percent = avaAutoLine.Value;
+                    break;
+            }   
+            
+           //_markupTransTmp.setCalculatedAmount(locMarkupTrans.calcDistributionAmount(_priceDiscTable.PriceUnit, lineAmount, _transDate), lineAmount);
+            
+            if(_markupTransTmp.Value != 0)
+            {
+                _markupTransTmp.insert();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<Label>@NDX:NXACharges</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>Txt</TitleField1>
+	<TableType>TempDB</TableType>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>CalcQty</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CalculatedAmount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CurrencyCode</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MarkupCategory</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MarkupCode</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ModuleCategory</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ModuleType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Txt</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Value</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>CalcQty</Name>
+			<ExtendedDataType>AVACalcQty</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>CalculatedAmount</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<Label>@SYS69023</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CurrencyCode</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>CurrencyCode</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>MarkupCategory</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>MarkupCategoryType</ExtendedDataType>
+			<EnumType>MarkupCategory</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>MarkupCode</Name>
+			<AllowEdit>No</AllowEdit>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>MarkupCode</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ModuleCategory</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>MarkupModuleCategory</ExtendedDataType>
+			<EnumType>HeadingLine</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ModuleType</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>MarkupModule</ExtendedDataType>
+			<EnumType>MarkupModuleType</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Txt</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>TransactionTextLarge</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>Value</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>MarkupValue</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>Percent</Name>
+			<ExtendedDataType>Percent</ExtendedDataType>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes />
+	<Mappings />
+	<Relations />
+	<StateMachines />
+</AxTable>

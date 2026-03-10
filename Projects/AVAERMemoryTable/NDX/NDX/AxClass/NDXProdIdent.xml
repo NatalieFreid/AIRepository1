@@ -1,0 +1,1785 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXProdIdent</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using System.Collections;
+
+/// <summary>
+/// PaffH 03.05.22
+/// last modified: PaffH 25.09.25
+/// </summary>
+public class NDXProdIdent
+{
+    const str languageId_de = 'de';
+    const str languageId_en = 'en';
+    const str languageId_en_us = 'en-us';
+
+    ProdTable   prodTable;
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    protected void new()
+    {
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    static NDXProdIdent construct()
+    {
+        return new NDXProdIdent();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillContractFromPIM</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.05.25
+    /// last change: PaffH 11.09.25
+    /// fill contract from PIM-System
+    /// </summary>
+    /// <param name = "_contract"></param>
+    public static void fillContractFromPIM(InventTable _inventTable, NDXProdIdentControlPanelContract _contract)
+    {
+        const int idArtikelKurzbeschreibung1 = 13350;
+        const int idArtikelKurzbeschreibung2 = 72;
+        const int idInclMaterial = 33;
+        const int idArtikelBeschreibungEN = 21007;
+        const str delimiter = ':';
+
+        System.String[] attr = new System.String[1]();
+        attr.setValue('attr_zeichnungFuerEtikett_48437', 0);
+
+        D365PIMCoreImportExport d365PIMCoreImportExport = D365PIMCoreImportExport::construct();
+        Niedax.PIMCore.Models.Product product_de = d365PIMCoreImportExport.importProduct(_inventTable, languageId_de, '', attr);
+        Niedax.PIMCore.Models.Product product_en = d365PIMCoreImportExport.importProduct(_inventTable, languageId_en, '', attr);
+
+        // Artikel-Kurzbeschreibung de 1,2
+        str itemBez1 = product_de.textFromcsFeatureTextarea(idArtikelKurzbeschreibung1);
+        str itemBez2 = product_de.textFromcsFeatureTextarea(idArtikelKurzbeschreibung2);
+        _contract.ParmArtikelkurzbeschreibung_de_CXM_1(itemBez1);
+        _contract.ParmArtikelkurzbeschreibung_de_CXM_2(itemBez2); 
+        _contract.ParmArtikelkurzbeschreibung_de(strFmt(NDXPlaceholderConstants::FirstSpaceSecond, itemBez1, itemBez2));
+
+        // incl. Material
+        itemBez1 = product_de.textFromcsFeatureTextarea(idInclMaterial);
+        int pos = strScan(itemBez1, delimiter, 1, strLen(itemBez1));
+        if (pos)
+        {
+            _contract.ParmInclMaterial(strLRTrim(subStr(itemBez1, pos+1, strLen(itemBez1))));
+        }
+        else
+        {
+            _contract.ParmInclMaterial(itemBez1);
+        }
+
+        // Artikelkurzbeschreibung en
+        itemBez1 = product_en.textFromcsFeatureTextarea(idArtikelKurzbeschreibung1);
+        itemBez2 = product_en.textFromcsFeatureTextarea(idArtikelKurzbeschreibung2);
+        _contract.ParmArtikelkurzbeschreibung_en_us(strFmt(NDXPlaceholderConstants::FirstSpaceSecond, itemBez1, itemBez2));
+
+        // Artikelbeschreibung en
+        _contract.ParmArtikelbeschreibung_en_CXM(product_en.artikelbeschreibung);
+
+        // Etikettenbild
+        IEnumerable enumerable = product_de.imageList;
+        IEnumerator enumerator = enumerable.GetEnumerator();
+        while (enumerator.MoveNext())
+        {
+            Niedax.PIMCore.Models.Images.HotspotImage hotspotImage = enumerator.Current;
+            Niedax.PIMCore.Models.Images.Asset asset = hotspotImage.image;
+            NDXBase64Content content = asset.data;
+            _contract.parmLabelPictureBase64(content);
+        }
+
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>contractFromItemId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 03.05.22
+    /// last modified: PaffH 05.05.25
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_prodTable">ProdTable</param>
+    /// <returns>NDXProdIdentControlPanelContract</returns>
+    public static NDXProdIdentControlPanelContract contractFromItemId(ItemId _itemId, ProdTable _prodTable)
+    {
+        NDXProdIdentControlPanelContract contract;
+        contract = new NDXProdIdentControlPanelContract();
+
+        contract.ParmProdId(_prodTable.ProdId);
+        contract.ParmItemId(_itemId);
+        contract.ParmInventColorId(_prodTable.inventDim().InventColorId);
+        InventTable inventTable = InventTable::find(_itemId);
+        if (inventTable)
+        {
+            contract.ParmModellNumber(inventTable.NDXModelNumber);
+            contract.ParmUK(inventTable.DataAreaId);
+
+            // TODO PaffH: Begin: AX2009.classes.NDX_ProdIdent.fillControlPanelAdditionInventTable()
+            NDXProdIdent::fillContractFromPIM(inventTable, contract);
+
+            contract.ParmArtikelkurzbeschreibung_de_CXM_1('Dummy_Artikelkurzbeschreibung_de_CXM_1');
+            contract.ParmArtikelkurzbeschreibung_de_CXM_2('Dummy_Artikelkurzbeschreibung_de_CXM_2');
+            contract.ParmEtikettentyp('Dummy_Etikettentyp');
+            contract.ParmItemName1_en_us('Dummy_Artikelname');
+            contract.ParmArtikelbild('Dummy_Artikelbild');
+            //contract.ParmURLOPK(false);
+            //contract.ParmInclMaterial(false);
+            // TODO PaffH: End: AX2009.classes.NDX_ProdIdent.fillControlPanelAdditionInventTable()
+                
+            // language specific de
+            EcoResProduct ecoResProduct = inventTable.Product();
+            EcoResProductTranslation ecoResProductTranslation = EcoResProductTranslation::findByProductLanguage(ecoResProduct.RecId, languageId_de);
+            contract.ParmItemName1_de(ecoResProductTranslation.NDXProductName1);
+            contract.ParmItemName2_de(ecoResProductTranslation.NDXProductName2);
+            contract.ParmArtikelkurzbeschreibung_de(ecoResProductTranslation.Description);
+            contract.ParmItemDescription(strFmt('%1, %2', ecoResProductTranslation.NDXProductName1, ecoResProductTranslation.NDXProductName2));
+            // language specific en-us
+            ecoResProductTranslation = EcoResProductTranslation::findByProductLanguage(ecoResProduct.RecId, languageId_en_us);
+            contract.ParmItemName1_en_us(ecoResProductTranslation.NDXProductName1);
+            contract.ParmItemName2_en_us(ecoResProductTranslation.NDXProductName2);
+            contract.ParmArtikelkurzbeschreibung_en_us(ecoResProductTranslation.Description);
+
+            // item barcode
+            InventItemBarcode inventItemBarcode = InventItemBarcode::findPrintItemId(inventTable.ItemId, 'EAN13');
+            contract.ParmEAN(inventItemBarcode.itemBarCode);
+        }
+        return contract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillFromProdStatusChangedGenerateTransportLabelEventContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 03.05.22
+    /// populate a list with NDXProdIdentControlPanelContract
+    /// </summary>
+    /// <param name = "_contract">NDXProdStatusChangedGenerateTransportLabelEventContract</param>
+    /// <returns>list with NDXProdIdentControlPanelContract</returns>
+    public List fillFromProdStatusChangedGenerateTransportLabelEventContract(NDXProdStatusChangedGenerateTransportLabelEventContract _contract)
+    {
+
+        List lines = new List(Types::Class);
+        ProdTable lProdTable = ProdTable::find(_contract.ParmProdId());
+        if (lProdTable)
+        {
+            lines = NDXProdIdent::fillControlPanelFromProdTable(lProdTable, _contract, true);
+        }
+        return lines;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>save2NDXProdIdentControlPanel</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.05.22
+    /// save list with NDXProdIdentControlPanelContract to table NDXProdIdentControlPanel
+    /// </summary>
+    /// <param name = "lines">List</param>
+    public void save2NDXProdIdentControlPanel(List lines)
+    {
+        ListEnumerator listEnum = lines.getEnumerator();
+        while (listEnum.moveNext())
+        {
+            if (listEnum.current() is NDXProdIdentControlPanelContract)
+            {
+                NDXProdIdentControlPanel::fillFromContract(listEnum.current() as NDXProdIdentControlPanelContract, true);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmProdTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 02.06.22
+    /// </summary>
+    /// <param name = "_prodTable">ProdTable</param>
+    /// <returns>ProdTable</returns>
+    public ProdTable parmProdTable(ProdTable _prodTable = prodTable)
+    {
+        prodTable = _prodTable;
+        return prodTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>queryFromProdIdentTechnique</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.08.24
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_nDXProdIdentRelevantFor">NDXProdIdentRelevantFor</param>
+    /// <returns>Query</returns>
+    static Query queryFromProdIdentTechnique(ItemId _itemId, NDXProdIdentRelevantFor _nDXProdIdentRelevantFor = NDXProdIdentRelevantFor::Verpackungsetikett)
+    {
+        Query q = new Query();
+        QueryBuildDataSource qbdsProcedureTable = q.addDataSource(tableNum(NDXProdIdentProcedureTable));
+        qbdsProcedureTable.addRange(fieldNum(NDXProdIdentProcedureTable, InventTable)).value(queryValue(InventTable::find(_itemId).RecId));
+        QueryBuildDataSource qbdsProdIdentProcedureLine1 = qbdsProcedureTable.addDataSource(tableNum(NDXProdIdentProcedureLine1));
+        qbdsProdIdentProcedureLine1.relations(true);
+        QueryBuildDataSource qbdsProdIdentProcedureLine2 = qbdsProdIdentProcedureLine1.addDataSource(tableNum(NDXProdIdentProcedureLine2));
+        qbdsProdIdentProcedureLine2.relations(true);
+        QueryBuildDataSource qbdsProdIdentTechnique = qbdsProdIdentProcedureLine2.addDataSource(tableNum(NDXProdIdentTechnique));
+        qbdsProdIdentTechnique.relations(true);
+        qbdsProdIdentTechnique.addRange(fieldNum(NDXProdIdentTechnique, RelevantFor)).value(queryValue(_nDXProdIdentRelevantFor));
+        return q;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>queryFromProcL2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 09.06.22
+    /// AX2009: classes.NDX_ProdIdent::queryFromProcL2()
+    /// </summary>
+    /// <param name = "prodTable">ProdTable</param>
+    /// <returns>Query</returns>
+    static Query queryFromProcL2(ProdTable prodTable = null)
+    {
+        Query q = new Query();
+
+        // ProdTable
+        QueryBuildDataSource qbdsProdTable = q.addDataSource(tablenum(ProdTable));
+        if (prodTable)
+        {
+            qbdsProdTable.addRange(fieldnum(ProdTable, ProdId)).value(prodTable.ProdId);
+        }
+
+        // ProdRoute
+        QueryBuildDataSource qbdsProdRoute = qbdsProdTable.addDataSource(tablenum(ProdRoute));
+        qbdsProdRoute.relations(true);
+        qbdsProdRoute.joinMode(JoinMode::InnerJoin);
+        qbdsProdRoute.fetchMode(QueryFetchMode::One2One);
+
+        //RouteOpr
+        QueryBuildDataSource qbdsRouteOpr = qbdsProdRoute.addDataSource(tablenum(RouteOpr));
+        qbdsRouteOpr.relations(true);
+        qbdsRouteOpr.joinMode(JoinMode::InnerJoin);
+        qbdsRouteOpr.fetchMode(QueryFetchMode::One2One);
+
+        // RouteTable
+        QueryBuildDataSource qbdsRouteTable = qbdsRouteOpr.addDataSource(tablenum(RouteTable));
+        qbdsRouteTable.relations(true);
+        qbdsRouteTable.joinMode(JoinMode::InnerJoin);
+        qbdsRouteTable.fetchMode(QueryFetchMode::One2One);
+
+        //RouteVersion
+        QueryBuildDataSource qbdsRouteVersion = qbdsRouteTable.addDataSource(tablenum(RouteVersion));
+        qbdsRouteVersion.relations(true);
+        qbdsRouteVersion.joinMode(JoinMode::InnerJoin);
+        qbdsRouteVersion.fetchMode(QueryFetchMode::One2One);
+
+        // Route
+        QueryBuildDataSource qbdsRoute = qbdsRouteTable.addDataSource(tablenum(Route));
+        qbdsRoute.relations(true);
+        qbdsRoute.joinMode(JoinMode::InnerJoin);
+        qbdsRoute.fetchMode(QueryFetchMode::One2One);
+
+        // nDXProdIdentProcedureLine1
+        QueryBuildDataSource qbdsNDXProdIdentProcedureLine1 = qbdsRoute.addDataSource(tablenum(NDXProdIdentProcedureLine1));
+        qbdsNDXProdIdentProcedureLine1.relations(true);
+        qbdsNDXProdIdentProcedureLine1.joinMode(JoinMode::InnerJoin);
+        qbdsNDXProdIdentProcedureLine1.fetchMode(QueryFetchMode::One2One);
+
+        // nDXProdIdentProcedureLine1
+        QueryBuildDataSource qbdsNDXProdIdentProcedureLine2 = qbdsNDXProdIdentProcedureLine1.addDataSource(tablenum(NDXProdIdentProcedureLine2));
+        qbdsNDXProdIdentProcedureLine2.relations(true);
+        qbdsNDXProdIdentProcedureLine2.joinMode(JoinMode::InnerJoin);
+        qbdsNDXProdIdentProcedureLine2.fetchMode(QueryFetchMode::One2One);
+
+        // NDX_ProdIdent_ProcedureTable
+        QueryBuildDataSource qbdsNDXProdIdentProcedureTable = qbdsNDXProdIdentProcedureLine1.addDataSource(tablenum(NDXProdIdentProcedureTable));
+        qbdsNDXProdIdentProcedureTable.relations(true);
+        qbdsNDXProdIdentProcedureTable.joinMode(JoinMode::InnerJoin);
+        qbdsNDXProdIdentProcedureTable.fetchMode(QueryFetchMode::One2One);
+        
+        // NDX_ProdIdent_ProcedureTable > ProdTable
+        // Sinn der folgenden 2 Zeilen nicht erkannt
+        //QueryBuildRange qbr = qbdsNDXProdIdentProcedureTable.addRange(fieldnum(NDXProdIdentProcedureTable, ItemId));
+        //qbr.value(strfmt("((%1.%3 == %2.%3))", qbdsNDXProdIdentProcedureTable.name(), qbdsProdTable.name(), fieldid2name(tablenum(ProdTable), fieldnum(prodTable, ItemId))));
+
+        // nDXProdIdentTechnique
+        QueryBuildDataSource qbdsNDXProdIdentTechnique = qbdsNDXProdIdentProcedureLine2.addDataSource(tablenum(NDXProdIdentTechnique));
+        qbdsNDXProdIdentTechnique.relations(true);
+        qbdsNDXProdIdentTechnique.joinMode(JoinMode::InnerJoin);
+        qbdsNDXProdIdentTechnique.fetchMode(QueryFetchMode::One2One);
+        qbdsNDXProdIdentTechnique.addRange(fieldnum(NDXProdIdentTechnique, RelevantFor)).value(QueryValue(NDXProdIdentRelevantFor::Verpackungsetikett));
+
+        // NDX_ProdIdent_Label
+        QueryBuildDataSource qbdsNDXProdIdentLabel = qbdsNDXProdIdentProcedureLine2.addDataSource(tablenum(NDXProdIdentLabel));
+        qbdsNDXProdIdentLabel.relations(true);
+        qbdsNDXProdIdentLabel.joinMode(JoinMode::InnerJoin);
+        qbdsNDXProdIdentLabel.fetchMode(QueryFetchMode::One2One);
+
+        // UnitConvert
+        QueryBuildDataSource qbdsUnitOfMeasureConversion = qbdsNDXProdIdentProcedureLine2.addDataSource(tableNum(UnitOfMeasureConversion));
+        qbdsUnitOfMeasureConversion.relations(true); 
+        qbdsUnitOfMeasureConversion.joinMode(JoinMode::OuterJoin);
+        qbdsUnitOfMeasureConversion.fetchMode(QueryFetchMode::One2One);
+
+        return q;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillControlPanelFromProdTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 09.06.22
+    /// AX2009: classes.NDX_ProdIdent.fillControlPanelFromProdTable()
+    /// </summary>
+    /// <param name = "_prodTable">ProdTable</param>
+    /// <param name = "_contract">NDXProdStatusChangedGenerateTransportLabelEventContract</param>
+    /// <param name = "_forceBuild">boolean</param>
+    /// <returns>List</returns>
+    static List fillControlPanelFromProdTable(ProdTable _prodTable, NDXProdStatusChangedGenerateTransportLabelEventContract _contract, boolean _forceBuild = false)
+    {
+        List lines = new List(Types::Class);
+        List linesProdIdent = new List(Types::Class);
+        ProdTable   lProdTable2;
+        FormDataSource  fds;
+        int anz1, anz2, anzPA, anzLabelForPA;
+
+        fds = FormDataUtil::getFormDataSource(_prodTable);
+        for (lProdTable2 = fds && fds.getFirst(true) ? fds.getFirst(true) : _prodTable;
+        lProdTable2;
+        lProdTable2 = fds ? fds.getNext() : null)
+        {
+            anz1 = 0;
+            anz2 = 0;
+            ++anzPA;
+
+            // label info based on "Produktkennzeichnung"
+            linesProdIdent = NDXProdIdent::fillControlPanelFromProcL2_Q(NDXProdIdent::queryFromProcL2(lProdTable2), lProdTable2, _contract, _forceBuild);
+            anz1 += linesProdIdent.elements();
+            lines.appendList(linesProdIdent);
+
+            if (anz1 && anz2)
+            {
+                NDXProdIdentControlPanel::setSyncActionDiffDataFrom(lProdTable2.ProdId);
+            }
+            anzLabelForPA += (anz1 || anz2) ? 1 : 0;
+
+            NDXProdTable2ProdIdent::checkProdTable(lProdTable2.ProdId);
+        }
+        lines = NDXProdIdentControlPanel::refreshListWithContracts(lines);
+
+        return lines;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillControlPanelFromProcL2_Q</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 09.06.22
+    /// modified: 18.10.24
+    /// AX2009: classes.NDX_ProdIdent::fillControlPanelFromProcL2_Q()
+    /// </summary>
+    /// <param name = "_q">Query</param>
+    /// <param name = "_prodTableBuffer">ProdTable</param>
+    /// <param name = "_contract">NDXProdStatusChangedGenerateTransportLabelEventContract</param>
+    /// <param name = "_forceBuild">boolean</param>
+    /// <returns>List</returns>
+    static List fillControlPanelFromProcL2_Q(Query _q,
+                                        ProdTable   _prodTableBuffer,
+                                        NDXProdStatusChangedGenerateTransportLabelEventContract _contract,
+                                        boolean _forceBuild = false)
+    {
+        NDXProdIdentProcedureTable    nDXProdIdentProcedureTable;
+        NDXProdIdentProcedureLine1    nDXProdIdentProcedureLine1;
+        NDXProdIdentProcedureLine2    nDXProdIdentProcedureLine2;
+        NDXProdIdentTechnique         nDXProdIdentTechnique;
+        ProdTable                       prodTable;
+        ProdRoute                       prodRoute;
+        Route route;
+        //UnitConvert                     unitConvert;
+        UnitOfMeasureConversion unitOfMeasureConversion;
+        NDXProdIdentControlPanel       nDXProdIdentControlPanel;
+        List listContracts = new List(Types::Class);
+        List listRecords = new List(Types::Record);
+        boolean lFirst = true;
+        RefRecId refRecIdParent;
+        int anz;
+        QueryRun    qr;
+
+        qr = new QueryRun(_q);
+        while (qr.next())
+        {
+            nDXProdIdentProcedureTable    = qr.get(tablenum(NDXProdIdentProcedureTable));
+            nDXProdIdentProcedureLine1    = qr.get(tablenum(NDXProdIdentProcedureLine1));
+            nDXProdIdentProcedureLine2    = qr.get(tablenum(NDXProdIdentProcedureLine2));
+            nDXProdIdentTechnique         = qr.get(tablenum(NDXProdIdentTechnique));
+            prodRoute                       = qr.get(tablenum(ProdRoute));
+            prodTable                       = qr.get(tablenum(ProdTable));
+            route = qr.get(tableNum(Route));
+            unitOfMeasureConversion = qr.get(tableNum(UnitOfMeasureConversion));
+
+            if (prodRoute.OprId != route.oprid)
+            {
+                continue;
+            }
+
+            nDXProdIdentControlPanel = NDXProdIdentControlPanel::findProcedureLine2(prodTable.ProdId, nDXProdIdentProcedureLine2.RecId, true);
+            if (_forceBuild && nDXProdIdentControlPanel)
+            {
+                switch (true)
+                {
+                    case !nDXProdIdentControlPanel.BT_RecordId :
+                        //Warning(strFmtLB(strfmt("@NXD9840", prodTable.ProdId)));            // Es besteht bereits ein BT-Transfer-DS zum PA [%1].\nDieser wurde noch nicht mit BT abgeglichen.\nTransfer zum BT per Sync.
+                        break;
+                    case  nDXProdIdentControlPanel.Active == NoYes::Yes :
+                        //Warning(strFmtLB(strfmt("@NXD9839", prodTable.ProdId)));            // Es besteht bereits ein BT-Transfer-DS zum PA [%1].\nTransfer zum BT per Sync.
+                        break;
+                    default :
+                        // create new record
+                        nDXProdIdentControlPanel.clear();
+                }
+            }
+            if (!nDXProdIdentControlPanel)
+            {
+                nDXProdIdentControlPanel.initValue();
+                nDXProdIdentControlPanel.ProdId                             = prodTable.ProdId;
+                nDXProdIdentControlPanel.RefRecIdProdIdent_ProcedureLine2   = nDXProdIdentProcedureLine2.RecId;
+                nDXProdIdentControlPanel.ControlPanelDataFrom               = NDXProdIdentControlPanelDataFrom::ProdIdent;
+                nDXProdIdentControlPanel.Host                               = _contract.ParmHost();
+            }
+            else
+            {
+                if (nDXProdIdentControlPanel.ControlPanelDataFrom == NDXProdIdentControlPanelDataFrom::BoxLabelMapping)
+                {
+                    nDXProdIdentControlPanel.ControlPanelDataFrom = NDXProdIdentControlPanelDataFrom::ProdIdentAndBoxLabelMapping;
+                }
+            }
+
+
+            nDXProdIdentControlPanel.OprId                             = prodRoute.OprId;
+            nDXProdIdentControlPanel.OprNum                            = prodRoute.OprNum;
+            nDXProdIdentControlPanel.ItemId                            = prodTable.ItemId;
+            nDXProdIdentControlPanel.InventRefId = prodTable.InventRefId;
+            nDXProdIdentControlPanel.Uebertragung_aus_AX = DateTimeUtil::utcNow();
+            nDXProdIdentControlPanel.LabelId                           = NDXProdIdentLabel::findRecId(nDXProdIdentProcedureLine2.NDXProdIdentLabel).ID;
+            nDXProdIdentControlPanel.RouteId                           = prodTable.RouteId;
+            nDXProdIdentControlPanel.AnzahlEtiketten                   = real2int(RoundUp(prodTable.QtySched
+                                                                        / (unitOfMeasureConversion.Factor ? unitOfMeasureConversion.Factor : 1), 1));
+
+            nDXProdIdentControlPanel.TechniqueID                       = NDXProdIdentTechnique::findRecId(nDXProdIdentProcedureLine2.NDXProdIdentTechnique).ID;
+            nDXProdIdentControlPanel.RefRecIdProdIdent_ProcedureLine2  = nDXProdIdentProcedureLine2.RecId;
+            nDXProdIdentControlPanel.RefRecIdUnitConvert = unitOfMeasureConversion.RecId;
+            nDXProdIdentControlPanel.LabelIdProdIdent                  = nDXProdIdentControlPanel.LabelId;
+            nDXProdIdentControlPanel.LabelFoundOK                      = true;
+            nDXProdIdentControlPanel.OprIdOK                           = prodRoute.RecId != 0;
+            nDXProdIdentControlPanel.OprNumOK                          = prodRoute.RecId != 0;
+            nDXProdIdentControlPanel.ProdIdentExists                   = true;
+
+            nDXProdIdentControlPanel.InventColorId                     = prodTable.inventDim().InventColorId;            
+
+            NDXProdIdent::fillControlPanelAddition(nDXProdIdentControlPanel);
+            NDXProdIdent::setStatus(nDXProdIdentControlPanel, _prodTableBuffer, _forceBuild);
+
+            ttsbegin;
+            if (nDXProdIdentControlPanel.validateWrite())
+            {
+                ++anz;
+                nDXProdIdentControlPanel.write();
+                listContracts.addEnd(NDXProdIdentControlPanel::populateToContract(nDXProdIdentControlPanel));
+                if (lFirst)
+                {
+                    refRecIdParent = nDXProdIdentControlPanel.RecId;
+                    lFirst = false;
+                }
+                listRecords.addEnd(nDXProdIdentControlPanel);
+            }
+            ttscommit;
+        }
+        NDXProdIdentControlPanelLine::fillFromRecordList(refRecIdParent, listRecords);
+        return listContracts;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillControlPanelAddition</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.07.22
+    /// last modified: PaffH 11.09.25
+    /// AX2009: classes.NDX_ProdIdent::fillControlPanelAddition()
+    /// </summary>
+    /// <param name = "nDX_ProdIdentControlPanel">NDXProdIdentControlPanel</param>
+    /// <param name = "isManual">boolean</param>
+    static void fillControlPanelAddition(NDXProdIdentControlPanel nDX_ProdIdentControlPanel, boolean isManual = false)
+    {
+        InventTable                     inventTable;
+        UnitOfMeasureConversion         unitOfMeasureConversion;
+        UnitOfMeasure                   unitOfMeasure;
+        UnitOfMeasureTranslation        unitOfMeasureTranslation;
+        EcoResPhysicalProductDimensions ecoResPhysicalProductDimensions;
+        ProdTable                       prodTable = ProdTable::find(nDX_ProdIdentControlPanel.ProdId);
+        nDXProdIdentProcedureLine2      nDXProdIdentProcedureLine2;
+
+        SalesLine                       salesLine;
+        CustTable                       custTable;
+        CustVendExternalItem            custVendExternalItem;
+        container       conData;
+        int             i;
+
+        inventTable = InventTable::find(NDXProdIdentOZMapping::getMappedItemIdActiv(nDX_ProdIdentControlPanel.ItemId, true));
+        if (inventTable.ItemId != nDX_ProdIdentControlPanel.ItemId)
+        {
+            nDX_ProdIdentControlPanel.OZMappedBy = inventTable.ItemId;
+        }
+
+        if (nDX_ProdIdentControlPanel.RefRecIdUnitConvert)
+        {
+            select firstonly unitOfMeasureConversion
+                where unitOfMeasureConversion.RecId == nDX_ProdIdentControlPanel.RefRecIdUnitConvert;
+        }
+
+        if (nDX_ProdIdentControlPanel.RefRecIdProdIdent_ProcedureLine2)
+        {
+            select nDXProdIdentProcedureLine2
+            where nDXProdIdentProcedureLine2.RecId == nDX_ProdIdentControlPanel.RefRecIdProdIdent_ProcedureLine2;
+
+            // PaffH 27.04.23: ProdRouteJob.JobId legacy:12 signs, now: 'PRV' + 6 signs - not usable for Barcode
+            //if(!isManual)
+            //{
+            //    nDX_ProdIdentControlPanel.ProdLabelId = nDXProdIdentProcedureLine1.getProdLabelIdBarcode(prodTable.ProdId, false);
+            //}
+            //else
+            nDX_ProdIdentControlPanel.ProdLabelId = NDXProdIdentControlPanel::genBarcodeString(false);
+            nDX_ProdIdentControlPanel.fillFromBlock2ItemId(nDXProdIdentProcedureLine2);
+        }
+
+        NDXProdIdent::fillControlPanelAdditionInventTable(nDX_ProdIdentControlPanel, inventTable);
+        nDX_ProdIdentControlPanel.Etikettentyp      = nDX_ProdIdentControlPanel.LabelId;
+
+        // Einheit
+        //unitOfMeasure = UnitOfMeasure::find(unitOfMeasureConversion.FromUnitOfMeasure); // in AX2009 FROM, in D365FO TO 
+        unitOfMeasure = UnitOfMeasure::find(unitOfMeasureConversion.ToUnitOfMeasure);
+        unitOfMeasureTranslation = unitOfMeasureTranslation::findByTranslation(unitOfMeasure.RecId, languageId_de);
+        nDX_ProdIdentControlPanel.Einheit_de        = unitOfMeasureTranslation.Description;
+        
+        unitOfMeasureTranslation = unitOfMeasureTranslation::findByTranslation(UnitOfMeasure::find(unitOfMeasureConversion.FromUnitOfMeasure).RecId, languageId_en);
+        nDX_ProdIdentControlPanel.Einheit_en_us     = unitOfMeasureTranslation.Description;
+        
+        ecoResPhysicalProductDimensions = EcoResPhysicalProductDimensions::find(inventTable.Product, unitOfMeasure.Symbol, EcoResPhysicalDimensionType::Packing);
+        
+        nDX_ProdIdentControlPanel.VP_Stufe          = unitOfMeasureConversion.NDXUnitLevel;
+        nDX_ProdIdentControlPanel.VP_VonEinheitFaktor   = real2int(unitOfMeasureConversion.Factor);
+        
+        //nDX_ProdIdentControlPanel.VP_VonEinheit     = UnitOfMeasure::find(unitOfMeasureConversion.FromUnitOfMeasure).Symbol;
+        //nDX_ProdIdentControlPanel.VP_InEinheit      = UnitOfMeasure::find(unitOfMeasureConversion.ToUnitOfMeasure).Symbol;
+        nDX_ProdIdentControlPanel.VP_VonEinheit     = UnitOfMeasure::find(unitOfMeasureConversion.ToUnitOfMeasure).Symbol;
+        nDX_ProdIdentControlPanel.VP_InEinheit      = UnitOfMeasure::find(unitOfMeasureConversion.FromUnitOfMeasure).Symbol;
+
+        nDX_ProdIdentControlPanel.Artikelbild = NDXProdIdentPictureItemIdMapping::findActive(inventTable.ItemId).ItemPictureName;
+        FilePath filePath;
+        Filename fileType;
+        [filePath, nDX_ProdIdentControlPanel.ArtikelbildExclExt, fileType] = fileNameSplit(nDX_ProdIdentControlPanel.Artikelbild);
+
+        // Prüfzeichen
+        conData = NDXProdIdentBlock2ItemId::getDataFromBlockType(NDXProdIdentBlockType::CertificationMark, nDXProdIdentProcedureLine2);
+        for (i=1; i<=conlen(conData); i++)
+        {
+            switch (i)
+            {
+                case 1: 
+                    nDX_ProdIdentControlPanel.Pruefzeichen1 = conpeek(conData,i); 
+                    break;
+                case 2: 
+                    nDX_ProdIdentControlPanel.Pruefzeichen2 = conpeek(conData,i); 
+                    break;
+                case 3: 
+                    nDX_ProdIdentControlPanel.Pruefzeichen3 = conpeek(conData,i); 
+                    break;
+                case 4: 
+                    nDX_ProdIdentControlPanel.Pruefzeichen4 = conpeek(conData,i); 
+                    break;
+                case 5: 
+                    nDX_ProdIdentControlPanel.Pruefzeichen5 = conpeek(conData,i); 
+                    break;
+            }
+        }
+
+        // Logo
+        conData = NDXProdIdentBlock2ItemId::getDataFromBlockType(NDXProdIdentBlockType::Logo, nDXProdIdentProcedureLine2);
+        for (i=1; i<=conlen(conData); i++)
+        {
+            switch (i)
+            {
+                case 1: 
+                    nDX_ProdIdentControlPanel.Logo1 = conpeek(conData,i); 
+                    break;
+                case 2: 
+                    nDX_ProdIdentControlPanel.Logo2 = conpeek(conData,i); 
+                    break;
+            }
+        }
+
+        // Kundenbezug vorhanden?
+        if (!isManual &&
+        prodTable.InventRefTransId  &&
+        prodTable.InventRefId       &&
+        prodTable.InventRefType == InventRefType::Sales)
+        {
+            select firstonly salesLine
+            where   salesLine.InventTransId == prodTable.InventRefTransId
+                &&  salesLine.SalesId == prodtable.InventRefId
+                &&  salesLine.SalesStatus == SalesStatus::Backorder
+            join        custTable
+                where   custTable.AccountNum == salesLine.CustAccount
+            outer join  custVendExternalItem
+                where   custVendExternalItem.ModuleType == ModuleInventPurchSalesVendCustGroup::Cust
+                    &&  custVendExternalItem.CustVendRelation == custTable.AccountNum;
+            // Artikel-Debitorengruppe
+            if (custTable.CustItemGroupId)
+            {
+                nDX_ProdIdentControlPanel.Artikel_DebitorenGruppe = custTable.CustItemGroupId;
+            }
+            if (custVendExternalItem)
+            {
+                // Externe Artikelnummer
+                nDX_ProdIdentControlPanel.ExterneArtikelnummer = custVendExternalItem.ExternalItemId;
+                // Externe EAN
+                //PaffH 03.01.25 Feld ist in D365FO nicht implementiert
+                //nDX_ProdIdentControlPanel.ExterneEAN            = custVendExternalItem.NDX_itemBarCode;
+            }
+        }
+
+        if(!isManual)                                                         
+        {
+            nDX_ProdIdentControlPanel.fillFromProdRouteJob();                 
+        }
+
+        NDXProdIdent::fillControlPanelAdditionNDX_RicoMap_ItemId(nDX_ProdIdentControlPanel, inventTable);
+
+        if(!isManual)                                                         
+        {
+            nDX_ProdIdentControlPanel.InventRefId   = prodTable.InventRefId;  
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillControlPanelAdditionNDX_RicoMap_ItemId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 18.11.24
+    /// fill Rico-Info
+    /// </summary>
+    /// <param name = "_nDX_ProdIdentControlPanel">NDXProdIdentControlPanel</param>
+    /// <param name = "_inventTable">InventTable</param>
+    public static void fillControlPanelAdditionNDX_RicoMap_ItemId(NDXProdIdentControlPanel _nDX_ProdIdentControlPanel, InventTable _inventTable)
+    {
+        _nDX_ProdIdentControlPanel.RicoItemIdNDX = NDXProdIdent::RicoProductNumberFromNDX_RicoMap_ItemId(_inventTable.ItemId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillControlPanelAdditionInventTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.07.22
+    /// last modified: PaffH 25.09.25
+    /// AX2009: classes.NDX_ProdIdent::fillControlPanelAdditionInventTable()
+    /// </summary>
+    /// <param name = "nDX_ProdIdentControlPanel">NDXProdIdentControlPanel</param>
+    /// <param name = "inventTable">InventTable</param>
+    static void fillControlPanelAdditionInventTable(NDXProdIdentControlPanel nDX_ProdIdentControlPanel, InventTable inventTable)
+    {
+        EcoResProduct ecoResProduct = EcoResProduct::find(inventTable.Product);
+
+        NDXProdIdentControlPanelContract contract = new NDXProdIdentControlPanelContract();
+        NDXProdIdent::fillContractFromPIM(inventTable, contract);
+
+        nDX_ProdIdentControlPanel.ArtikelbildBase64 = contract.parmLabelPictureBase64();
+
+        if (contract.ParmArtikelkurzbeschreibung_de())
+        {
+            nDX_ProdIdentControlPanel.Artikelkurzbeschreibung_de = contract.ParmArtikelkurzbeschreibung_de();
+            nDX_ProdIdentControlPanel.Artikelkurzbeschreibung_de_CXM_1 = contract.ParmArtikelkurzbeschreibung_de_CXM_1();
+            nDX_ProdIdentControlPanel.Artikelkurzbeschreibung_de_CXM_2 = contract.ParmArtikelkurzbeschreibung_de_CXM_2();
+        }
+        else
+        {
+            nDX_ProdIdentControlPanel.Artikelkurzbeschreibung_de = ecoResProduct.productDescription(languageId_de);
+        }
+
+        // Artikelkurzbeschreibung EN
+        if (contract.ParmArtikelkurzbeschreibung_en_us())
+        {
+            nDX_ProdIdentControlPanel.Artikelkurzbeschreibung_en_us = contract.ParmArtikelkurzbeschreibung_en_us();
+        }
+        else
+        {
+            nDX_ProdIdentControlPanel.Artikelkurzbeschreibung_en_us = ecoResProduct.productDescription(languageId_en_us);
+        }
+        nDX_ProdIdentControlPanel.PIMItemDescriptionEN = contract.ParmArtikelbeschreibung_en_CXM();
+
+        nDX_ProdIdentControlPanel.Etikettentyp      = nDX_ProdIdentControlPanel.LabelId;
+
+        // englischer Artikelname 1 und 2
+        nDX_ProdIdentControlPanel.Artikelname1_en_us = ecoResProduct.NDXProductName1(languageId_en_us);
+        nDX_ProdIdentControlPanel.Artikelname2_en_us = ecoResProduct.NDXProductName2(languageId_en_us);
+
+        // deutscher Artikelname 1 und 2
+        nDX_ProdIdentControlPanel.Artikelname1_de   = ecoResProduct.NDXProductName1(languageId_de);
+        nDX_ProdIdentControlPanel.Artikelname2_de   = ecoResProduct.NDXProductName2(languageId_de);
+
+        nDX_ProdIdentControlPanel.Artikelbeschreibung   = strfmt("@NDXBase:NDXPlaceholder01", nDX_ProdIdentControlPanel.Artikelname1_de, nDX_ProdIdentControlPanel.Artikelname2_de);
+        nDX_ProdIdentControlPanel.ModellNummer      = inventTable.NDXModelNumber;
+        nDX_ProdIdentControlPanel.EAN               = inventTable.NDXItemBarcode();
+        nDX_ProdIdentControlPanel.UK                = inventTable.dataAreaId;
+
+        // URL OPK
+        nDX_ProdIdentControlPanel.URLOPK = NDXMagentoBase::getItemOPKWEBAddress(inventTable.NDXModelNumber, languageId_de);
+
+        //InclZub
+        nDX_ProdIdentControlPanel.InclMaterial = contract.ParmInclMaterial();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>queryFromProdTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 06.07.22
+    /// AX2009: classes.NDX_ProdIdent.queryFromProdTable()
+    /// </summary>
+    /// <param name = "prodTable">ProdTable</param>
+    /// <returns>Query</returns>
+    static Query queryFromProdTable(ProdTable prodTable)
+    {
+        Query   q;
+        QueryBuildDataSource    qbds1, qbds2, qbds3, qbds4, qbds5, qbds6;
+        ;
+        q = new Query();
+
+        // ProdTable
+        qbds1 = q.addDataSource(tablenum(prodTable));
+        qbds1.addRange(fieldnum(ProdTable, RecId)).value(QueryValue(prodTable.RecId));
+
+        // ProdBOM
+        qbds2 = qbds1.addDataSource(tablenum(ProdBOM));
+        qbds2.addLink(fieldnum(ProdTable, ProdId), fieldnum(ProdBOM, ProdId));
+        qbds2.joinMode(JoinMode::InnerJoin);
+        qbds2.fetchMode(QueryFetchMode::One2One);
+
+        // ProdRoute
+        qbds3 = qbds2.addDataSource(tablenum(ProdRoute));
+        qbds3.addLink(fieldnum(ProdBOM, ProdId), fieldnum(ProdRoute, ProdId));
+        qbds3.addLink(fieldnum(ProdBOM, OprNum), fieldnum(ProdRoute, OprNum));
+        qbds3.addRange(fieldnum(ProdRoute, OprPriority)).value(QueryValue(RouteOprPriority::Primary));
+        qbds3.joinMode(JoinMode::InnerJoin);
+        qbds3.fetchMode(QueryFetchMode::One2One);
+
+        // NDX_ProdIdent_LabelItem
+        qbds4 = qbds2.addDataSource(tablenum(NDXProdIdentLabelItem));
+        qbds4.addLink(fieldnum(ProdBOM, ItemId), fieldnum(NDXProdIdentLabelItem, ItemId));
+        qbds4.joinMode(JoinMode::InnerJoin);
+        qbds4.fetchMode(QueryFetchMode::One2One);
+
+        // NDX_ProdIdent_Label
+        qbds5 = qbds4.addDataSource(tablenum(NDXProdIdentLabel));
+        qbds5.relations(true);
+        qbds5.joinMode(JoinMode::InnerJoin);
+        qbds5.fetchMode(QueryFetchMode::One2One);
+
+        // InventTable
+        qbds6 = qbds2.addDataSource(tablenum(InventTable));
+        qbds6.relations(true);
+        qbds6.joinMode(JoinMode::InnerJoin);
+        qbds6.fetchMode(QueryFetchMode::One2One);
+
+        return q;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>queryFromProdTable2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 24.08.24
+    /// </summary>
+    /// <param name = "_prodTable">ProdTable</param>
+    /// <returns>Query</returns>
+    static Query queryFromProdTable2(ProdTable _prodTable = null)
+    {
+        Query q = new Query();
+
+        //QueryBuildDataSource qbdsRouteTest = q.addDataSource(tableNum(Route));
+        //QueryBuildDataSource qbdsRouteOprTest = qbdsRouteTest.addDataSource(tableNum(RouteOpr));
+        //qbdsRouteOprTest.relations(false);
+        //qbdsRouteOprTest.addLink(fieldNum(Route, RouteId), fieldNum(RouteOpr,RouteRelation));
+        //qbdsRouteOprTest.joinMode(JoinMode::InnerJoin);
+        //qbdsRouteOprTest.fetchMode(QueryFetchMode::One2One);
+        //QueryBuildDataSource qbdsProdRouteTest = qbdsRouteTest.addDataSource(tableNum(ProdRoute));
+        //qbdsProdRouteTest.relations(false);
+        //qbdsProdRouteTest.addLink(fieldNum(Route, OprId), fieldNum(ProdRoute, OprId));
+        //qbdsProdRouteTest.joinMode(JoinMode::InnerJoin);
+        //qbdsProdRouteTest.fetchMode(QueryFetchMode::One2One);
+
+        QueryBuildDataSource qbdsProdTable = q.addDataSource(tableNum(ProdTable));
+        if (_prodTable)
+        {
+            qbdsProdTable.addRange(fieldnum(ProdTable, RecId)).value(queryValue(_prodTable.RecId));
+        }
+        
+        QueryBuildDataSource qbdsProdRoute = qbdsProdTable.addDataSource(tableNum(ProdRoute));
+        qbdsProdRoute.relations(true);
+        qbdsProdRoute.joinMode(JoinMode::InnerJoin);
+        qbdsProdRoute.fetchMode(QueryFetchMode::One2One);
+        
+        QueryBuildDataSource qbdsRouteOpr = qbdsProdRoute.addDataSource(tableNum(RouteOpr));
+        qbdsRouteOpr.joinMode(JoinMode::InnerJoin);
+        qbdsRouteOpr.fetchMode(QueryFetchMode::One2One);
+        qbdsRouteOpr.relations(false);
+        qbdsRouteOpr.addLink(fieldNum(ProdRoute, RouteOprRefRecId), fieldNum(RouteOpr, RecId));
+        qbdsRouteOpr.addLink(fieldNum(ProdRoute, OprId), fieldNum(RouteOpr, OprId));
+
+        QueryBuildDataSource qbdsRoute = qbdsRouteOpr.addDataSource(tableNum(Route));
+        qbdsRoute.relations(false);
+        qbdsRoute.addLink(fieldNum(RouteOpr, RouteRelation), fieldNum(Route, RouteId));
+        qbdsRoute.addLink(fieldNum(RouteOpr, OprId), fieldNum(Route, OprId));
+        qbdsRoute.joinMode(JoinMode::InnerJoin);
+        qbdsRoute.fetchMode(QueryFetchMode::One2One);
+
+        //QueryBuildDataSource qbdsRouteProdRoute = qbdsRoute.addDataSource(tableNum(ProdRoute));
+        //qbdsRouteProdRoute.relations(false);
+        //qbdsRouteProdRoute.addLink(fieldNum(Route, OprId), fieldNum(ProdRoute, OprId));
+        //qbdsRouteProdRoute.joinMode(JoinMode::ExistsJoin);
+        //qbdsRouteProdRoute.fetchMode(QueryFetchMode::One2One);
+
+        QueryBuildDataSource qbdsNDXProdIdentProcedureLine1 = qbdsRoute.addDataSource(tableNum(NDXProdIdentProcedureLine1));
+        qbdsNDXProdIdentProcedureLine1.relations(true);
+        qbdsNDXProdIdentProcedureLine1.joinMode(JoinMode::InnerJoin);
+        qbdsNDXProdIdentProcedureLine1.fetchMode(QueryFetchMode::One2One);
+
+        QueryBuildDataSource qbdsNDXProdIdentProcedureLine2 = qbdsNDXProdIdentProcedureLine1.addDataSource(tableNum(NDXProdIdentProcedureLine2));
+        qbdsNDXProdIdentProcedureLine2.relations(true);
+        qbdsNDXProdIdentProcedureLine2.joinMode(JoinMode::InnerJoin);
+        qbdsNDXProdIdentProcedureLine2.fetchMode(QueryFetchMode::One2One);
+
+        QueryBuildDataSource qbdsNDXProdIdentTechnique = qbdsNDXProdIdentProcedureLine2.addDataSource(tableNum(NDXProdIdentTechnique));
+        qbdsNDXProdIdentTechnique.relations(true);
+        qbdsNDXProdIdentTechnique.joinMode(JoinMode::InnerJoin);
+        qbdsNDXProdIdentTechnique.fetchMode(QueryFetchMode::One2One);
+
+        QueryBuildDataSource qbdsUnitOfMeasureConversion = qbdsNDXProdIdentProcedureLine2.addDataSource(tableNum(UnitOfMeasureConversion));
+        qbdsUnitOfMeasureConversion.relations(true);
+        qbdsUnitOfMeasureConversion.joinMode(JoinMode::OuterJoin);
+        qbdsUnitOfMeasureConversion.fetchMode(QueryFetchMode::One2One);
+
+        QueryBuildDataSource qbdsNDXProdIdentLabel = qbdsNDXProdIdentProcedureLine2.addDataSource(tableNum(NDXProdIdentLabel));
+        qbdsNDXProdIdentLabel.relations(true);
+        qbdsNDXProdIdentLabel.joinMode(JoinMode::InnerJoin);
+        qbdsNDXProdIdentLabel.fetchMode(QueryFetchMode::One2One);
+
+        QueryBuildDataSource qbdsNDXProdIdentProcedureTable = qbdsNDXProdIdentProcedureLine1.addDataSource(tableNum(NDXProdIdentProcedureTable));
+        qbdsNDXProdIdentProcedureTable.relations(true);
+        qbdsNDXProdIdentProcedureTable.joinMode(JoinMode::InnerJoin);
+        qbdsNDXProdIdentProcedureTable.fetchMode(QueryFetchMode::One2One);
+       
+        return q;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillControlPanelFromProdBOM_Q</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 07.07.22
+    /// AX2009: classes.NDX_ProdIdent::fillControlPanelFromProdBOM_Q()
+    /// </summary>
+    /// <param name = "_q">Query</param>
+    /// <param name = "_prodTableBuffer">ProdTable</param>
+    /// <param name = "_contract">NDXProdStatusChangedGenerateTransportLabelEventContract</param>
+    /// <returns>int</returns>
+    static List fillControlPanelFromProdBOM_Q(Query _q, ProdTable _prodTableBuffer, NDXProdStatusChangedGenerateTransportLabelEventContract _contract)
+    {
+        ProdBOM                         prodBOM;
+        ProdTable                       prodTable;
+        ProdRoute                       prodRoute;
+        NDXProdIdentLabelItem         nDXProdIdentLabelItem;
+        NDXProdIdentControlPanel       nDXProdIdentControlPanel;
+        NDXProdIdentControlPanel       nDXProdIdentControlPanel2;
+        NDXProdIdentLabel             nDXProdIdentLabel;
+        InventTable                     inventTable;
+        NDXProdIdentProcedureLine1    nDXProdIdentProcedureLine1;
+        NDXProdIdentProcedureLine2    nDXProdIdentProcedureLine2;
+
+        QueryRun    qr;
+        Query       q2, q3;
+        QueryRun    qr2, qr3;
+        QueryBuildDataSource    qbds2_1, qbds2_2, qbds2_4;
+        QueryBuildDataSource    qbds3_1, qbds3_2, qbds3_3;
+
+        boolean                 lLVEtiFoundOK;
+        int anz;
+        List listContract = new List(Types::Class);
+
+        void doSave(NDXProdIdentControlPanel lNDXProdIdentControlPanel)
+        {
+            if (lNDXProdIdentControlPanel.validateWrite())
+            {
+                lNDXProdIdentControlPanel.write();
+                listContract.addEnd(NDXProdIdentControlPanel::populateToContract(lNDXProdIdentControlPanel));
+                ++anz;
+            }
+        }
+        ;
+        qr = new QueryRun(_q);
+        while (qr.next())
+        {
+            prodBOM                 = qr.get(tablenum(ProdBOM));
+            prodTable               = qr.get(tablenum(ProdTable));
+            prodRoute               = qr.get(tablenum(ProdRoute));
+            nDXProdIdentLabelItem = qr.get(tablenum(NDXProdIdentLabelItem));
+            nDXProdIdentLabel     = qr.get(tablenum(NDXProdIdentLabel));
+            inventTable             = qr.get(tablenum(InventTable));
+            //   ItemId of packaging
+            nDXProdIdentControlPanel = NDXProdIdentControlPanel::findItemIdProdBOM(prodBOM.ItemId, prodRoute.OprNum, prodTable.ProdId, true);
+            if (!nDXProdIdentControlPanel)
+            {
+                nDXProdIdentControlPanel.initValue();
+                nDXProdIdentControlPanel.ProdId                = prodTable.ProdId;
+                nDXProdIdentControlPanel.OprNum                = prodRoute.OprNum;
+                nDXProdIdentControlPanel.ItemIdProdBOM         = prodBOM.ItemId;
+                nDXProdIdentControlPanel.ControlPanelDataFrom  = NDXProdIdentControlPanelDataFrom::BoxLabelMapping;
+                nDXProdIdentControlPanel.Host                  = _contract.ParmHost();
+            }
+            else
+            {
+                if (nDXProdIdentControlPanel.ControlPanelDataFrom == NDXProdIdentControlPanelDataFrom::ProdIdent)
+                {
+                    nDXProdIdentControlPanel.ControlPanelDataFrom = NDXProdIdentControlPanelDataFrom::ProdIdentAndBoxLabelMapping;
+                }
+            }
+
+            nDXProdIdentControlPanel.OprId                     = prodRoute.OprId;
+            nDXProdIdentControlPanel.ItemId                    = prodTable.ItemId;
+            nDXProdIdentControlPanel.Uebertragung_aus_AX = DateTimeUtil::utcNow();
+            nDXProdIdentControlPanel.LabelId                   = nDXProdIdentLabelItem.LabelId;
+            nDXProdIdentControlPanel.LabelIdBoxLabelMapping    = nDXProdIdentLabelItem.LabelId;
+            nDXProdIdentControlPanel.RouteId                   = prodTable.RouteId;
+            nDXProdIdentControlPanel.AnzahlEtiketten           = real2int(prodBOM.QtyInventCalc);
+            //nDXProdIdentControlPanel.Menge                     = prodTable.QtySched;
+
+            // Kennzeichnungsverfahren ermitteln
+            // 1.Prüfung: Existiert eine Produktkennzeichnung zu diesem Artikel mit dem Arbeitsgang
+            nDXProdIdentControlPanel.OprIdOK           = false;
+            nDXProdIdentControlPanel.OprNumOK          = false;
+            nDXProdIdentControlPanel.LabelFoundOK      = false;
+            nDXProdIdentControlPanel.ProdIdentExists   = false;
+            q2 = new Query();
+            // NDX_ProdIdent_ProcedureTable
+            qbds2_1 = q2.addDataSource(tablenum(NDXProdIdentProcedureTable));
+            qbds2_1.addRange(fieldnum(NDXProdIdentProcedureTable, InventTable)).value(queryValue(InventTable::find(prodTable.ItemId).RecId));
+
+            // NDXProdIdentProcedureLine2
+            qbds2_2 = qbds2_1.addDataSource(tablenum(NDXProdIdentProcedureLine1));
+            qbds2_2.relations(true);
+            qbds2_2.joinMode(JoinMode::InnerJoin);
+            qbds2_2.fetchMode(QueryFetchMode::One2One);
+            //qbds2_2.addRange(fieldnum(NDX_ProdIdent_ProcedureLine1, OprNum)).value(QueryValue(prodRoute.OprNum));
+
+            // Existiert eine Produktkennzeichnung?
+            qr2 = new QueryRun(q2);
+            nDXProdIdentControlPanel.ProdIdentExists = qr2.next();
+
+
+            // Route
+            qbds2_4 = qbds2_2.addDataSource(tablenum(Route));
+            qbds2_4.relations(true);
+            qbds2_4.joinMode(JoinMode::InnerJoin);
+            qbds2_4.fetchMode(QueryFetchMode::One2One);
+            qbds2_4.addRange(fieldnum(Route, OprId)).value(prodRoute.OprId);
+
+            qr2 = new QueryRun(q2);
+            while (qr2.next())
+            {
+                nDXProdIdentControlPanel.OprIdOK = true;
+                nDXProdIdentProcedureLine1 = qr2.get(tablenum(NDXProdIdentProcedureLine1));
+                // Entspricht der AG der Vorgabe
+                if (nDXProdIdentProcedureLine1.Route != 0 &&
+                    Route::findRecId(nDXProdIdentProcedureLine1.Route).OprNum == prodRoute.OprNum)
+                {
+                    nDXProdIdentControlPanel.OprNumOK = true;
+                    // Existiert zu der Arbeitsplanzuordnung ein Kennzeichnungsverfahren zu einem Verpackungsetikett
+                    q3 = new Query(q2);
+                    qbds3_1 = q3.dataSourceTable(tablenum(NDXProdIdentProcedureLine1));
+
+                    // nDXProdIdentProcedureLine2
+                    qbds3_2 = qbds3_1.addDataSource(tablenum(NDXProdIdentProcedureLine2));
+                    qbds3_2.relations(true);
+                    qbds3_2.joinMode(JoinMode::InnerJoin);
+                    qbds3_2.fetchMode(QueryFetchMode::One2One);
+
+                    // nDXProdIdentTechnique
+                    qbds3_3 = qbds3_2.addDataSource(tablenum(NDXProdIdentTechnique));
+                    qbds3_3.relations(true);
+                    qbds3_3.joinMode(JoinMode::InnerJoin);
+                    qbds3_3.fetchMode(QueryFetchMode::One2One);
+                    qbds3_3.addRange(fieldnum(NDXProdIdentTechnique, RelevantFor)).value(QueryValue(NDXProdIdentRelevantFor::Verpackungsetikett));
+
+                    qr3 = new QueryRun(q3);
+                    while (qr3.next())
+                    {
+                        lLVEtiFoundOK = true;
+                        nDXProdIdentProcedureLine2 = qr3.get(tablenum(NDXProdIdentProcedureLine2));
+
+                        // Entspricht das Etikett der Vorgabe
+                        if (NDXProdIdentLabel::findRecId(nDXProdIdentProcedureLine2.NDXProdIdentLabel).ID == nDXProdIdentLabelItem.LabelId)
+                        {
+                            nDXProdIdentControlPanel.LabelFoundOK = true;
+                            nDXProdIdentControlPanel.TechniqueID                       = NDXProdIdentTechnique::findRecId(nDXProdIdentProcedureLine2.NDXProdIdentTechnique).ID;
+                            nDXProdIdentControlPanel.RefRecIdProdIdent_ProcedureLine2  = nDXProdIdentProcedureLine2.RecId;
+                        }
+                        else
+                        {
+                            nDXProdIdentControlPanel.LabelIdProdIdent  = NDXProdIdentLabel::findRecId(nDXProdIdentProcedureLine2.NDXProdIdentLabel).ID;
+                        }
+                    }
+                }
+            }
+
+            NDXProdIdent::fillControlPanelAddition(nDXProdIdentControlPanel);
+            NDXProdIdent::setStatus(nDXProdIdentControlPanel, _prodTableBuffer);
+
+            ttsbegin;
+            if (nDXProdIdentControlPanel.RefRecIdProdIdent_ProcedureLine2)
+            {
+                // Test: Existiert diese Festlegung bereits?
+                nDXProdIdentControlPanel2 = NDXProdIdentControlPanel::findProcedureLine2(nDXProdIdentControlPanel.ProdId, nDXProdIdentControlPanel.RefRecIdProdIdent_ProcedureLine2, true);
+                if (nDXProdIdentControlPanel2)
+                {
+                    if (nDXProdIdentControlPanel2.ControlPanelDataFrom == NDXProdIdentControlPanelDataFrom::ProdIdent)
+                    {
+                        nDXProdIdentControlPanel.ControlPanelDataFrom = NDXProdIdentControlPanelDataFrom::ProdIdentAndBoxLabelMapping;
+                    }
+                    nDXProdIdentControlPanel.LabelIdProdIdent     = nDXProdIdentControlPanel2.LabelIdProdIdent;
+                    buf2Buf(nDXProdIdentControlPanel, nDXProdIdentControlPanel2);
+                    doSave(nDXProdIdentControlPanel2);
+                }
+                else
+                {
+                    doSave(nDXProdIdentControlPanel);
+                }
+            }
+            else
+            {
+                doSave(nDXProdIdentControlPanel);
+            }
+            ttscommit;
+        }
+        return listContract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 07.07.22
+    /// AX2009: classes.NDX_ProdIdent::setStatus()
+    /// </summary>
+    /// <param name = "nDX_ProdIdentControlPanel">NDXProdIdentControlPanel</param>
+    /// <param name = "prodTableBuffer">ProdTable</param>
+    /// <param name = "forceBuild">boolean</param>
+    static void setStatus(NDXProdIdentControlPanel nDX_ProdIdentControlPanel,
+                      ProdTable                 prodTableBuffer,
+                      boolean                   forceBuild = false)
+
+    {
+        NDXProdIdentParameters    nDX_ProdIdent_Parameters    = NDXProdIdentParameters::find();
+        ProdStatusType prodStatusType = ProdStatusType::construct(prodTableBuffer);
+
+        if (forceBuild)
+        {
+            nDX_ProdIdentControlPanel.ToSync    = NoYes::Yes;
+            nDX_ProdIdentControlPanel.BTAction = nDX_ProdIdentControlPanel.BT_RecordId ? NDXProdIdentBTAction::update
+                                                                                    : NDXProdIdentBTAction::insert;
+        }
+        else if (prodStatusType.isAfterOrEqualTo(nDX_ProdIdent_Parameters.ProdStatusLabelErase))          // delete label entry
+        {
+            if (nDX_ProdIdentControlPanel.BT_RecordId)
+            {
+                nDX_ProdIdentControlPanel.BTAction = NDXProdIdentBTAction::delete;
+                nDX_ProdIdentControlPanel.ToSync    = NoYes::Yes;
+            }
+            else
+            {
+                nDX_ProdIdentControlPanel.BTAction = NDXProdIdentBTAction::noAction;
+                nDX_ProdIdentControlPanel.ToSync    = NoYes::No;
+            }
+        }
+        else if (prodStatusType.isAfterOrEqualTo(nDX_ProdIdent_Parameters.ProdStatusLabelTransfer))  // print BT-label
+        {
+            if (nDX_ProdIdentControlPanel.BT_RecordId)
+            {
+                nDX_ProdIdentControlPanel.BTAction = NDXProdIdentBTAction::update;
+            }
+            else
+            {
+                nDX_ProdIdentControlPanel.BTAction = NDXProdIdentBTAction::insert;
+            }
+            nDX_ProdIdentControlPanel.ToSync    = NoYes::Yes;
+        }
+        else
+        {
+            nDX_ProdIdentControlPanel.BTAction = NDXProdIdentBTAction::noAction;
+            nDX_ProdIdentControlPanel.ToSync    = NoYes::No;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>queryFromProdBOM</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 09.07.22
+    /// AX2009: classes.NDX_ProdIdent::queryFromProdBOM()
+    /// </summary>
+    /// <param name = "prodBOM">ProdBOM</param>
+    /// <returns>Query</returns>
+    static Query queryFromProdBOM(ProdBOM prodBOM)
+    {
+        Query   q;
+        QueryBuildDataSource    qbds1, qbds2, qbds3, qbds4, qbds5, qbds6;
+        ;
+        q = new Query();
+
+        // ProdBOM
+        qbds1 = q.addDataSource(tablenum(ProdBOM));
+        qbds1.addRange(fieldnum(ProdBOM, RecId)).value(QueryValue(prodBOM.RecId));
+
+        // ProdTable
+        qbds2 = qbds1.addDataSource(tablenum(ProdTable));
+        qbds2.addLink(fieldnum(ProdBOM, ProdId), fieldnum(ProdTable, ProdId));
+        qbds2.joinMode(JoinMode::InnerJoin);
+        qbds2.fetchMode(QueryFetchMode::One2One);
+
+        // ProdRoute
+        qbds3 = qbds1.addDataSource(tablenum(ProdRoute));
+        qbds3.addLink(fieldnum(ProdBOM, ProdId), fieldnum(ProdRoute, ProdId));
+        qbds3.addLink(fieldnum(ProdBOM, OprNum), fieldnum(ProdRoute, OprNum));
+        qbds3.addRange(fieldnum(ProdRoute, OprPriority)).value(QueryValue(RouteOprPriority::Primary));
+        qbds3.joinMode(JoinMode::InnerJoin);
+        qbds3.fetchMode(QueryFetchMode::One2One);
+
+        // NDX_ProdIdent_LabelItem
+        qbds4 = qbds1.addDataSource(tablenum(NDXProdIdentLabelItem));
+        qbds4.addLink(fieldnum(ProdBOM, ItemId), fieldnum(NDXProdIdentLabelItem, ItemId));
+        qbds4.joinMode(JoinMode::InnerJoin);
+        qbds4.fetchMode(QueryFetchMode::One2One);
+
+        // NDX_ProdIdent_Label
+        qbds5 = qbds4.addDataSource(tablenum(NDXProdIdentLabel));
+        qbds5.relations(true);
+        qbds5.joinMode(JoinMode::InnerJoin);
+        qbds5.fetchMode(QueryFetchMode::One2One);
+
+        // InventTable
+        qbds6 = qbds1.addDataSource(tablenum(InventTable));
+        qbds6.relations(true);
+        qbds6.joinMode(JoinMode::InnerJoin);
+        qbds6.fetchMode(QueryFetchMode::One2One);
+
+        return q;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getResult</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 21.03.23
+    /// AX2009: classes.NDX_ProdIdent.getResult()
+    /// </summary>
+    /// <param name = "_classId">classId</param>
+    /// <param name = "_staticMethodName">str</param>
+    /// <param name = "_args">container</param>
+    /// <returns>container</returns>
+    public static container getResult(classId _classId, str _staticMethodName, container _args)
+    {
+        SysDictClass        sysDictClass;
+        anytype result;
+        container           retContainer = conNull();
+        str errorStr;
+        sysDictClass = new SysDictClass(_classId);
+        if (sysDictClass == null)
+        {
+            retContainer += '';
+            retContainer += strFmt("@NDX:NDXClassNotLocalized", _classId);
+            return retContainer;
+        }
+        new ExecutePermission().assert();
+        try
+        {
+            if (_args)
+            {
+                str arg = conPeek(_args, 1);
+                result = sysDictClass.callStatic(_staticMethodName, arg);
+            }
+            else
+            {
+                result = sysDictClass.callStatic(_staticMethodName);
+            }
+        }
+        catch
+        {
+            errorStr = strfmt("@NDX:NDXClassMethodCouldNotBeExecuted", _classId, _staticMethodName, Con2Str(_args) );
+            Error(errorStr); 
+        }
+        CodeAccessPermission::revertAssert();
+        retContainer += any2Str(result);
+        retContainer += errorStr;
+
+        return retContainer;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>RicoItemIdFromNDX_RicoMap_ItemId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 21.03.23
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <returns>ItemId</returns>
+    public static ItemId RicoItemIdFromNDX_RicoMap_ItemId(ItemId _itemId)
+    {
+        return NDX_RicoMap_ItemId::findItemId_NDX(_itemId).ItemId_RIC;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>RicoProductNumberFromNDX_RicoMap_ItemId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 18.11.24
+    /// product number
+    /// </summary>
+    /// <param name = "_itemIdNDX">NDX itemId</param>
+    /// <returns>RICO productnumber from mapping</returns>
+    public static EcoResProductDisplayProductNumber RicoProductNumberFromNDX_RicoMap_ItemId(ItemId _itemIdNDX)
+    {
+        EcoResProductDisplayProductNumber productNumber;
+        NDX_RicoMap_ItemId nDX_RicoMap_ItemId = NDX_RicoMap_ItemId::findItemId_NDX(_itemIdNDX);
+        if (nDX_RicoMap_ItemId)
+        {
+            changecompany(NDXHelperDataArea::DataAreaIdFromEnum(NDXDataAreaIdEnum::Rico))
+            {
+                InventTable inventTable = InventTable::find(nDX_RicoMap_ItemId.ItemId_RIC);
+                productNumber = EcoResProduct::find(inventTable.Product).DisplayProductNumber;
+            }
+        }
+        return productNumber;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setSyncAction</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.05.23
+    /// initilaize BT sync.-Action
+    /// AX2009: classes.NDX_ProdIdent.setSyncAction()
+    /// </summary>
+    /// <param name = "syncAction">syncAction</param>
+    /// <param name = "nDX_ProdIdentControlPanel">NDXProdIdentControlPanel</param>
+    /// TODO PaffH: Aufruf über Formular realisieren
+    static void setSyncAction(NDXProdIdentBTAction syncAction, NDXProdIdentControlPanel nDX_ProdIdentControlPanel)
+    {
+        NDXProdIdentControlPanel   lNDX_ProdIdentControlPanel;
+        NDXProdIdentControlPanel   lNDX_ProdIdentControlPanel2;
+        MultiSelectionHelper    msh;
+        Counter i;
+        ;
+        msh = MultiSelectionHelper::construct();
+        msh.parmDatasource(FormDataUtil::getFormDataSource(nDX_ProdIdentControlPanel));
+        lNDX_ProdIdentControlPanel = msh.getFirst();
+        while (lNDX_ProdIdentControlPanel)
+        {
+            ++i;
+            lNDX_ProdIdentControlPanel = msh.getNext();
+        }
+
+        if (box::okCancel(strfmt("@NDX:NDXBTSyncActionInit", i==1 ? "@NDXBase:NDXWillSingular": "@NDXBase:NDXWillPlural", i, syncAction), DialogButton::Ok) == DialogButton::Cancel)
+        {
+            return;
+        }
+
+        i = 0;
+        lNDX_ProdIdentControlPanel = msh.getFirst();
+        while (lNDX_ProdIdentControlPanel)
+        {
+            ++i;
+            lNDX_ProdIdentControlPanel2 = NDXProdIdentControlPanel::findRecId(lNDX_ProdIdentControlPanel.RecId, true);
+            lNDX_ProdIdentControlPanel2.BTAction = syncAction;
+            lNDX_ProdIdentControlPanel2.modifiedField(fieldnum(NDXProdIdentControlPanel, BTAction));
+            if (lNDX_ProdIdentControlPanel2.validateWrite())
+            {
+                ttsbegin;
+                lNDX_ProdIdentControlPanel2.update();
+                ttscommit;
+            }
+            lNDX_ProdIdentControlPanel = msh.getNext();
+        }
+        info(strfmt("@NDXBase:NDXUpdateWasPerformedOnRecords", i));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyFrom</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 02.11.23
+    /// </summary>
+    /// <param name = "_infoMsg"></param>
+    /// <param name = "_testMode"></param>
+    //public static void showInfo(str _infoMsg, boolean _testMode = false)
+    //{
+    //    if (_testMode)
+    //    {
+    //        Info(_infoMsg);
+    //    }
+    //}
+
+    /// <summary>
+    /// PaffH 27.08.23
+    /// copy product identifier for item
+    /// </summary>
+    /// <param name = "inventTableCopyTo">InventTable</param>
+    /// <param name = "procedureLine1CopyTo">NDXProdIdentProcedureLine1</param>
+    /// <param name = "procedureLine1CopyFrom">NDXProdIdentProcedureLine1</param>
+    /// <param name = "lTest">boolean</param>
+    /// <returns>boolean</returns>
+    [SuppressBPWarning('BPParameterNotUsed','Parameter "lTest"')]
+    static boolean copyFrom(InventTable inventTableCopyTo,
+        NDXProdIdentProcedureLine1   procedureLine1CopyTo,
+        NDXProdIdentProcedureLine1   procedureLine1CopyFrom,
+        boolean lTest = false)
+    {
+        NDXProdIdentProcedureTable        lNDX_ProdIdent_ProcedureTable;
+        NDXProdIdentProcedureLine1        lNDX_ProdIdent_ProcedureLine1CopyTo;
+        NDXProdIdentProcedureLine2        lNDX_ProdIdent_ProcedureLine2CopyFrom,  lNDX_ProdIdent_ProcedureLine2CopyTo;
+        NDXProdIdentLine22LabelArea       lNDX_ProdIdent_Line22LabelAreaCopyFrom, lNDX_ProdIdent_Line22LabelAreaCopyTo;
+        NDXProdIdentBlock2ItemId          lNDX_ProdIdent_Block2ItemIdCopyFrom,    lNDX_ProdIdent_Block2ItemIdCopyTo;
+        NDXProdIdentBlock2LabelArea       lNDX_ProdIdent_Block2LabelAreaCopyFrom, lNDX_ProdIdent_Block2LabelAreaCopyTo;
+
+
+        boolean     lCopyOk = true;
+
+        if (inventTableCopyTo.RecId == 0)
+        {
+            Error("@NDX:NDXProdIdentCopyToError1");
+            lCopyOk = false;
+        }
+        if (procedureLine1CopyTo.Route == 0 || procedureLine1CopyTo.RouteVersion == 0)
+        {
+            Error("@NDX:NDXProdIdentCopyToError2");
+            lCopyOk = false;
+        }
+        if (procedureLine1CopyFrom.Route == 0 || procedureLine1CopyFrom.RouteVersion == 0)
+        {
+            Error("@NDX:NDXProdIdentCopyToError3");
+            lCopyOk = false;
+        }
+
+        if (lCopyOk)
+        {
+            ttsbegin;
+            // NDX_ProdIdent_ProcedureTable
+            lNDX_ProdIdent_ProcedureTable = NDXProdIdentProcedureTable::findInventTable(inventTableCopyTo.RecId, true);
+            if (!lNDX_ProdIdent_ProcedureTable)
+            {
+                lNDX_ProdIdent_ProcedureTable.InventTable = inventTableCopyTo.RecId;
+                //NDXProdIdent::showInfo(strFmt('Insert [NDXProdIdentProcedureTable] [%1]', InventTable::findRecId(lNDX_ProdIdent_ProcedureTable.InventTable)), lTest);
+                lNDX_ProdIdent_ProcedureTable.insert();
+            }
+            //else
+            //{
+            //    NDXProdIdent::showInfo(strFmt('Exists [NDXProdIdentProcedureTable] [%1]', InventTable::findRecId(lNDX_ProdIdent_ProcedureTable.InventTable)), lTest);
+            //}
+
+            // NDX_ProdIdent_ProcedureLine1
+            lNDX_ProdIdent_ProcedureLine1CopyTo = NDXProdIdentProcedureLine1::find(lNDX_ProdIdent_ProcedureTable.RecId,
+                                                                                 procedureLine1CopyTo.RouteVersion,
+                                                                                 procedureLine1CopyTo.Route, true);
+            if (!lNDX_ProdIdent_ProcedureLine1CopyTo)
+            {
+                lNDX_ProdIdent_ProcedureLine1CopyTo.NDXProdIdentProcedureTable = lNDX_ProdIdent_ProcedureTable.RecId;
+                lNDX_ProdIdent_ProcedureLine1CopyTo.RouteVersion  = procedureLine1CopyTo.RouteVersion;
+                lNDX_ProdIdent_ProcedureLine1CopyTo.Route = procedureLine1CopyTo.Route;
+                lNDX_ProdIdent_ProcedureLine1CopyTo.insert();
+                //NDXProdIdent::showInfo(strFmt('Insert [NDXProdIdentProcedureLine1] Route [%1] RouteVersion [%2]', Route::findRecId(lNDX_ProdIdent_ProcedureLine1CopyTo.Route).RouteId, RouteVersion::findRecId(lNDX_ProdIdent_ProcedureLine1CopyTo.RouteVersion).RouteId), lTest);
+            }
+            //else
+            //{
+            //    NDXProdIdent::showInfo(strFmt('Exists [NDXProdIdentProcedureLine1] Route [%1] RouteVersion [%2]', Route::findRecId(lNDX_ProdIdent_ProcedureLine1CopyTo.Route).RouteId, RouteVersion::findRecId(lNDX_ProdIdent_ProcedureLine1CopyTo.RouteVersion).RouteId), lTest);
+            //}
+            // Freigabe beim kopierten Artikel entfernen
+            if (lNDX_ProdIdent_ProcedureLine1CopyTo.Freigabe == NoYes::Yes)
+            {
+                lNDX_ProdIdent_ProcedureLine1CopyTo.Freigabe = NoYes::No;
+                ttsbegin;
+                lNDX_ProdIdent_ProcedureLine1CopyTo.update();
+                ttscommit;
+            }
+
+            // Kennzeichnungsverfahren zum Arbeitsplan/gang durchlaufen
+            while select lNDX_ProdIdent_ProcedureLine2CopyFrom
+            where    lNDX_ProdIdent_ProcedureLine2CopyFrom.NDXProdIdentProcedureLine1 == procedureLine1CopyFrom.RecId
+            {
+                // Ausgabewerte zum Kennzeichnungsverfahren
+                while select lNDX_ProdIdent_Block2ItemIdCopyFrom
+                where    lNDX_ProdIdent_Block2ItemIdCopyFrom.IDSort                             == lNDX_ProdIdent_ProcedureLine2CopyFrom.IDSort
+                    &&   lNDX_ProdIdent_Block2ItemIdCopyFrom.NDXProdIdentProcedureLine1   == lNDX_ProdIdent_ProcedureLine2CopyFrom.NDXProdIdentProcedureLine1
+                {
+                    lNDX_ProdIdent_Block2ItemIdCopyTo = NDXProdIdentBlock2ItemId::find(lNDX_ProdIdent_ProcedureLine1CopyTo.RecId,
+                                                                                     lNDX_ProdIdent_Block2ItemIdCopyFrom.IDSort,
+                                                                                     lNDX_ProdIdent_Block2ItemIdCopyFrom.SubId,
+                                                                                     lNDX_ProdIdent_Block2ItemIdCopyFrom.NDXProdIdentBlockTable,
+                                                                                     lNDX_ProdIdent_Block2ItemIdCopyFrom.BlockIdFieldName, true);
+                    if (!lNDX_ProdIdent_Block2ItemIdCopyTo)
+                    {
+                        buf2Buf(lNDX_ProdIdent_Block2ItemIdCopyFrom, lNDX_ProdIdent_Block2ItemIdCopyTo);
+                        lNDX_ProdIdent_Block2ItemIdCopyTo.NDXProdIdentProcedureLine1   = lNDX_ProdIdent_ProcedureLine1CopyTo.RecId;
+                        lNDX_ProdIdent_Block2ItemIdCopyTo.insert();
+                        //NDXProdIdent::showInfo(strFmt('Insert [NDXProdIdentBlock2ItemId] [%1]', lNDX_ProdIdent_Block2ItemIdCopyTo.BlockIdFieldName), lTest);
+                    }
+                    //else
+                    //{
+                    //    NDXProdIdent::showInfo(strFmt('Exists [NDXProdIdentBlock2ItemId] [%1]', lNDX_ProdIdent_Block2ItemIdCopyTo.BlockIdFieldName), lTest);
+                    //}
+                }
+
+                // DS-Anlage darf erst hier erfolgen (ansonsten würden schon alles Block-ID's angelegt)
+                lNDX_ProdIdent_ProcedureLine2CopyTo = NDXProdIdentProcedureLine2::find(lNDX_ProdIdent_ProcedureLine1CopyTo.RecId, lNDX_ProdIdent_ProcedureLine2CopyFrom.IDSort, true);
+                if (!lNDX_ProdIdent_ProcedureLine2CopyTo)
+                {
+                    buf2Buf(lNDX_ProdIdent_ProcedureLine2CopyFrom, lNDX_ProdIdent_ProcedureLine2CopyTo);
+                    lNDX_ProdIdent_ProcedureLine2CopyTo.NDXProdIdentProcedureLine1 = lNDX_ProdIdent_ProcedureLine1CopyTo.RecId;
+                    lNDX_ProdIdent_ProcedureLine2CopyTo.insert();
+                    //NDXProdIdent::showInfo(strFmt('Insert [NDXProdIdentProcedureLine2] [%1]', NDXProdIdentTechnique::findRecId(lNDX_ProdIdent_ProcedureLine2CopyTo.NDXProdIdentTechnique).Name), lTest);
+                }
+                //else
+                //{
+                //    NDXProdIdent::showInfo(strFmt('Exists [NDXProdIdentProcedureLine2] [%1]', NDXProdIdentTechnique::findRecId(lNDX_ProdIdent_ProcedureLine2CopyTo.NDXProdIdentTechnique).Name), lTest);
+                //}
+
+                // Beschriftungsflächenzuordnung zum Kennzeichnungsverfahren
+                while select lNDX_ProdIdent_Line22LabelAreaCopyFrom
+                where    lNDX_ProdIdent_Line22LabelAreaCopyFrom.NDXProdIdentProcedureLine2 == lNDX_ProdIdent_ProcedureLine2CopyFrom.RecId
+                {
+                    lNDX_ProdIdent_Line22LabelAreaCopyTo = NDXProdIdentLine22LabelArea::find(lNDX_ProdIdent_ProcedureLine2CopyTo.RecId, lNDX_ProdIdent_Line22LabelAreaCopyFrom.NDXProdIdentLabelAreaTable, true);
+                    if (!lNDX_ProdIdent_Line22LabelAreaCopyTo)
+                    {
+                        buf2Buf(lNDX_ProdIdent_Line22LabelAreaCopyFrom, lNDX_ProdIdent_Line22LabelAreaCopyTo);
+                        lNDX_ProdIdent_Line22LabelAreaCopyTo.NDXProdIdentProcedureLine2 = lNDX_ProdIdent_ProcedureLine2CopyTo.RecId;
+                        lNDX_ProdIdent_Line22LabelAreaCopyTo.insert();
+                        //NDXProdIdent::showInfo(strFmt('Insert [NDXProdIdentLine22LabelArea] [%1]', NDXProdIdentLabelAreaTable::findRecId(lNDX_ProdIdent_Line22LabelAreaCopyTo.NDXProdIdentLabelAreaTable).Id), lTest);
+                    }
+                    //else
+                    //{
+                    //    NDXProdIdent::showInfo(strFmt('Exists [NDXProdIdentLine22LabelArea] [%1]', NDXProdIdentLabelAreaTable::findRecId(lNDX_ProdIdent_Line22LabelAreaCopyTo.NDXProdIdentLabelAreaTable).Id), lTest);
+                    //}
+
+                    // Beschriftungsflächen-Zuordnung
+                    while select lNDX_ProdIdent_Block2LabelAreaCopyFrom
+                    where    lNDX_ProdIdent_Block2LabelAreaCopyFrom.NDXProdIdentLine22LabelArea == lNDX_ProdIdent_Line22LabelAreaCopyFrom.RecId
+                    {
+                        lNDX_ProdIdent_Block2LabelAreaCopyTo = NDXProdIdentBlock2LabelArea::find(lNDX_ProdIdent_Line22LabelAreaCopyTo.RecId,
+                                                                                               lNDX_ProdIdent_Block2LabelAreaCopyFrom.NDXProdIdentBlockTable,
+                                                                                               lNDX_ProdIdent_Block2LabelAreaCopyFrom.AllRest, true);
+                        if (!lNDX_ProdIdent_Block2LabelAreaCopyTo)
+                        {
+                            buf2Buf(lNDX_ProdIdent_Block2LabelAreaCopyFrom, lNDX_ProdIdent_Block2LabelAreaCopyTo);
+                            lNDX_ProdIdent_Block2LabelAreaCopyTo.NDXProdIdentLine22LabelArea = lNDX_ProdIdent_Line22LabelAreaCopyTo.RecId;
+                            lNDX_ProdIdent_Block2LabelAreaCopyTo.insert();
+                            //NDXProdIdent::showInfo(strFmt('Insert [NDXProdIdentBlock2LabelArea] [%1]', lNDX_ProdIdent_Block2LabelAreaCopyTo.RecId), lTest);
+                        }
+                        //else
+                        //{
+                        //    NDXProdIdent::showInfo(strFmt('Exists [NDXProdIdentBlock2LabelArea] [%1]', lNDX_ProdIdent_Block2LabelAreaCopyTo.RecId), lTest);
+                        //}
+                    }
+                }
+            }
+            //if (lTest)
+            //{
+            //    ttsabort;
+            //}
+            //else
+            //{
+            ttscommit;
+            //}
+            info(strfmt("@NDX:NDXProductIdentifierForItemHasBeenCreated", inventTableCopyTo.ItemId ));
+        }
+        return lCopyOk;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkPhantom</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.08.24
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_showInfo">boolean</param>
+    /// <returns>container</returns>
+    static container checkPhantom(ItemId _itemId, boolean _showInfo = false)
+    {
+        NDXPhantomOprNumAdd nDXPhantomOprNumAdd;
+        const int oprNumAdd = 10;
+
+        void checkRouteVersion(BOM _bomLocal)
+        {
+            Route route;
+            RouteVersion routeVersion = RouteVersion::findActive(_bomLocal.ItemId, NDXHelperCommon::SystemDateGet(), 0, _bomLocal.inventDim());
+            while select route
+                where route.RouteId == routeVersion.RouteId
+            {
+                if (route.OprPriority == RouteOprPriority::Primary)
+                {
+                    nDXPhantomOprNumAdd += oprNumAdd;
+                }
+                if (_showInfo)
+                {
+                    info(strFmt("@NDX:NDXCheckRouteVersionInfo", route.OprNum, route.RouteId, route.OprId, route.OprPriority, nDXPhantomOprNumAdd));
+                }
+            }
+        }
+
+        void checkPhantomRecursive(ItemId _itemIdLocal, int _levelLocal)
+        {
+            BOM bomLocal;
+            BOMVersion bomVersionLocal = BOMVersion::findValidActive(_itemIdLocal);
+            while select bomLocal
+                where bomLocal.BOMId == bomVersionLocal.BOMId
+            {
+                if (_showInfo)
+                {
+                    Info(strFmt(NDXPlaceholderConstants::SquareBrackets1Space2Space3, _levelLocal, bomLocal.ItemId, bomLocal.BOMType));
+                }
+                if (bomLocal.BOMType == BOMType::Phantom)
+                {
+                    checkPhantomRecursive(bomLocal.ItemId, _levelLocal + 1);
+                    checkRouteVersion(bomLocal);
+                }
+            }
+        }
+
+        BOMVersion bomVersion = BOMVersion::findValidActive(_itemId);
+        BOM bom;
+        int level = 1;
+        NDXHasPhantomBOM nDXHasPhantomBOM = false;
+        while select bom
+            where bom.BOMId == bomVersion.BOMId
+        {
+            if (_showInfo)
+            {
+                Info(strFmt(NDXPlaceholderConstants::SquareBrackets1Space2Space3, level, bom.ItemId, bom.BOMType));
+            }
+            if (bom.BOMType == BOMType::Phantom)
+            {
+                nDXHasPhantomBOM = true;
+                checkPhantomRecursive(bom.ItemId, level + 1);
+                checkRouteVersion(bom);
+            }
+        }
+        return [nDXHasPhantomBOM, nDXPhantomOprNumAdd];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>changeLabelId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 02.10.24
+    /// change label id
+    /// </summary>
+    /// <param name = "nDX_ProdIdent_ProcedureLine2">NDXProdIdentProcedureLine2</param>
+    /// <param name = "nDXProdIdentLabelFrom">NDXProdIdentLabel</param>
+    /// <param name = "nDXProdIdentLabelTo">NDXProdIdentLabel</param>
+    static void changeLabelId(NDXProdIdentProcedureLine2 nDX_ProdIdent_ProcedureLine2,
+                          NDXProdIdentLabel nDXProdIdentLabelFrom,
+                          NDXProdIdentLabel nDXProdIdentLabelTo)
+    {
+        NDXProdIdentProcedureLine2    l_NDX_ProdIdent_ProcedureLine2;
+        FormDataSource  fds;
+        Counter anz1, anz2, anz3;
+        Query q;
+        QueryRun qr;
+        QueryBuildDataSource qbds1;
+        str info;
+        DialogButton btnChoice;
+        boolean lChange = true;
+
+        // change label id
+        boolean changeLabelId2(NDXProdIdentProcedureLine2 l2_NDX_ProdIdent_ProcedureLine2)
+        {
+            NDXProdIdentProcedureLine2 l3_NDX_ProdIdent_ProcedureLine2;
+            NDXProdIdentLabel nDXProdIdentLabel;
+            select firstonly forUpdate l3_NDX_ProdIdent_ProcedureLine2
+            where l3_NDX_ProdIdent_ProcedureLine2.RecId == l2_NDX_ProdIdent_ProcedureLine2.RecId
+                join nDXProdIdentLabel 
+                where nDXProdIdentLabel.RecId == l3_NDX_ProdIdent_ProcedureLine2.NDXProdIdentLabel;
+            if (nDXProdIdentLabel.ID == nDXProdIdentLabelFrom.ID)
+            {
+                if (lChange)
+                {
+                    ttsbegin;
+                    l3_NDX_ProdIdent_ProcedureLine2.NDXProdIdentLabel = nDXProdIdentLabelTo.RecId;
+                    l3_NDX_ProdIdent_ProcedureLine2.update();
+                    ttscommit;
+                }
+                return true;
+            }
+            return false;
+        }
+
+        if (!nDXProdIdentLabelFrom.ID || !nDXProdIdentLabelTo.ID || nDXProdIdentLabelFrom.ID == nDXProdIdentLabelTo.ID)
+        {
+            CheckFailed("@NDX:NDXChangeLabelMapping_2");        // Bitte geben Sie an, welche Etiketten-Id zu ändern ist!
+            return;
+        }
+        if (FormDataUtil::isFormDataSource(nDX_ProdIdent_ProcedureLine2))
+        {
+            fds = FormDataUtil::getFormDataSource(nDX_ProdIdent_ProcedureLine2);
+        }
+        if (fds && fds.anyMarked())
+        {
+            l_NDX_ProdIdent_ProcedureLine2 = fds.getFirst(1);
+            while (l_NDX_ProdIdent_ProcedureLine2)
+            {
+                ++anz2;
+                if (l_NDX_ProdIdent_ProcedureLine2.NDXProdIdentLabel == nDXProdIdentLabelFrom.RecId)
+                {
+                    ++anz1;
+                }
+                l_NDX_ProdIdent_ProcedureLine2 = fds.getNext();
+            }
+            if (!anz1)
+            {
+                info = strfmt("@NDX:NDXChangeLabelMapping_3", anz2, nDXProdIdentLabelFrom.ID);                   // Unter den [%1] markierten Datensätzen wurde keiner mit dem Etikettentyp [%2] lokalisiert!
+                Warning(info);
+            }
+            info = strfmt("@NDX:NDXChangeLabelMapping_4", anz1, nDXProdIdentLabelFrom.ID, nDXProdIdentLabelTo.ID);            // Sollen die [%1] markierten Etikettenzuordnungen von [%2] nach [%3] geändert werden?
+            btnChoice = box::yesNoCancel(info, DialogButton::Cancel);
+            if (!anz1 || btnChoice != DialogButton::Yes)
+            {
+                return;
+            }
+            l_NDX_ProdIdent_ProcedureLine2 = fds.getFirst(1);
+            while (l_NDX_ProdIdent_ProcedureLine2)
+            {
+                ++anz2;
+                if (l_NDX_ProdIdent_ProcedureLine2.NDXProdIdentLabel == nDXProdIdentLabelFrom.RecId)
+                {
+                    if (changeLabelId2(l_NDX_ProdIdent_ProcedureLine2))
+                    {
+                        ++anz3;
+                    }
+                }
+                l_NDX_ProdIdent_ProcedureLine2 = fds.getNext();
+            }
+        }
+        else
+        {
+            q = new Query();
+            qbds1 = q.addDataSource(tablenum(NDXProdIdentProcedureLine2));
+            qbds1.addRange(fieldnum(NDXProdIdentProcedureLine2, NDXProdIdentLabel)).value(queryValue(nDXProdIdentLabelFrom.RecId));
+            qbds1.addSelectionField(fieldnum(NDXProdIdentProcedureLine2, RecId), SelectionField::Count);
+            qr = new QueryRun(q);
+            qr.next();
+            l_NDX_ProdIdent_ProcedureLine2 = qr.get(tablenum(NDXProdIdentProcedureLine2));
+            anz1 = int642int(l_NDX_ProdIdent_ProcedureLine2.RecId);
+            info = strfmt("@NDX:NDXChangeLabelMapping", anz1, nDXProdIdentLabelFrom.ID, nDXProdIdentLabelTo.ID);        // Sollen alle [%1] Etikettenzuordnungen von [%2] nach [%3] geändert werden?\n(Bei 'Nein' wird nur das Etikett des aktuellen Eintrag geändert.)
+            info = strFmtLB(info);
+            btnChoice = box::yesNoCancel(info, DialogButton::Cancel);
+            if (btnChoice == DialogButton::Cancel)
+            {
+                return;
+            }
+            else if (btnChoice == DialogButton::No)
+            {
+                if (changeLabelId2(nDX_ProdIdent_ProcedureLine2))
+                {
+                    ++anz3;
+                }
+            }
+            else
+            {
+                q = new Query();
+                qbds1 = q.addDataSource(tablenum(NDXProdIdentProcedureLine2));
+                qbds1.addRange(fieldnum(NDXProdIdentProcedureLine2, NDXProdIdentLabel)).value(queryValue(nDXProdIdentLabelFrom.RecId));
+                qr = new QueryRun(q);
+                while (qr.next())
+                {
+                    l_NDX_ProdIdent_ProcedureLine2 = qr.get(tablenum(NDXProdIdentProcedureLine2));
+                    if (changeLabelId2(l_NDX_ProdIdent_ProcedureLine2))
+                    {
+                        ++anz3;
+                    }
+                }
+            }
+        }
+        info(strfmt("@NDX:NDXChangeLabelMapping_5", anz3));         // Insgesamt wurden [%1] Etikettenzuordnungen geändert.
+        if (fds)
+        {
+            fds.executeQuery();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,2918 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXTmpKumUmsCustArtGrp</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// DebuC 05.10.23
+/// </summary>
+public class NDXTmpKumUmsCustArtGrp extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>setUmsatzCS</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 05.10.23
+    /// last modified PaffH 05.05.25
+    /// </summary>
+    /// <param name = "umsSignature">NDXUmsSignature</param>
+    /// <param name = "monthYearSignature">NDXMonthYearSignature</param>
+    /// <param name = "alliance">CustAccount</param>
+    /// <param name = "lWithProt">boolean</param>
+    /// <param name = "nDXUmsatzClass">nDXUmsatzClass</param>
+    static server void setUmsatzCS( NDXUmsSignature            umsSignature,
+                                NDXMonthYearSignature       monthYearSignature,
+                                CustAccount                 alliance,
+                                boolean                     lWithProt,
+                                nDXUmsatzClass              nDXUmsatzClass)
+    {
+        NDXTmpKumUmsCustArtGrp          nDXTmpKumUmsCustArtGrp;
+        NDXTmpKumUmsCustArtGrp          nDXTmpKumUmsCustArtGrpAll;
+        NDXTmpCSAllianceArtGrp          nDXTmpCSAllianceArtGrp;
+        NDXTmpCSAllianceArtGrp          nDXTmpCSAllianceArtGrpGrp;
+        NDXArtGrp                       nDX_ArtGrp;
+        NDXTmpCustomerAlliance          nDXTmpCustomerAlliance;
+        NDXCompanyBE                    firma, lfirma;
+        boolean                         lTestImport = false;        
+        CustAccount                     child;
+        CustTable                       custTablePartyId;
+        str infoAddition;
+        System.Exception ex;
+
+        //Gruppierung: Artikelgruppe des Zentrallagerumsatzes
+        try
+        {
+            firma = NDXCompanyBE::WithoutAssignment;
+            ttsbegin;
+            while select    nDXTmpCSAllianceArtGrpGrp
+            group by    Alliance, CustAccount, Company, ArtGrp
+            where       nDXTmpCSAllianceArtGrpGrp.UmsSignature         == umsSignature         &&
+                        nDXTmpCSAllianceArtGrpGrp.MonthYearSignature   == monthYearSignature   &&
+                        nDXTmpCSAllianceArtGrpGrp.Alliance             == alliance
+            {
+                if (lWithProt)
+                {
+                    NDXUmsatzProt::add(umsSignature, "@NDX:NDXAddSalesVoumeShares2", NDXProtStart::Start, 2);             // Artikelgruppenumsatz-ZL-Anteile den Artikelgruppenumsätzen zufügen 2
+                }
+
+                lfirma = NDXHelperCommon::CompanyId2NDXCompany(nDXTmpCSAllianceArtGrpGrp.Company, lTestImport);
+                if (firma != lfirma)
+                {
+                    firma = lfirma;
+                    custTablePartyId = NDXUmsatzClass::getCustTableFromAccount(alliance, firma);
+                }
+                if (nDXUmsatzClass.parmPartyIdCalculated())
+                {
+                    custTablePartyId = CustTable::findByPartyRecId(nDXUmsatzClass.parmPartyIdCalculated());
+                }
+                child = NDXTmpCSAllianceArtGrpGrp.CustAccount;
+                //Artikelgruppe des Debitoren
+                if (nDXUmsatzClass.parmPartyIdCalculated())
+                {
+                    nDXTmpKumUmsCustArtGrp = NDXTmpKumUmsCustArtGrp::findPartyId(umsSignature,
+                                                                        monthYearSignature,
+                                                                        nDXUmsatzClass.parmPartyIdCalculated(),
+                                                                        firma,
+                                                                        NDXTmpCSAllianceArtGrpGrp.ArtGrp,
+                                                                        true);
+                    nDXTmpKumUmsCustArtGrpAll = NDXTmpKumUmsCustArtGrp::findPartyId(umsSignature,
+                                                                        monthYearSignature,
+                                                                        nDXUmsatzClass.parmPartyIdCalculated(),
+                                                                        NDXCompanyBE::AllCompanies,
+                                                                        NDXTmpCSAllianceArtGrpGrp.ArtGrp,
+                                                                        true);
+                }
+                else
+                {
+                    nDXTmpKumUmsCustArtGrp = NDXTmpKumUmsCustArtGrp::find(umsSignature,
+                                                                        monthYearSignature,
+                                                                        nDXTmpCSAllianceArtGrpGrp.Alliance,
+                                                                        child,
+                                                                        firma,
+                                                                        NDXTmpCSAllianceArtGrpGrp.ArtGrp,
+                                                                        true);
+                    nDXTmpKumUmsCustArtGrpAll = NDXTmpKumUmsCustArtGrp::find(umsSignature,
+                                                                        monthYearSignature,
+                                                                        nDXTmpCSAllianceArtGrpGrp.Alliance,
+                                                                        child,
+                                                                        NDXCompanyBE::AllCompanies,
+                                                                        NDXTmpCSAllianceArtGrpGrp.ArtGrp,
+                                                                        true);
+                }
+
+                // Falls Debitor für diese Gruppe keinen Umsatz gemacht hat, diesen anlegen
+                if (!nDXTmpKumUmsCustArtGrp)
+                {
+
+                    nDX_ArtGrp = NDXArtGrp::find(nDXTmpCSAllianceArtGrpGrp.ArtGrp, '', '');
+                    nDXTmpKumUmsCustArtGrp.UmsSignature        = umsSignature;
+                    nDXTmpKumUmsCustArtGrp.MonthYearSignature  = monthYearSignature;
+                    nDXTmpKumUmsCustArtGrp.Alliance            = nDXTmpCSAllianceArtGrpGrp.Alliance;
+                    nDXTmpKumUmsCustArtGrp.Child               = child;
+                    nDXTmpKumUmsCustArtGrp.ItemGroup           = nDXTmpCSAllianceArtGrpGrp.ArtGrp;
+                    nDXTmpKumUmsCustArtGrp.Name                = nDX_ArtGrp.BEZ;
+                    nDXTmpKumUmsCustArtGrp.Company             = firma;
+                    nDXTmpKumUmsCustArtGrp.Party             = custTablePartyId.Party;                 // 1.3: NDX/PAFFH/NDX_TASK1235003633/10.12.2014
+                    nDXTmpKumUmsCustArtGrp.PartyChild        = CustTable::find(nDXTmpKumUmsCustArtGrp.Child).Party;           // 1.4: NDX/PAFFH/NDX_TASK1235004221/03.02.2018
+                }
+                if (!nDXTmpKumUmsCustArtGrpAll)
+                {
+                    nDX_ArtGrp = NDXArtGrp::find(nDXTmpCSAllianceArtGrpGrp.ArtGrp, '', '');
+                    nDXTmpKumUmsCustArtGrpAll.UmsSignature         = umsSignature;
+                    nDXTmpKumUmsCustArtGrpAll.MonthYearSignature   = monthYearSignature;
+                    nDXTmpKumUmsCustArtGrpAll.Alliance             = nDXTmpCSAllianceArtGrpGrp.Alliance;
+                    nDXTmpKumUmsCustArtGrpAll.Child                = child;
+                    nDXTmpKumUmsCustArtGrpAll.ItemGroup            = nDXTmpCSAllianceArtGrpGrp.ArtGrp;
+                    nDXTmpKumUmsCustArtGrpAll.Name                 = nDX_ArtGrp.BEZ;
+                    nDXTmpKumUmsCustArtGrpAll.Company                = NDXCompanyBE::AllCompanies;
+                    nDXTmpKumUmsCustArtGrpAll.Party                = custTablePartyId.Party;                 // 1.3: NDX/PAFFH/NDX_TASK1235003633/10.12.2014
+                    nDXTmpKumUmsCustArtGrpAll.PartyChild           = CustTable::find(nDXTmpKumUmsCustArtGrp.Child).Party;           // 1.4: NDX/PAFFH/NDX_TASK1235004221/03.02.2018
+                    nDXTmpKumUmsCustArtGrpAll.setUmsLfdJTmpKumUmsCustArtGrp(nDXTmpKumUmsCustArtGrp);
+                    nDXTmpKumUmsCustArtGrpAll.setUmsVJTmpKumUmsCustArtGrp(nDXTmpKumUmsCustArtGrp);
+                }
+
+                // Umsatzwerte der Artikelgruppe der Zentrallager ermitteln
+                select      sum(U01) , sum(U02) , sum(U03) , sum(U04) , sum(U05) , sum(U06) , sum(U07) , sum(U08) , sum(U09) , sum(U10) , sum(U11) , sum(U12) ,
+                            sum(VU01), sum(VU02), sum(VU03), sum(VU04), sum(VU05), sum(VU06), sum(VU07), sum(VU08), sum(VU09), sum(VU10), sum(VU11), sum(VU12),
+                            sum(C01) , sum(C02) , sum(C03) , sum(C04) , sum(C05) , sum(C06) , sum(C07) , sum(C08) , sum(C09) , sum(C10) , sum(C11) , sum(C12) ,
+                            sum(VC01), sum(VC02), sum(VC03), sum(VC04), sum(VC05), sum(VC06), sum(VC07), sum(VC08), sum(VC09), sum(VC10), sum(VC11), sum(VC12)
+                from        nDXTmpCSAllianceArtGrp
+                where       nDXTmpCSAllianceArtGrp.UmsSignature        == umsSignature                             &&
+                            nDXTmpCSAllianceArtGrp.MonthYearSignature  == monthYearSignature                       &&
+                            nDXTmpCSAllianceArtGrp.Exclude             == NoYes::No                                &&
+                            nDXTmpCSAllianceArtGrp.Company             == nDXTmpCSAllianceArtGrpGrp.Company       &&
+                            nDXTmpCSAllianceArtGrp.Alliance            == nDXTmpCSAllianceArtGrpGrp.Alliance      &&
+                            nDXTmpCSAllianceArtGrp.CustAccount         == nDXTmpCSAllianceArtGrpGrp.CustAccount   &&
+                            nDXTmpCSAllianceArtGrp.ArtGrp              == nDXTmpCSAllianceArtGrpGrp.ArtGrp;
+
+                nDXTmpKumUmsCustArtGrp.UCSShare                = nDXTmpCSAllianceArtGrp.UJahr();
+                nDXTmpKumUmsCustArtGrp.VUCSShare               = nDXTmpCSAllianceArtGrp.VUJahr();
+                nDXTmpKumUmsCustArtGrp.CCSShare                = nDXTmpCSAllianceArtGrp.CJahr();
+                nDXTmpKumUmsCustArtGrp.VCCSShare               = nDXTmpCSAllianceArtGrp.VCJahr();
+                nDXTmpKumUmsCustArtGrp.UCSShareExcl            = nDXTmpKumUmsCustArtGrp.getUmsLfdJahr();
+                nDXTmpKumUmsCustArtGrp.VUCSShareExcl           = nDXTmpKumUmsCustArtGrp.getUmsVJahr();
+                nDXTmpKumUmsCustArtGrp.UACSShare               = nDXUmsatzClass.UAJahrNDXTmpCSAllianceArtGrp(nDXTmpCSAllianceArtGrp);
+                nDXTmpKumUmsCustArtGrp.VUACSShare              = nDXUmsatzClass.VUAJahrNDXTmpCSAllianceArtGrp(nDXTmpCSAllianceArtGrp);
+                nDXTmpKumUmsCustArtGrp.UACSShareExcl           = nDXUmsatzClass.UAJahrNDXTmpKumUmsCustArtGrp(nDXTmpKumUmsCustArtGrp);
+                nDXTmpKumUmsCustArtGrp.VUACSShareExcl          = nDXUmsatzClass.VUAJahrNDXTmpKumUmsCustArtGrp(nDXTmpKumUmsCustArtGrp);
+                nDXTmpKumUmsCustArtGrp.U                       = nDXTmpKumUmsCustArtGrp.UCSShareExcl + nDXTmpKumUmsCustArtGrp.UCSShare;
+                nDXTmpKumUmsCustArtGrp.UCSSharePercent         = nDXTmpKumUmsCustArtGrp.U ? (nDXTmpKumUmsCustArtGrp.UCSShare * 100)  / nDXTmpKumUmsCustArtGrp.U   : 0;
+                nDXTmpKumUmsCustArtGrp.VU                      = nDXTmpKumUmsCustArtGrp.VUCSShareExcl + nDXTmpKumUmsCustArtGrp.VUCSShare;
+                nDXTmpKumUmsCustArtGrp.VUCSSharePercent        = nDXTmpKumUmsCustArtGrp.VU ? (nDXTmpKumUmsCustArtGrp.VUCSShare * 100) / nDXTmpKumUmsCustArtGrp.VU : 0;
+                nDXTmpKumUmsCustArtGrp.setDiffValuesPercent(nDXUmsatzClass, true);
+                if (nDXTmpKumUmsCustArtGrp.validateWrite())
+                {
+                    nDXTmpKumUmsCustArtGrp.write();
+                }
+
+                nDXTmpKumUmsCustArtGrpAll.UCSShare             = nDXTmpCSAllianceArtGrp.UJahr();
+                nDXTmpKumUmsCustArtGrpAll.VUCSShare            = nDXTmpCSAllianceArtGrp.VUJahr();
+                nDXTmpKumUmsCustArtGrpAll.CCSShare             = nDXTmpCSAllianceArtGrp.CJahr();
+                nDXTmpKumUmsCustArtGrpAll.VCCSShare            = nDXTmpCSAllianceArtGrp.VCJahr();
+                nDXTmpKumUmsCustArtGrpAll.UCSShareExcl         =  nDXTmpKumUmsCustArtGrp.getUmsLfdJahr();
+                nDXTmpKumUmsCustArtGrpAll.VUCSShareExcl        =  nDXTmpKumUmsCustArtGrp.getUmsVJahr();
+                nDXTmpKumUmsCustArtGrpAll.UACSShare            = nDXUmsatzClass.UAJahrNDXTmpCSAllianceArtGrp(nDXTmpCSAllianceArtGrp);
+                nDXTmpKumUmsCustArtGrpAll.VUACSShare           = nDXUmsatzClass.VUAJahrNDXTmpCSAllianceArtGrp(nDXTmpCSAllianceArtGrp);
+                nDXTmpKumUmsCustArtGrpAll.UACSShareExcl        = nDXUmsatzClass.UAJahrNDXTmpKumUmsCustArtGrp(nDXTmpKumUmsCustArtGrp);
+                nDXTmpKumUmsCustArtGrpAll.VUACSShareExcl       = nDXUmsatzClass.VUAJahrNDXTmpKumUmsCustArtGrp(nDXTmpKumUmsCustArtGrp);
+                nDXTmpKumUmsCustArtGrpAll.U                    = nDXTmpKumUmsCustArtGrpAll.UCSShareExcl + nDXTmpKumUmsCustArtGrpAll.UCSShare;
+                nDXTmpKumUmsCustArtGrpAll.UCSSharePercent      = nDXTmpKumUmsCustArtGrpAll.U ? (nDXTmpKumUmsCustArtGrpAll.UCSShare * 100)  / nDXTmpKumUmsCustArtGrpAll.U   : 0;
+                nDXTmpKumUmsCustArtGrpAll.VU                   = nDXTmpKumUmsCustArtGrpAll.VUCSShareExcl + nDXTmpKumUmsCustArtGrpAll.VUCSShare;
+                nDXTmpKumUmsCustArtGrpAll.VUCSSharePercent     = nDXTmpKumUmsCustArtGrpAll.VU ? (nDXTmpKumUmsCustArtGrpAll.VUCSShare * 100) / nDXTmpKumUmsCustArtGrpAll.VU : 0;
+                nDXTmpKumUmsCustArtGrpAll.setDiffValuesPercent(nDXUmsatzClass, true);
+                if (nDXTmpKumUmsCustArtGrpAll.validateWrite())
+                {
+                    nDXTmpKumUmsCustArtGrpAll.write();
+                }
+
+                if (lWithProt)
+                {
+                    NDXUmsatzProt::add(umsSignature, "@NDX:NDXAddSalesVoumeShares2", NDXProtStart::Stop, 2);          // Artikelgruppenumsatz-ZL-Anteile den Artikelgruppenumsätzen zufügen 2
+                }
+            }
+
+            // Nachdem die Artikelgruppenumsätze incl. CL-Anteile der einzelnen Debitoren berechnet wurden,
+            // sind die Artikelgruppenumsätze des Rings zu komplettieren
+            while select    sum(U01) , sum(U02) , sum(U03) , sum(U04) , sum(U05) , sum(U06) , sum(U07) , sum(U08) , sum(U09) , sum(U10) , sum(U11) , sum(U12) ,
+                            sum(VU01), sum(VU02), sum(VU03), sum(VU04), sum(VU05), sum(VU06), sum(VU07), sum(VU08), sum(VU09), sum(VU10), sum(VU11), sum(VU12),
+                            sum(UCSShareExcl), sum(VUCSShareExcl), sum(UCSShare), sum(VUCSShare),
+                            sum(UACSShareExcl), sum(VUACSShareExcl), sum(UACSShare), sum(VUACSShare),
+                            sum(CCSShare), sum(VCCSShare),
+                            sum(U), sum(VU)
+            from            nDXTmpKumUmsCustArtGrp
+            group by        Company, ItemGroup
+            where           nDXTmpKumUmsCustArtGrp.UmsSignature        == umsSignature                         &&
+                            nDXTmpKumUmsCustArtGrp.MonthYearSignature  == monthYearSignature                   &&
+                            nDXTmpKumUmsCustArtGrp.Alliance            == alliance                             &&
+                            nDXTmpKumUmsCustArtGrp.Company               != NDXCompanyBE::AllCompanies
+            exists join     nDXTmpCustomerAlliance
+                where       nDXTmpCustomerAlliance.UmsSignature        == nDXTmpKumUmsCustArtGrp.UmsSignature &&
+                            nDXTmpCustomerAlliance.Alliance            == nDXTmpKumUmsCustArtGrp.Alliance     &&
+                            nDXTmpCustomerAlliance.CustAccount         == nDXTmpKumUmsCustArtGrp.Child
+            {
+                if (NDXConstants::DebugModeHP)
+                {
+                    Debug::printDebug(strfmt("@NDX:NDXCompanyItemGrpU01", nDXTmpKumUmsCustArtGrp.Company, nDXTmpKumUmsCustArtGrp.ItemGroup, nDXTmpKumUmsCustArtGrp.U01));          // Firma[%1] Artikelgruppe[%2] U01[%3]
+                }
+                //Artikelgruppe des Rings
+                if (nDXUmsatzClass.parmPartyIdCalculated())
+                {
+                    nDXTmpKumUmsCustArtGrpAll = NDXTmpKumUmsCustArtGrp::findPartyId(umsSignature,
+                                                                        monthYearSignature,
+                                                                        nDXUmsatzClass.parmPartyIdCalculated(),
+                                                                        nDXTmpKumUmsCustArtGrp.Company,
+                                                                        nDXTmpKumUmsCustArtGrp.ItemGroup,
+                                                                        true);
+                }
+                else
+                {
+                    nDXTmpKumUmsCustArtGrpAll = NDXTmpKumUmsCustArtGrp::find(umsSignature,
+                                                                        monthYearSignature,
+                                                                        alliance,
+                                                                        alliance,
+                                                                        nDXTmpKumUmsCustArtGrp.Company,
+                                                                        nDXTmpKumUmsCustArtGrp.ItemGroup,
+                                                                        true);
+                    custTablePartyId = NDXUmsatzClass::getCustTableFromAccount(alliance, nDXTmpKumUmsCustArtGrp.Company);
+                }
+                // Falls Debitor für diese Gruppe keinen Umsatz gemacht hat, diesen anlegen
+                if (!nDXTmpKumUmsCustArtGrpAll)
+                {
+                    nDX_ArtGrp = NDXArtGrp::find(nDXTmpKumUmsCustArtGrp.ItemGroup, '', '');
+                    nDXTmpKumUmsCustArtGrpAll.UmsSignature        = umsSignature;
+                    nDXTmpKumUmsCustArtGrpAll.MonthYearSignature  = monthYearSignature;
+                    nDXTmpKumUmsCustArtGrpAll.Alliance            = alliance;
+                    nDXTmpKumUmsCustArtGrpAll.Child               = alliance;
+                    nDXTmpKumUmsCustArtGrpAll.ItemGroup           = nDXTmpKumUmsCustArtGrp.ItemGroup;
+                    nDXTmpKumUmsCustArtGrpAll.Name                = nDX_ArtGrp.BEZ;
+                    nDXTmpKumUmsCustArtGrpAll.Company               = nDXTmpKumUmsCustArtGrp.Company;
+                    nDXTmpKumUmsCustArtGrpAll.Party             = custTablePartyId.Party;
+                    nDXTmpKumUmsCustArtGrpAll.PartyChild        = custTablePartyId.Party;
+                }
+                nDXTmpKumUmsCustArtGrpAll.setUmsLfdJTmpKumUmsCustArtGrp(nDXTmpKumUmsCustArtGrp);
+                nDXTmpKumUmsCustArtGrpAll.setUmsVJTmpKumUmsCustArtGrp(nDXTmpKumUmsCustArtGrp);
+                nDXTmpKumUmsCustArtGrpAll.UCSShare             = nDXTmpKumUmsCustArtGrp.UCSShare;
+                nDXTmpKumUmsCustArtGrpAll.VUCSShare            = nDXTmpKumUmsCustArtGrp.VUCSShare;
+                nDXTmpKumUmsCustArtGrpAll.CCSShare             = nDXTmpKumUmsCustArtGrp.CCSShare;
+                nDXTmpKumUmsCustArtGrpAll.VCCSShare            = nDXTmpKumUmsCustArtGrp.VCCSShare;
+                nDXTmpKumUmsCustArtGrpAll.UCSShareExcl         = nDXTmpKumUmsCustArtGrpAll.getUmsLfdJahr();
+                nDXTmpKumUmsCustArtGrpAll.VUCSShareExcl        = nDXTmpKumUmsCustArtGrpAll.getUmsVJahr();
+                nDXTmpKumUmsCustArtGrpAll.UACSShare            = nDXTmpKumUmsCustArtGrp.UACSShare;
+                nDXTmpKumUmsCustArtGrpAll.VUACSShare           = nDXTmpKumUmsCustArtGrp.VUACSShare;
+                nDXTmpKumUmsCustArtGrpAll.UACSShareExcl        = nDXUmsatzClass.UAJahrNDXTmpKumUmsCustArtGrp(nDXTmpKumUmsCustArtGrpAll);
+                nDXTmpKumUmsCustArtGrpAll.VUACSShareExcl       = nDXUmsatzClass.VUAJahrNDXTmpKumUmsCustArtGrp(nDXTmpKumUmsCustArtGrpAll);
+                nDXTmpKumUmsCustArtGrpAll.U                    = nDXTmpKumUmsCustArtGrpAll.UCSShareExcl   + nDXTmpKumUmsCustArtGrpAll.UCSShare;
+                nDXTmpKumUmsCustArtGrpAll.VU                   = nDXTmpKumUmsCustArtGrpAll.VUCSShareExcl  + nDXTmpKumUmsCustArtGrpAll.VUCSShare;
+                nDXTmpKumUmsCustArtGrpAll.UCSSharePercent      = nDXTmpKumUmsCustArtGrpAll.U  ? (nDXTmpKumUmsCustArtGrpAll.UCSShare * 100)  / nDXTmpKumUmsCustArtGrpAll.U   : 0;
+                nDXTmpKumUmsCustArtGrpAll.VUCSSharePercent     = nDXTmpKumUmsCustArtGrpAll.VU ? (nDXTmpKumUmsCustArtGrpAll.VUCSShare * 100) / nDXTmpKumUmsCustArtGrpAll.VU : 0;
+                nDXTmpKumUmsCustArtGrpAll.setDiffValuesPercent(nDXUmsatzClass, true);
+                if (nDXTmpKumUmsCustArtGrpAll.validateWrite())
+                {
+                    nDXTmpKumUmsCustArtGrpAll.write();
+                }
+            }
+
+            // Werte für alle Firmen ermitteln
+            while select    sum(U01) , sum(U02) , sum(U03) , sum(U04) , sum(U05) , sum(U06) , sum(U07) , sum(U08) , sum(U09) , sum(U10) , sum(U11) , sum(U12) ,
+                            sum(VU01), sum(VU02), sum(VU03), sum(VU04), sum(VU05), sum(VU06), sum(VU07), sum(VU08), sum(VU09), sum(VU10), sum(VU11), sum(VU12),
+                            sum(UCSShareExcl), sum(VUCSShareExcl),
+                            sum(UCSShare), sum(VUCSShare),
+                            sum(CCSShare), sum(VCCSShare),
+                            sum(UACSShareExcl), sum(VUACSShareExcl),
+                            sum(UACSShare), sum(VUACSShare),
+                            sum(U), sum(VU)
+            from            nDXTmpKumUmsCustArtGrp
+            group by        ItemGroup
+            where           nDXTmpKumUmsCustArtGrp.UmsSignature        == umsSignature                         &&
+                            nDXTmpKumUmsCustArtGrp.MonthYearSignature  == monthYearSignature                   &&
+                            nDXTmpKumUmsCustArtGrp.Alliance            == alliance                             &&
+                            nDXTmpKumUmsCustArtGrp.Child               == alliance                             &&
+                            nDXTmpKumUmsCustArtGrp.Company               != NDXCompanyBE::AllCompanies
+            {
+                if (NDXConstants::DebugModeHP)
+                {
+                    Debug::printDebug(strfmt("@NDX:NDXCompanyItemGrpU01", nDXTmpKumUmsCustArtGrp.Company, nDXTmpKumUmsCustArtGrp.ItemGroup, nDXTmpKumUmsCustArtGrp.U01));      // Firma[%1] Artikelgruppe[%2] U01[%3]
+                }
+                //Artikelgruppe des Rings
+                if (nDXUmsatzClass.parmPartyIdCalculated())
+                {
+                    nDXTmpKumUmsCustArtGrpAll = NDXTmpKumUmsCustArtGrp::findPartyId(umsSignature,
+                                                                        monthYearSignature,
+                                                                        nDXUmsatzClass.parmPartyIdCalculated(),
+                                                                        NDXCompanyBE::AllCompanies,
+                                                                        nDXTmpKumUmsCustArtGrp.ItemGroup,
+                                                                        true);
+                }
+                else
+                {
+                    nDXTmpKumUmsCustArtGrpAll = NDXTmpKumUmsCustArtGrp::find(umsSignature,
+                                                                        monthYearSignature,
+                                                                        alliance,
+                                                                        alliance,
+                                                                        NDXCompanyBE::AllCompanies,
+                                                                        nDXTmpKumUmsCustArtGrp.ItemGroup,
+                                                                        true);
+                }
+
+                // Falls Debitor für diese Gruppe keinen Umsatz gemacht hat, diesen anlegen
+                if (!nDXTmpKumUmsCustArtGrpAll)
+                {
+                    nDX_ArtGrp = NDXArtGrp::find(nDXTmpKumUmsCustArtGrp.ItemGroup, '', '');
+                    nDXTmpKumUmsCustArtGrpAll.UmsSignature        = umsSignature;
+                    nDXTmpKumUmsCustArtGrpAll.MonthYearSignature  = monthYearSignature;
+                    nDXTmpKumUmsCustArtGrpAll.Alliance            = alliance;
+                    nDXTmpKumUmsCustArtGrpAll.Child               = alliance;
+                    nDXTmpKumUmsCustArtGrpAll.ItemGroup           = nDXTmpKumUmsCustArtGrp.ItemGroup;
+                    nDXTmpKumUmsCustArtGrpAll.Name                = nDX_ArtGrp.BEZ;
+                    nDXTmpKumUmsCustArtGrpAll.Company             = NDXCompanyBE::AllCompanies;
+                    nDXTmpKumUmsCustArtGrpAll.Party             = custTablePartyId.Party;
+                    nDXTmpKumUmsCustArtGrpAll.PartyChild        = CustTable::find(nDXTmpKumUmsCustArtGrp.Child).Party;
+                }
+                nDXTmpKumUmsCustArtGrpAll.setUmsLfdJTmpKumUmsCustArtGrp(nDXTmpKumUmsCustArtGrp);
+                nDXTmpKumUmsCustArtGrpAll.setUmsVJTmpKumUmsCustArtGrp(nDXTmpKumUmsCustArtGrp);
+                nDXTmpKumUmsCustArtGrpAll.UCSShare             = nDXTmpKumUmsCustArtGrp.UCSShare;
+                nDXTmpKumUmsCustArtGrpAll.VUCSShare            = nDXTmpKumUmsCustArtGrp.VUCSShare;
+                nDXTmpKumUmsCustArtGrpAll.CCSShare             = nDXTmpKumUmsCustArtGrp.CCSShare;
+                nDXTmpKumUmsCustArtGrpAll.VCCSShare            = nDXTmpKumUmsCustArtGrp.VCCSShare;
+                nDXTmpKumUmsCustArtGrpAll.UCSShareExcl         = nDXTmpKumUmsCustArtGrpAll.getUmsLfdJahr();
+                nDXTmpKumUmsCustArtGrpAll.VUCSShareExcl        = nDXTmpKumUmsCustArtGrpAll.getUmsVJahr();
+                nDXTmpKumUmsCustArtGrpAll.UACSShare            = nDXTmpKumUmsCustArtGrp.UACSShare;
+                nDXTmpKumUmsCustArtGrpAll.VUACSShare           = nDXTmpKumUmsCustArtGrp.VUACSShare;
+                nDXTmpKumUmsCustArtGrpAll.UACSShareExcl        = nDXUmsatzClass.UAJahrNDXTmpKumUmsCustArtGrp(nDXTmpKumUmsCustArtGrpAll);
+                nDXTmpKumUmsCustArtGrpAll.VUACSShareExcl       = nDXUmsatzClass.VUAJahrNDXTmpKumUmsCustArtGrp(nDXTmpKumUmsCustArtGrpAll);
+                nDXTmpKumUmsCustArtGrpAll.U                    = nDXTmpKumUmsCustArtGrpAll.UCSShareExcl   + nDXTmpKumUmsCustArtGrpAll.UCSShare;
+                nDXTmpKumUmsCustArtGrpAll.VU                   = nDXTmpKumUmsCustArtGrpAll.VUCSShareExcl  + nDXTmpKumUmsCustArtGrpAll.VUCSShare;
+                nDXTmpKumUmsCustArtGrpAll.UCSSharePercent      = nDXTmpKumUmsCustArtGrpAll.U  ? (nDXTmpKumUmsCustArtGrpAll.UCSShare * 100)  / nDXTmpKumUmsCustArtGrpAll.U   : 0;
+                nDXTmpKumUmsCustArtGrpAll.VUCSSharePercent     = nDXTmpKumUmsCustArtGrpAll.VU ? (nDXTmpKumUmsCustArtGrpAll.VUCSShare * 100) / nDXTmpKumUmsCustArtGrpAll.VU : 0;
+                nDXTmpKumUmsCustArtGrpAll.setDiffValuesPercent(nDXUmsatzClass, true);
+                if (nDXTmpKumUmsCustArtGrpAll.validateWrite())
+                {
+                    nDXTmpKumUmsCustArtGrpAll.write();
+                }
+            }
+            //TODO: DebuC Prüfung erforderlich ob dieser Aufruf noch Sinn macht. Nachfolgendes Query kann mit doppelter Übergabe der Alliance eig keinen Satz ermitteln und würde die Methode überspringen
+            //nDXTmpKumUmsCustArtGrp::setUmsAnteil(umsSignature, monthYearSignature, alliance, alliance, nDXUmsatzClass, true);        // Umsatzanteile neu berechnen
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= NDXExceptionConstants::Retry5)
+            {
+                infoAddition = strFmt("@NDX:NDXErrorTmpKumUmsCustArtGrpAddition", sessionId(), nDXTmpKumUmsCustArtGrpAll.Alliance, nDXTmpKumUmsCustArtGrpAll.Child, nDXTmpKumUmsCustArtGrpAll.ItemGroup, nDXTmpKumUmsCustArtGrpAll.UmsSignature, nDXTmpKumUmsCustArtGrpAll.MonthYearSignature);
+                infoAddition += "NDXTmpKumUmsCustArtGrp:350";
+                throw Error(strFmt("@NDXBase:NDXDeadLock", tableId2Name(nDXTmpKumUmsCustArtGrpAll.TableId)) + infoAddition);
+            }
+            else
+            {
+                sleep(NDXExceptionConstants::RetryInterval500);
+                retry;
+            }
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (xSession::currentRetryCount() >= NDXExceptionConstants::Retry5)
+            {
+                infoAddition = strFmt("@NDX:NDXErrorTmpKumUmsCustArtGrpAddition", sessionId(), nDXTmpKumUmsCustArtGrpAll.Alliance, nDXTmpKumUmsCustArtGrpAll.Child, nDXTmpKumUmsCustArtGrpAll.ItemGroup, nDXTmpKumUmsCustArtGrpAll.UmsSignature, nDXTmpKumUmsCustArtGrpAll.MonthYearSignature);
+                infoAddition += "NDXTmpKumUmsCustArtGrp:364";
+                throw Error(strFmt("@NDXBase:NDXUpdateConflict", tableId2Name(nDXTmpKumUmsCustArtGrpAll.TableId)) + infoAddition);
+            }
+            else
+            {
+                sleep(NDXExceptionConstants::RetryInterval500);
+                retry;
+            }
+        }
+        catch (Exception::Error)
+        {
+            if (xSession::currentRetryCount() >= NDXExceptionConstants::Retry5)
+            {
+                infoAddition = strFmt("@NDX:NDXErrorTmpKumUmsCustArtGrpAddition", sessionId(), nDXTmpKumUmsCustArtGrpAll.Alliance, nDXTmpKumUmsCustArtGrpAll.Child, nDXTmpKumUmsCustArtGrpAll.ItemGroup, nDXTmpKumUmsCustArtGrpAll.UmsSignature, nDXTmpKumUmsCustArtGrpAll.MonthYearSignature);
+                infoAddition += "NDXTmpKumUmsCustArtGrp:378";
+                throw Error(strFmt("@NDXBase:NDXTableError", tableId2Name(nDXTmpKumUmsCustArtGrpAll.TableId)) + infoAddition);
+            }
+            else
+            {
+                sleep(NDXExceptionConstants::RetryInterval500);
+                retry;
+            }
+        }
+        catch (ex)
+        {
+            str errorMessage = ex.Message + NDXGlobalConstants::NewLine;
+            errorMessage += "Error: NDXTmpKumUmsCustArtGrp:390" + NDXGlobalConstants::NewLine;
+            errorMessage += NDXHelperCommon::callStack2str();
+            throw Error(errorMessage);
+        }
+
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setDiffValuesPercent</Name>
+				<Source><![CDATA[
+    void setDiffValuesPercent(nDXUmsatzClass _umsatzClass, boolean lInclCS = false)
+    {
+        real        umsLfdJ;
+        real        umsVJ;
+        ;
+        if (_UmsatzClass.parmNdxUmsatzAbschluss().parmJahr() <= _UmsatzClass.parmYearlfdJ())
+        {
+            umsLfdJ = lInclCS ? this.UCSShare  + this.UCSShareExcl  : this.UCSShareExcl;
+            umsVJ   = lInclCS ? this.VUCSShare + this.VUCSShareExcl : this.VUCSShareExcl;
+        }
+        else
+        {
+            umsLfdJ = lInclCS ? this.U  : this.getUmsLfdJahr();
+            umsVJ   = lInclCS ? this.VU : this.getUmsVJahr();
+        }
+        if (!umsVJ && !umsLfdJ)
+        {
+            this.DiffJahr   = 0;
+        }
+        else if (!umsVJ && umsLfdJ)
+        {
+            this.DiffJahr   = 100;
+        }
+        else
+        {
+            if (umsVJ)
+            {
+                this.DiffJahr = ((100 * umsLfdJ) / umsVJ) - 100;
+            }
+            else
+            {
+                this.DiffJahr = 0;
+            }
+        }
+        if (umsLfdJ >= 0 && umsVJ < 0)
+        {
+            this.DiffJahr = 100;
+        }
+        else if (umsLfdJ <  0 && umsVJ < 0)
+        {
+            this.DiffJahr = this.DiffJahr * -1;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getUmsLfdJahr</Name>
+				<Source><![CDATA[
+    display NDXUmsatz getUmsLfdJahr()
+    {
+        return  this.U01 +
+            this.U02 +
+            this.U03 +
+            this.U04 +
+            this.U05 +
+            this.U06 +
+            this.U07 +
+            this.U08 +
+            this.U09 +
+            this.U10 +
+            this.U11 +
+            this.U12;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getUmsVJahr</Name>
+				<Source><![CDATA[
+    display NDXUmsatz getUmsVJahr()
+    {
+        return  this.VU01 +
+            this.VU02 +
+            this.VU03 +
+            this.VU04 +
+            this.VU05 +
+            this.VU06 +
+            this.VU07 +
+            this.VU08 +
+            this.VU09 +
+            this.VU10 +
+            this.VU11 +
+            this.VU12;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setUmsAnteil</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// last modified: PaffH 06.06.25
+    /// </summary>
+    /// <param name = "umsSignature">NDXUmsSignature</param>
+    /// <param name = "monthYearSignature">NDXMonthYearSignature</param>
+    /// <param name = "alliance">CustAccount</param>
+    /// <param name = "partyId">RefRecId</param>
+    /// <param name = "nDX_UmsatzClass">nDXUmsatzClass</param>
+    /// <param name = "lInclCS">boolean</param>
+    static void setUmsAnteil(NDXUmsSignature        umsSignature,
+                          NDXMonthYearSignature     monthYearSignature,
+                          CustAccount               alliance,
+                          RefRecId                  partyId,
+                          nDXUmsatzClass            nDX_UmsatzClass,
+                          boolean                   lInclCS = false)
+    {
+        #OCCRetryCount
+
+        NDXTmpKumUmsCustArtGrp     nDXTmpKumUmsCustArtGrpFirma;
+        NDXTmpKumUmsCustArtGrp     nDXTmpKumUmsCustArtGrp;
+        NDXJobMangerJobsClass      nDX_JobManagerJobs;
+        real                        umsGes, umsAnteil;
+        Query                       q, qSum, qUpdate;
+        QueryBuildDataSource        qbds, qbdsSum, qbdsUpdate;
+        QueryRun                    qr, qrSum, qrUpdate;
+        QueryBuildFieldList         fieldList;
+        int                         nAnz1;
+        str infoAddition;
+
+        nDX_JobManagerJobs = NDXJobMangerJobsClass::construct(NDXJobManagerJobId::getUmsVerband_L3);
+        //TODO: DebuC austauschen der Winapi durch Protokolltabelle
+        nDX_JobManagerJobs.openFileToWrite();
+        nDX_JobManagerJobs.start("@NDX:NDXSalesSharesPerCmpItemGroup", strfmt('%1-%2', alliance, partyId));
+
+        try
+        {
+            nAnz1 = 0;
+            q       = new Query();
+            qbds    = q.addDataSource(tablenum(NDXTmpKumUmsCustArtGrp));
+            qbds.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, UmsSignature))      .value(umsSignature);
+            qbds.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, MonthYearSignature)).value(monthYearSignature);
+            qbds.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, Alliance))          .value(alliance);
+            //qbds.addRange(fieldnum(nDXTmpKumUmsCustArtGrp, Child))             .value(child);
+            qbds.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, Party))             .value(queryValue(partyId));
+            qbds.orderMode(OrderMode::GroupBy);
+            qbds.addSortField(fieldnum(NDXTmpKumUmsCustArtGrp, Company));
+            qr      = new QueryRun(q);
+            while (qr.next())
+            {
+                nDXTmpKumUmsCustArtGrpFirma = qr.get(tablenum(NDXTmpKumUmsCustArtGrp));
+
+                // Gesamtumsatz der Firma ermitteln
+                qSum        = new Query();
+                qbdsSum     = qSum.addDataSource(tablenum(NDXTmpKumUmsCustArtGrp));
+                qbdsSum.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, UmsSignature))       .value(umsSignature);
+                qbdsSum.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, MonthYearSignature)) .value(monthYearSignature);
+                qbdsSum.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, Company))              .value(QueryValue(nDXTmpKumUmsCustArtGrpFirma.Company));
+                qbdsSum.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, Alliance))           .value(alliance);
+                //qbdsSum.addRange(fieldnum(NDX_TmpKumUmsCustArtGrp, Child))              .value(child);
+                qbdsSum.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, Party))            .value(queryValue(partyId));
+
+                qbdsSum.orderMode(OrderMode::GroupBy);
+                fieldList   = qbdsSum.fields();
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U01)           , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U02)           , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U03)           , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U04)           , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U05)           , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U06)           , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U07)           , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U08)           , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U09)           , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U10)           , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U11)           , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, U12)           , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU01)          , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU02)          , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU03)          , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU04)          , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU05)          , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU06)          , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU07)          , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU08)          , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU09)          , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU10)          , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU11)          , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VU12)          , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, UCSShare)      , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, UCSShareExcl)  , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VUCSShare)     , SelectionField::Sum);
+                fieldList.addField(fieldnum(NDXTmpKumUmsCustArtGrp, VUCSShareExcl) , SelectionField::Sum);
+
+                qrSum = new QueryRun(qSum);
+                qrSum.next();
+                nDXTmpKumUmsCustArtGrp = qrSum.get(tablenum(NDXTmpKumUmsCustArtGrp));
+
+                umsGes = nDXTmpKumUmsCustArtGrp.getUmsLfdJahr();
+                if (lInclCS)
+                {
+                    umsGes  += nDXTmpKumUmsCustArtGrp.UCSShare;
+                }
+
+                qUpdate     = new Query();
+                qbdsUpdate  = qUpdate.addDataSource(tablenum(NDXTmpKumUmsCustArtGrp));
+                qbdsUpdate.update(true);
+                qbdsUpdate.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, UmsSignature))      .value(umsSignature);
+                qbdsUpdate.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, MonthYearSignature)).value(monthYearSignature);
+                qbdsUpdate.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, Company))             .value(QueryValue(nDXTmpKumUmsCustArtGrpFirma.Company));
+                qbdsUpdate.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, Alliance))          .value(alliance);
+                //qbdsUpdate.addRange(fieldnum(nDXTmpKumUmsCustArtGrp, Child))             .value(child);
+                qbdsUpdate.addRange(fieldnum(NDXTmpKumUmsCustArtGrp, Party))             .value(queryValue(partyId));
+
+                //try
+                {
+                    qrUpdate    = new QueryRun(qUpdate);
+                    //ttsbegin;
+                    while (qrUpdate.next())
+                    {
+                        ttsbegin;
+                        nDXTmpKumUmsCustArtGrp = qrUpdate.get(tablenum(NDXTmpKumUmsCustArtGrp));
+
+                        nDXTmpKumUmsCustArtGrp.UCSShareExcl    = nDXTmpKumUmsCustArtGrp.getUmsLfdJahr();
+                        nDXTmpKumUmsCustArtGrp.VUCSShareExcl   = nDXTmpKumUmsCustArtGrp.getUmsVJahr();
+
+                        nDXTmpKumUmsCustArtGrp.UACSShareExcl   = nDX_UmsatzClass.UAJahrNDXTmpKumUmsCustArtGrp(nDXTmpKumUmsCustArtGrp);
+                        nDXTmpKumUmsCustArtGrp.VUACSShareExcl  = nDX_UmsatzClass.VUAJahrNDXTmpKumUmsCustArtGrp(nDXTmpKumUmsCustArtGrp);
+
+                        nDXTmpKumUmsCustArtGrp.U               = nDXTmpKumUmsCustArtGrp.UCSShareExcl;
+                        if (lInclCS)
+                        {
+                            nDXTmpKumUmsCustArtGrp.U           += nDXTmpKumUmsCustArtGrp.UCSShare;
+                        }
+
+                        umsAnteil                               = umsGes ? ((nDXTmpKumUmsCustArtGrp.U  * 100) / umsGes) : 0;
+                        nDXTmpKumUmsCustArtGrp.UmsAnteil       = umsAnteil;
+
+                        nDXTmpKumUmsCustArtGrp.VU              = nDXTmpKumUmsCustArtGrp.VUCSShareExcl;
+                        if (lInclCS)
+                        {
+                            nDXTmpKumUmsCustArtGrp.VU          += nDXTmpKumUmsCustArtGrp.VUCSShare;
+                        }
+
+                        nDXTmpKumUmsCustArtGrp.setDiffValuesPercent(nDX_UmsatzClass, true);
+
+                        if (nDXTmpKumUmsCustArtGrp.validateWrite())
+                        {
+                            nDXTmpKumUmsCustArtGrp.update();
+                        }
+                        ttscommit;
+
+                        ++nAnz1;
+                        nDX_JobManagerJobs.setAction("@NDX:NDXSalesSharesPerCmpItemGroup", strfmt('%1-%2-%3', alliance, partyId, nDXTmpKumUmsCustArtGrp.ItemGroup), nAnz1);
+                    }
+                    //ttscommit;
+                }
+                //catch (Exception::Deadlock)
+                //{
+                //    if (xSession::currentRetryCount() >= #RetryNum)
+                //    {
+                //        //Error("Deadlock: NDXTmpKumUmsCustArtGrp:626");
+                //        //throw Exception::Deadlock;
+                //        throw Error(strFmt("@NDXBase:NDXDeadLock", tableId2Name(nDXTmpKumUmsCustArtGrp.TableId)) + "NDXTmpKumUmsCustArtGrp:626");
+                //    }
+                //    else
+                //    {
+                //        retry;
+                //    }
+                //}
+                //catch (Exception::UpdateConflict)
+                //{
+                //    if (xSession::currentRetryCount() >= NDXExceptionConstants::Retry5)
+                //    {
+                //        infoAddition = strFmt("@NDX:NDXConflictAdditionNDXTmpKumUmsCustArtGrp", 
+                //            sessionId(), 
+                //            nDXTmpKumUmsCustArtGrp.UmsSignature,
+                //            nDXTmpKumUmsCustArtGrp.MonthYearSignature,
+                //            nDXTmpKumUmsCustArtGrp.Company,
+                //            nDXTmpKumUmsCustArtGrp.Alliance,
+                //            nDXTmpKumUmsCustArtGrp.Child,
+                //            nDXTmpKumUmsCustArtGrp.ItemGroup);
+                //        infoAddition += " NDXTmpKumUmsCustArtGrp:364";
+                //        throw Error(strFmt("@NDXBase:NDXUpdateConflict", tableId2Name(nDXTmpKumUmsCustArtGrp.TableId)) + infoAddition);
+                //    }
+                //    else
+                //    {
+                //        sleep(NDXExceptionConstants::RetryInterval500);
+                //        retry;
+                //    }
+                //}
+            }
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                //Error("Deadlock: NDXTmpKumUmsCustArtGrp:626");
+                //throw Exception::Deadlock;
+                throw Error(strFmt("@NDXBase:NDXDeadLock", tableId2Name(nDXTmpKumUmsCustArtGrp.TableId)) + "NDXTmpKumUmsCustArtGrp:626");
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (xSession::currentRetryCount() >= NDXExceptionConstants::Retry5)
+            {
+                infoAddition = strFmt("@NDX:NDXConflictAdditionNDXTmpKumUmsCustArtGrp",
+                            sessionId(),
+                            nDXTmpKumUmsCustArtGrp.UmsSignature,
+                            nDXTmpKumUmsCustArtGrp.MonthYearSignature,
+                            nDXTmpKumUmsCustArtGrp.Company,
+                            nDXTmpKumUmsCustArtGrp.Alliance,
+                            nDXTmpKumUmsCustArtGrp.Child,
+                            nDXTmpKumUmsCustArtGrp.ItemGroup);
+                infoAddition += " NDXTmpKumUmsCustArtGrp:364";
+                throw Error(strFmt("@NDXBase:NDXUpdateConflict", tableId2Name(nDXTmpKumUmsCustArtGrp.TableId)) + infoAddition);
+            }
+            else
+            {
+                sleep(NDXExceptionConstants::RetryInterval500);
+                retry;
+            }
+        }
+        catch 
+        {
+            if (xSession::currentRetryCount() >= NDXExceptionConstants::Retry5)
+            {
+                infoAddition = strFmt("@NDX:NDXConflictAdditionNDXTmpKumUmsCustArtGrp",
+                            sessionId(),
+                            nDXTmpKumUmsCustArtGrp.UmsSignature,
+                            nDXTmpKumUmsCustArtGrp.MonthYearSignature,
+                            nDXTmpKumUmsCustArtGrp.Company,
+                            nDXTmpKumUmsCustArtGrp.Alliance,
+                            nDXTmpKumUmsCustArtGrp.Child,
+                            nDXTmpKumUmsCustArtGrp.ItemGroup);
+                infoAddition += " NDXTmpKumUmsCustArtGrp:711";
+                throw Error(strFmt("@NDXBase:NDXUpdateConflict", tableId2Name(nDXTmpKumUmsCustArtGrp.TableId)) + infoAddition);
+            }
+            else
+            {
+                sleep(NDXExceptionConstants::RetryInterval500);
+                retry;
+            }
+        }
+
+        nDX_JobManagerJobs.ende();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getUmsCS</Name>
+				<Source><![CDATA[
+    static void getUmsCS(NDXTmpCSAlliance  l_NDX_TmpCSAlliance,
+                     NDXYear            jahr,
+                     boolean            lExclude,
+                     boolean            lAktJahr = true,
+                     boolean            lTestImport = false)
+    {
+
+        NDXKumUmsCustArtGrp        nDX_KumUmsCustArtGrp;
+        NDXTmpCSAllianceArtGrp     nDX_TmpCSAllianceArtGrp;
+
+        NDXCompanyBE                firma;
+        NDXKdNr                     nDX_KdNr;
+
+        Query                       q;
+        QueryRun                    qr;
+        QueryBuildDataSource        qbds;
+        RecordSortedList            recordSortedList;
+        ;
+
+        ttsbegin;
+        recordSortedList = new RecordSortedList(tablenum(NDXTmpCSAllianceArtGrp));
+        recordSortedList.sortOrder(fieldnum(NDXTmpCSAllianceArtGrp, UmsSignature),
+                               fieldnum(NDXTmpCSAllianceArtGrp, MonthYearSignature),
+                               fieldnum(NDXTmpCSAllianceArtGrp, Exclude),
+                               fieldnum(NDXTmpCSAllianceArtGrp, Company),
+                               fieldnum(NDXTmpCSAllianceArtGrp, Alliance),
+                               fieldnum(NDXTmpCSAllianceArtGrp, CustAccount),
+                               fieldnum(NDXTmpCSAllianceArtGrp, CentralStoreId),
+                               fieldnum(NDXTmpCSAllianceArtGrp, ArtGrp));
+        firma       = NDXHelperCommon::CompanyId2NDXCompany(l_NDX_TmpCSAlliance.Company, lTestImport);
+        nDX_KdNr    = str2int(l_NDX_TmpCSAlliance.CentralStoreId);
+
+
+        // über alle Artikelgruppen des Zentrallagers die Werte ermitteln
+        q       = new Query();
+        qbds    = q.addDataSource(tablenum(NDXKumUmsCustArtGrp));
+        qbds.addRange(fieldnum(NDXKumUmsCustArtGrp, KdNr)).value(QueryValue(nDX_KdNr));
+        qbds.addRange(fieldnum(NDXKumUmsCustArtGrp, Jahr)).value(QueryValue(jahr));
+        qbds.addRange(fieldnum(NDXKumUmsCustArtGrp, Companys)).value(QueryValue(firma));
+        qr      = new QueryRun(q);
+        while (qr.next())
+        {
+            nDX_KumUmsCustArtGrp = qr.get(tablenum(NDXKumUmsCustArtGrp));
+
+            nDX_TmpCSAllianceArtGrp = NDXTmpCSAllianceArtGrp::find(l_NDX_TmpCSAlliance.UmsSignature,
+                                                                l_NDX_TmpCSAlliance.MonthYearSignature,
+                                                                lExclude,
+                                                                l_NDX_TmpCSAlliance.Company,
+                                                                l_NDX_TmpCSAlliance.Alliance,
+                                                                l_NDX_TmpCSAlliance.CustAccount,
+                                                                l_NDX_TmpCSAlliance.CentralStoreId,
+                                                                nDX_KumUmsCustArtGrp.ArtGrp(),
+                                                                true);
+
+            nDX_TmpCSAllianceArtGrp.UmsSignature        = l_NDX_TmpCSAlliance.UmsSignature;
+            nDX_TmpCSAllianceArtGrp.MonthYearSignature  = l_NDX_TmpCSAlliance.MonthYearSignature;
+            nDX_TmpCSAllianceArtGrp.Exclude             = lExclude;
+            nDX_TmpCSAllianceArtGrp.Company             = l_NDX_TmpCSAlliance.Company;
+            nDX_TmpCSAllianceArtGrp.Alliance            = l_NDX_TmpCSAlliance.Alliance;
+            nDX_TmpCSAllianceArtGrp.CustAccount         = l_NDX_TmpCSAlliance.CustAccount;
+            nDX_TmpCSAllianceArtGrp.ArtGrp              = nDX_KumUmsCustArtGrp.ArtGrp();
+            nDX_TmpCSAllianceArtGrp.CSDPctLfdJ          = l_NDX_TmpCSAlliance.CSDPctLfdJ;
+            nDX_TmpCSAllianceArtGrp.CSDPctVJ            = l_NDX_TmpCSAlliance.CSDPctVJ;
+            nDX_TmpCSAllianceArtGrp.CentralStoreId      = l_NDX_TmpCSAlliance.CentralStoreId;
+
+            if (lAktJahr)
+            {
+                nDX_TmpCSAllianceArtGrp.U01         = (nDX_KumUmsCustArtGrp.Umsatz01 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.U02         = (nDX_KumUmsCustArtGrp.Umsatz02 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.U03         = (nDX_KumUmsCustArtGrp.Umsatz03 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.U04         = (nDX_KumUmsCustArtGrp.Umsatz04 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.U05         = (nDX_KumUmsCustArtGrp.Umsatz05 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.U06         = (nDX_KumUmsCustArtGrp.Umsatz06 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.U07         = (nDX_KumUmsCustArtGrp.Umsatz07 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.U08         = (nDX_KumUmsCustArtGrp.Umsatz08 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.U09         = (nDX_KumUmsCustArtGrp.Umsatz09 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.U10         = (nDX_KumUmsCustArtGrp.Umsatz10 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.U11         = (nDX_KumUmsCustArtGrp.Umsatz11 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.U12         = (nDX_KumUmsCustArtGrp.Umsatz12 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+
+                nDX_TmpCSAllianceArtGrp.C01         = (nDX_KumUmsCustArtGrp.CostAmount01 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.C02         = (nDX_KumUmsCustArtGrp.CostAmount02 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.C03         = (nDX_KumUmsCustArtGrp.CostAmount03 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.C04         = (nDX_KumUmsCustArtGrp.CostAmount04 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.C05         = (nDX_KumUmsCustArtGrp.CostAmount05 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.C06         = (nDX_KumUmsCustArtGrp.CostAmount06 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.C07         = (nDX_KumUmsCustArtGrp.CostAmount07 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.C08         = (nDX_KumUmsCustArtGrp.CostAmount08 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.C09         = (nDX_KumUmsCustArtGrp.CostAmount09 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.C10         = (nDX_KumUmsCustArtGrp.CostAmount10 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.C11         = (nDX_KumUmsCustArtGrp.CostAmount11 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+                nDX_TmpCSAllianceArtGrp.C12         = (nDX_KumUmsCustArtGrp.CostAmount12 * nDX_TmpCSAllianceArtGrp.CSDPctLfdJ) / 100;
+            }
+            else
+            {
+                nDX_TmpCSAllianceArtGrp.VU01        = (nDX_KumUmsCustArtGrp.Umsatz01 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VU02        = (nDX_KumUmsCustArtGrp.Umsatz02 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VU03        = (nDX_KumUmsCustArtGrp.Umsatz03 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VU04        = (nDX_KumUmsCustArtGrp.Umsatz04 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VU05        = (nDX_KumUmsCustArtGrp.Umsatz05 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VU06        = (nDX_KumUmsCustArtGrp.Umsatz06 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VU07        = (nDX_KumUmsCustArtGrp.Umsatz07 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VU08        = (nDX_KumUmsCustArtGrp.Umsatz08 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VU09        = (nDX_KumUmsCustArtGrp.Umsatz09 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VU10        = (nDX_KumUmsCustArtGrp.Umsatz10 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VU11        = (nDX_KumUmsCustArtGrp.Umsatz11 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VU12        = (nDX_KumUmsCustArtGrp.Umsatz12 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+
+                nDX_TmpCSAllianceArtGrp.VC01        = (nDX_KumUmsCustArtGrp.CostAmount01 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VC02        = (nDX_KumUmsCustArtGrp.CostAmount02 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VC03        = (nDX_KumUmsCustArtGrp.CostAmount03 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VC04        = (nDX_KumUmsCustArtGrp.CostAmount04 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VC05        = (nDX_KumUmsCustArtGrp.CostAmount05 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VC06        = (nDX_KumUmsCustArtGrp.CostAmount06 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VC07        = (nDX_KumUmsCustArtGrp.CostAmount07 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VC08        = (nDX_KumUmsCustArtGrp.CostAmount08 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VC09        = (nDX_KumUmsCustArtGrp.CostAmount09 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VC10        = (nDX_KumUmsCustArtGrp.CostAmount10 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VC11        = (nDX_KumUmsCustArtGrp.CostAmount11 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+                nDX_TmpCSAllianceArtGrp.VC12        = (nDX_KumUmsCustArtGrp.CostAmount12 * nDX_TmpCSAllianceArtGrp.CSDPctVJ) / 100;
+            }
+            if (nDX_TmpCSAllianceArtGrp.validateWrite())
+            {
+                if (nDX_TmpCSAllianceArtGrp)
+                {
+                    nDX_TmpCSAllianceArtGrp.write();
+                }
+                else
+                {
+                    recordSortedList.ins(nDX_TmpCSAllianceArtGrp);
+                }
+            }
+        }
+        recordSortedList.insertDatabase();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.10.23
+    /// last modified: PaffH 19.02.25
+    /// </summary>
+    /// <param name = "umsSignature">NDXUmsSignature</param>
+    /// <param name = "monthYearSignature">NDXMonthYearSignature</param>
+    /// <param name = "alliance">CustAccount</param>
+    /// <param name = "child">CustAccount</param>
+    /// <param name = "firma">NDXCompanyBE</param>
+    /// <param name = "artGrp">NDXItemGroup</param>
+    /// <param name = "l_forUpdate">boolean</param>
+    /// <param name = "_pessimisticLock">boolean</param>
+    /// <returns>NDXTmpKumUmsCustArtGrp</returns>
+    static NDXTmpKumUmsCustArtGrp find(
+        NDXUmsSignature umsSignature,
+        NDXMonthYearSignature monthYearSignature,
+        CustAccount alliance,
+        CustAccount child,
+        NDXCompanyBE firma,
+        NDXItemGroup artGrp,
+        boolean l_forUpdate = false,
+        boolean _pessimisticLock = false)
+    {
+        NDXTmpKumUmsCustArtGrp umsatz;
+        ;
+        umsatz.selectForUpdate(l_forUpdate);
+        if (_pessimisticLock)
+        {
+            umsatz.concurrencyModel(ConcurrencyModel::Pessimistic);
+        }
+
+        if (alliance && child)
+        {
+            select      umsatz
+                where   umsatz.UmsSignature         == umsSignature         &&
+                        umsatz.MonthYearSignature   == monthYearSignature   &&
+                        umsatz.Company              == firma                &&
+                        umsatz.ItemGroup            == artGrp               &&
+                        umsatz.Alliance             == alliance             &&
+                        umsatz.Child                == child;
+        }
+
+        return umsatz;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findPartyId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.10.23
+    /// last modified: PaffH 19.02.25
+    /// </summary>
+    /// <param name = "umsSignature">NDXUmsSignature</param>
+    /// <param name = "monthYearSignature">NDXMonthYearSignature</param>
+    /// <param name = "party">RefRecId</param>
+    /// <param name = "firma">NDXCompanyBE</param>
+    /// <param name = "artGrp">NDXItemGroup</param>
+    /// <param name = "l_forUpdate">boolean</param>
+    /// <param name = "_pessimisticLock">boolean</param>
+    /// <returns>NDXTmpKumUmsCustArtGrp</returns>
+    static NDXTmpKumUmsCustArtGrp findPartyId(
+        NDXUmsSignature        umsSignature,
+        NDXMonthYearSignature  monthYearSignature,
+        RefRecId                party,
+        NDXCompanyBE             firma,
+        NDXItemGroup            artGrp,
+        boolean                 l_forUpdate = false,
+        boolean _pessimisticLock = false)
+    {
+        NDXTmpKumUmsCustArtGrp umsatz;
+        umsatz.selectForUpdate(l_forUpdate);
+        if (_pessimisticLock)
+        {
+            umsatz.concurrencyModel(ConcurrencyModel::Pessimistic);
+        }
+
+        select      umsatz
+        where   umsatz.UmsSignature         == umsSignature         &&
+                umsatz.MonthYearSignature   == monthYearSignature   &&
+                umsatz.Company              == firma                &&
+                umsatz.ItemGroup            == artGrp               &&
+                umsatz.Party                == party;
+
+        return umsatz;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addUmsVJ</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.10.23
+    /// </summary>
+    /// <param name = "_NDX_KumUmsCustArtGrp">NDXKumUmsCustArtGrp</param>
+    void addUmsVJ(NDXKumUmsCustArtGrp  _NDX_KumUmsCustArtGrp)
+    {
+        this.VU01    += _NDX_KumUmsCustArtGrp.Umsatz01;
+        this.VU02    += _NDX_KumUmsCustArtGrp.Umsatz02;
+        this.VU03    += _NDX_KumUmsCustArtGrp.Umsatz03;
+        this.VU04    += _NDX_KumUmsCustArtGrp.Umsatz04;
+        this.VU05    += _NDX_KumUmsCustArtGrp.Umsatz05;
+        this.VU06    += _NDX_KumUmsCustArtGrp.Umsatz06;
+        this.VU07    += _NDX_KumUmsCustArtGrp.Umsatz07;
+        this.VU08    += _NDX_KumUmsCustArtGrp.Umsatz08;
+        this.VU09    += _NDX_KumUmsCustArtGrp.Umsatz09;
+        this.VU10    += _NDX_KumUmsCustArtGrp.Umsatz10;
+        this.VU11    += _NDX_KumUmsCustArtGrp.Umsatz11;
+        this.VU12    += _NDX_KumUmsCustArtGrp.Umsatz12;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setUmsVJ</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.10.23
+    /// </summary>
+    /// <param name = "_NDX_KumUmsCustArtGrp">NDXKumUmsCustArtGrp</param>
+    void setUmsVJ(NDXKumUmsCustArtGrp  _NDX_KumUmsCustArtGrp)
+    {
+        this.VU01    = _NDX_KumUmsCustArtGrp.Umsatz01;
+        this.VU02    = _NDX_KumUmsCustArtGrp.Umsatz02;
+        this.VU03    = _NDX_KumUmsCustArtGrp.Umsatz03;
+        this.VU04    = _NDX_KumUmsCustArtGrp.Umsatz04;
+        this.VU05    = _NDX_KumUmsCustArtGrp.Umsatz05;
+        this.VU06    = _NDX_KumUmsCustArtGrp.Umsatz06;
+        this.VU07    = _NDX_KumUmsCustArtGrp.Umsatz07;
+        this.VU08    = _NDX_KumUmsCustArtGrp.Umsatz08;
+        this.VU09    = _NDX_KumUmsCustArtGrp.Umsatz09;
+        this.VU10    = _NDX_KumUmsCustArtGrp.Umsatz10;
+        this.VU11    = _NDX_KumUmsCustArtGrp.Umsatz11;
+        this.VU12    = _NDX_KumUmsCustArtGrp.Umsatz12;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setUmsLfdJ</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.10.23
+    /// </summary>
+    /// <param name = "_NDX_KumUmsCustArtGrp">NDXKumUmsCustArtGrp</param>
+    void setUmsLfdJ(NDXKumUmsCustArtGrp  _NDX_KumUmsCustArtGrp)
+    {
+        this.U01    = _NDX_KumUmsCustArtGrp.Umsatz01;
+        this.U02    = _NDX_KumUmsCustArtGrp.Umsatz02;
+        this.U03    = _NDX_KumUmsCustArtGrp.Umsatz03;
+        this.U04    = _NDX_KumUmsCustArtGrp.Umsatz04;
+        this.U05    = _NDX_KumUmsCustArtGrp.Umsatz05;
+        this.U06    = _NDX_KumUmsCustArtGrp.Umsatz06;
+        this.U07    = _NDX_KumUmsCustArtGrp.Umsatz07;
+        this.U08    = _NDX_KumUmsCustArtGrp.Umsatz08;
+        this.U09    = _NDX_KumUmsCustArtGrp.Umsatz09;
+        this.U10    = _NDX_KumUmsCustArtGrp.Umsatz10;
+        this.U11    = _NDX_KumUmsCustArtGrp.Umsatz11;
+        this.U12    = _NDX_KumUmsCustArtGrp.Umsatz12;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addUmsLfdJ</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.10.23
+    /// </summary>
+    /// <param name = "_NDX_KumUmsCustArtGrp">NDXKumUmsCustArtGrp</param>
+    void addUmsLfdJ(NDXKumUmsCustArtGrp  _NDX_KumUmsCustArtGrp)
+    {
+        this.U01    += _NDX_KumUmsCustArtGrp.Umsatz01;
+        this.U02    += _NDX_KumUmsCustArtGrp.Umsatz02;
+        this.U03    += _NDX_KumUmsCustArtGrp.Umsatz03;
+        this.U04    += _NDX_KumUmsCustArtGrp.Umsatz04;
+        this.U05    += _NDX_KumUmsCustArtGrp.Umsatz05;
+        this.U06    += _NDX_KumUmsCustArtGrp.Umsatz06;
+        this.U07    += _NDX_KumUmsCustArtGrp.Umsatz07;
+        this.U08    += _NDX_KumUmsCustArtGrp.Umsatz08;
+        this.U09    += _NDX_KumUmsCustArtGrp.Umsatz09;
+        this.U10    += _NDX_KumUmsCustArtGrp.Umsatz10;
+        this.U11    += _NDX_KumUmsCustArtGrp.Umsatz11;
+        this.U12    += _NDX_KumUmsCustArtGrp.Umsatz12;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setUmsLfdJTmpKumUmsCustArtGrp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.10.23
+    /// </summary>
+    /// <param name = "_NDX_TmpKumUmsCustArtGr">NDXTmpKumUmsCustArtGrp</param>
+    void setUmsLfdJTmpKumUmsCustArtGrp(NDXTmpKumUmsCustArtGrp  _NDX_TmpKumUmsCustArtGr)
+    {
+        this.U01    = _NDX_TmpKumUmsCustArtGr.U01;
+        this.U02    = _NDX_TmpKumUmsCustArtGr.U02;
+        this.U03    = _NDX_TmpKumUmsCustArtGr.U03;
+        this.U04    = _NDX_TmpKumUmsCustArtGr.U04;
+        this.U05    = _NDX_TmpKumUmsCustArtGr.U05;
+        this.U06    = _NDX_TmpKumUmsCustArtGr.U06;
+        this.U07    = _NDX_TmpKumUmsCustArtGr.U07;
+        this.U08    = _NDX_TmpKumUmsCustArtGr.U08;
+        this.U09    = _NDX_TmpKumUmsCustArtGr.U09;
+        this.U10    = _NDX_TmpKumUmsCustArtGr.U10;
+        this.U11    = _NDX_TmpKumUmsCustArtGr.U11;
+        this.U12    = _NDX_TmpKumUmsCustArtGr.U12;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setUmsVJTmpKumUmsCustArtGrp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.10.23
+    /// </summary>
+    /// <param name = "_NDX_TmpKumUmsCustArtGr">NDXTmpKumUmsCustArtGrp</param>
+    void setUmsVJTmpKumUmsCustArtGrp(NDXTmpKumUmsCustArtGrp  _NDX_TmpKumUmsCustArtGr)
+    {
+        this.VU01    = _NDX_TmpKumUmsCustArtGr.VU01;
+        this.VU02    = _NDX_TmpKumUmsCustArtGr.VU02;
+        this.VU03    = _NDX_TmpKumUmsCustArtGr.VU03;
+        this.VU04    = _NDX_TmpKumUmsCustArtGr.VU04;
+        this.VU05    = _NDX_TmpKumUmsCustArtGr.VU05;
+        this.VU06    = _NDX_TmpKumUmsCustArtGr.VU06;
+        this.VU07    = _NDX_TmpKumUmsCustArtGr.VU07;
+        this.VU08    = _NDX_TmpKumUmsCustArtGr.VU08;
+        this.VU09    = _NDX_TmpKumUmsCustArtGr.VU09;
+        this.VU10    = _NDX_TmpKumUmsCustArtGr.VU10;
+        this.VU11    = _NDX_TmpKumUmsCustArtGr.VU11;
+        this.VU12    = _NDX_TmpKumUmsCustArtGr.VU12;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteRecords</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.10.23
+    /// </summary>
+    /// <param name = "_umsSignature">NDXUmsSignature</param>
+    /// <param name = "_alliance">CustAccount</param>
+    static void deleteRecords(NDXUmsSignature _umsSignature, CustAccount _alliance)
+    {
+        NDXTmpKumUmsCustArtGrp          table;
+        ;
+
+        table.skipDataMethods(true);
+        table.skipAosValidation(true);
+        table.skipDatabaseLog(true);
+        table.skipEvents(true);
+        table.skipDeleteActions(true);
+        
+        if (_alliance)
+        {
+            delete_from     table
+                    where       table.UmsSignature == _umsSignature &&
+                                table.Alliance     == _alliance;
+        }
+        else
+        {
+            delete_from     table
+                    where       table.UmsSignature == _umsSignature;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateRecords</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.10.23
+    /// </summary>
+    /// <param name = "_copyTo">NDXUmsSignature</param>
+    /// <param name = "_copyToOld">NDXUmsSignature</param>
+    /// <param name = "_sic">boolean</param>
+    /// <param name = "_copyFromSic">NDXUmsSignature</param>
+    /// <param name = "_only4Alliance">CustAccount</param>
+    static void updateRecords(NDXUmsSignature _copyTo,NDXUmsSignature _copyToOld, boolean _sic, NDXUmsSignature _copyFromSic, CustAccount _only4Alliance)
+    {
+        
+        // bestehende Daten sichern
+        NDXTmpKumUmsCustArtGrp      table;
+        Common                      commonCopySic;
+        int64                       anzBefore, anzAfter;
+        DictTable                   dictTable;
+        NDXUmsSignature         l_copyFrom2 = _copyTo;
+        NDXUmsSignature         l_copyTo2   = _copyToOld;        
+        boolean                 l_lSic      = _sic;
+
+        //BP deviation documented
+        table.skipDataMethods(true);
+        table.skipAosValidation(true);
+        table.skipDatabaseLog(true);
+        table.skipEvents(true);
+        table.skipDeleteActions(true);
+
+        // Sicherung der CopyFrom-Daten
+        if (l_lSic)
+        {
+            dictTable       = new DictTable(table.TableId);
+            commonCopySic   = dictTable.makeRecord();
+            ttsbegin;
+
+            // alte Sicherung löschen
+            if (_only4Alliance)
+            {
+                delete_from     table
+                    where       table.UmsSignature == _copyFromSic &&
+                                table.Alliance     == _only4Alliance;
+            }
+            else
+            {
+                delete_from     table
+                    where       table.UmsSignature == _copyFromSic;
+            }
+
+            // aktuelle Daten sichern
+            if (_only4Alliance)
+            {
+                while select table
+                    where    table.UmsSignature    == l_copyFrom2      &&
+                                table.Alliance        == _only4Alliance
+                {
+                    buf2Buf(table, commonCopySic);
+                    commonCopySic.(dictTable.fieldname2id(identifierstr(UmsSignature))) = _copyFromSic;
+                    commonCopySic.doInsert();
+                }
+            }
+            else
+            {
+                while select table
+                    where    table.UmsSignature == l_copyFrom2
+                {
+                    buf2Buf(table, commonCopySic);
+                    commonCopySic.(dictTable.fieldname2id(identifierstr(UmsSignature))) = _copyFromSic;
+                    commonCopySic.doInsert();
+                }
+            }
+            ttscommit;
+        }
+
+        if (_only4Alliance)
+        {
+            anzBefore = (select     count(recid)
+                            from    NDXTmpKumUmsCustArtGrp
+                            where   NDXTmpKumUmsCustArtGrp.UmsSignature == l_copyTo2 &&
+                                    NDXTmpKumUmsCustArtGrp.Alliance     == _only4Alliance).recid;
+
+            update_recordset        table
+                setting             UmsSignature = l_copyTo2
+                where               table.UmsSignature == l_copyFrom2 &&
+                                    table.Alliance     == _only4Alliance;
+
+            anzAfter  = (select     count(recid)
+                            from    NDXTmpKumUmsCustArtGrp
+                            where   NDXTmpKumUmsCustArtGrp.UmsSignature == l_copyTo2 &&
+                                    NDXTmpKumUmsCustArtGrp.Alliance     == _only4Alliance).recid;
+        }
+        else
+        {
+            anzBefore = (select     count(recid)
+                            from    NDXTmpKumUmsCustArtGrp
+                            where   NDXTmpKumUmsCustArtGrp.UmsSignature == l_copyTo2).recid;
+
+            update_recordset        table
+                setting             UmsSignature = l_copyTo2
+                where               table.UmsSignature == l_copyFrom2;
+
+            anzAfter  = (select     count(recid)
+                            from    NDXTmpKumUmsCustArtGrp
+                            where   NDXTmpKumUmsCustArtGrp.UmsSignature == l_copyTo2).recid;
+        }
+        if (_copyToOld)
+        {
+            info(strfmt("@NDX:NDXRecordsSavedIn", NDXHelperCommon::seconds2Str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone())), anzAfter - anzBefore, tableId2Name(table.TableId), l_copyTo2));       // [%1] [%2] Records in [%3] unter [%4] gesichert
+        }
+        else
+        {
+            info(strfmt("@NDX:NDXRecordsTransferedTo", NDXHelperCommon::seconds2Str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone())), anzAfter - anzBefore, tableId2Name(table.TableId), l_copyTo2));       // [%1] [%2] Records in [%3] unter [%4] übertragen
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.05.25
+    /// last modified: PaffH 03.07.25
+    /// </summary>
+    public void update()
+    {
+        str infoAddition = '';
+        System.Exception ex;
+        try
+        {
+            infoAddition = strFmt("@NDX:NDXErrorTmpKumUmsCustArtGrpAddition", sessionId(), this.Alliance, this.Child, this.ItemGroup, this.UmsSignature, this.MonthYearSignature);
+            infoAddition += strFmt(' RecId [%1]', this.RecId);
+            this.SessionIdLast = sessionId();
+            this.RecVersionLast = this.RecVersion;
+            if (NDXBatchProcessingParameters::find().WriteLog2File)
+            {
+                NDXHelperCommon::writeToTextFile(@'c:\logs\NDXBatchMultithreading.log', 
+                strFmt('time [%1]; session [%2]; Alliance [%3]; table [%4]; recid [%5]; recversion [%6]; type [%7]; action [%8]',
+                    NDXHelperCommon::miliseconds2Str(), 
+                    sessionId(), 
+                    this.Alliance,
+                    'NDXTmpKumUmsCustArtGrp',
+                    this.RecId,
+                    this.RecVersion,
+                    2,
+                    'NDXTmpKumUmsCustArtGrp.update()'));
+            }
+            super();
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= NDXExceptionConstants::Retry5)
+            {
+                infoAddition += NDXGlobalConstants::NewLine + 'NDXTmpKumUmsCustArtGrp:1160';
+                infoAddition += NDXGlobalConstants::NewLine + NDXHelperCommon::callStack2str();
+                Error(strFmt("@NDXBase:NDXDeadLock", tableId2Name(tableNum(NDXTmpKumUmsCustArtGrp))) + infoAddition);
+                throw;
+            }
+            else
+            {
+                sleep(NDXExceptionConstants::RetryInterval500);
+                retry;
+            }
+        }
+        catch (Exception::UpdateConflict)
+        {
+            infoAddition += NDXGlobalConstants::NewLine + 'NDXTmpKumUmsCustArtGrp:1171';
+            infoAddition += NDXGlobalConstants::NewLine + NDXHelperCommon::callStack2str();
+            Error(strFmt("@NDXBase:NDXUpdateConflict", tableId2Name(tableNum(NDXTmpKumUmsCustArtGrp))) + infoAddition);
+            throw;
+        }
+        catch (Exception::Error)
+        {
+            if (xSession::currentRetryCount() >= NDXExceptionConstants::Retry5)
+            {
+                infoAddition += NDXGlobalConstants::NewLine + 'NDXTmpKumUmsCustArtGrp:1178';
+                infoAddition += NDXGlobalConstants::NewLine + NDXHelperCommon::callStack2str();
+                Error(strFmt("@NDXBase:NDXTableError", tableId2Name(tableNum(NDXTmpKumUmsCustArtGrp))) + infoAddition);
+                throw;
+
+            }
+            else
+            {
+                sleep(NDXExceptionConstants::RetryInterval500);
+                retry;
+            }
+        }
+        catch (ex)
+        {
+            Error('Error: NDXTmpKumUmsCustArtGrp:1189');
+            str errorMessage = ex.Message + NDXGlobalConstants::NewLine;
+            errorMessage += ' NDXTmpKumUmsCustArtGrp:1178' + NDXGlobalConstants::NewLine;
+            errorMessage += NDXHelperCommon::callStack2str();
+            Error(errorMessage + infoAddition);
+            throw;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NDXTmpKumUmsCustArtGrpDev</DeveloperDocumentation>
+	<Label>@NDX:NDXTmpKumUmsCustArtGrp</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>ItemGroup</TitleField1>
+	<CacheLookup>Found</CacheLookup>
+	<ClusteredIndex>ArtGrpIdx</ClusteredIndex>
+	<ModifiedBy>Yes</ModifiedBy>
+	<ModifiedDateTime>Yes</ModifiedDateTime>
+	<PrimaryIndex>ArtGrpIdx</PrimaryIndex>
+	<ReplacementKey>ArtGrpIdx</ReplacementKey>
+	<SaveDataPerCompany>No</SaveDataPerCompany>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>U01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U12</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU12</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KU01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KU02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KU03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KU04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KU05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KU06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KU07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KU08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KU09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KU10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KU11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KU12</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVU01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVU02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVU03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVU04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVU05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVU06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVU07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVU08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVU09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVU10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVU11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVU12</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DiffU01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DiffU02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DiffU03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DiffU04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DiffU05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DiffU06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DiffU07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DiffU08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DiffU09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DiffU10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DiffU11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DiffU12</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B12</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB12</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KB01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KB02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KB03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KB04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KB05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KB06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KB07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KB08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KB09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KB10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KB11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KB12</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVB01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVB02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVB03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVB04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVB05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVB06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVB07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVB08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVB09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVB10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVB11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KVB12</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C12</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC12</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>anzChilds</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Company</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>UmsSignature</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MonthYearSignature</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesGroup</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesGroupChild</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Party</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PartyChild</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Alliance</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Child</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>UCSShareExcl</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VUCSShareExcl</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>UCSShare</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VUCSShare</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>UCSSharePercent</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VUCSSharePercent</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>UACSShare</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VUACSShare</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>UACSShareExcl</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VUACSShareExcl</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CCSShare</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VCCSShare</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Name</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ItemGroup</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DiffJahr</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>UmsAnteil</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>UmsSignature</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MonthYearSignature</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Company</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ItemGroup</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Alliance</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Child</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U01</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NXAU01</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U02</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NDXU02</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U03</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NXAU03</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U04</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NXAU04</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U05</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NXAU05</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U06</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NXAU06</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U07</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NXAU07</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U08</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NXAU08</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U09</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NXAU09</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U10</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NXAU10</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U11</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NXAU11</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U12</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NXAU12</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU01</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NDXVU01</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU02</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NDXVU02</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU03</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NDXVU03</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU04</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NDXVU04</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU05</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NDXVU05</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU06</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NDXVU06</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU07</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NDXVU07</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU08</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NDXVU08</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU09</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NDXVU09</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU10</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NDXVU10</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU11</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NDXVU11</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU12</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+			<Label>@NDX:NDXVU12</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KU01</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KU02</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KU03</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KU04</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KU05</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KU06</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KU07</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KU08</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KU09</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KU10</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KU11</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KU12</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVU01</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVU02</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVU03</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVU04</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVU05</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVU06</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVU07</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVU08</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVU09</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVU10</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVU11</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVU12</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DiffU01</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DiffU02</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DiffU03</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DiffU04</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DiffU05</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DiffU06</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DiffU07</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DiffU08</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DiffU09</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DiffU10</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DiffU11</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DiffU12</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B01</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B02</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B03</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B04</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B05</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B06</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B07</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B08</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B09</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B10</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B11</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B12</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB01</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB02</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB03</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB04</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB05</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB06</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB07</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB08</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB09</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB10</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB11</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB12</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KB01</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KB02</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KB03</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KB04</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KB05</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KB06</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KB07</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KB08</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KB09</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KB10</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KB11</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KB12</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVB01</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVB02</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVB03</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVB04</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVB05</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVB06</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVB07</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVB08</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVB09</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVB10</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVB11</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>KVB12</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C01</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C02</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C03</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C04</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C05</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C06</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C07</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C08</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C09</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C10</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C11</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C12</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC01</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC02</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC03</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC04</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC05</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC06</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC07</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC08</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC09</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC10</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC11</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC12</Name>
+			<ExtendedDataType>NDXCostAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>anzChilds</Name>
+			<ExtendedDataType>NDXanzChilds</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Company</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>NDXCompanys</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+			<EnumType>NDXCompanyBE</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>UmsSignature</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>NDXUmsSignature</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>MonthYearSignature</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>NDXMonthYearSignature</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SalesGroup</Name>
+			<ExtendedDataType>CommissSalesGroup</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SalesGroupChild</Name>
+			<ExtendedDataType>CommissSalesGroup</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>Party</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>PartyChild</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Alliance</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>NDXAlliance</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Child</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>CustAccount</ExtendedDataType>
+			<Label>@NDXBase:NDXAllianceChild</Label>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+			<Label>@NDXBase:NDXSalesYear</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>UCSShareExcl</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VUCSShareExcl</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>UCSShare</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VUCSShare</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>UCSSharePercent</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VUCSSharePercent</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>UACSShare</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VUACSShare</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>UACSShareExcl</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VUACSShareExcl</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>CCSShare</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VCCSShare</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Name</Name>
+			<ExtendedDataType>Name</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ItemGroup</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>NDXItemGroup</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DiffJahr</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>UmsAnteil</Name>
+			<ExtendedDataType>NDXUmsatz</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>SessionIdLast</Name>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>RecVersionLast</Name>
+			<ExtendedDataType>RecVersion</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>ArtGrpIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>UmsSignature</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>MonthYearSignature</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Company</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>ItemGroup</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Alliance</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Child</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>ChildIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>UmsSignature</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>MonthYearSignature</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Alliance</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Child</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>PartyIdIDx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>UmsSignature</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>MonthYearSignature</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Alliance</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Party</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>CommissionSalesGroup</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<RelatedTable>CommissionSalesGroup</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>SalesGroup</Name>
+					<SourceEDT>CommissSalesGroup</SourceEDT>
+					<Field>SalesGroup</Field>
+					<RelatedField>GroupId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>CustTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<RelatedTable>CustTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Child</Name>
+					<SourceEDT>CustAccount</SourceEDT>
+					<Field>Child</Field>
+					<RelatedField>AccountNum</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>CommissionSalesGroup_Child</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<RelatedTable>CommissionSalesGroup</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>SalesGroupChild</Name>
+					<SourceEDT>CommissSalesGroup</SourceEDT>
+					<Field>SalesGroupChild</Field>
+					<RelatedField>GroupId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>NDXSNAllianceItemGroupsRelation</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>NDXSNAllianceItemGroups</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Company</Name>
+					<Field>Company</Field>
+					<RelatedField>Companys</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>ItemGroup</Name>
+					<Field>ItemGroup</Field>
+					<RelatedField>ArtGrp</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Alliance</Name>
+					<Field>Alliance</Field>
+					<RelatedField>TOSId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

@@ -1,0 +1,386 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVALedgerJournalTransRepost</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA
+/// </summary>
+public final class AVALedgerJournalTransRepost extends RunBase
+{
+    LedgerJournalTrans                  ledgerJournalTrans;
+    LedgerJournalTrans_Project          sourceLedgerJournalTrans_Project; 
+    TaxAmount                           taxAmount;   
+   
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createLedgerTransProj</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_newledgerJournalTrans">LedgerJournalTrans</param>
+    void createLedgerTransProj(LedgerJournalTrans       _newledgerJournalTrans)
+    {
+        LedgerJournalTrans_Project         ledgerJournalTrans_Project;
+
+        if (sourceLedgerJournalTrans_Project.ProjId)
+        {
+            ledgerJournalTrans_Project.data(sourceLedgerJournalTrans_Project);
+            ledgerJournalTrans_Project.TransId = '';
+            ledgerJournalTrans_Project.RefRecId = _newLedgerJournalTrans.RecId;
+            ledgerJournalTrans_project.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createLedgerTransRepost</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>   
+    void createLedgerTransRepost()
+    {
+        LedgerJournalTrans      ledgerJournalTransRepost;
+        NoYes                   tax;
+        VendParameters          vendParameters;                                    // KCS/RAB/UL_01001021/22.03.2007
+
+        ledgerJournalTransRepost.data(ledgerJournalTrans);
+        tax = ledgerJournalTrans.ledgerJournalTable().LedgerJournalInclTax;
+
+        vendParameters = VendParameters::find();                                   // KCS/RAB/UL_01001021/22.03.2007
+
+
+        //if (ledgerJournalTrans.OffsetAccount)
+        if (ledgerJournalTrans.OffsetLedgerDimension)
+        {
+
+            ledgerJournalTransRepost.TransDate          = nextMth(ledgerJournalTrans.avaRepostPeriod) - 1;
+            ledgerJournalTransRepost.Voucher            = ledgerJournalTrans.Voucher + vendParameters.AVARepostPeriodeSuffix;
+            ledgerJournalTransRepost.JournalNum         = ledgerJournalTrans.JournalNum;
+            ledgerJournalTransRepost.Invoice            = ledgerJournalTrans.Invoice;
+            ledgerJournalTransRepost.LineNum            = ledgerJournalTrans.LineNum + 0.00002;
+
+            ledgerJournalTransRepost.AccountType        = LedgerJournalACType::Ledger;
+            if(ledgerJournalTransRepost.TransDate < ledgerJournalTrans.TransDate)
+            {
+                //ledgerJournalTransRepost.AccountNum      = vendParameters.AVALedgerAccountRepostPre;
+                ledgerJournalTransRepost.LedgerDimension = LedgerDefaultAccountHelper::getDefaultAccountFromMainAccountId(vendParameters.AVALedgerAccountRepostPre);
+            }
+            else
+            {
+                //ledgerJournalTransRepost.AccountNum      = vendParameters.AVALedgerAccountRepost;
+                ledgerJournalTransRepost.LedgerDimension = LedgerDefaultAccountHelper::getDefaultAccountFromMainAccountId(vendParameters.AVALedgerAccountRepost);
+            }
+            ledgerJournalTransRepost.DefaultDimension =
+                    LedgerDimensionFacade::getDefaultDimensionFromLedgerDimension(ledgerJournalTransRepost.LedgerDimension);
+
+            ledgerJournalTransRepost.LedgerDimension = LedgerDimensionFacade::serviceCreateLedgerDimension(
+                    ledgerJournalTransRepost.LedgerDimension, ledgerJournalTransRepost.DefaultDimension);
+
+            ledgerJournalTransRepost.LedgerDimension = LedgerDimensionFacade::serviceApplyFixedAndRecreateLedgerDimension(ledgerJournalTransRepost.LedgerDimension, Ledger::current());
+
+            ledgerJournalTransRepost.AmountCurDebit     = (tax && ledgerJournalTrans.AmountCurDebit) ? ledgerJournalTrans.AmountCurDebit - taxAmount : ledgerJournalTrans.AmountCurDebit;
+            ledgerJournalTransRepost.AmountCurCredit    = (tax && ledgerJournalTrans.AmountCurCredit) ? ledgerJournalTrans.AmountCurCredit - taxAmount : ledgerJournalTrans.AmountCurCredit;
+
+            ledgerJournalTransRepost.OffsetAccountType  = ledgerJournalTrans.OffsetAccountType;
+            //ledgerJournalTransRepost.OffsetAccount      = ledgerJournalTrans.OffsetAccount;
+            ledgerJournalTransRepost.OffsetLedgerDimension  = ledgerJournalTrans.OffsetLedgerDimension;
+
+            //ledgerJournalTransRepost.CurrencyCode       = ledgerJournalTrans.currencyCode();
+            ledgerJournalTransRepost.CurrencyCode       = ledgerJournalTrans.CurrencyCode;
+            ledgerJournalTransRepost.ExchRate           = ledgerJournalTrans.ExchRate;
+
+            ledgerJournalTransRepost.CashDiscCode       = '';
+            ledgerJournalTransRepost.CashDiscAmount     = 0;
+            ledgerJournalTransRepost.DateCashDisc       = dateNull();
+            ledgerJournalTransRepost.TaxItemGroup       = '';
+            ledgerJournalTransRepost.TaxGroup           = '';
+            //ledgerJournalTransRepost.KCS_RepostPeriodTrans = NoYes::Yes;           // KCS/THOMA/LU_TASK1235002468/15.02.2011
+        }
+        else
+        {
+            ledgerJournalTransRepost.TransDate          = nextMth(ledgerJournalTrans.AVARepostPeriod) - 1;
+            //--> KCS/HEFLT/LU_1235001056/02.03.2010
+//         ledgerJournalTransRepost.Voucher            = ledgerJournalTrans.Voucher;
+            ledgerJournalTransRepost.Voucher            = ledgerJournalTrans.Voucher + vendParameters.AVARepostPeriodeSuffix;
+            //<-- KCS/HEFLT/LU_1235001056/02.03.2010
+            ledgerJournalTransRepost.JournalNum         = ledgerJournalTrans.JournalNum;
+            ledgerJournalTransRepost.Invoice            = ledgerJournalTrans.Invoice;
+            ledgerJournalTransRepost.LineNum            = ledgerJournalTrans.LineNum + 0.00002;
+
+            ledgerJournalTransRepost.AccountType        = LedgerJournalACType::Ledger;
+            //ledgerJournalTransRepost.AccountNum         = ledgerJournalTrans.AccountNum;
+            ledgerJournalTransRepost.LedgerDimension    = ledgerJournalTrans.LedgerDimension;
+
+            ledgerJournalTransRepost.AmountCurDebit     = (tax && ledgerJournalTrans.AmountCurDebit) ? ledgerJournalTrans.AmountCurDebit - taxAmount : ledgerJournalTrans.AmountCurDebit;
+            ledgerJournalTransRepost.AmountCurCredit    = (tax && ledgerJournalTrans.AmountCurCredit) ? ledgerJournalTrans.AmountCurCredit - taxAmount : ledgerJournalTrans.AmountCurCredit;
+
+            ledgerJournalTransRepost.OffsetAccountType  = LedgerJournalACType::Ledger;
+            if(ledgerJournalTransRepost.TransDate < ledgerJournalTrans.TransDate)
+            {
+                //ledgerJournalTransRepost.OffsetAccount      = VendParameters::find().AVALedgerAccountRepostPre;
+                ledgerJournalTransRepost.OffsetLedgerDimension  = LedgerDefaultAccountHelper::getDefaultAccountFromMainAccountId(vendParameters.AVALedgerAccountRepostPre);
+            }
+            else
+            {
+                //ledgerJournalTransRepost.OffsetAccount      = VendParameters::find().AVALedgerAccountRepost;
+                ledgerJournalTransRepost.OffsetLedgerDimension  = LedgerDefaultAccountHelper::getDefaultAccountFromMainAccountId(vendParameters.AVALedgerAccountRepost);
+            }
+            ledgerJournalTransRepost.OffsetDefaultDimension =
+                    LedgerDimensionFacade::getDefaultDimensionFromLedgerDimension(ledgerJournalTransRepost.OffsetLedgerDimension);
+
+            ledgerJournalTransRepost.OffsetLedgerDimension = LedgerDimensionFacade::serviceCreateLedgerDimension(
+                    ledgerJournalTransRepost.OffsetLedgerDimension, ledgerJournalTransRepost.OffsetLedgerDimension);
+
+            ledgerJournalTransRepost.OffsetLedgerDimension = LedgerDimensionFacade::serviceApplyFixedAndRecreateLedgerDimension(ledgerJournalTransRepost.OffsetLedgerDimension, Ledger::current());
+
+
+            //ledgerJournalTransRepost.CurrencyCode       = ledgerJournalTrans.currencyCode();
+            ledgerJournalTransRepost.CurrencyCode       = ledgerJournalTrans.CurrencyCode;
+            ledgerJournalTransRepost.ExchRate           = ledgerJournalTrans.ExchRate;
+
+            ledgerJournalTransRepost.CashDiscCode       = '';
+            ledgerJournalTransRepost.CashDiscAmount     = 0;
+            ledgerJournalTransRepost.DateCashDisc       = dateNull();
+            ledgerJournalTransRepost.TaxItemGroup       = '';
+            ledgerJournalTransRepost.TaxGroup           = '';
+            //ledgerJournalTransRepost.KCS_RepostPeriodTrans = NoYes::Yes;           // KCS/THOMA/LU_TASK1235002468/15.02.2011
+        }
+
+        ledgerJournalTransRepost.insert();
+
+        this.createLedgerTransProj(ledgerJournalTransRepost);                      // KCS/FREIN/LU_TASK1235001981/29.11.2010
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createLedgerTransStorno</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    void createLedgerTransStorno()
+    {
+        LedgerJournalTrans      ledgerJournalTransStorno;
+        NoYes                   tax;
+        VendParameters          vendParameters;                                    // KCS/RAB/UL_01001021/22.03.2007
+
+        ledgerJournalTransStorno.data(ledgerJournalTrans);
+        tax = ledgerJournalTrans.ledgerJournalTable().LedgerJournalInclTax;
+
+        vendParameters = VendParameters::find();                                   // KCS/RAB/UL_01001021/22.03.2007
+
+        //if (ledgerJournalTrans.OffsetAccount)
+        if (ledgerJournalTrans.OffsetLedgerDimension)
+        {
+            ledgerJournalTransStorno.TransDate          = ledgerJournalTrans.TransDate;
+            ledgerJournalTransStorno.Voucher            = ledgerJournalTrans.Voucher;
+            ledgerJournalTransStorno.Invoice            = ledgerJournalTrans.Invoice;
+            ledgerJournalTransStorno.JournalNum         = ledgerJournalTrans.JournalNum;
+            ledgerJournalTransStorno.LineNum            = ledgerJournalTrans.LineNum + 0.00001;
+
+            ledgerJournalTransStorno.AccountType        = LedgerJournalACType::Ledger;
+
+            if((nextMth(ledgerJournalTrans.AVARepostPeriod) - 1) < ledgerJournalTrans.TransDate)
+            {
+                //ledgerJournalTransStorno.AccountNum      = vendParameters.AVALedgerAccountRepostPre;
+                ledgerJournalTransStorno.LedgerDimension    = LedgerDefaultAccountHelper::getDefaultAccountFromMainAccountId(vendParameters.AVALedgerAccountRepostPre);
+            }
+            else
+            {
+                //ledgerJournalTransStorno.AccountNum      = vendParameters.AVALedgerAccountRepost;
+                ledgerJournalTransStorno.LedgerDimension    = LedgerDefaultAccountHelper::getDefaultAccountFromMainAccountId(vendParameters.AVALedgerAccountRepost);
+            }
+            ledgerJournalTransStorno.DefaultDimension =
+                    LedgerDimensionFacade::getDefaultDimensionFromLedgerDimension(ledgerJournalTransStorno.LedgerDimension);
+
+            ledgerJournalTransStorno.LedgerDimension = LedgerDimensionFacade::serviceCreateLedgerDimension(
+                    ledgerJournalTransStorno.LedgerDimension, ledgerJournalTransStorno.DefaultDimension);
+
+            ledgerJournalTransStorno.LedgerDimension = LedgerDimensionFacade::serviceApplyFixedAndRecreateLedgerDimension(ledgerJournalTransStorno.LedgerDimension, Ledger::current());
+
+            ledgerJournalTransStorno.AmountCurDebit     = (tax && ledgerJournalTrans.AmountCurCredit) ? ledgerJournalTrans.AmountCurCredit - taxAmount : ledgerJournalTrans.AmountCurCredit;
+            ledgerJournalTransStorno.AmountCurCredit    = (tax && ledgerJournalTrans.AmountCurDebit) ? ledgerJournalTrans.AmountCurDebit - taxAmount : ledgerJournalTrans.AmountCurDebit;
+
+            ledgerJournalTransStorno.OffsetAccountType  = ledgerJournalTrans.OffsetAccountType;
+            //ledgerJournalTransStorno.OffsetAccount      = ledgerJournalTrans.OffsetAccount;
+            ledgerJournalTransStorno.OffsetLedgerDimension  = ledgerJournalTrans.OffsetLedgerDimension;
+
+            //ledgerJournalTransStorno.CurrencyCode       = ledgerJournalTrans.currencyCode();
+            ledgerJournalTransStorno.CurrencyCode       = ledgerJournalTrans.CurrencyCode;
+            ledgerJournalTransStorno.ExchRate           = ledgerJournalTrans.ExchRate;
+
+            ledgerJournalTransStorno.CashDiscCode       = '';
+            ledgerJournalTransStorno.CashDiscAmount     = 0;
+            ledgerJournalTransStorno.DateCashDisc       = dateNull();
+            ledgerJournalTransStorno.TaxItemGroup       = '';
+            ledgerJournalTransStorno.TaxGroup           = '';
+        }
+        else
+        {
+            ledgerJournalTransStorno.TransDate          = ledgerJournalTrans.TransDate;
+            ledgerJournalTransStorno.Voucher            = ledgerJournalTrans.Voucher;
+            ledgerJournalTransStorno.Invoice            = ledgerJournalTrans.Invoice;
+            ledgerJournalTransStorno.JournalNum         = ledgerJournalTrans.JournalNum;
+            ledgerJournalTransStorno.LineNum            = ledgerJournalTrans.LineNum + 0.00001;
+
+            ledgerJournalTransStorno.AccountType        = LedgerJournalACType::Ledger;
+            //ledgerJournalTransStorno.AccountNum         = ledgerJournalTrans.AccountNum;
+            ledgerJournalTransStorno.LedgerDimension    = ledgerJournalTrans.LedgerDimension;
+
+            ledgerJournalTransStorno.AmountCurDebit     = (tax && ledgerJournalTrans.AmountCurCredit) ? ledgerJournalTrans.AmountCurCredit - taxAmount : ledgerJournalTrans.AmountCurCredit;
+            ledgerJournalTransStorno.AmountCurCredit    = (tax && ledgerJournalTrans.AmountCurDebit) ? ledgerJournalTrans.AmountCurDebit - taxAmount : ledgerJournalTrans.AmountCurDebit;
+
+            ledgerJournalTransStorno.OffsetAccountType  = LedgerJournalACType::Ledger;
+
+            if((nextMth(ledgerJournalTrans.AVARepostPeriod) - 1) < ledgerJournalTrans.TransDate)
+            {
+                //ledgerJournalTransStorno.OffsetAccount      = vendParameters.AVALedgerAccountRepostPre;
+                ledgerJournalTransStorno.OffsetLedgerDimension  = LedgerDefaultAccountHelper::getDefaultAccountFromMainAccountId(vendParameters.AVALedgerAccountRepostPre);
+            }
+            else
+            {
+                //ledgerJournalTransStorno.OffsetAccount      = vendParameters.AVALedgerAccountRepost;
+                ledgerJournalTransStorno.OffsetLedgerDimension  = LedgerDefaultAccountHelper::getDefaultAccountFromMainAccountId(vendParameters.AVALedgerAccountRepost);
+            }
+            ledgerJournalTransStorno.OffsetDefaultDimension =
+                LedgerDimensionFacade::getDefaultDimensionFromLedgerDimension(ledgerJournalTransStorno.OffsetLedgerDimension);
+
+            ledgerJournalTransStorno.OffsetLedgerDimension = LedgerDimensionFacade::serviceCreateLedgerDimension(
+                    ledgerJournalTransStorno.OffsetLedgerDimension, ledgerJournalTransStorno.OffsetLedgerDimension);
+
+            ledgerJournalTransStorno.OffsetLedgerDimension = LedgerDimensionFacade::serviceApplyFixedAndRecreateLedgerDimension(ledgerJournalTransStorno.OffsetLedgerDimension, Ledger::current());
+
+            //ledgerJournalTransStorno.CurrencyCode       = ledgerJournalTrans.currencyCode();
+            ledgerJournalTransStorno.CurrencyCode       = ledgerJournalTrans.CurrencyCode;
+            ledgerJournalTransStorno.ExchRate           = ledgerJournalTrans.ExchRate;
+
+            ledgerJournalTransStorno.CashDiscCode       = '';
+            ledgerJournalTransStorno.CashDiscAmount     = 0;
+            ledgerJournalTransStorno.DateCashDisc       = dateNull();
+            ledgerJournalTransStorno.TaxItemGroup       = '';
+            ledgerJournalTransStorno.TaxGroup           = '';
+        }
+
+        ledgerJournalTransStorno.insert();
+
+        this.createLedgerTransProj(ledgerJournalTransStorno);                      // KCS/FREIN/LU_TASK1235001981/29.11.2010
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmLedgerJournalTrans</Name>
+				<Source><![CDATA[
+    LedgerJournalTrans parmLedgerJournalTrans(LedgerJournalTrans _ledgerJournalTrans)
+    {
+        ledgerJournalTrans = _ledgerJournalTrans;
+
+        return ledgerJournalTrans;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSourceLedgerJournalTrans_Project</Name>
+				<Source><![CDATA[
+    public LedgerJournalTrans_Project parmSourceLedgerJournalTrans_Project(LedgerJournalTrans_Project _sourceLedgerJournalTrans_Project = sourceLedgerJournalTrans_Project)
+    {
+        sourceLedgerJournalTrans_Project = _sourceLedgerJournalTrans_Project;
+
+        return sourceLedgerJournalTrans_Project;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmTaxAmount</Name>
+				<Source><![CDATA[
+    public TaxAmount parmTaxAmount(TaxAmount _taxAmount = TaxAmount)
+    {
+        taxAmount = _taxAmount;
+        return taxAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        try
+        {
+
+            if (!ledgerJournalTrans.AVARepostPeriod)
+            {
+                return;
+            }
+
+            if (DialogButton::No == Box::yesNo(strfmt("@NDX:NXARepostDlg", nextMth(ledgerJournalTrans.AVARepostPeriod) - 1), DialogButton::Yes, "@NDX:NXARepostPeriod"))
+            {
+                return;
+            }
+
+            ttsbegin;
+
+            this.createLedgerTransStorno();
+            this.createLedgerTransRepost();
+
+            ttscommit;
+        }
+
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        AVALedgerJournalTransRepost     LedgerJournalTransRepost;
+        //FormDataSource                  formDataSource;
+        LedgerJournalTrans              ledgerJournalTrans;
+
+        //formDataSource = _args.record().dataSource();
+
+        LedgerJournalTransRepost = new AVALedgerJournalTransRepost();
+        LedgerJournalTransRepost.parmLedgerJournalTrans(_args.record());
+
+        //LedgerJournalTransRepost.run();
+        LedgerJournalTransRepost.runOperation();
+
+        ledgerJournalTrans = _args.record();
+        //formDataSource.executeQuery();
+        //formDataSource.findRecord(ledgerJournalTrans);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    protected boolean canRunInNewSession()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

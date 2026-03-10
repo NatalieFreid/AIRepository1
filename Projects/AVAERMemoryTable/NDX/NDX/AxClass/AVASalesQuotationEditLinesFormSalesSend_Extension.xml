@@ -1,0 +1,454 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesQuotationEditLinesFormSalesSend_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(classStr(SalesQuotationEditLinesForm_Sales_Send))]
+final class AVASalesQuotationEditLinesFormSalesSend_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaDeleteProforma</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Delete custQuotationJour record if  SendMode is Proforma
+    /// </summary>
+    public void avaDeleteProforma()
+    {
+        if (custQuotationJour.KCS_SendMode == KCS_SendMode::Proforma)
+        {
+            custQuotationJour.delete();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>renderingCompleted</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_sender">SrsReportRunController</param>
+    /// <param name = "_eventArgs">SrsRenderingCompletedEventArgs</param>
+    public static void renderingCompleted(SrsReportRunController _sender, SrsRenderingCompletedEventArgs _eventArgs)
+    {
+        if (classIdGet(_sender.parmArgs().caller()) == classNum(  SalesQuotationEditLinesForm_Sales_Send))
+        {
+            // from the sender get the underyling SalesConfirmJournalPrint instance
+            SalesQuotationEditLinesForm_Sales_Send callerSales = _sender.parmArgs().caller();
+        
+            if (callerSales)
+            {
+                callerSales.avaDeleteProforma();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>writeJournalLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    protected void writeJournalLine()
+    {
+        if (this.parmPrintWeights())
+        {
+            custQuotationTrans.KCS_GrossWeightME          = custQuotationTrans.AVAsetWeightPE(salesQuotationLine);
+            custQuotationTrans.KCS_GrossWeightTotal       = custQuotationTrans.AVAsetWeightTotal(salesQuotationLine, custQuotationTrans.KCS_GrossWeightME);
+        }
+
+        next writeJournalLine();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>writeJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    protected void writeJournal()
+    {
+        AVASpecialDiscQuotationJour         specialDiscQuotationJour;
+        //CustQuotationTrans                  custQuotationTrans;
+        AmountMST                           quotLineAmount;
+        AmountCur                           locQuotationBaseAmount;
+        custQuotationJour                   locJour;
+        //salesQuotationTable                 salesQuotationTable;
+        DocuRef                             docuRef;
+        DocuTypeId                          GAEBDocuTypeId;
+
+        next writeJournal();
+
+        this.avaDocuRefQuickCopy();
+
+        GAEBDocuTypeId  = smmParametersTable::find().KCS_DocuTypeIdForGAEB;
+
+        delete_from docuRef where docuRef.RefTableId == tableNum(CustQuotationJour)
+                                          && docuRef.RefRecId == custQuotationJour.RecId
+                                          && docuRef.TypeId == GAEBDocuTypeId;
+
+        specialDiscQuotationJour.initFromQuotationJour(this.custQuotationJour, this.salesQuotationTable().QuotationId);
+        specialDiscQuotationJour.insert();
+        /* no simple sum up of LineAmount
+        select sum(LineAmount)  from custQuotationTrans
+            where   custQuotationTrans.QuotationId      == custQuotationJour.QuotationId
+                &&  custQuotationTrans.QuotationDate    == custQuotationJour.QuotationDate
+                &&  custQuotationTrans.SalesId          == custQuotationJour.SalesId;
+        quotLineAmount = custQuotationTrans.LineAmount;
+        */
+        locQuotationBaseAmount = custQuotationJour.displayAVABaseAmount(false);
+                
+        locJour = custQuotationJour;
+        this.parmCustQuotationJourRecId(custQuotationJour.RecId);
+        locJour.selectForUpdate();
+        //quotLineAmount = quotLineAmount - specialDiscQuotationJour.SpecialDiscountAmount1 - specialDiscQuotationJour.SpecialDiscountAmount2 - specialDiscQuotationJour.SpecialDiscountAmount3;
+        quotLineAmount = locQuotationBaseAmount - specialDiscQuotationJour.displaySpecialDiscountAmountSum();
+        locJour.KCS_QuotationAmount = quotLineAmount;
+        locJour.KCS_SendMode        = this.parmSendMode();
+        locJour.KCS_printWeights    = this.parmPrintWeights();
+        if (locjour.kcs_printWeights)
+        {
+            locJour.KCS_TotalWeight = locJour.AVAsetWeightTotal(this.salesQuotationTable());
+        }
+
+        //locJour.AVAQuotationMatValue = this.avaCalcQuotationMatValue(custQuotationJour.QuotationId, custQuotationJour.QuotationDate);
+        locJour.AVAQuotationMatValue = locQuotationBaseAmount;
+
+        locJour.doUpdate();
+        //select firstonly forupdate salesQuotationTable where salesQuotationTable.QuotationId == locJour.KCS_QuotationId;
+       
+       // this.salesQuotationTable(salesQuotationTable);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDocuRefQuickCopy</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/08/20   AVA_013264_SalesQuotationProforma_DocuRef
+    /// </summary>
+    public void avaDocuRefQuickCopy()
+    {
+        DocuRef                 docuRef;
+        DocuRef                 copyDocuRef;
+        RecordInsertList        docuRefInsertList = new RecordInsertList(tableNum(DocuRef));
+        CustQuotationTrans      locCustQuotationTrans;
+        SalesQuotationLine      locSalesQuotationLine;
+
+        delete_from docuRef where docuRef.RefTableId == tableNum(CustQuotationJour)
+            && docuRef.RefRecId == custQuotationJour.RecId;
+        while select locCustQuotationTrans
+                           where locCustQuotationTrans.QuotationId   == custQuotationJour.QuotationId
+                           && locCustQuotationTrans.QuotationDate == custQuotationJour.QuotationDate
+        {
+            delete_from docuRef where docuRef.RefTableId == tableNum(CustQuotationTrans)
+            && docuRef.RefRecId == locCustQuotationTrans.RecId;
+        }
+
+        while select docuRef order by KCS_TCVLineNum
+            where docuRef.RefTableId == tableNum(SalesQuotationTable)
+               && docuRef.RefRecId   == salesQuotationTable.RecId
+        {
+            copyDocuRef.clear();
+            copyDocuRef.data(docuRef);
+            copyDocuRef.RefTableId = tableNum(CustQuotationJour);
+            copyDocuRef.RefRecId   = custQuotationJour.RecId;
+            docuRefInsertList.add(copyDocuRef);
+        }
+
+        while select docuRef order by KCS_TCVLineNum
+            join  locSalesQuotationLine
+                where locSalesQuotationLine.TableId == docuRef.RefTableId
+                   && locSalesQuotationLine.RecId   == docuRef.RefRecId
+                   && locSalesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+                     join locCustQuotationTrans
+                        where locCustQuotationTrans.InventTransId == locSalesQuotationLine.InventTransId
+                           && locCustQuotationTrans.QuotationId   == custQuotationJour.QuotationId
+                           && locCustQuotationTrans.QuotationDate == custQuotationJour.QuotationDate
+        {
+            copyDocuRef.clear();
+            copyDocuRef.data(docuRef);
+            copyDocuRef.RefTableId = tableNum(CustQuotationTrans);
+            copyDocuRef.RefRecId   = locCustQuotationTrans.RecId;
+            docuRefInsertList.add(copyDocuRef);
+        }
+
+        docuRefInsertList.insertDatabase();
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postUpdate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// defined from AVA
+    /// </summary>
+    void postUpdate()
+    {
+       
+        // salesQuotationTable.selectForUpdate(true);
+    
+        next postUpdate();
+        salesQuotationTable.AVAKBVRequestTablePostUpdate();
+        this.updateMasterPriceMark();
+        this.updateSalesQuotationTableStatus();
+        this.updateAllSpecialDiscFactor();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeSalesQuotationTableFromDocumentStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_salesQuotationTable">SalesQuotationTable</param>
+    protected void initializeSalesQuotationTableFromDocumentStatus(SalesQuotationTable _salesQuotationTable)
+    {
+        //AVASpecialDiscQuotation         specialDiscountQuotation = AVASpecialDiscQuotation::find(_salesQuotationTable.QuotationId);
+        //AmountCur                       specialDiscountAmount1, specialDiscountAmount2, specialDiscountAmount3;
+
+        next initializeSalesQuotationTableFromDocumentStatus(_salesQuotationTable);
+
+        if (salesQuotationTable
+            && this.parmSendMode() != KCS_SendMode::Proforma)
+        {
+            //CustQuotationTrans  custQuotationTrans;
+            LineAmount          quotLineAmount;
+
+            /* no simple sum up of LineAmount
+            select sum(LineAmount)  from custQuotationTrans
+            where custQuotationTrans.QuotationId   == custQuotationJour.QuotationId
+               && custQuotationTrans.QuotationDate == custQuotationJour.QuotationDate
+              && custQuotationTrans.SalesId       == custQuotationJour.SalesId;
+
+            quotLineAmount = custQuotationTrans.LineAmount;
+
+            SpecialDiscountAmount1     = decRound(quotLineAmount*specialDiscountQuotation.SpecialDiscountPct1/100,2);
+            SpecialDiscountAmount2     = decRound((quotLineAmount - SpecialDiscountAmount1) *specialDiscountQuotation.SpecialDiscountPct2/100,2);
+            SpecialDiscountAmount3     = decRound((quotLineAmount - SpecialDiscountAmount1 - SpecialDiscountAmount2) *specialDiscountQuotation.SpecialDiscountPct3/100,2);
+            quotLineAmount = quotLineAmount - SpecialDiscountAmount1 - SpecialDiscountAmount2 - SpecialDiscountAmount3;
+            */
+            
+            quotLineAmount = custQuotationJour.displayAVABaseAmount() - custQuotationJour.avaSpecialDiscAmount(true); // amount special discounts included
+
+            _salesQuotationTable.AVAPosted              = NoYes::Yes;
+            _salesQuotationTable.AVAPostedEnum          = AVAPostedEnum::Posted;
+            _salesQuotationTable.KCS_QuotationAmount    = quotLineAmount;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmJournalList</Name>
+				<Source><![CDATA[
+    public RecordSortedList parmJournalList(RecordSortedList _journalList = journalList)
+    {
+        journalList = _journalList;
+        return journalList;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCustQuotationJour</Name>
+				<Source><![CDATA[
+    public CustQuotationJour parmCustQuotationJour(CustQuotationJour _custQuotationJour = this.custQuotationJour)
+    {
+        this.custQuotationJour = _custQuotationJour;
+        return this.custQuotationJour;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSalesQuotationParmTable</Name>
+				<Source><![CDATA[
+    public SalesQuotationParmTable parmSalesQuotationParmTable(SalesQuotationParmTable _SalesQuotationParmTable = this.salesQuotationParmTable)
+    {
+        this.salesQuotationParmTable = _SalesQuotationParmTable;
+        return this.salesQuotationParmTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcQuotationMatValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA <c>avaCalcQuotationMatValue</c>
+    /// </summary>
+    /// <param name = "_quotationId">QuotationId</param>
+    /// <param name = "_quotationDate">TransDate</param>
+    /// <returns>AVAQuotationMatValue</returns>
+    public AVAQuotationMatValue avaCalcQuotationMatValue(
+        QuotationId _quotationId,
+        TransDate _quotationDate)
+    {
+        AVAQuotationMatValue avaMatValue;
+
+        avaMatValue = this.avaMatValueNoInt(_quotationId, _quotationDate) + this.avaMatValueFirstInt(_quotationId, _quotationDate);
+
+        return avaMatValue;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaMatValueNoInt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_quotationId">QuotationId</param>
+    /// <param name = "_quotationDate">TransDate</param>
+    /// <returns>AmountCur</returns>
+    public AmountCur avaMatValueNoInt(
+        QuotationId _quotationId,
+        TransDate _quotationDate)
+    {
+        CustQuotationTrans avaCustQuotationTrans;
+
+        select sum(LineAmount) from avaCustQuotationTrans
+            where avaCustQuotationTrans.QuotationId == _quotationId
+            && avaCustQuotationTrans.QuotationDate == _quotationDate
+            && avaCustQuotationTrans.KCS_QLInternalPosition == 0
+            && avaCustQuotationTrans.KCS_CRMIsAlternativeLine == NoYes::No;
+
+        return avaCustQuotationTrans.LineAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaMatValueFirstInt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_quotationId">QuotationId</param>
+    /// <param name = "_quotationDate">TransDate</param>
+    /// <returns>KCS_QLLVAmount</returns>
+    public KCS_QLLVAmount avaMatValueFirstInt(
+        QuotationId _quotationId,
+        TransDate _quotationDate)
+    {
+        CustQuotationTrans avaCustQuotationTrans;
+
+        select sum(KCS_QLLVAmount) from avaCustQuotationTrans
+            where avaCustQuotationTrans.QuotationId == _quotationId
+            && avaCustQuotationTrans.QuotationDate == _quotationDate
+            && avaCustQuotationTrans.KCS_QLInternalPosition == 1
+            && avaCustQuotationTrans.KCS_CRMIsAlternativeLine == NoYes::No;
+
+        return avaCustQuotationTrans.KCS_QLLVAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>queryBuildSalesQuotationTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <returns>QueryRun</returns>
+    QueryRun  queryBuildSalesQuotationTable()
+    {
+        QueryRun locQueryRun;
+
+        this.skipQueryStatusFilter(true);
+
+        locQueryRun = next queryBuildSalesQuotationTable();
+
+        return locQueryRun;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateMasterPriceMark</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    void updateMasterPriceMark()
+    {
+        if (!salesQuotationParmUpdate.proforma)
+        {
+            salesQuotationLine  locSalesQuotationLine;
+            update_recordset locSalesQuotationLine
+            setting KCS_CalcMark = ''
+            where locSalesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+            && locSalesQuotationLine.KCS_CalcMark == 'M';
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateSalesQuotationTableStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    void updateSalesQuotationTableStatus()
+    {
+        KCS_QuotationStatus        quotationStatus;
+        SalesQuotationTable        locSalesQuotationTable;
+        select firstonly quotationStatus
+            where quotationStatus.KCS_SalesQuotationStatus == SalesQuotationStatus::Sent;
+
+        if (quotationStatus)
+        {
+            locSalesQuotationTable = SalesQuotationTable::find(salesQuotationTable.QuotationId);
+            if (locSalesQuotationTable.KCS_StatusId == '0')
+            {
+                locSalesQuotationTable.KCS_StatusId = quotationStatus.KCS_StatusId;
+                locSalesQuotationTable.selectForUpdate(true);
+                locSalesQuotationTable.doUpdate();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateAllSpecialDiscFactor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    void updateAllSpecialDiscFactor()
+    {
+        SalesQuotationTable             locSalesQuotationTable;
+            
+        AVASpecialDiscQuotationJour     specialDiscQuotationJour = AVASpecialDiscQuotationJour::findQuotation(custQuotationJour.RecId);
+
+        locSalesQuotationTable = SalesQuotationTable::find(salesQuotationTable.QuotationId);
+        locSalesQuotationTable.AVASpecialDiscFactor  = specialDiscQuotationJour.AllDiscountFactor;
+        locSalesQuotationTable.selectForUpdate(true);
+        locSalesQuotationTable.doUpdate();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

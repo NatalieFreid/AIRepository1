@@ -1,0 +1,466 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVARUMSalesLineDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// The <c>AVARUMSalesTableFrm_SalesLineDS_SalesQtyFld_Extension</c> class  
+/// </summary>
+/// <remarks>
+/// Modified for price recalculation
+/// </remarks>
+[ExtensionOf(tableStr(SalesLine))]
+final class AVARUMSalesLineDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes the values of the extended fields.
+    /// </summary>
+    /// <param name = "_salesType">The saley type</param>
+    void initValue(SalesType _salesType)
+    {
+        next initValue(_salesType);
+
+        this.AVARUMUnitConvertFactor = 1;
+        this.AVARUMPriceUnitID = this.inventTable().salesUnitId();
+        this.AVARUMUnitConversionText = '';
+        this.AVARUMSpecialSalesPrice = NoYes::No;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>delete</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Deletes the sales line and call custom delete logic for e.g. DSD positions.
+    /// </summary>
+    /// <param name = "childBuffer">The child buffer.</param>
+    /// <param name = "updateOrderLineOfDeliverySchedule">Indicates whether to update the order line of the delivery schedule.</param>
+    void delete(Common childBuffer, boolean updateOrderLineOfDeliverySchedule)
+    {
+        SalesLine salesLineDSD;
+
+        next delete(childBuffer, updateOrderLineOfDeliverySchedule);
+
+        if (!this.AVARUMDSDPos)
+        {
+            select firstonly forupdate salesLineDSD
+                where salesLineDSD.AVARUMSalesLineRef == this.InventTransId;
+
+            if (salesLineDSD.RecId && salesLineDSD.AVARUMDSDPos)
+            {
+                salesLineDSD.delete();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcLineAmountForcedInteraction</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calculates of line amount forced with user interaction if associated link to agreement order line becomes invalid.
+    /// </summary>
+    /// <param name="_fieldId">
+    /// The field ID of the field which changes require recalculation of line amount.
+    /// </param>
+    /// <param name="_qty">
+    /// The sales quantity used for calculating the line amount.
+    /// </param>
+    /// <param name="_recalcValidLink">
+    /// A Boolean value that indicates whether to calculate line amount if the agreement link is valid; optional.
+    /// </param>
+    /// <returns>
+    /// The line amount.
+    /// </returns>
+    /// <remarks>
+    /// Used when there is a need for the option to dissociate agreement order line via prompt if changes will make the existing association to a agreement order line invalid.
+    /// </remarks>
+    public AmountCur calcLineAmountForcedInteraction(FieldId _fieldId, Qty _qty, boolean _recalcValidLink)
+    {
+        AmountCur amount;
+
+        amount = next calcLineAmountForcedInteraction(_fieldId,_qty, _recalcValidLink);
+
+        if (_recalcValidLink && this.AVARUMUnitConvertFactor != 1 && this.AVARUMPriceUnitID != this.SalesUnit)
+        {
+            amount = this.calcLineAmountForced(_qty * this.AVARUMUnitConvertFactor);
+        }
+
+        return amount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>inventUnitId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the  unit for the item.
+    /// </summary>
+    /// <returns>
+    /// The  unit for the item.
+    /// </returns>
+    //[SysClientCacheDataMethodAttribute(true)]
+    public display UnitOfMeasureSymbol inventUnitId()
+    {
+        return this.inventTable().inventUnitId();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>salesUnitId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the sales unit for the item.
+    /// </summary>
+    /// <returns>The sales unit for the item.</returns>    
+    //[SysClientCacheDataMethodAttribute(true)]
+    public display SalesUnit salesUnitId()
+    {
+        InventTableModule inventTableModule;
+
+        inventTableModule = this.inventTableModule_AVA();
+
+        return inventTableModule.UnitId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setPriceDiscUnitDependant</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the price and discount on the sales line, depending on the sales unit.
+    /// </summary>
+    public void setPriceDiscUnitDependant()
+    {
+        InventDim inventDim;
+        AVARUMUnitConversionItem conversion;
+        InventTableModule inventTableModule;
+
+        conversion = AVARUMUnitConversionItem::default();
+        inventTableModule = this.inventTableModule_AVA();
+       
+        if (this.SalesUnit != this.inventUnitId())
+        {
+            inventDim.ConfigId = this.inventDim().configId;
+            
+            if (inventDim.ConfigId)
+            {
+                inventDim = InventDim::findOrCreate(inventDim);
+            }
+
+            conversion = UnitOfMeasureConversion::getUnitConversion_AVA
+            (
+                this.ItemId,
+                inventDim.inventDimId,
+                this.SalesUnit,
+                this.SalesQty,
+                this.AVARUMPriceUnitID
+            );
+        }
+
+        this.AVARUMUnitConversionText = conversion.paramText();
+        this.AVARUMUnitConvertFactor = conversion.paramFactor();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>salesUnitModified</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Changes the sales line, depending on changes in the sales unit field.
+    /// </summary>
+    /// <remarks>
+    /// Called from the <c>modifiedField</c> method.
+    /// </remarks>
+    public void salesUnitModified()
+    {        
+        next salesUnitModified();
+
+        this.setCustomFields_AVA();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Method called when a field is modified.
+    /// </summary>
+    /// <param name = "_fieldId">The field Id of the modified field.</param>
+    public void modifiedField(FieldId _fieldId)
+    {
+        next modifiedField(_fieldId);
+
+        switch (_fieldId)
+        {
+            case fieldNum(SalesLine, SalesUnit):
+            case fieldNum(SalesLine, SalesPrice):
+            case fieldNum(SalesLine, PriceUnit):
+                /// Set custom fields when one of the relevant fields are modified
+                this.setCustomFields_AVA();
+
+                /// If the sales unit has been changed and the price is manually changed
+                /// the price disc policy dialog will be shown and the user can reset the price.
+                /// To reflect this the flag AVARUMSpecialSalesPrice must be reevaluated.
+                this.setIsSpecialSalesPrice_AVA();
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setSalesAndPriceUnit_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the sales and price unit based on the inventory table module.
+    /// </summary>
+    public void setSalesAndPriceUnit_AVA()
+    {
+        InventTableModule inventTableModule;
+
+        inventTableModule = this.inventTableModule_AVA();
+
+        if (inventTableModule && inventTableModule.UnitId && inventTableModule.UnitId != this.SalesUnit)
+        {
+            this.SalesUnit = inventTableModule.UnitId;
+            this.PriceUnit = inventTableModule.PriceUnit;
+
+            this.modifiedField(fieldNum(SalesLine, SalesUnit));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>inventTableModule_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds the inventory table module for the current sales line.
+    /// </summary>
+    /// <returns>Corresponding InventTableModule</returns>
+    public InventTableModule inventTableModule_AVA()
+    {
+        InventDimCombination inventDimCombination;
+        InventTableModule inventTableModule;        
+        EcoResDistinctProductVariant productVariant; 
+
+        inventDimCombination=InventDimCombination::findByInventDim(this.ItemId, this.inventDim());
+        if (inventDimCombination)
+        {                        
+            inventTableModule = InventTableModule::findByProductVariant_AVA
+            (
+                inventDimCombination.DistinctProductVariant,
+                ModuleInventPurchSales::AVARUMSalesForProductVariants
+            );
+        }
+
+        if (!inventTableModule || !inventTableModule.AVARUMOverrideSettings)
+        {
+            inventTableModule = InventTableModule::find(this.ItemId, ModuleInventPurchSales::Sales);
+        }
+
+        return inventTableModule;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setIsSpecialSalesPrice_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the AVARUMSpecialSalesPrice field to indicate if the sales price has been changed manually.
+    /// </summary>
+    public void setIsSpecialSalesPrice_AVA()
+    {
+        SalesLine salesLineCopy;
+
+        /// Create a copy of the current sales line
+        salesLineCopy.SalesId = this.SalesId;
+        salesLineCopy.ItemId = this.ItemId;
+        salesLineCopy.RetailVariantId = this.RetailVariantId;
+        salesLineCopy.SalesUnit = this.SalesUnit;
+        salesLineCopy.SalesQty = this.SalesQty;
+        salesLineCopy.CurrencyCode = this.CurrencyCode;
+        salesLineCopy.InventDimId = this.InventDimId;
+        salesLineCopy.DeliveryType = this.DeliveryType;
+        salesLineCopy.QtyOrdered = this.QtyOrdered;
+        salesLineCopy.CustAccount = this.CustAccount;
+
+        /// Set the price and discount on the copy of the sales line
+        salesLineCopy.setPriceDisc(salesLineCopy.inventDim());
+
+        /// Determine if the sales price has been changed manually
+        this.AVARUMSpecialSalesPrice = salesLineCopy.SalesPrice != this.SalesPrice;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setCustomFields_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets custom fields
+    /// </summary>
+    public void setCustomFields_AVA()
+    {
+        SalesPrice pricePerSalesUnit;
+        priceUnit priceUnit;
+        InventTableModule inventTableModule;    
+
+        inventTableModule = this.inventTableModule_AVA();
+        this.AVARUMPriceUnitID = inventTableModule.UnitId;
+        
+        this.setPriceDiscUnitDependant();
+
+        priceUnit = this.priceUnit ? this.priceUnit : 1;
+        pricePerSalesUnit = (this.SalesPrice / priceUnit); // * (this.AVARUMUnitConvertFactor ? this.AVARUMUnitConvertFactor : 1);
+       
+        this.AVARUMSalesPricePerUnit = pricePerSalesUnit;
+        this.LineAmount = this.calcLineAmountForced(this.SalesQty); // * (this.AVARUMUnitConvertFactor ? this.AVARUMUnitConvertFactor : 1));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>custName_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns the customer name for the current purchase line
+    /// </summary>
+    /// <returns>Customer name </returns>
+    //[SysClientCacheDataMethodAttribute(true)]
+    public display CustName custName_AVA()
+    {
+        return CustTable::find(this.CustAccount).name();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>distinctProductVariant_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns the distinct product variant associated with the retail variant id
+    /// </summary>
+    /// <returns>Distinct product variant</returns>
+    public EcoResDistinctProductVariant distinctProductVariant_AVA(InventDim _inventDim=this.inventDim())
+    {
+        EcoResDistinctProductVariant distinctProductVariant;   
+        InventDimCombination inventDimCombination;
+
+        inventDimCombination=InventDimCombination::findByInventDim(this.ItemId, _inventDim);
+        distinctProductVariant=EcoResDistinctProductVariant::find(inventDimCombination.DistinctProductVariant);
+
+        return distinctProductVariant;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>prodId_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns the producttion ID for the current sales line.
+    /// </summary>
+    /// <returns>Producttion ID</returns>
+    public display ProdId prodId_AVA()
+    {
+        return ProdTable::findSalesRefTransId_AVA(this.InventTransId).ProdId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>itemIdChanged</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Handles changes to the item ID field.
+    /// </summary>
+    /// <param name = "_resetPrice">Reset price</param>
+    /// <param name = "_matchingAgreement">Matching agreement</param>
+    /// <param name = "_performProductVariantValidation">Perform product variant validation</param>
+    /// <returns>Resulting container</returns>
+    public container itemIdChanged(boolean _resetPrice, AgreementHeaderRecId _matchingAgreement, boolean _performProductVariantValidation)
+    {
+        container result;
+        RetailVariantId retailVariantIdBefore;
+
+        retailVariantIdBefore = this.orig().RetailVariantId;
+        result = next itemIdChanged(_resetPrice, _matchingAgreement, _performProductVariantValidation);
+
+        if (retailVariantIdBefore && this.RetailVariantId != retailVariantIdBefore)
+        {
+            this.modifiedField(fieldNum(SalesLine, RetailVariantId));
+        }
+
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifyInventDim</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the related fields when an inventory dimension field is modified.
+    /// </summary>
+    /// <param name="_inventDim">
+    /// The new inventory dimension record.
+    /// </param>
+    /// <param name="_dimFieldId">
+    /// The ID of the modified <c>InventDim</c> field.
+    /// </param>
+    /// <param name="_resetPrice">
+    /// A Boolean value that indicates whether the price agreements are to be reset.
+    /// </param>
+    public boolean modifyInventDim(InventDim _inventDim, FieldId _dimFieldId, boolean _resetPrice)
+    {
+        boolean ret;
+
+        ret = next modifyInventDim(_inventDim, _dimFieldId, _resetPrice);
+
+        this.setSalesAndPriceUnit_AVA();
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayFirstLoadId_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Return first loadId for this sales order line
+    /// </summary>
+    /// <returns>first loadId</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display WHSLoadId displayFirstLoadId_AVA()
+    {
+        WHSLoadLine  locWHSLoadLine;
+        select firstonly LoadId, RecId, InventTransId from locWHSLoadLine
+            where locWHSLoadLine.InventTransId==this.InventTransId
+            && locWHSLoadLine.InventTransType==InventTransType::Sales;
+
+        return locWHSLoadLine.LoadId;
+             
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

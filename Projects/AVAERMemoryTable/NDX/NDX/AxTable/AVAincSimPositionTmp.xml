@@ -1,0 +1,341 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAincSimPositionTmp</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+public class AVAincSimPositionTmp extends common
+{
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>fillData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_incSimPos">_incSimPos</param>
+    /// <param name = "_salesQuotationTable">_salesQuotationTable</param>
+    /// <param name = "_specialDiscQuotation">_specialDiscQuotation</param>
+    public static server void fillData(AVAincSimPositionTmp        _incSimPos,SalesQuotationTable     _salesQuotationTable, AVASpecialDiscQuotationTmp     _specialDiscQuotation)
+    {
+        //AVAincSimPositionTmp        incSimPositionTmp;
+        SalesQuotationTotals        salesQuotationTotals;
+        //AVASpecialDiscQuotation     specialDiscQuotation =  AVASpecialDiscQuotation::find(_salesQuotationTable.QuotationId);
+        container                   totalsContainer;
+
+        real                        calcSum, calcSumBefore, calcSum2, headSum1, headSum2, headSum3,rechRab;
+        Percent                     rechRabPct;
+        KCS_IncSimData              incSimData = KCS_IncSimData::find(_salesQuotationTable.QuotationId);
+
+        real calcHK2;
+        real calcBonus;
+        real calcLimitPrice;
+
+        boolean hasPrivilege;
+
+        salesQuotationTotals = SalesQuotationTotals::construct(_salesQuotationTable);
+        salesQuotationTotals.calc();
+
+        delete_from _incSimPos;
+
+        totalsContainer = salesQuotationTotals.displayFields();
+        calcSum = conPeek(totalsContainer,TradeTotals::posBalance());
+        calcSumBefore = calcSum;
+        _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NXAIncomeBeforDisc",0,calcSum,1);
+
+        headSum1 = calcSum  - ((calcSum  / 100) * _specialDiscQuotation.SpecialDiscountPct1);
+        headSum2 = headSum1 - ((headSum1 / 100) * _specialDiscQuotation.SpecialDiscountPct2);
+        headSum3 = headSum2 - ((headSum2 / 100) * _specialDiscQuotation.SpecialDiscountPct3);
+
+        rechRab = calcSum - headSum3;
+
+        if (_specialDiscQuotation.SpecialDiscountPct1 != 0)
+        {
+            _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NXAHeadDisc1",_specialDiscQuotation.SpecialDiscountPct1,calcSum-headSum1,2);
+        }
+        if (_specialDiscQuotation.SpecialDiscountPct2 != 0)
+        {
+            _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NXAHeadDisc2",_specialDiscQuotation.SpecialDiscountPct2,headSum1-headSum2,3);
+        }
+        if (_specialDiscQuotation.SpecialDiscountPct3 != 0)
+        {
+            _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NXAHeadDisc3",_specialDiscQuotation.SpecialDiscountPct3,headSum2-headSum3,4);
+        }
+
+       
+        if(calcSum != 0)
+        {
+            rechRabPct = _salesQuotationTable.DiscPercent;
+        }
+        else
+        {
+            rechRabPct = 0;
+        }
+
+        calcSum2 = calcSum * rechRabPct / 100;
+        _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NDXPRCUseEndDisc", rechRabPct, calcSum2,5);
+
+        //Ertrag
+        headSum3 = headSum3 - calcSum2;
+        _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NXAIncome",0,headSum3,6,NoYes::Yes);
+
+        hasPrivilege = xUserInfo::hasSecuritykeyAccess(privilegeStr(NDXIncSimView));
+
+        if(hasPrivilege)
+        {
+            //Herstellkosten
+            calcHK2 = _incSimPos.getTotalHK2(_salesQuotationTable.QuotationId);
+            _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NXAProductionCost",100,calcHK2,7);
+
+            //Rohertrag 1
+            real calcRoh1 = headSum3 - calcHK2;
+            _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NXANettoInc",calcHK2 != 0 ? calcRoh1 / calcHK2 * 100 : 0 ,calcRoh1,8,NoYes::Yes);
+       
+            //Bonus
+            calcBonus = headSum3 * incSimData.KCS_MaxBonusAmount / 100;
+            _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NDXBonus",incSimData.KCS_MaxBonusAmount ,calcBonus,9);
+
+            //Provision
+            real calcCommission = headSum3 * (1 - (incSimData.KCS_MaxBonusAmount / 100)) * incSimData.KCS_Commision / 100;
+            _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@SYS71025",incSimData.KCS_Commision ,calcCommission,10);
+
+            //Skonto
+            real calcCashDisc = headSum3 * incSimData.KCS_CashDisc / 100;
+            _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NXACashDisc",incSimData.KCS_CashDisc ,calcCashDisc,11);
+
+            //Sonstige Kosten
+            real calcMiscCosts = headSum3 * incSimData.KCS_MiscCosts / 100;
+            _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NXAMiscCost",incSimData.KCS_MiscCosts ,calcMiscCosts,12);
+
+            //Rohertrag 2
+            real calcRoh2 = calcRoh1 - calcBonus - calcCommission - calcCashDisc - calcMiscCosts;
+            _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NXANettonInc2",calcHK2 != 0 ?  calcRoh2 / calcHK2 * 100 : 0 ,calcRoh2,13, NoYes::Yes);
+
+            //V&V
+            real calcVV = calcHK2 * incSimData.KCS_VuV / 100;
+            _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NXAVuV",incSimData.KCS_VuV,calcVV,14);
+       
+            //Rohertrag 3
+            real calcRoh3 = calcRoh2 - calcVV;
+            _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NXANettoInc3",calcHK2 != 0 ? calcRoh3 / calcHK2 * 100 : 0 ,calcRoh3,15,NoYes::Yes);
+        
+            //EmptyLine
+            _incSimPos.createRecord(_salesQuotationTable.QuotationId,'',0,0,16);
+        }
+
+        //Limitfaktor
+        KCS_LimitFactors            limitFactors;
+
+         
+
+        select firstonly limitFactors
+        where limitFactors.GroupName == _salesQuotationTable.KCS_LimitGroupName
+            && limitFactors.ItemCode == TableGroupAll::All;
+
+        if (hasPrivilege)
+        {
+            _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NDXLimitFactor",limitFactors.UnitFactor ,0,17);
+        }
+
+        //Limitpreis
+        calcLimitPrice = calcHK2 * limitFactors.UnitFactor / (((100-_specialDiscQuotation.SpecialDiscountPct1)/100) * ((100-_specialDiscQuotation.SpecialDiscountPct2)/100) * ((100-_specialDiscQuotation.SpecialDiscountPct3)/100)) / ((100 - incSimData.KCS_MaxBonusAmount) / 100);
+        _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NDXLimitPrice2",0,calcLimitPrice,18);
+        
+        
+        //Puffer
+        real calcPuffer = calcSumBefore - calcLimitPrice;
+        _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NXAPuffer",calcSumBefore ? calcPuffer / calcSumBefore * 100 : calcPuffer / 100 ,calcPuffer,19,NoYes::Yes);
+
+        if (hasPrivilege)
+        {
+            //EmptyLine
+            _incSimPos.createRecord(_salesQuotationTable.QuotationId,'',0,0,20);
+
+            //Deckung auf HK2 abzgl. Bonus
+            _incSimPos.createRecord(_salesQuotationTable.QuotationId,"@NDX:NXAHK2Deck",calcHK2 ? ((headSum3 - calcBonus) / calcHK2) * 100 : 0 ,0 ,21,NoYes::Yes);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_quotationId">_quotationId</param>
+    /// <param name = "_incSimPosType">_incSimPosType</param>
+    /// <param name = "_incSimPercent">_incSimPercent</param>
+    /// <param name = "_incSimAmount">_incSimAmount</param>
+    /// <param name = "_lineNum">_lineNum</param>
+    /// <param name = "_colorLine">_colorLine</param>
+    public void createRecord(KCS_RefQuotationId      _quotationId,
+                             AVAIncSimPosType        _incSimPosType, 
+                             AVAIncSimPercent        _incSimPercent,
+                             AVAIncSimAmount         _incSimAmount,
+                             LineNum                 _lineNum,
+                             NoYes                   _colorLine = NoYes::No)
+    {
+        this.clear();
+        this.RefQuotationId = _quotationId;
+        this.IncSimPosType  = _incSimPosType;
+        this.IncSimPercent  = _incSimPercent;
+        this.IncSimAmount   = _incSimAmount;
+        this.LineNum        = _lineNum;
+        this.IncColorLine   = _colorLine;
+        this.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTotalHK2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_quotationId">_quotationId</param>
+    /// <returns>getTotalHK2</returns>
+    public real getTotalHK2(QuotationId _quotationId)
+    {
+        SalesQuotationLine      salesQuotationLine;
+        real                    ret;
+        real                    hk2;
+        
+        SalesQuotationTable     salesQuotationTable;                                
+        
+        if(!xUserInfo::hasSecuritykeyAccess(privilegeStr(NDXHK2View)))
+        {
+            ret = 0;
+        }
+
+        while select salesQuotationLine
+            where salesQuotationLine.QuotationId == _quotationId
+               && salesQuotationLine.KCS_CRMIsAlternativeLine == NoYes::No
+        {
+            if(salesQuotationLine.KCS_NotCalculated == NoYes::No)
+            {
+       
+                hk2 = salesQuotationLine.KCS_HK2;
+                if(salesQuotationLine.PriceUnit > 1) 
+                {
+                    hk2 = hk2 / salesQuotationLine.PriceUnit;
+                }
+                ret += hk2 * salesQuotationLine.SalesQty;
+            }
+            else
+            {
+                if (salesQuotationLine.PriceUnit == 0) 
+                {
+                    salesQuotationLine.PriceUnit = 1;
+                }
+                ret += (salesQuotationLine.KCS_SonderHK * salesQuotationLine.SalesQty) / salesQuotationLine.PriceUnit;
+               
+            }
+        }
+
+        salesQuotationTable = SalesQuotationTable::find(_quotationId);
+
+        if(salesQuotationTable.KCS_LimitPriceExchRate != 0)
+        {
+            ret = ret / salesQuotationTable.KCS_LimitPriceExchRate * 100;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NXAIncPosition</DeveloperDocumentation>
+	<Label>@NDX:NXAIncPosition</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TableType>TempDB</TableType>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>IncSimAmount</Name>
+			<ExtendedDataType>AVAIncSimAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>IncSimPercent</Name>
+			<ExtendedDataType>AVAIncSimPercent</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>IncSimPosType</Name>
+			<ExtendedDataType>AVAIncSimPosType</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>LineNum</Name>
+			<ExtendedDataType>LineNum</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>IncColorLine</Name>
+			<ExtendedDataType>AVAIncColorLine</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>RefQuotationId</Name>
+			<ExtendedDataType>KCS_RefQuotationId</ExtendedDataType>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes />
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>RefQuotation</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>SalesQuotationTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>RefQuotationId</Name>
+					<Field>RefQuotationId</Field>
+					<RelatedField>QuotationId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

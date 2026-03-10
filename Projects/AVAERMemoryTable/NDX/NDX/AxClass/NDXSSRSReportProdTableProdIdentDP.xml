@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXSSRSReportProdTableProdIdentDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 14.08.24
+/// </summary>
+[SrsReportParameterAttribute(classstr(NDXSSRSReportProdTableProdIdentContract))]
+class NDXSSRSReportProdTableProdIdentDP extends SRSReportDataProviderBase
+{
+    NDXProdIdentDetailsTmp reportDetailsTmp;
+    NDXProdIdentHeaderTmp reportHeaderTmp;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getDetailsTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 14.08.24
+    /// </summary>
+    /// <returns>NDXProdIdentDetailsTmp</returns>
+    [SrsReportDataSet(tablestr(NDXProdIdentDetailsTmp))]
+    public NDXProdIdentDetailsTmp getDetailsTmp()
+    {
+        select reportDetailsTmp;
+        return reportDetailsTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHeaderTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 21.08.24
+    /// </summary>
+    /// <returns>NDXProdIdentHeaderTmp</returns>
+    [SrsReportDataSet(tablestr(NDXProdIdentHeaderTmp))]
+    public NDXProdIdentHeaderTmp getHeaderTmp()
+    {
+        select reportHeaderTmp;
+        return reportHeaderTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 14.08.24
+    /// changed: 17.10.24
+    /// </summary>
+    public void processReport()
+    {
+        boolean firstDetail = true;
+        NDXSSRSReportProdTableProdIdentContract contract = this.parmDataContract() as NDXSSRSReportProdTableProdIdentContract;
+        NDXProdIdentControlPanel nDXProdIdentControlPanel;
+        Query q = new Query();
+        QueryBuildDataSource qbdsNDXProdIdentControlPanel = q.addDataSource(tableNum(NDXProdIdentControlPanel));
+        if (contract.parmProdIdentControlPanelManual() == NoYes::Yes && contract.parmProdIdentManualId() != '')
+        {
+            qbdsNDXProdIdentControlPanel.addRange(fieldNum(NDXProdIdentControlPanel, ProdIdentManualId)).value(queryValue(contract.parmProdIdentManualId()));
+        }
+        else if (contract.parmProdId())
+        {
+            qbdsNDXProdIdentControlPanel.addRange(fieldNum(NDXProdIdentControlPanel, ProdId)).value(queryValue(contract.parmProdId()));
+        }
+        else
+        {
+            Error("@NDXBase:NDXPrintDataCouldNotBeDetermined");
+            return;
+        }
+        QueryRun qr = new QueryRun(q);
+        while (qr.next())
+        {
+            nDXProdIdentControlPanel = qr.get(tableNum(NDXProdIdentControlPanel));
+            if (firstDetail)
+            {
+                firstDetail = false;
+                reportHeaderTmp.ItemId = nDXProdIdentControlPanel.ItemId;
+                reportHeaderTmp.ModellNummer = nDXProdIdentControlPanel.ModellNummer;
+                reportHeaderTmp.Artikelname1 = nDXProdIdentControlPanel.Artikelname1_de;
+                reportHeaderTmp.Artikelname2 = nDXProdIdentControlPanel.Artikelname2_de;
+                reportHeaderTmp.OprNum = nDXProdIdentControlPanel.OprNum;
+                reportHeaderTmp.RouteId = nDXProdIdentControlPanel.RouteId;
+                reportHeaderTmp.RouteOprId = nDXProdIdentControlPanel.OprId;
+                reportHeaderTmp.NumberOfLabels = nDXProdIdentControlPanel.AnzahlEtiketten;
+                reportHeaderTmp.ProdId = nDXProdIdentControlPanel.ProdId;
+                reportHeaderTmp.InventColorId = nDXProdIdentControlPanel.InventColorId;
+            }
+            if (NDXProdIdentControlPanelLine::exist(nDXProdIdentControlPanel.RecId))
+            {
+                NDXProdIdentControlPanelLine nDXProdIdentControlPanelLine;
+                while select nDXProdIdentControlPanelLine
+                    where nDXProdIdentControlPanelLine.NDXProdIdentControlPanelParent == nDXProdIdentControlPanel.RecId
+                {
+                    NDXProdIdentControlPanel nDXProdIdentControlPanel2 = NDXProdIdentControlPanel::findRecId(nDXProdIdentControlPanelLine.NDXProdIdentControlPanel);
+                    NDXProdIdentDetailsTmp::insertFromNDXProdIdentControlPanel(reportDetailsTmp, nDXProdIdentControlPanel2);
+                }
+                break;
+            }
+            else
+            {
+                NDXProdIdentDetailsTmp::insertFromNDXProdIdentControlPanel(reportDetailsTmp, nDXProdIdentControlPanel);
+            }
+        }
+        reportHeaderTmp.insert();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

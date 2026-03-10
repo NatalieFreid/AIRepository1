@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAQuickCopyService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed by AVANADE
+/// </summary>
+class AVAQuickCopyService extends SysOperationServiceBase
+{
+    QuotationId     copyQuotationId;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_contract">AVAQuickCopyContract</param>
+    public void process(AVAQuickCopyContract _contract)
+    {
+        Set                     /*recordSet,*/ setLineNumbers;
+        //SetEnumerator           se;
+        RecordSortedList        records;
+        boolean                 moreRecs;
+        //Common                  record;
+        SalesQuotationLine      salesQuotationLine, sqlLVLine;
+        SalesQuotationTable     salesQuotationTable;
+        KCS_QLLVPosition        lvPos;
+
+        //if (conLen(_contract.parmRecordCon()) > 0)
+        if (_contract.parmRecords().len() > 0)
+        {
+            //recordSet = Set::create(_contract.parmRecordCon());
+            records = _contract.parmRecords();
+            setLineNumbers  = new Set(Types::Real);
+            //se = recordSet.getEnumerator();
+            moreRecs = records.first(salesQuotationLine);
+            //while (se.moveNext())
+            while (moreRecs)
+            {
+                //record = se.current();
+
+                //if (record.TableId == tableNum(salesQuotationLine))
+                //{
+                    //salesQuotationLine = record;
+                salesQuotationTable = salesQuotationLine.salesQuotationTable();
+                copyQuotationId     = salesQuotationTable.QuotationId;
+                if (!setLineNumbers.in(salesQuotationLine.LineNum))
+                {
+                    lvPos = SalesQuotationLine::KCS_getNewLVPos(salesQuotationLine.QuotationId, salesQuotationLine.KCS_QLLVPosition, true);
+                    if (!salesQuotationLine.KCS_QLInternalPosition)
+                    {
+                        this.copyCurLine(salesQuotationLine, salesQuotationTable, lvPos);
+                    }
+                    else
+                    {
+                        while select sqlLVLine where sqlLVLine.QuotationId == salesQuotationLine.QuotationId
+                                                    && sqlLVLine.KCS_QLLVPosition == salesQuotationLine.KCS_QLLVPosition
+                        {
+                            if (!setLineNumbers.in(sqlLVLine.LineNum))
+                            {
+                                this.copyCurLine(sqlLVLine, salesQuotationTable, lvPos);
+                                setLineNumbers.add(sqlLVLine.LineNum);
+                            }
+                        }
+                    }
+                    setLineNumbers.add(salesQuotationLine.LineNum);
+                }
+                moreRecs = records.next(salesQuotationLine);
+                //}
+            }
+
+            this.addDuplicateMark();
+
+            SysGlobalCache globalCache = ClassFactory.globalCache();
+            globalCache.clear(strFmt("@NDX:NXAP1P2",curUserId(),classStr(SalesQuotationLineType)));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addDuplicateMark</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void  addDuplicateMark()
+    {
+        SalesQuotationLine          avaSalesQuotationLineLoc;
+        SalesQuotationLine          salesQuotationLineItemGrp;    
+
+        while select count(RecId) from salesQuotationLineItemGrp
+            group by ItemId
+            where salesQuotationLineItemGrp.QuotationId == copyQuotationId
+        {
+            if (salesQuotationLineItemGrp.RecId > 1)
+            {
+                ttsbegin;
+                update_recordset avaSalesQuotationLineLoc
+            setting KCS_MultipleItem = 'X'
+            where avaSalesQuotationLineLoc.ItemId == salesQuotationLineItemGrp.itemId
+            //&& avaSalesQuotationLineLoc.QuotationId == this.quotationId;
+            && avasalesquotationlineloc.QuotationId == copyQuotationId;
+                ttscommit;
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyCurLine</Name>
+				<Source><![CDATA[
+    private void copyCurLine(SalesQuotationLine _salesQuotationLine, SalesQuotationTable _salesQuotationTable, KCS_QLLVPosition _lvPos)
+    {
+        SalesQuotationLine      newLine;
+
+        ttsbegin;
+        newLine = salesQuotationLine::find(_salesQuotationTable.QuotationId, _salesQuotationTable.maxLineNum() + 1, true);
+        newline.initFromSalesQuotationTable(_salesQuotationTable);
+        newLine.initFromSalesQuotationLine(_salesQuotationLine, true, true, true);
+        newLine.KCS_GAEBExtPosNr = '';
+        newLine.KCS_GAEBOZ = '';
+        //newLine.LineNum = _salesQuotationTable.maxLineNum() + 1;
+        newline.KCS_QLLVPosition = _lvPos;
+        newline.KCS_MultipleItem = 'X';
+        newline.KCS_QLLVPositionModified();
+        newLine.LineNum = newLine.buildLineNumFromLVPos();
+        newline.insert();
+        //Docu::copy(_salesQuotationLine, newLine);
+        Markup::copy(NoYes::No, _salesQuotationLine, newLine);
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

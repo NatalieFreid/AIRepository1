@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAInventJournalCheckPost_Movement_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// N.Freidenberger 15-07-2025
+/// </summary>
+[ExtensionOf(classstr(InventJournalCheckPost_Movement))]
+internal final class AVAInventJournalCheckPost_Movement_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>runEnd</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 15-07-2025
+    /// </summary>
+    /// <param name = "_deleteErrors">_deleteErrors</param>
+    /// <returns>runEnd</returns>
+    protected Integer runEnd(boolean _deleteErrors)
+    {
+        AVAItemCycleCountOverviewObject         updateItemCycleCountOverviewObject;
+        InventItemLocation                      inventItemLocation;
+        InventDim                               locInventDim;
+        InventItemLocationCountingStatus        inventItemLocationCountingStatus;
+        AVAItemCycleCountOverviewLine           updateItemCycleCountOverviewLine;
+
+        Integer ret = next runEnd(_deleteErrors);
+
+        if (journalCheckPostType != JournalCheckPostType::Check
+            && journalTableData.journalTable().Posted)
+        {
+            InventJournalTable inventJournalTable = journalTableData.journalTable();
+
+            if (inventJournalTable.JournalType == InventJournalType::Count)
+            {
+                select firstonly updateItemCycleCountOverviewObject
+                    where updateItemCycleCountOverviewObject.ItemCycleCountObject == AVAItemCycleCountObject::InventJournal
+                    && updateItemCycleCountOverviewObject.ObjectId             == inventJournalTable.JournalId;
+
+                if (updateItemCycleCountOverviewObject.RecId)
+                {
+                    updateItemCycleCountOverviewObject.Posted = NoYes::Yes;
+                    updateItemCycleCountOverviewObject.selectForUpdate(true);
+                    ttsbegin;
+                    updateItemCycleCountOverviewObject.update();
+                    ttscommit;
+
+                   
+                    select firstonly  inventItemLocation
+                        where inventItemLocation.ItemId ==   updateItemCycleCountOverviewObject.ItemId
+                            join locInventDim
+                                where locInventDim.inventDimId == inventItemLocation.inventDimId
+                                    && locInventDim.InventLocationId == updateItemCycleCountOverviewObject.InventLocationId
+                            outer join inventItemLocationCountingStatus
+                                where inventItemLocationCountingStatus.ItemId == inventItemLocation.ItemId
+                                    && InventItemLocationCountingStatus.InventDimId == inventItemLocation.inventDimId;
+
+                    if (inventItemLocationCountingStatus.RecId)
+                    {
+                        inventItemLocationCountingStatus.selectForUpdate(true);
+                        inventItemLocationCountingStatus.CountingStarted = NoYes::No;
+                        inventItemLocationCountingStatus.CountingJournalId = '';
+                        ttsbegin;
+                        inventItemLocationCountingStatus.update();
+                        ttscommit;
+                    }       
+
+                    if(inventItemLocation.RecId)
+                    {
+                        inventItemLocation.AVAInvCountNeeded = NoYes::No;
+                        inventItemLocation.AVAInvCountLast   = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                        inventItemLocation.selectForUpdate(true);
+                        ttsbegin;
+                        inventItemLocation.update();
+                        ttscommit;
+                    }
+
+                    select firstonly forupdate updateItemCycleCountOverviewLine
+                    where updateItemCycleCountOverviewLine.RecId == updateItemCycleCountOverviewObject.ItemCycleCountOverviewLine;
+
+                    if(updateItemCycleCountOverviewLine)
+                    {
+                        //updateItemCycleCountOverviewLine.ItemCycleCountStarted = NoYes::No;
+                        //updateItemCycleCountOverviewLine.InventJournalId       = '';
+                        ttsbegin;
+                        //updateItemCycleCountOverviewLine.update();
+                        updateItemCycleCountOverviewLine.delete();
+                        ttscommit;
+                    }
+
+                }
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

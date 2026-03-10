@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXSalesQuotationTableTransferProcess</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+internal final class NDXSalesQuotationTableTransferProcess extends NDXTransferToD365 implements NDXTransferToD365Interface
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>writeSalesQuotaionTable</Name>
+				<Source><![CDATA[
+    private void writeSalesQuotaionTable(Niedax.AX.TableRecordModels.TableRecord _record)
+    {
+        System.Exception ex;
+        Niedax.AX.TableRecordModels.SalesQuotationTable salesQuotationTable = _record;
+        SalesQuotationTable lSalesQuotaionTable;
+        SalesQuotationId quotationId = '';
+        SalesQuotationId quotationIdOrig = '';
+
+        str message = strFmt("SalesQuotationTable %1 entered on %2", salesQuotationTable.ToString(), this.environment);
+        str firstChar = "";
+        try
+        {
+            quotationIdOrig =  salesQuotationTable.QuotationId;
+            firstChar = subStr(quotationIdOrig, 0, 1);
+            boolean isFirstCharDigit;
+
+            isFirstCharDigit = (firstChar >= '0' && firstChar <= '9') ? true : false;
+
+            if(_record.IsAX2009 && salesQuotationTable.QuotationId.Length < 13 && isFirstCharDigit)
+            {
+                for(int i = 0; i< 13 -  salesQuotationTable.QuotationId.Length; i++)
+                {
+                    quotationId = strIns(quotationIdOrig, '0',0);
+                }
+            }
+
+            changecompany(salesQuotationTable.DataAreaId)
+            {
+                lSalesQuotaionTable = SalesQuotationTable::find(quotationId);
+
+                if(!lSalesQuotaionTable)
+                {
+                    lSalesQuotaionTable = SalesQuotationTable::find(quotationIdOrig);
+                }
+            }
+            
+            //Make only updates on an existing record, since the records are created by determination process in d365
+            if(!lSalesQuotaionTable)
+            {
+                message = strFmt("Record does not exist",  this.environment, salesQuotationTable.ToString());
+                throw Error(message);
+            }
+            else
+            {
+                message = strFmt("SalesQuotationTable %1 inserted or found on %2", salesQuotationTable.ToString(), this.environment);
+                response.RecId = lSalesQuotaionTable.RecId;
+                response.Success = true;
+            }
+
+        }
+        catch(ex)
+        {
+            message = message + "-" + ex.Message;
+            response.RecId = 0;
+        }
+
+        response.Message = message;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>writeRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates or creates corresponding record
+    /// </summary>
+    /// <param name = "_record">record instance</param>
+    /// <returns>Response</returns>
+    public Niedax.D365.API.Models.D365_APIResponse writeRecord(Niedax.AX.TableRecordModels.TableRecord _record)
+    {
+        this.writeSalesQuotaionTable(_record);
+        return response;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

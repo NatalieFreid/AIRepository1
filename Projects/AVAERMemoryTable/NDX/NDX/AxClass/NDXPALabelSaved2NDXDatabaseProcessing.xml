@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXPALabelSaved2NDXDatabaseProcessing</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using System.Collections;
+using Niedax.AzureServiceBus.PALabel;
+using Niedax.AzureServiceBus.Models.PALabel;
+/// <summary>
+/// PaffH 27.04.22
+/// Label is saved to NDX Database
+/// </summary>
+class NDXPALabelSaved2NDXDatabaseProcessing
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>InitFromContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.04.22
+    /// </summary>
+    /// <param name = "_contract">NDXPALabelSaved2NDXDatabaseContract</param>
+    protected void InitFromContract(NDXPALabelSaved2NDXDatabaseContract _contract)
+    {
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Processing</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.04.22
+    /// process return messages (contracts) from queue
+    /// </summary>
+    protected void Processing()
+    {
+        NDXStepCurrent stepCurrent = 4;
+        System.Exception ex;
+        str conStr, queue;
+        Niedax.AzureServiceBus.Models.PALabel.ResponseLabelSaved2DatabaseContract responseLabelSaved2DatabaseContract;
+        ProdId prodId;
+        boolean lHostCheckOK;
+        container conProdId = conNull();
+        List receivedMessagesToSendAgain = new List(Types::Class);
+
+        [conStr, queue] = NDXServiceBusQueueReaderSavePALabel2NDXDatabase::getConnectionParam();
+        if (!conStr)
+        {
+            NDXHistoryLogProdIdentOnPremLabelContract::construct(stepCurrent).saveAsError("@NDX:NDXConnectionValueError");
+            throw Error("@NDX:NDXConnectionValueError");
+        }
+
+        try
+        {
+            Info(strFmt("@NDXBase:NDXGetAzuresServiceBusMessagesFromQueue", NDXHelperCommon::seconds2Str(), "@NDXBase:NDXStart", queue));
+            ServiceBusMessagingPALabelSaved serviceBusMessagingPALabelSaved = new ServiceBusMessagingPALabelSaved(conStr, NDXProdIdentControlPanelParameters::find().AzureServiceBusQueueNameLabelInfoHandshake);
+            do 
+            {
+                info(strFmt("@NDXBase:NDXGetAzuresServiceBusGet1MessageFromQueue", NDXHelperCommon::seconds2Str()));
+                ServiceBusReceivedMessageValuesServiceBusMessagingPALabelSaved serviceBusReceivedMessageValuesServiceBusMessagingPALabelSaved = 
+                    serviceBusMessagingPALabelSaved.Receive1MessageValuesD365FO(true);
+                responseLabelSaved2DatabaseContract = serviceBusReceivedMessageValuesServiceBusMessagingPALabelSaved.Contract;
+                if (responseLabelSaved2DatabaseContract == null)
+                {
+                    info(strFmt("@NDXBase:NDXGetAzuresServiceBusQueueNoMessage", NDXHelperCommon::seconds2Str()));
+                    break;
+                }
+                else
+                {
+                    info(strFmt("@NDXBase:NDXGetAzuresServiceBusQueue1Message", NDXHelperCommon::seconds2Str()));
+                }
+
+                prodId = responseLabelSaved2DatabaseContract.NDXProdStatusChangedGenerateTransportLabelEventContract.ProdId;
+
+                // check if received host is the same as the sending host
+                lHostCheckOK = responseLabelSaved2DatabaseContract.NDXProdStatusChangedGenerateTransportLabelEventContract.HostURL ==
+                    NDXEnvironmentInformation::construct().parmHostUrl();
+                if (!lHostCheckOK)
+                {
+                    receivedMessagesToSendAgain.addEnd(serviceBusReceivedMessageValuesServiceBusMessagingPALabelSaved.ServiceBusReceivedMessage);
+                }
+
+                if (prodId && lHostCheckOK)
+                {
+                    ttsbegin;
+
+                    // save values to NDXPAWithLabelInfo
+                    NDXPAWithLabelInfo::processFromResponseLabelSaved2DatabaseContract(responseLabelSaved2DatabaseContract);
+
+                    // save values to NDXProdIdentControlPanel
+                    NDXProdIdentControlPanel::processFromResponseLabelSaved2DatabaseContract(responseLabelSaved2DatabaseContract);
+                    
+                    ttscommit;
+                    NDXHistoryLogProdIdentOnPremLabelContract::construct(stepCurrent).saveAsSuccess(strFmt("@NDX:NDXResponseMessageExtractFromQueue", prodId, queue));
+                    conProdId += prodId;
+                }
+            
+            } while (prodId);
+            Info(strFmt("@NDXBase:NDXGetAzuresServiceBusMessagesFromQueue", NDXHelperCommon::seconds2Str(), "@NDXBase:NDXEnd", queue));
+            ListEnumerator enumreceivedMessagesToSendAgain = receivedMessagesToSendAgain.getEnumerator();
+            while (enumreceivedMessagesToSendAgain.MoveNext())
+            {
+                Azure.Messaging.ServiceBus.ServiceBusReceivedMessage serviceBusReceivedMessage = enumreceivedMessagesToSendAgain.Current();
+                serviceBusMessagingPALabelSaved.SendReceivedMessageToQueue(serviceBusReceivedMessage, queue);
+            }
+        }
+        catch (ex)
+        {
+            NDXHistoryLogProdIdentOnPremLabelContract::construct(stepCurrent).saveAsError(ex.Message);
+            error(strFmt("@NDX:NDXErrorMessage", ex.message));
+        }
+        info( conLen(conProdId) > 0 ? strFmt("@NDX:NDXConfirmationGenForProdOrder", conLen(conProdId), con2Str(conProdId, ', ')) : "@NDX:NDXNoConfirmations");
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Validate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.04.22
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean Validate()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.04.22
+    /// </summary>
+    /// <param name = "_contract">NDXPALabelSaved2NDXDatabaseContract</param>
+    public void Run(NDXPALabelSaved2NDXDatabaseContract _contract)
+    {
+        if (!_contract.validate())
+        {
+            return;
+        }
+        this.InitFromContract(_contract);
+        if (!this.Validate())
+        {
+            return;
+        }
+        this.Processing();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

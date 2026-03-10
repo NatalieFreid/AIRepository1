@@ -1,0 +1,442 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAWhsWorkExecuteDisplayCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// The <c>AVAWhsWorkExecuteDisplayCls_Extension</c> represents a extension of WhsWorkExecuteDisplay.
+/// </summary>
+[
+    ExtensionOf(classStr(WhsWorkExecuteDisplay))
+]
+final class AVAWhsWorkExecuteDisplayCls_Extension
+{
+    #WHSRF
+    #AVAWHSRF
+    #WHSWorkExecuteDisplayCases
+    #WHSWorkExecuteControlElements
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Constructs a WorkExecuteDisplay subclass instance based on the work execution mode.
+    /// </summary>
+    /// <param name="_mode">
+    /// The work execution mode.
+    /// </param>
+    /// <param name="_menuItemName">
+    /// The menu item name; optional.
+    /// </param>
+    /// <returns>
+    /// An instance of a subclass of WorkExecuteDisplay class.
+    /// </returns>
+    /// <exception cref="Exception::Error">
+    /// Invalid work execution mode.
+    /// </exception>
+    static WHSWorkExecuteDisplay construct(WHSWorkExecuteMode _mode,
+                                           WHSMenuItemName    _menuItemName)
+    {
+        WHSWorkExecuteDisplay instance;
+        WHSWorkExecuteMode    mode;
+
+        mode = _mode;
+
+        if (mode == WHSWorkExecuteMode::Login)
+        {
+            mode = WHSWorkExecuteMode::AVALoginPrinter;
+        }
+
+        instance = next construct(mode, _menuItemName);
+
+        return instance;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processWorkLineForCustomStep</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Processes the work line for a custom step.
+    /// </summary>
+    /// <param name = "_state">The state for processing work lines.</param>
+    /// <returns>true, if the processing of the work line has been finished; otherwise, false.</returns>
+    protected boolean processWorkLineForCustomStep(WhsWorkProcessWorkLineState _state)
+    {
+
+        boolean     valid;
+        container   buildCon;
+
+        valid = next processWorkLineForCustomStep(_state);
+        
+        switch (step)
+        {
+            case #AVASplitWork:
+                if (!pass.exists(#AVAFullMode)
+                 && AVAWHSWorkExecuteDisplayHelper::existDisplayContainer(buildCon, #Name, #AVAFullMode)
+                 && AVAWHSWorkExecuteDisplayHelper::getdisplayContainerData(buildCon, #Name, #AVAFullMode) != '')
+                {
+                    pass.avaParmFullMode(AVAWHSWorkExecuteDisplayHelper::getdisplayContainerData(buildCon, #Name, #AVAFullMode));
+                }
+
+                if (pass.exists(#AVAFullMode))
+                {
+                    valid           = true;
+                    step            = #SplitWork;
+                    _state.recall   = true;
+                }
+                else
+                {
+                    valid = false;
+                    _state.nextForm = this.avaBuildFullSelection(conNull());
+                }
+
+                break;
+        }
+
+        return valid;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>preProcessWorkLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Pre-processes the work line for pick operation.
+    /// </summary>
+    /// <param name = "_state">The state for processing work lines.</param>
+    /// <returns>true, if the pre-processing of the work line has been finished; otherwise, false.</returns>
+    protected boolean preProcessWorkLine(WhsWorkProcessWorkLineState _state)
+    {
+        boolean ret;
+
+        ret = next preProcessWorkLine(_state);
+
+        if (ret
+         && step == #AVASplitWork)
+        {
+            ret = false;
+        }
+
+        return  ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaBuildFullSelection</Name>
+				<Source><![CDATA[
+    private container avaBuildFullSelection(container  _con)
+    {
+        container ret;
+   
+        str  finalLabel = "@NDX:AVAFullConfirm";
+
+        ret = _con;
+
+        ret += [this.buildControl(#RFLabel, #Scan, finalLabel, 1, '', #WHSRFUndefinedDataType, '', 0)];
+        ret = this.avaBuildFullMode(ret, '', false, true, false, pass.lookupStr(#SelectedValueUOM));
+                         
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaBuildFullMode</Name>
+				<Source><![CDATA[
+    private container avaBuildFullMode(container    _con,
+                                       str          _label = '',
+                                       boolean      _showRemove = false,
+                                       boolean      _showBlank  = false,
+                                       boolean      _showOK     = true,
+                                       str          _selected   = '',
+                                       boolean      _enabled    = true)
+    {
+        container   ret;
+        str         elements;
+        str         label = "@NDX:AVAFullModeSelection";
+
+        elements = this.avaBuildFullModeString(_showBlank);
+
+        ret += [this.buildControl(#RFCombobox, #AVAFullMode, label, 1, elements, #WHSRFUndefinedDataType, '', 0, true, '', WHSRFColorText::Default)];
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaBuildFullModeString</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// create a string list for selection of the full mode
+    /// </summary>
+    /// <param name = "_showBlank">
+    /// to create e empty entry
+    /// </param>
+    /// <returns>
+    /// a list of elements
+    /// </returns>
+    public str avaBuildFullModeString(boolean _showBlank = true)
+    {
+        WHSWorkException    workException;
+        boolean             first = true;
+        str                 elements;
+
+        if (_showBlank)
+        {
+            elements = '||';
+        }
+
+        while select WorkExceptionCode from workException
+            where workException.ExceptionType == WHSExceptionType::AVAFullPick
+        {
+            if (first)
+            {
+                first = false;
+            }
+            else
+            {
+                elements += '||';
+            }
+
+            elements += workException.WorkExceptionCode;
+        }
+
+        return elements;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInsertWorkTransType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Add the WorkTransType display Field in process
+    /// </summary>
+    /// <param name = "ret">
+    /// return container with controls
+    /// </param>
+    /// <returns>
+    /// The changed display container
+    /// </returns>
+    public container avaInsertWorkTransType(container  ret)
+    {
+        WHSRFMenuItemTable  menuItemTable;
+        str                 finalLabel;
+        container           insertdisplayContainer;
+
+        if (pass.exists(#MenuItem)
+         && (pass.exists(#WorkId) || pass.exists(#Id)))
+        {
+            menuItemTable = WHSRFMenuItemTable::find(pass.lookupStr(#MenuItem));
+
+            if (menuItemTable.AVADisplayWHSWorkTransType == NoYes::Yes)
+            {
+                if (worktable
+                 && worktable.WorkStatus != WHSWorkStatus::Cancelled
+                 && worktable.WorkStatus != WHSWorkStatus::Closed
+                 && worktable.WorkTransType)
+                {
+                    if (!AVAWHSWorkExecuteDisplayHelper::existDisplayContainer(ret, #Name, #AVAWorkTransType))
+                    {
+                        finalLabel              = strFmt('%1', worktable.WorkTransType);
+                        insertdisplayContainer  = this.buildControl(#RFLabel, #AVAWorkTransType, finalLabel, 1, '', #WHSRFUndefinedDataType, '', 0, false, '', WHSRFColorText::Default, extendedTypeNum(AVAWHSOrderNum));
+                        ret = AVAWHSWorkExecuteDisplayHelper::insertDisplayContainer(ret, #ControlType, #RFLabel, insertdisplayContainer);
+                    }
+                }
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInsertOrderNum</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Add the OrderNum display field in process
+    /// </summary>
+    /// <param name = "ret">
+    /// return container with controls
+    /// </param>
+    /// <returns>
+    /// The changed display container
+    /// </returns>
+    public container avaInsertOrderNum(container  ret)
+    {
+        WHSRFMenuItemTable  menuItemTable;
+        str                 finalLabel;
+        container           insertdisplayContainer;
+
+        if (pass.exists(#MenuItem)
+         && (pass.exists(#WorkId) || pass.exists(#Id)))
+        {
+            menuItemTable = WHSRFMenuItemTable::find(pass.lookupStr(#MenuItem));
+
+            if (menuItemTable.AVADisplayWHSOrderNum == NoYes::Yes)
+            {
+                if (worktable
+                 && worktable.WorkStatus != WHSWorkStatus::Cancelled
+                 && worktable.WorkStatus != WHSWorkStatus::Closed
+                 && worktable.OrderNum)
+                {
+                    if (!AVAWHSWorkExecuteDisplayHelper::existDisplayContainer(ret, #Name, #AVAOrderNum))
+                    {
+                        finalLabel              = strFmt('%1', worktable.OrderNum);
+                        insertdisplayContainer  = this.buildControl(#RFLabel, #AVAOrderNum, finalLabel, 1, '', #WHSRFUndefinedDataType, '', 0, false, '', WHSRFColorText::Default, extendedTypeNum(AVAWHSOrderNum));
+                        ret = AVAWHSWorkExecuteDisplayHelper::insertDisplayContainer(ret, #ControlType, #RFLabel, insertdisplayContainer);
+                    }
+                }
+            }
+
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildComments</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension code for buildComments
+    /// </summary>
+    /// <param name="_con">
+    /// Container containing the form state before controls are added.
+    /// </param>
+    /// <returns>
+    /// Container containing the form state after controls are added.
+    /// </returns>
+    container buildComments(container _con)
+    {
+        container ret;
+
+        ret = next buildComments(_con);
+
+        ret = this.avaBuildComments(ret);
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaBuildComments</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates Comments form KCS_SOCSalesTableInfoFields
+    /// </summary>
+    /// <param name="_con">
+    /// Container containing the form state before controls are added.
+    /// </param>
+    /// <returns>
+    /// Container containing the form state after controls are added.
+    /// </returns>
+    public container avaBuildComments(container _con)
+    {
+        container                   ret;
+        KCS_SOCSalesTableInfoFields kcs_SOCSalesTableInfoFields;
+
+        ret = _con;
+
+        if (worktable
+         && (worktable.WorkTransType == WHSWorkTransType::Sales || worktable.WorkTransType == WHSWorkTransType::TransferIssue)
+         && worktable.OrderNum)
+        {
+            switch (worktable.WorkTransType)
+            {
+                case WHSWorkTransType::Sales:
+                    kcs_SOCSalesTableInfoFields = KCS_SOCSalesTableInfoFields::find(AVATableInfoFieldTypes::Sales, worktable.OrderNum);
+                    break;
+                case WHSWorkTransType::TransferIssue:
+                    kcs_SOCSalesTableInfoFields = KCS_SOCSalesTableInfoFields::find(AVATableInfoFieldTypes::TransferOrderShip, worktable.OrderNum);
+                    break;
+            }
+
+            if (kcs_SOCSalesTableInfoFields
+             && kcs_SOCSalesTableInfoFields.InfoField4)
+            {
+                ret += [this.buildControl(#RFLabel, #Comments, strFmt("@NDX:AVACommentsSalesOrder", kcs_SOCSalesTableInfoFields.SalesId, '\n', kcs_SOCSalesTableInfoFields.InfoField4), 1, '', #WHSRFUndefinedDataType, '', 0, true, "", WHSRFColorText::Default, extendedTypeNum(WHSShipmentId))];
+            }
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>hasComments</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///Extension code for buildComments hasComments
+    /// </summary>
+    /// <returns>
+    /// True if the shipment has comments to be shown in RF.
+    /// </returns>
+    public boolean hasComments()
+    {
+        boolean avaHasComments;
+
+        avaHasComments = next hasComments();
+
+        avaHasComments = avaHasComments || this.avaHasComments();
+
+        return avaHasComments;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaHasComments</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks whether the shipment of the current work line has comments to be shown in RF.
+    /// </summary>
+    /// <returns>
+    /// True if the shipment has comments to be shown in RF.
+    /// </returns>
+    public boolean avaHasComments()
+    {
+        boolean                     avaHasComments;
+        KCS_SOCSalesTableInfoFields kcs_SOCSalesTableInfoFields;
+
+        if (worktable
+         && (worktable.WorkTransType == WHSWorkTransType::Sales || worktable.WorkTransType == WHSWorkTransType::TransferIssue)
+         && worktable.OrderNum)
+
+        {
+            switch (worktable.WorkTransType)
+            {
+                case WHSWorkTransType::Sales:
+                    kcs_SOCSalesTableInfoFields = KCS_SOCSalesTableInfoFields::find(AVATableInfoFieldTypes::Sales, worktable.OrderNum);
+                    break;
+                case WHSWorkTransType::TransferIssue:
+                    kcs_SOCSalesTableInfoFields = KCS_SOCSalesTableInfoFields::find(AVATableInfoFieldTypes::TransferOrderShip, worktable.OrderNum);
+                    break;
+            }
+
+            if (kcs_SOCSalesTableInfoFields
+             && kcs_SOCSalesTableInfoFields.InfoField4)
+            {
+                avaHasComments = true;
+            }
+        }
+
+        return avaHasComments;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

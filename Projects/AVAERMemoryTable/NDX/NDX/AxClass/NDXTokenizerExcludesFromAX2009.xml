@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXTokenizerExcludesFromAX2009</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using System.Collections;
+using Niedax.AzureServiceBus.General;
+using Niedax.AzureServiceBus.Models.General;
+
+/// <summary>
+/// PaffH 04.02.23
+/// </summary>
+public class NDXTokenizerExcludesFromAX2009 extends NDXProdIdentProcedureFromAX2009
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.02.23
+    /// </summary>
+    /// <returns>NDXProdIdentPackagingFromAX2009</returns>
+    public static NDXTokenizerExcludesFromAX2009 construct()
+    {
+        NDXTokenizerExcludesFromAX2009 nDXTokenizerExcludesFromAX2009 = new NDXTokenizerExcludesFromAX2009();
+        return nDXTokenizerExcludesFromAX2009;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runAsyc</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.02.23
+    /// </summary>
+    /// <returns>System.Threading.Tasks.Task</returns>
+    public static System.Threading.Tasks.Task runAsyc()
+    {
+        System.Threading.Tasks.Task task;
+        Dialog dialog = new Dialog();
+        dialog.addText("@NDX:NDXTransferOfProductLabelsFromAX2009");
+        DialogField fieldMaxRunTime = dialog.addFieldValue(extendedTypeStr(NDXID), 1, "@NDX:NDXMaxRuntimeForAzureQueueQuery");
+        DialogField fieldDeleteActualData = dialog.addFieldValue(extendedTypeStr(NoYesId), NoYes::No, "@NDX:NDXDeleteExistingTransferData");
+        DialogField fieldRunWithoutAction = dialog.addFieldValue(extendedTypeStr(NoYesId), NoYes::No, "@NDX:NDXRemoveContractsWithoutProcessingFromAzureQueue");
+        dialog.run();
+        if (dialog.closedOk())
+        {
+            int maxRunTime = fieldMaxRunTime.value();
+            NoYes deleteActualData = fieldDeleteActualData.value();
+            NoYes runWithoutAction = fieldRunWithoutAction.value();
+            task = runAsync(
+                classNum(NDXTokenizerExcludesFromAX2009),
+                staticMethodStr(NDXTokenizerExcludesFromAX2009,runableForAsyncCall),
+                [maxRunTime, deleteActualData, runWithoutAction],
+                System.Threading.CancellationToken::None,
+                classNum(NDXProdIdentProcedureFromAX2009),
+                staticMethodStr(NDXProdIdentProcedureFromAX2009,asyncResult));
+        }
+        return task;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runableForAsyncCall</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.02.23
+    /// </summary>
+    /// <param name = "_params">container</param>
+    /// <returns>container</returns>
+    public static container runableForAsyncCall(container _params)
+    {
+        container conRet = conNull();
+        int maxRuntimeInMinutes = conPeek(_params, 1);
+        NoYes deleteActualData = conPeek(_params, 2);
+        NoYes runWithoutAction = conPeek(_params, 3);
+        NDXTokenizerExcludesFromAX2009 nDXTokenizerExcludesFromAX2009 = NDXTokenizerExcludesFromAX2009::construct();
+        nDXTokenizerExcludesFromAX2009.ParmDeleteActualData(deleteActualData);
+        nDXTokenizerExcludesFromAX2009.ParmRunWithoutAction(runWithoutAction);
+        nDXTokenizerExcludesFromAX2009.ReadContractsFromQueue(maxRuntimeInMinutes);
+        return conRet;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteActualData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.02.23
+    /// </summary>
+    protected void deleteActualData()
+    {
+        NDXTokenizerExcludes nDXTokenizerExcludes;
+        delete_from nDXTokenizerExcludes;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>readContractsFromQueue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.02.23
+    /// </summary>
+    /// <param name = "_maxRuntimeInMinutes">int</param>
+    public void readContractsFromQueue(int _maxRuntimeInMinutes = 0)
+    {
+        maxRuntimeInMinutes = _maxRuntimeInMinutes;
+
+        NDXTokenizerExcludes nDXTokenizerExcludes;
+        boolean loopOK = true;
+        int recCount1, recCount2, recCount3, countReadFromQueue, countRuns;
+        NDXTokenizerExcludesContract nDXTokenizerExcludesContract, nDXTokenizerExcludesContractLast;
+        TokenizerExcludesFromAX2009 tokenizerExcludesFromAX2009 = new TokenizerExcludesFromAX2009(connectionString, azureQueueName);
+
+        int sleepDuration = 1000;
+        secStart = NDXHelperCommon::timeNow();
+        int secStartRun = secStart;
+        int secEnd, diffSec;
+        str errInfo;
+        NDXDataTransferErrorClass dataTransferError = NDXDataTransferErrorClass::construct(tableNum(NDXTokenizerExcludes));
+        recCount1 = 0;
+        recCount2 = 0;
+        recCount3 = 0;
+        countReadFromQueue = 0;
+        countRuns = 0;
+        int runtimeInMinutes;
+        nDXTokenizerExcludesContractLast = null;
+        isReadingFromQueue = true;
+        info(strFmt('Start : [%1]', NDXHelperCommon::seconds2Str()));
+        if (deleteActualData == NoYes::Yes)
+        {
+            this.deleteActualData();
+            dataTransferError.deleteExistingLog();
+        }
+        while (loopOK)
+        {
+            nDXTokenizerExcludes = null;
+            nDXTokenizerExcludesContract = tokenizerExcludesFromAX2009.Receive1MessageValuesD365FO(true).Contract;
+            if (runWithoutAction == NoYes::Yes)
+            {
+                if (nDXTokenizerExcludesContract == null)
+                {
+                    break;
+                }
+                else
+                {
+                    continue;
+                }
+            }
+
+
+            if (nDXTokenizerExcludesContract == null && nDXTokenizerExcludesContractLast == null)
+            {
+                secEnd = NDXHelperCommon::timeNow();
+                runtimeInMinutes = real2int((secEnd - secStart) / 60);
+                if (maxRuntimeInMinutes != 0 && runtimeInMinutes >= maxRuntimeInMinutes)
+                {
+                    break;
+                }
+                else
+                {
+                    sleep(sleepDuration);
+                    continue;
+                }
+            }
+
+            ++countReadFromQueue;
+            if (nDXTokenizerExcludesContract == null && nDXTokenizerExcludesContractLast != null)
+            {
+                nDXTokenizerExcludesContractLast = null;
+                ++countRuns;
+                secEnd = NDXHelperCommon::timeNow();
+                diffSec = secEnd - secStartRun;
+                Info(strFmt('%1.) Dauer: [%2]', countRuns, NDXHelperCommon::seconds2Str(diffSec)));
+                Info(strFmt('%1.) Azure-Queue Lesevorgänge: [%2]', countRuns, countReadFromQueue));
+                Info(strFmt('%1.) Anzahl DS: Artikel[%2] [%3][%4]', countRuns, recCount1, recCount2, recCount3));
+                runtimeInMinutes = real2int((secEnd - secStart) / 60);
+                if (maxRuntimeInMinutes != 0 && runtimeInMinutes >= maxRuntimeInMinutes)
+                {
+                    break;
+                }
+                else
+                {
+                    sleep(sleepDuration);
+                    continue;
+                }
+            }
+            else
+            {
+                nDXTokenizerExcludesContractLast = nDXTokenizerExcludesContract;
+                secStartRun = NDXHelperCommon::timeNow();
+            }
+
+            // read data from: nDXTokenizerExcludes - Contract
+            IEnumerable tList = nDXTokenizerExcludesContract.nDXTokenizerExcludesTableContract;
+            IEnumerator enum = tList.GetEnumerator();
+            while (enum.moveNext())
+            {
+                ++recCount1;
+                errInfo = '';
+                NDXTokenizerExcludesTableContract nDXTokenizerExcludesTableContract = enum.current;
+
+                if (nDXTokenizerExcludesTableContract.toExcludeFrom != '')
+                {
+                    nDXTokenizerExcludes = NDXTokenizerExcludes::findOrCreate(nDXTokenizerExcludesTableContract.toExcludeFrom, false);
+                    nDXTokenizerExcludes.ToInclude = nDXTokenizerExcludesTableContract.toInclude;
+                    nDXTokenizerExcludes.TokenizerExcludeType = nDXTokenizerExcludesTableContract.TokenizerExcludeType;
+                    nDXTokenizerExcludes.Priority = nDXTokenizerExcludesTableContract.Priority;
+                    ttsbegin;
+                    nDXTokenizerExcludes.write();
+                    ttscommit;
+                }
+                else
+                {
+                    continue;
+                }
+            }
+        }
+        dataTransferError.endError();
+        secEnd = NDXHelperCommon::timeNow();
+        Info(strFmt('Gesamtlaufzeit: [%1]', NDXHelperCommon::seconds2Str(secEnd - secStart)));
+        isReadingFromQueue = false;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

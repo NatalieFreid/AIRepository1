@@ -1,0 +1,345 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXELGateHelper_cls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(classStr(NDXBaseELGateHelper))]
+final class NDXELGateHelper_cls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>isDiscontinuedItem</Name>
+				<Source><![CDATA[
+    public static boolean isDiscontinuedItem(InventTable _inventTable)
+    {
+        boolean ret = next isDiscontinuedItem(_inventTable);
+        ret = (_inventTable && _inventTable.KCS_KAOItemState == 'RART');
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDX_DeliveryUnitLowest</Name>
+				<Source><![CDATA[
+    NDXDeliveryUnit NDX_DeliveryUnitLowest(InventTable _inventTable)
+    {
+        UnitIDBase  unitId, unitId1;
+        NDXDeliveryUnitTxt deliveryUnitTxt;
+
+        NDXDeliveryUnit ndxDeliveryUnit;
+        
+        UnitOfMeasure lUnitOfMeasureDeliveryUnitLowest;
+        UnitOfMeasure lUnitOfMeasureDeliveryUnitPreferred;
+
+        QtyMultiples  InventItemSalesSetupMultipleQty;
+        
+        UnitOfMeasureConversion unitOfMeasureConversionConvertDeliveryUnitLowest;
+        UnitOfMeasureConversion unitOfMeasureConversionDeliveryUnitPreferred;
+
+        ndxDeliveryUnit = next NDX_DeliveryUnitLowest(_inventTable);
+
+        unitOfMeasureConversionConvertDeliveryUnitLowest = UnitOfMeasureConversion::NDX_getDeliveryUnitLowest(_inventTable);
+        unitOfMeasureConversionDeliveryUnitPreferred = UnitOfMeasureConversion::NDX_getDeliveryUnitPreferred(_inventTable);
+        
+        if(unitOfMeasureConversionDeliveryUnitPreferred)
+        {
+            ndxDeliveryUnit.parmUnitPrefFactor(unitOfMeasureConversionDeliveryUnitPreferred.Factor);
+            ndxDeliveryUnit.parmUnitPrefFromUnit(unitOfMeasureConversionDeliveryUnitPreferred.FromUnitOfMeasure);
+            ndxDeliveryUnit.parmUnitPrefToUnit(unitOfMeasureConversionDeliveryUnitPreferred.ToUnitOfMeasure);
+
+            ndxDeliveryUnit.parmUnitConvertDeliveryUnitPrefFound(NoYes::Yes);
+            ndxDeliveryUnit.parmDeliveryUnitPrefMultipleQty(unitOfMeasureConversionDeliveryUnitPreferred.Factor / ndxDeliveryUnit.parmInventItemSalesSetupMultipleQty());
+
+
+            deliveryUnitTxt = InventTable::NDX_DeliveryUnitTxt(ndxDeliveryUnit.parmDeliveryUnitPrefMultipleQty(),
+                                                               ndxDeliveryUnit.parmInventItemSalesSetupMultipleQty(),
+                                                               this.parmUnitId());
+
+            ndxDeliveryUnit.parmDeliveryUnitPrefTxt(deliveryUnitTxt);
+            ndxDeliveryUnit.parmDeliveryUnitTxt(deliveryUnitTxt);
+            ndxDeliveryUnit.parmNetWeightDeliveryUnitPreffered(ndxDeliveryUnit.parmDeliveryUnitPrefMultipleQty() * ndxDeliveryUnit.parmInventItemSalesSetupMultipleQty() * _inventTable.NetWeight);
+            ndxDeliveryUnit.parmNetWeightDeliveryUnit(ndxDeliveryUnit.parmNetWeightDeliveryUnitPreffered());
+
+            // the conversion works differently as in AX 2009
+            //
+            //if (ndxDeliveryUnit.parmUnitIdInventTableModuleInvent() != unitOfMeasureConversionDeliveryUnitPreferred.FromUnitOfMeasure)
+            if (ndxDeliveryUnit.parmUnitIdInventTableModuleInvent() != unitOfMeasureConversionDeliveryUnitPreferred.ToUnitOfMeasure)
+            {
+                lUnitOfMeasureDeliveryUnitPreferred = UnitOfMeasure::find(unitOfMeasureConversionDeliveryUnitPreferred.ToUnitOfMeasure);
+                
+                unitId = UnitOfMeasure::find(ndxDeliveryUnit.parmUnitIdInventTableModuleInvent()).Symbol;
+                unitId1 =lUnitOfMeasureDeliveryUnitPreferred.Symbol;
+
+                deliveryUnitTxt = strfmt("@NDX:NDXUnitConvertCheckInfoTxt22", unitId, unitId1);        // Lagereinheit [%1] ungleich 'von Einheit' aus Einheitenumrechnung [%2]
+                ndxDeliveryUnit.parmDeliveryUnitInfo(deliveryUnitTxt);
+                ndxDeliveryUnit.parmValueDetermined(noYes::No);
+                unitOfMeasureConversionDeliveryUnitPreferred = null;
+            }
+        }
+
+        if (unitOfMeasureConversionConvertDeliveryUnitLowest)
+        {
+            ndxDeliveryUnit.parmUnitLowFactor(unitOfMeasureConversionConvertDeliveryUnitLowest.Factor);
+            ndxDeliveryUnit.parmUnitLowFromUnit(unitOfMeasureConversionConvertDeliveryUnitLowest.FromUnitOfMeasure);
+            ndxDeliveryUnit.parmUnitLowToUnit(unitOfMeasureConversionConvertDeliveryUnitLowest.ToUnitOfMeasure);
+            ndxDeliveryUnit.parmUnitConvertDeliveryUnitLowestFound(NoYes::Yes);
+
+            ndxDeliveryUnit.parmDeliveryUnitLowestMultipleQty(unitOfMeasureConversionConvertDeliveryUnitLowest.Factor / ndxDeliveryUnit.parmInventItemSalesSetupMultipleQty());
+
+            deliveryUnitTxt = InventTable::NDX_DeliveryUnitTxt(ndxDeliveryUnit.parmDeliveryUnitLowestMultipleQty(),
+                                                               ndxDeliveryUnit.parmInventItemSalesSetupMultipleQty(),
+                                                               this.parmUnitId());
+
+            ndxDeliveryUnit.parmDeliveryUnitLowestTxt(deliveryUnitTxt);
+            ndxDeliveryUnit.parmNetWeightDeliveryUnitLowest(ndxDeliveryUnit.parmDeliveryUnitLowestMultipleQty() * ndxDeliveryUnit.parmInventItemInventSetupMultipleQty() * _inventTable.NetWeight);
+
+            if (!ndxDeliveryUnit.parmDeliveryUnitTxt())
+            {
+                ndxDeliveryUnit.parmDeliveryUnitTxt(deliveryUnitTxt);
+                ndxDeliveryUnit.parmNetWeightDeliveryUnit(ndxDeliveryUnit.parmNetWeightDeliveryUnitLowest());
+            }
+
+            // the conversion works differently as in AX 2009
+            //
+            //if (ndxDeliveryUnit.parmUnitIdInventTableModuleInvent() != unitOfMeasureConversionConvertDeliveryUnitLowest.FromUnitOfMeasure)
+            if (ndxDeliveryUnit.parmUnitIdInventTableModuleInvent() != unitOfMeasureConversionConvertDeliveryUnitLowest.ToUnitOfMeasure)
+            {
+                lUnitOfMeasureDeliveryUnitPreferred = UnitOfMeasure::find(unitOfMeasureConversionConvertDeliveryUnitLowest.ToUnitOfMeasure);
+                
+                unitId = UnitOfMeasure::find(ndxDeliveryUnit.parmUnitIdInventTableModuleInvent()).Symbol;
+                unitId1 =lUnitOfMeasureDeliveryUnitPreferred.Symbol;
+
+                deliveryUnitTxt = strfmt("@NDX:NDXUnitConvertCheckInfoTxt22", unitId, unitId1);        // Lagereinheit [%1] ungleich 'von Einheit' aus Einheitenumrechnung [%2]
+                ndxDeliveryUnit.parmDeliveryUnitInfo(deliveryUnitTxt);
+                ndxDeliveryUnit.parmValueDetermined(noYes::No);
+                unitOfMeasureConversionConvertDeliveryUnitLowest = null;
+            }
+        }
+
+        if(!ndxDeliveryUnit.parmDeliveryUnitTxt())
+        {
+            // Wenn keine kleinste Liefereinheit vorhanden ist, entspricht die Lagereinheit der keinsten Liefereinheit
+            deliveryUnitTxt = strfmt('%1 %2', 1, unitId);
+            ndxDeliveryUnit.parmDeliveryUnitTxt(deliveryUnitTxt);
+            ndxDeliveryUnit.parmNetWeightDeliveryUnit(_inventTable.NetWeight);
+        }
+
+
+        return ndxDeliveryUnit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addRangeItemSet</Name>
+				<Source><![CDATA[
+    public static void addRangeItemSet(QueryBuildDataSource _qbds)
+    {
+        next addRangeItemSet(_qbds);
+        _qbds.addRange(fieldnum(SalesLine, AVAItemSet)).value(SysQuery::value(NoYes::No));   // keine Sortimentspositionen
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addRangeDelegatedToAgent</Name>
+				<Source><![CDATA[
+    public static void addRangeDelegatedToAgent(QueryBuildDataSource _qbds)
+    {
+        next addRangeDelegatedToAgent(_qbds);
+        _qbds.addRange(fieldnum(SalesTable, AVADelegatedToAgent)).value(QueryValue(NoYes::No));                        // keine delegierten Aufträge//Dummy
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addRangeDateFromDateTo</Name>
+				<Source><![CDATA[
+    public static void addRangeDateFromDateTo(QueryBuildDataSource _qbds,  Date _orderDateFrom, Date _orderDateTo)
+    {
+        next addRangeDateFromDateTo(_qbds, _orderDateFrom, _orderDateTo);
+        _qbds.addRange(fieldnum(SalesTable, KCS_PurchRefDate)).value(SysQuery::range(_orderDateFrom, _orderDateTo));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>hasAlliance</Name>
+				<Source><![CDATA[
+    public static boolean hasAlliance(DataAreaId _uk, CustAccount _custAccount)
+    {
+        boolean ret;
+        KCS_TOSTable lKCS_TOSTable;
+        CustTable custTable;
+        ret = next hasAlliance(_uk, _custAccount);
+
+        select firstonly custTable
+            where custTable.AccountNum == _custAccount
+            && custTable.DataAreaId == _uk;
+
+        if(custTable && custTable.KCS_TOSId)
+        {
+            lKCS_TOSTable = KCS_TOSTable::findChild(_uk, _custAccount);
+        }
+        
+        ret = lKCS_TOSTable? true:false;
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addRangeAllianceRequests</Name>
+				<Source><![CDATA[
+    public static void addRangeAllianceRequests(QueryBuildDataSource _qbds, DataAreaId _uk, CustAccount _custAccount)
+    {
+        KCS_TOSTable lKCS_TOSTable;
+        KCS_TOSTableCustTmp lKCS_TOSTableCustTmp;
+
+        next  addRangeAllianceRequests(_qbds, _uk, _custAccount);
+        
+        lKCS_TOSTable = KCS_TOSTable::findChild(_uk, _custAccount);
+        lKCS_TOSTableCustTmp = lKCS_TOSTable.buildTOSTableCustTmp();
+
+        while select lKCS_TOSTableCustTmp
+        {
+            _qbds.addRange(fieldnum(SalesTable, CustAccount)).value(QueryValue(lKCS_TOSTableCustTmp.CustAccount));  // Verband-Mitglied
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPurchDate</Name>
+				<Source><![CDATA[
+    public static TransDate getPurchDate(SalesTable _salesTable)
+    {
+        TransDate transDate = next getPurchDate(_salesTable);
+
+        if (_salesTable.KCS_PurchRefDate != DateNull())
+        {
+            transDate = _salesTable.KCS_PurchRefDate;
+        }
+        return transDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getProductDescription</Name>
+				<Source><![CDATA[
+    public static str getProductDescription(InventTable _inventTable)
+    {
+        str strItemDescription = next getProductDescription(_inventTable);
+        
+        strItemDescription = strrtrim(EcoResProductTranslation::findByProductLanguage(_inventTable.Product, new xInfo().language()).NDXProductName1);
+        strItemDescription += ' ' + strrtrim(EcoResProductTranslation::findByProductLanguage(_inventTable.Product, new xInfo().language()).NDXProductName2);
+        return strItemDescription;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAllianceSet</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Get alliances for specific GLN number
+    /// </summary>
+    /// <param name = "_gln">GLN number</param>
+    /// <returns>set of alliance</returns>
+    public static Set getAllianceSet(NDXBASEGLN _gln)
+    {
+        KCS_TOSTable lKCS_TOSTable;
+        Set allienceSet = next getAllianceSet(_gln);
+        container conAlience;
+
+        while select crosscompany lKCS_TOSTable
+            where lKCS_TOSTable.GLN == _gln
+        {
+            conAlience = conNull();
+            conAlience = [lKCS_TOSTable.DataAreaId, lKCS_TOSTable.TosId, lKCS_TOSTable.Description];
+            allienceSet.add(conAlience);
+        }
+
+        return allienceSet;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isAlliance</Name>
+				<Source><![CDATA[
+    public static boolean isAlliance(AccountNum _accountNum)
+    {
+        KCS_TOSTable lKCS_TOSTable;
+        boolean ret = next isAlliance(_accountNum);
+
+        select firstonly lKCS_TOSTable
+            where  lKCS_TOSTable.TosId == _accountNum;
+        
+        ret = lKCS_TOSTable.RecId > 0;
+        
+        return ret; 
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMaster</Name>
+				<Source><![CDATA[
+    public static container getMaster(AccountNum _accountNum, CompanyId _companyId)
+    {
+        NDXVerband verband = NDXVerband::constructor();
+        container conMaster = next getMaster(_accountNum, _companyId);
+        
+        conMaster = verband.getMaster(_accountNum, _companyId);
+        
+        return conMaster;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChildrenFromMaster</Name>
+				<Source><![CDATA[
+    public static container getChildrenFromMaster(AccountNum _master, container _conCompany)
+    {
+        NDXVerband verband = NDXVerband::constructor();
+        container conChildren = next getChildrenFromMaster(_master, _conCompany);     
+
+        conChildren = verband.getChildrenFromMaster(_master, _conCompany);
+
+        return conChildren;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dispRequesterName</Name>
+				<Source><![CDATA[
+    public static CustName dispRequesterName(AccountNum _accountnum)
+    {
+        KCS_TOSTable lKCS_TOSTable;
+        CustName custName = '';
+               
+        custName = next dispRequesterName(_accountnum);
+
+        if(custName == '')
+        {
+            select firstonly lKCS_TOSTable
+                where lKCS_TOSTable.TosId == _accountnum;
+
+            custName = lKCS_TOSTable.Description;
+        }
+        
+        return custName;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,289 @@
+﻿# Quick Reference Guide - AVA Sales Invoice Report
+
+## File Locations
+
+```
+AVAExtension/
+├── AxQuery/
+│   └── AVASalesInvoiceReportQuery.xml          # Query definition
+├── AxClass/
+│   ├── AVASalesInvoiceReportContract.xml       # Parameter contract
+│   └── AVASalesInvoiceReportController.xml     # Report controller
+├── AxReport/
+│   └── AVASalesInvoiceReport.xml               # SSRS report
+└── AxMenuItemOutput/
+    └── AVASalesInvoiceReport.xml               # Menu item
+```
+
+## Object Naming Convention
+
+| Object Type | Name | Prefix |
+|-------------|------|--------|
+| Query | AVASalesInvoiceReportQuery | AVA |
+| Contract Class | AVASalesInvoiceReportContract | AVA |
+| Controller Class | AVASalesInvoiceReportController | AVA |
+| Report | AVASalesInvoiceReport | AVA |
+| Menu Item | AVASalesInvoiceReport | AVA |
+
+## Parameters
+
+| Parameter | Type | Required | Description | Example |
+|-----------|------|----------|-------------|---------|
+| CustAccount | String | No | Customer account filter | "US-001" |
+| DeliveryDateFrom | Date | No | Delivery date from | 01/01/2024 |
+| DeliveryDateTo | Date | No | Delivery date to | 12/31/2024 |
+
+## Report Fields
+
+| Field | Source Table | Description |
+|-------|--------------|-------------|
+| SalesId | SalesTable | Sales order number |
+| CustAccount | SalesTable | Customer account |
+| CustomerName | CustTable | Customer name |
+| DeliveryDate | SalesTable | Delivery date |
+| InvoiceId | CustInvoiceJour | Invoice number |
+| InvoiceDate | CustInvoiceJour | Invoice date |
+| CurrencyCode | CustInvoiceJour | Currency code |
+| ItemId | CustInvoiceTrans | Item number |
+| ItemName | CustInvoiceTrans | Item description |
+| Qty | CustInvoiceTrans | Quantity |
+| SalesPrice | CustInvoiceTrans | Unit price |
+| LineAmount | CustInvoiceTrans | Line total |
+
+## Key Methods
+
+### Contract Class
+
+```xpp
+// Get/set customer account
+public CustAccount parmCustAccount(CustAccount _custAccount = custAccount)
+
+// Get/set delivery date from
+public TransDate parmDeliveryDateFrom(TransDate _deliveryDateFrom = deliveryDateFrom)
+
+// Get/set delivery date to
+public TransDate parmDeliveryDateTo(TransDate _deliveryDateTo = deliveryDateTo)
+
+// Validate parameters
+public boolean validate()
+```
+
+### Controller Class
+
+```xpp
+// Entry point
+public static void main(Args _args)
+
+// Apply query ranges before execution
+protected void preRunModifyContract()
+```
+
+## Common Tasks
+
+### Run Report from Code
+
+```xpp
+Args args = new Args();
+AVASalesInvoiceReportController::main(args);
+```
+
+### Run Report with Parameters
+
+```xpp
+Args args = new Args();
+AVASalesInvoiceReportController controller = new AVASalesInvoiceReportController();
+AVASalesInvoiceReportContract contract;
+
+controller.parmArgs(args);
+contract = controller.parmReportContract().parmRdpContract() as AVASalesInvoiceReportContract;
+
+// Set parameters
+contract.parmCustAccount("US-001");
+contract.parmDeliveryDateFrom(str2Date("01/01/2024", 123));
+contract.parmDeliveryDateTo(str2Date("12/31/2024", 123));
+
+controller.startOperation();
+```
+
+### Modify Query Programmatically
+
+```xpp
+Query query = new Query(queryStr(AVASalesInvoiceReportQuery));
+QueryBuildDataSource qbdsSalesTable = query.dataSourceTable(tableNum(SalesTable));
+QueryBuildRange qbrCustAccount = qbdsSalesTable.addRange(fieldNum(SalesTable, CustAccount));
+qbrCustAccount.value("US-001");
+```
+
+## Labels
+
+### System Labels Used
+
+| Label | English Text | Usage |
+|-------|--------------|-------|
+| @SYS7407 | Customer account | Customer parameter |
+| @SYS22447 | Delivery date | Date from parameter |
+| @SYS318425 | To date | Date to parameter |
+| @SYS318698 | Sales invoice report | Dialog caption |
+
+### Custom Labels (Create in label file)
+
+| Label | Suggested Text |
+|-------|----------------|
+| @AVA:SalesInvoiceReport | Sales Invoice Report |
+| @AVA:SalesInvoiceReportHelp | Display all invoices associated with sales orders |
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Report not in menu | Check security privileges |
+| No data shown | Verify filters and test data exists |
+| Query not found | Rebuild project and sync database |
+| Parameter dialog doesn't show | Verify menu item points to controller class |
+| Date validation fails | Check DeliveryDateFrom <= DeliveryDateTo |
+| Performance issues | Review indexes and date range |
+
+## Build and Deploy
+
+### Quick Build
+```powershell
+# In Visual Studio
+Ctrl+Shift+B  # Build solution
+```
+
+### Synchronize Database
+```
+Dynamics 365 → Synchronize Database → Select Model → Synchronize
+```
+
+### Create Deployable Package
+```
+Dynamics 365 → Create Deployable Package → Select Model → Create
+```
+
+## Testing Checklist
+
+- [ ] Query executes without errors
+- [ ] All joins return expected data
+- [ ] Parameters filter correctly
+- [ ] Date validation works
+- [ ] Report renders with data
+- [ ] Grouping is correct
+- [ ] Subtotals are accurate
+- [ ] Grand total is correct
+- [ ] Export to PDF works
+- [ ] Export to Excel works
+- [ ] Security is enforced
+
+## Security Configuration
+
+### Create Privilege (Optional)
+
+```xml
+<AxSecurityPrivilege>
+  <Name>AVASalesInvoiceReportView</Name>
+  <Label>@AVA:ViewSalesInvoiceReport</Label>
+  <AccessLevel>Read</AccessLevel>
+  <EntryPoints>
+    <AxSecurityEntryPoint>
+      <Name>AVASalesInvoiceReport</Name>
+      <ObjectType>MenuItemOutput</ObjectType>
+    </AxSecurityEntryPoint>
+  </EntryPoints>
+</AxSecurityPrivilege>
+```
+
+### Assign to Duty
+
+```
+System Administration → Security → Duties
+→ Select appropriate duty (e.g., SalesClerk)
+→ Add privilege: AVASalesInvoiceReportView
+```
+
+## Performance Tips
+
+1. **Limit date ranges** - Don't query entire history
+2. **Use specific customer** - When possible, filter by account
+3. **Add indexes** - On SalesTable(CustAccount, DeliveryDate)
+4. **Batch execution** - For very large datasets
+5. **Report caching** - Enable for frequently run reports
+
+## Customization Guide
+
+### Add New Parameter
+
+1. Add variable to contract class
+2. Add parm method with DataMemberAttribute
+3. Apply range in controller.preRunModifyContract()
+4. Update report parameters
+
+### Add New Field
+
+1. Ensure field is in query (DynamicFields=Yes includes all)
+2. Add field to report dataset
+3. Add to report layout in Visual Studio
+
+### Change Grouping
+
+1. Open report in Visual Studio
+2. Modify Tablix grouping
+3. Update group expressions
+4. Rebuild and deploy
+
+## Common Errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| Cannot find query 'AVASalesInvoiceReportQuery' | Query not compiled | Build project |
+| Cannot find label '@AVA:xxx' | Label doesn't exist | Create label or use system label |
+| Table 'SalesTable' does not exist | Database not synchronized | Sync database |
+| Access denied | Security not configured | Grant permissions |
+| Report times out | Dataset too large | Add date range filter |
+
+## Related Objects
+
+### Tables
+- SalesTable
+- CustTable
+- CustInvoiceJour
+- CustInvoiceTrans
+
+### EDT Types
+- CustAccount
+- TransDate
+- SalesIdBase
+- InvoiceId
+- ItemId
+- Name
+- Qty
+- SalesPrice
+- AmountCur
+- CurrencyCode
+
+### Framework Classes
+- SrsReportDataContractBase
+- SrsReportRunController
+- SrsReportHelper
+- QueryRun
+
+## Support Resources
+
+- **Documentation:** See TECHNICAL_SPECIFICATION.md
+- **Deployment:** See DEPLOYMENT_GUIDE.md
+- **Overview:** See README.md
+- **Microsoft Docs:** https://docs.microsoft.com/dynamics365/fin-ops-core/dev-itpro/analytics/
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2026-02-18 | Initial release |
+
+---
+
+**Quick Help:**
+- Press F1 in Visual Studio for context-sensitive help
+- Use Ctrl+K, Ctrl+D to format X++ code
+- Use Ctrl+Shift+F to find in files
+- Use F12 to go to definition

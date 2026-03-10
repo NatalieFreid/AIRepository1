@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVABOMCalcLine_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(classStr(BOMCalcLine))]
+final class AVABOMCalcLine_Extension
+{
+    public AVACostModelCombination     avaCostModelCombination;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmAVACostModelCombination</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_avacostModelCombination">_avacostModelCombination</param>
+    /// <returns>AVACostModelCombination</returns>
+    AVACostModelCombination         parmAVACostModelCombination(AVACostModelCombination         _avacostModelCombination = avaCostModelCombination)
+    {
+        avaCostModelCombination = _avacostModelCombination;
+        return avaCostModelCombination;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcCost</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_consumptionInventQty">Qty</param>
+    /// <param name = "_calcTradeAgreements">boolean</param>
+    /// <returns>boolean</returns>
+    protected boolean calcCost(Qty _consumptionInventQty, boolean _calcTradeAgreements)
+    {
+        boolean ret;
+        
+        if (this.parmAVACostModelCombination() == NoYes::Yes && _calcTradeAgreements == false)
+        {
+            parentBOMCalc.parmCostPriceModel(BOMCostPriceModel::ItemCostPrice);
+        }
+
+        ret = next calcCost(_consumptionInventQty,_calcTradeAgreements);
+
+        if (!bomCalcCost.costPrice() &&    this.parmAVACostModelCombination() == NoYes::Yes)
+        {
+            parentBOMCalc.parmCostPriceModel(BOMCostPriceModel::BOMCalcGroup);
+            this.AVACalcCostSecondary( _consumptionInventQty, _calcTradeAgreements);
+            parentBOMCalc.parmCostPriceModel(BOMCostPriceModel::ItemCostPrice);
+        }
+
+        
+        
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVACalcCostSecondary</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// desigend from AVA
+    /// </summary>
+    /// <param name = "_consumptionInventQty">_consumptionInventQty</param>
+    /// <param name = "_calcTradeAgreements">_calcTradeAgreements</param>
+    /// <returns>boolean</returns>
+    boolean AVACalcCostSecondary(Qty _consumptionInventQty, boolean _calcTradeAgreements = false)
+    {
+        BOMCostPriceModel   parentCostPriceModel        = parentBOMCalc.parmCostPriceModel();
+        BOMCalcCostPrice    bomCalcGroupCostPrice       = bomCalcGroup.getCostPriceModel(parentCostPriceModel);
+        BOMCalcCostPrice    bomCalcGroupCostPriceAlt    = bomCalcGroup.getCostPriceModelAlt(parentCostPriceModel);
+
+
+        // If trade agreements are used as cost price model, collect total consumption and calculate this item later
+        if (!_calcTradeAgreements && bomCalcGroupCostPrice == BOMCalcCostPrice::PriceDisc)
+        {
+            this.parmParentBOMCalc().addTotalItemConsumption(itemId, inventDimId, _consumptionInventQty);
+            return false;
+        }
+
+        tradeAgreementQty = !_calcTradeAgreements ? 0 : this.parmParentBOMCalc().getTotalItemConsumption(itemId, inventDimId);
+
+        bomCalcCost.initCalc(this.parmParentBOMCalc().parmCalcDate(),
+                             itemId,
+                             inventDimId,
+                             _consumptionInventQty,
+                             tradeAgreementQty,
+                             vendAccount,
+                             this.parmParentBOMCalc().parmProfitSet(),
+                             costingVersionId,
+                             bomCalcFallBack,
+                             fallBackVersionId,
+                             parentCostPriceModel,
+                             siteId);
+        bomCalcCost.setBurden(this.pmfIsBurden(), this.pmfBurdenAmount());
+
+        // calculate cost price
+        bomCalcCost.calcPrimaryCostModel();
+        costPriceModel  = bomCalcGroupCostPrice;
+
+        if (!_calcTradeAgreements && !bomCalcCost.costPrice() && bomCalcGroupCostPriceAlt == BOMCalcCostPrice::PriceDisc)
+        {
+            this.parmParentBOMCalc().addTotalItemConsumption(itemId, inventDimId, _consumptionInventQty);
+            return false;
+        }
+
+        if (!bomCalcCost.costPrice() && bomCalcGroupCostPrice != bomCalcGroupCostPriceAlt)
+        {
+            bomCalcCost.calcAlternativeCostModel();
+            costPriceModel  = bomCalcGroupCostPriceAlt;
+        }
+
+        // calculate sales price
+        bomCalcCost.calcSalesPrice();
+        salesPriceModel  = bomCalcGroup.getSalesPriceModel(parentCostPriceModel);
+
+        this.updateCalcData();
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

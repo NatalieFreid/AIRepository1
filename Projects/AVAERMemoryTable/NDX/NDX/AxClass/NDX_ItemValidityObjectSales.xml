@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDX_ItemValidityObjectSales</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// WolfA 21.03.23
+/// Derived class
+/// </summary>
+class NDX_ItemValidityObjectSales extends NDX_ItemValidityObject
+{
+    QuotationId check_QuotationIdOrigin;
+    SalesId check_SalesId;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    protected void new(SalesId _check_salesId, QuotationId _check_QuotationIdOrigin)
+    {
+        check_salesId = _check_salesId;
+        check_QuotationIdOrigin = _check_QuotationIdOrigin;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    static public NDX_ItemValidityObjectSales construct(SalesId _check_salesId, QuotationId _check_QuotationIdOrigin)
+    {
+        return new NDX_ItemValidityObjectSales(_check_salesId, _check_QuotationIdOrigin);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCheck_SalesId</Name>
+				<Source><![CDATA[
+    public SalesId parmCheck_SalesId(SalesId _check_SalesId = check_SalesId)
+    {
+        check_SalesId = _check_SalesId;
+        return check_SalesId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCheck_QuotationIdOrigin</Name>
+				<Source><![CDATA[
+    public QuotationId parmCheck_QuotationIdOrigin(QuotationId _check_QuotationIdOrigin = check_QuotationIdOrigin)
+    {
+        check_QuotationIdOrigin = _check_QuotationIdOrigin;
+        return check_QuotationIdOrigin;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>startTest</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Starts the validation test
+    /// </summary>
+    /// <param name = "_caller">Caller form</param>
+    public void startTest(FormRun _caller)
+    {
+        container result;
+        NDXValidityMessage message;
+        INDX_ItemValidityTest ndx_ItemValidityTestForm = _caller as INDX_ItemValidityTest;
+
+        //if caller Quotation
+        result = NDX_ItemValidity::checkValiditySale(check_ItemId,
+                                                        check_SalesId,
+                                                        check_QuotationIdOrigin,
+                                                        check_CustAccount,
+                                                        check_Date);
+
+        message = NDX_ItemValidity::conErrorMessage2ValidityMessage(conPeek(result,2));
+        ndx_ItemValidityTestForm.setMessage(message);
+
+        // 2. komplette-Validierungsprüfung
+        result = NDX_ItemValidity::checkValiditySale(check_ItemId,
+                                                        check_SalesId,
+                                                        check_QuotationIdOrigin,
+                                                        check_CustAccount,
+                                                        check_Date,
+                                                        true);
+        
+        message = NDX_ItemValidity::conErrorMessage2ValidityMessage(conPeek(result,2));
+        ndx_ItemValidityTestForm.setMessageAll(message);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkValidity</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Run check for object
+    /// </summary>
+    /// <param name = "_itemId">_itemId</param>
+    /// <param name = "_salesId">_salesId</param>
+    /// <param name = "_quotationId">_quotationId</param>
+    /// <param name = "_accountNum">_accountNum</param>
+    /// <param name = "_checkDate">_checkDate</param>
+    /// <param name = "_lDoAllChecks">_lDoAllChecks</param>
+    /// <returns>result container</returns>
+    public container checkValidity(ItemId                _itemId,
+                                   SalesIdBase               _salesId,
+                                   QuotationId               _quotationId,
+                                   CustAccount               _accountNum = '',
+                                   date                      _checkDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()),
+                                   boolean                   _lDoAllChecks = false)
+    {
+        inventTable                             inventTable = InventTable::find(_itemId);
+        CustTable                               custTable;
+        SalesTable                              salesTable;
+        smmBusRelChainGroup                     smmBusRelChainGroup;
+
+        NDXItemValidityErrors                   nDX_ItemValidityErrors;
+
+        NDX_ItemValidity                        oItemValidity;
+        NDX_MultipleS_Sales_Item                oMultipleS_Sales_Item;
+        NDX_MultipleS_Customer_Item             oMultipleS_Customer_Item;
+        NDX_MultipleS_Chain_Item                oMultipleS_Chain_Item;
+        NDXValidityMessage                      validityMessage;
+        boolean                                 isValid1, isValid = true;
+        container                               conErrorMessage = connull();
+        ;
+
+        oItemValidity = NDX_ItemValidity::nDX_ItemValidity_Sale(inventTable, _lDoAllChecks);
+
+        // keine Gültigkeitseinschränkung
+        if (!oItemValidity.parmLItemValidityTableExists() || !oItemValidity.hasValidityChecksSale())
+        {
+            return [isValid, conErrorMessage];
+        }
+
+        // 1.Gültigkeitsprüfung: Datum
+        salesTable = SalesTable::find(_salesId);
+        if (prmisdefault(_checkDate) && salesTable)
+        {
+            _checkDate = DateTimeUtil::date(salesTable.createdDateTime);
+        }
+
+        if (oItemValidity.parmChecked_Date() != _checkDate)
+        {
+            [isValid1, nDX_ItemValidityErrors] = oItemValidity.isValidDate(_checkDate);
+            if (!isValid1)
+            {
+                isValid         = isValid && isValid1;
+                conErrorMessage += nDX_ItemValidityErrors.checkMessage;
+                conErrorMessage += nDX_ItemValidityErrors.ErrorMessage;
+                if (!_lDoAllChecks)
+                {
+                    return [isValid, conErrorMessage];
+                }
+            }
+        }
+
+        // 2.Gültigkeitsprüfung: Auftragsnummer
+        oMultipleS_Sales_Item = NDX_MultipleS_Sales_Item::new_FromNDX_ItemValidity(oItemValidity, salesTable);
+        [isValid1, validityMessage] = oMultipleS_Sales_Item.isValid();
+        if (!isValid1)
+        {
+            isValid         = isValid && isValid1;
+            conErrorMessage += validityMessage;
+            if (!_lDoAllChecks)
+            {
+                return [isValid, conErrorMessage];
+            }
+        }
+
+        // 3.Gültigkeitsprüfung: Debitor
+        if (_accountNum)
+        {
+            custTable = CustTable::find(_accountNum);
+        }
+        else
+        {
+            salesTable = SalesTable::find(_salesId);
+            custTable = CustTable::find(salesTable.CustAccount);
+        }
+        if (oItemValidity.parmChecked_Debitor() != custTable.AccountNum)
+        {
+            if (custTable)
+            {
+                oMultipleS_Customer_Item = NDX_MultipleS_Customer_Item::new_FromNDX_ItemValidity(oItemValidity, custTable);
+                [isValid1, validityMessage] = oMultipleS_Customer_Item.isValid();
+                if (!isValid1)
+                {
+                    isValid         = isValid && isValid1;
+                    conErrorMessage += validityMessage;
+                    if (!_lDoAllChecks)
+                    {
+                        return [isValid, conErrorMessage];
+                    }
+                }
+            }
+        }
+
+        // 4.Gültigkeitsprüfung: Kette
+        if (oItemValidity.parmChecked_Chain() != custTable.CompanyChainId)
+        {
+            smmBusRelChainGroup = smmBusRelChainGroup::avaFindChainId(custTable.CompanyChainId);
+
+            oMultipleS_Chain_Item = NDX_MultipleS_Chain_Item::new_FromNDX_ItemValidity(oItemValidity, smmBusRelChainGroup);
+            [isValid1, validityMessage] = oMultipleS_Chain_Item.isValid();
+            if (!isValid1)
+            {
+                isValid         = isValid && isValid1;
+                conErrorMessage += validityMessage;
+                if (!_lDoAllChecks)
+                {
+                    return [isValid, conErrorMessage];
+                }
+            }
+        }
+
+        // 5. Angebotsprüfung
+        if (_quotationId)
+        {
+            NDX_ItemValidity::checkValidityQuotation(_itemId, _quotationId, '', '', DateTimeUtil::date(salesTable.createdDateTime), _lDoAllChecks, oItemValidity);
+        }
+
+        return [isValid, _lDoAllChecks ? oItemValidity.getConErrorMessageAll() : conErrorMessage];
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

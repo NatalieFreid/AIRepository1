@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+  <Name>AVADAIReportCleanupService</Name>
+  <SourceCode>
+    <Declaration><![CDATA[
+public final class AVADAIReportCleanupService extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+    <Methods>
+      <Method>
+        <Name>runCleanup</Name>
+        <Source><![CDATA[
+/// <summary>
+/// Clears the ReportData field on AVADAIReportExportWork for all child records
+/// of AVADAIReportExportTable records matching the supplied query.
+/// </summary>
+/// <param name="_contract">The cleanup data contract containing the query.</param>
+[SysEntryPointAttribute(true)]
+public void runCleanup(AVADAIReportCleanupContract _contract)
+{
+    if (!_contract)
+    {
+        throw error("Contract was not provided.");
+    }
+
+    Query query = _contract.parmQuery();
+    if (!query)
+    {
+        throw error("Query was not provided.");
+    }
+
+    // Respect security when running under batch or user session
+    // The controller will configure runas appropriately, this just ensures we follow best practices
+    SysOperationProgress progress = new SysOperationProgress();
+    progress.setCaption("Cleaning AVADAI Report Export Work data");
+    progress.setTotal(0);
+
+    // Use QueryRun to iterate the parent records
+    QueryRun      qr = new QueryRun(query);
+    AVADAIReportExportTable parent;
+    AVADAIReportExportWork  child;
+
+    int cleaned = 0;
+    try
+    {
+        ttsbegin;
+
+        while (qr.next())
+        {
+            parent = qr.get(tableNum(AVADAIReportExportTable));
+
+            // For each parent, select child rows by foreign key. Adjust the relation name/field if needed.
+            while select forupdate child
+                where child.ReportExportTableRecId == parent.RecId
+            {
+                // Clear the blob/memo field ReportData
+                if (child.ReportData)
+                {
+                    child.ReportData = '';
+                    child.doUpdate();
+                    cleaned++;
+
+                    if ((cleaned % 100) == 0)
+                    {
+                        progress.setText(strFmt("Cleaned %1 rows...", cleaned));
+                    }
+                }
+            }
+        }
+
+        ttscommit;
+    }
+    catch (Exception::Deadlock)
+    {
+        ttsabort;
+        error("Cleanup aborted due to deadlock. Please retry or schedule during off-peak hours.");
+        throw;
+    }
+    catch (Exception::UpdateConflict)
+    {
+        ttsabort;
+        error("Cleanup aborted due to update conflict.");
+        throw;
+    }
+    catch (Exception::Error)
+    {
+        ttsabort;
+        error("An error occurred during cleanup.");
+        throw;
+    }
+
+    info(strFmt("Cleanup finished. Rows processed: %1", cleaned));
+}
+]]></Source>
+      </Method>
+    </Methods>
+  </SourceCode>
+</AxClass>

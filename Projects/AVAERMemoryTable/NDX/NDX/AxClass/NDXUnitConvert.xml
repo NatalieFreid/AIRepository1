@@ -1,0 +1,793 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXUnitConvert</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// WolfA 24.04.23
+/// Unit convert class
+/// </summary>
+internal final class NDXUnitConvert
+{
+    UnitOfMeasureConversion unitOfMeasureConversionTmp;
+    NDXRecIdUnitConvert     ndxRecIdUnitConvert_DiffWeight;
+
+    InventTable             inventTable;
+    InventTable             inventTableBOM;
+    BOMVersion              bomVersion;
+    BOM                     bom;
+    UnitOfMeasure           unit;
+
+    ItemId                  inventTable_ItemId;
+    ItemId                  inventTableBOM_ItemId;
+    UnitIdBase              unit_UnitId;
+    recId                   bOMVersion_RecId;
+    recId                   bOM_RecId;
+
+    NDXUnitDoubleAmount     lIsDoubleAmount;
+    NDXUmsSignature         signature;
+
+    NDXUnitConvertCheckParameters ndxUnitConvertCheckParameters;
+    Common record;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmUnitConvertTmp</Name>
+				<Source><![CDATA[
+    public UnitOfMeasureConversion parmUnitConvertTmp(UnitOfMeasureConversion _unitOfMeasureConversionTmp = unitOfMeasureConversionTmp)
+    {
+        unitOfMeasureConversionTmp = _unitOfMeasureConversionTmp;
+        return unitOfMeasureConversionTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSignature</Name>
+				<Source><![CDATA[
+    public NDXUmsSignature parmSignature(NDXUmsSignature _signature = signature)
+    {
+        signature = _signature;
+        return signature;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNDXRecIdUnitRefRecId</Name>
+				<Source><![CDATA[
+    public NDXRecIdUnitConvert parmNDXRecIdUnitRefRecId(NDXRecIdUnitConvert _ndxRecIdUnitConvert_DiffWeight = ndxRecIdUnitConvert_DiffWeight)
+    {
+        ndxRecIdUnitConvert_DiffWeight = _ndxRecIdUnitConvert_DiffWeight;
+        return ndxRecIdUnitConvert_DiffWeight;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    private void new()
+    {
+        Random    random = new Random();
+        ;
+        signature = strfmt('%1.%2.', SessionId(), random.nextInt());
+     
+        //BP Deviation Documented
+        unitOfMeasureConversionTmp.setTmp();
+        ndxUnitConvertCheckParameters = NDXUnitConvertCheckParameters::find();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>constructor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// class constructor 
+    /// </summary>
+    /// <returns>NDXUnitconvert object</returns>
+    public static NDXUnitConvert constructor()
+    {
+        return new NDXUnitConvert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initialize</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// init method
+    /// </summary>
+    public void initialize()
+    {
+        delete_from unitOfMeasureConversionTmp;
+        delete_from ndxRecIdUnitConvert_DiffWeight where ndxRecIdUnitConvert_DiffWeight.Signature == this.signature;
+        delete_from ndxRecIdUnitConvert_DiffWeight where ndxRecIdUnitConvert_DiffWeight.CreatedDateTime < DateTimeUtil::addDays(DateTimeUtil::utcNow(), -ndxUnitConvertCheckParameters.HoldDataDays);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkUnitConvertWeight_DS</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// check unit convert weight call from form
+    /// </summary>
+    /// <param name = "_unitOfMeasureConversion">ndxUnitConvertCheck record</param>
+    void checkUnitConvertWeight_DS(UnitOfMeasureConversion  _unitOfMeasureConversion)
+    {
+        FormDataSource unitOfMeasureConversion_DS;
+        UnitOfMeasureConversion unitOfMeasureConversion;
+        int nAnz;
+
+        if (!FormDataUtil::isFormDataSource(_unitOfMeasureConversion))
+        {
+            Error("@NDX:NDXMustBeCalledFromForm"); // Aufruf muss aus einer Form heraus erfolgen
+            return;
+        }
+
+        info(strfmt("@NDX:NDXUnitConvertCheckInfoTxt12", datetime2Str(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()))));      // [%1] Start: Prüfung Gewichte/Dimensionen Einheitenumrechnung
+        this.initialize();
+
+        unitOfMeasureConversion_DS = FormDataUtil::getFormDataSource(_unitOfMeasureConversion);
+
+        if (unitOfMeasureConversion_DS.anyMarked())
+        {
+            for (unitOfMeasureConversion = unitOfMeasureConversion_DS.getFirst(1); unitOfMeasureConversion; unitOfMeasureConversion = unitOfMeasureConversion_DS.getNext())
+            {
+                this.checkUnitConvertWeight(unitOfMeasureConversion, true, true);
+                ++nAnz;
+            }
+        }
+        else
+        {
+            // Mit (Ja) wird nur die aktuelle, mit (Nein) werden alle Verpackungsdimensionen geprüft.; Verpackungsdimensionen prüfen
+            if (box::yesNo("@NDX:NDXUnitConvertCheckInfoTxt17", DialogButton::Yes, "@NDX:NDXUnitConvertCheckInfoTxt18") == DialogButton::Yes)
+            {
+                unitOfMeasureConversion = unitOfMeasureConversion_DS.cursor();
+                this.checkUnitConvertWeight(unitOfMeasureConversion, true, true);
+                ++nAnz;
+            }
+            else
+            {
+                while select unitOfMeasureConversion
+                    where unitOfMeasureConversion.Product != 0
+                {
+                    this.checkUnitConvertWeight(unitOfMeasureConversion, true, true);
+                    ++nAnz;
+                }
+            }
+        }
+        info(strfmt("@NDX:NDXUnitConvertCheckInfoTxt19", datetime2Str(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())), nAnz ));        // [%1] Ende: Prüfung Gewichte/Dimensionen Einheitenumrechnung (Anzahl [%2])
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkUnitConvertWeight</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// check unit convert weight
+    /// </summary>
+    /// <param name = "_unitOfMeasureConversion">UnitOfMeasureConversion record</param>
+    /// <param name = "_displayInfo">info is diplayed or not</param>
+    /// <param name = "_createNDXRecIdUnitConvert">create record in NDXRecIdUnitConvert</param>
+    /// <returns>UnitOfMeasureConversion record</returns>
+    UnitOfMeasureConversion checkUnitConvertWeight(UnitOfMeasureConversion _unitOfMeasureConversion = null, boolean _displayInfo = true, boolean _createNDXRecIdUnitConvert = false)
+    {
+        #define.AnzDim(3)
+        #define.Hoehe(1)
+        #define.Breite(2)
+        #define.Laenge(3)
+        #define.5mm(5)
+        #define.CR('\n')
+
+        NDXUnitItemMapping      nDX_UnitItemMapping;
+        UnitOfMeasureConversion unitOfMeasureConversion, unitOfMeasureConversionLast;
+
+        Query                   q = new Query();
+        QueryRun                qr;
+        QueryBuildDataSource    qbds1, qbds2, qbds3;
+
+        ItemNetWeight           itemNetWeightBOM;
+        str                     infoTxt;
+        int                     nAnzBomItem;
+        int                     nDim;
+        real                    dimensionValueUnit, dimensionValueInvent;
+        real                    nFactor;
+        NoYes                   isVariable;
+        fieldId                 fId;
+        boolean                 lIsDiff, diffWeight, diffLength, diffWidth, diffHeight, diffVolume, diffMaxQty;
+        boolean                 lUnitHasDimensions;
+        boolean                 lBomItemHasDimensions;
+        boolean                 lItemHasDimensions;
+        recId                   refRecId;
+        boolean                 lSet0;
+
+        void checkDim()
+        {
+            if (dimensionValueUnit)    // Wert in Unit vorhanden
+            {
+                if (isVariable == NoYes::Yes)  // variable Ermittlung
+                {
+                    if (dimensionValueUnit > dimensionValueInvent)
+                    {
+                        unitOfMeasureConversionTmp.(fId) = dimensionValueUnit;
+                    }
+                    else
+                    {
+                        unitOfMeasureConversionTmp.(fId) = dimensionValueInvent;
+                    }
+                }
+                else    // keine variable Ermittlung => Unit ist maßgeblich
+                {
+                    unitOfMeasureConversionTmp.(fId) = dimensionValueUnit;
+                }
+            }
+            else // Wert in Unit nicht angegeben => Wert aus Kartonartikel
+            {
+                unitOfMeasureConversionTmp.(fId) = dimensionValueInvent;
+            }
+        }
+        
+        if(!_unitOfMeasureConversion || _unitOfMeasureConversion.NDXUnitLevel == 0)
+        {
+            return _unitOfMeasureConversion;
+        }
+        
+        qbds1 = q.addDataSource(tablenum(UnitOfMeasureConversion));
+        
+        if (_unitOfMeasureConversion.RecId || _unitOfMeasureConversion.Product)
+        {
+            qbds1.addRange(fieldnum(UnitOfMeasureConversion, Product)).value(queryValue(_unitOfMeasureConversion.Product));
+            qbds1.addRange(fieldnum(UnitOfMeasureConversion, FromUnitOfMeasure)).value(queryValue(_unitOfMeasureConversion.FromUnitOfMeasure));
+            qbds1.addRange(fieldnum(UnitOfMeasureConversion, ToUnitOfMeasure)).value(queryValue(_unitOfMeasureConversion.ToUnitOfMeasure));
+        }
+
+        qbds2 = qbds1.addDataSource(tablenum(InventTable));
+        qbds2.joinMode(JoinMode::InnerJoin);
+        qbds2.addLink(fieldnum(UnitOfMeasureConversion, Product), fieldnum(InventTable, Product));
+        qbds2.fetchMode(QueryFetchMode::One2One);
+        
+        qbds3 = qbds1.addDataSource(tablenum(UnitOfMeasure));
+        qbds3.joinMode(JoinMode::InnerJoin);
+
+        qbds3.addLink(fieldnum(UnitOfMeasureConversion, FromUnitOfMeasure), fieldnum(UnitOfMeasure, RecId));
+        qbds3.fetchMode(QueryFetchMode::One2One);
+        
+        qr = new QueryRun(q);
+        
+        while (qr.next())
+        {
+            infoTxt     = '';
+            unitOfMeasureConversion = qr.get(tablenum(UnitOfMeasureConversion));
+
+            if (_unitOfMeasureConversion.RecId || _unitOfMeasureConversion.Product)   // falls Puffer übergeben wurde, diese Werte nehmen
+            {
+                buf2Buf(_unitOfMeasureConversion, unitOfMeasureConversion);
+            }
+
+            inventTable = qr.get(tablenum(InventTable));
+            inventTable_ItemId = inventTable.ItemId;
+            
+            unit        = qr.get(tablenum(UnitOfMeasure));
+            unit_UnitId = unit.Symbol;
+            
+            nAnzBomItem = 0;
+            lIsDiff     = false;
+            buf2Buf(unitOfMeasureConversion, unitOfMeasureConversionTmp);
+            
+            if (unitOfMeasureConversion.NDXFixedValues == NoYes::Yes)      // die fixierten Werte sind maßgeblich
+            {
+                unitOfMeasureConversionTmp.insert();
+                continue;
+            }
+
+            lIsDoubleAmount  = NDXUnitConvert::isDoubleAmount(unitOfMeasureConversion);
+            
+            lUnitHasDimensions = unit && unit.NDXHeight && unit.NDXWidth && unit.NDXLength;
+
+            itemNetWeightBOM = 0;
+            
+            bomVersion = bomVersion::findValidActive(InventTable::findByProduct(unitOfMeasureConversion.Product).ItemId);
+
+            if (bomVersion)
+            {
+                lBomItemHasDimensions = false;
+                bOMVersion_RecId = bomVersion.RecId;
+                
+                while select bom
+                    where bom.BOMId == bomVersion.BOMId
+                    join inventTableBOM
+                        where inventTableBOM.ItemId == bom.ItemId
+                    join nDX_UnitItemMapping
+                        where nDX_UnitItemMapping.RefRecIdInventTable == inventTableBOM.RecId
+                            && nDX_UnitItemMapping.RefRecIdUnitOfMeasure == unitOfMeasureConversion.FromUnitOfMeasure
+                {
+                    ++nAnzBomItem;
+                    if (!lBomItemHasDimensions)
+                    {
+                        lBomItemHasDimensions = (inventTableBOM.grossHeight && inventTableBOM.grossWidth && inventTableBOM.grossDepth);
+                    }
+                    inventTableBOM_ItemId = inventTableBOM.ItemId;
+                    bOM_RecId = bom.RecId;
+                    
+                    // Gewicht(e) der Verpackungen aufaddieren
+                    itemNetWeightBOM += (inventTableBOM.NetWeight / 1000);  // Umrechnung in KG (BomQty wird über unitConvert.Factor abgebildet)
+
+                    // Maximal-Dimensionen bestimmen
+                    for (nDim = 1; nDim <= #AnzDim; ++nDim)
+                    {
+                        switch (nDim)
+                        {
+                            case #Hoehe     :
+                                dimensionValueUnit      = unit.NDXHeight;
+                                dimensionValueInvent    = inventTableBOM.grossHeight;
+                                
+                                isVariable              = unit.NDXUnitHeightVariable;
+                                fId                     = fieldnum(UnitOfMeasureConversion, NDXHeight);
+                                
+                                break;
+                            case #Breite    :
+                                dimensionValueUnit      = unit.NDXWidth;
+                                dimensionValueInvent    = inventTableBOM.grossWidth;
+                                
+                                isVariable              = unit.NDXUnitWidthVariable;
+                                fId                     = fieldnum(UnitOfMeasureConversion, NDXWidth);
+
+                                break;
+                            case #Laenge    :
+                                dimensionValueUnit      = unit.NDXLength;
+                                dimensionValueInvent    = inventTableBOM.grossDepth;
+                                
+                                isVariable              = unit.NDXUnitLengthVariable;
+                                fId                     = fieldnum(UnitOfMeasureConversion, NDXLength);
+                                
+                                break;
+                        }
+                        
+                        if (!lUnitHasDimensions && lIsDoubleAmount && dimensionValueInvent && !lBomItemHasDimensions)
+                        {
+                            switch (nDim)
+                            {
+                                case #Hoehe     :
+                                case #Breite    :
+                                    dimensionValueInvent += #5mm;
+                            }
+                        }
+                        checkDim();
+                    }
+                }
+            }
+
+            // Maximal-Dimensionen bestimmen (wenn nicht über Stückliste ermittelt)
+            if (!nAnzBomItem)       // Dimensionen aus Unit
+            {
+                lItemHasDimensions = (inventTable.grossHeight && inventTable.grossWidth && inventTable.grossDepth);
+                for (nDim = 1; nDim <= #AnzDim; ++nDim)
+                {
+                    switch (nDim)
+                    {
+                        case #Hoehe     :
+                            dimensionValueUnit      = unit.NDXHeight;
+                            dimensionValueInvent    = inventTable.grossHeight;
+
+                            isVariable              = unit.NDXUnitHeightVariable;
+                            fId                     = fieldnum(UnitOfMeasureConversion, NDXHeight);
+                            break;
+                        case #Breite    :
+                            dimensionValueUnit      = unit.NDXWidth;
+                            dimensionValueInvent    = inventTable.grossWidth;
+                            
+                            isVariable              = unit.NDXUnitWidthVariable;
+                            fId                     = fieldnum(UnitOfMeasureConversion, NDXWidth);
+                            break;
+                        case #Laenge    :
+                            dimensionValueUnit      = unit.NDXLength;
+                            dimensionValueInvent    = inventTable.grossDepth;
+                            
+                            isVariable              = unit.NDXUnitLengthVariable;
+                            fId                     = fieldnum(UnitOfMeasureConversion, NDXLength);
+                            break;
+                    }
+                   
+                    if (!lUnitHasDimensions && lIsDoubleAmount && dimensionValueInvent && !lBomItemHasDimensions)
+                    {
+                        switch (nDim)
+                        {
+                            case #Hoehe     :
+                            case #Breite    :
+                                dimensionValueInvent += #5mm;
+                        }
+                    }
+                    checkDim();
+                }
+            }
+
+            lSet0 = !lIsDoubleAmount && !lUnitHasDimensions && !lBomItemHasDimensions && unit.NDXUnspecifiedDimensions == NoYes::Yes;
+        
+            if (lSet0)
+            {
+                unitOfMeasureConversionTmp.NDXLength    = 0;
+                unitOfMeasureConversionTmp.NDXWidth    = 0;
+                unitOfMeasureConversionTmp.NDXHeight   = 0;
+            }
+
+            // Gewicht
+            unitOfMeasureConversionTmp.NDXWeight = unitOfMeasureConversion.Factor * (inventTable.NetWeight / 1000);     // Nettogewicht Artikel in KG
+
+            if (itemNetWeightBOM)
+            {
+                unitOfMeasureConversionTmp.NDXWeight += itemNetWeightBOM;          // Gewicht der Verpackung gem. Stückliste
+            }
+            else
+            {
+                unitOfMeasureConversionTmp.NDXWeight += unit.NDXWeight;       // Gewicht der Verpackung aus Einheitenumrechnung
+            }
+
+            unitOfMeasureConversionTmp.NDXWeight = decround(unitOfMeasureConversion.NDXWeight,3);
+
+            //Volumen
+            unitOfMeasureConversionTmp.NDXUnitMaxQty = unitOfMeasureConversion.Factor;
+            unitOfMeasureConversionTmp.insert();
+
+            ndxRecIdUnitConvert_DiffWeight = NDXRecIdUnitConvert::find(unitOfMeasureConversionTmp.RecId, true);
+
+            // Gewicht gemäß der vorherigen Verpackungsstufe ?
+            if (unitOfMeasureConversion.NDXUnitConvertPrevLevel == NoYes::Yes)
+            {
+                select firstonly unitOfMeasureConversionLast
+                    where unitOfMeasureConversionLast.Product == unitOfMeasureConversion.Product
+                        && unitOfMeasureConversionLast.NDXUnitLevel == unitOfMeasureConversion.NDXUnitLevel - 1;
+
+                if (!unitOfMeasureConversionLast && _displayInfo)
+                {
+                    lIsDiff = true;
+                    infoTxt += strfmt("@NDX:NDXUnitConvertCheckInfoTxt1", unitOfMeasureConversion.NDXUnitLevel - 1) + #CR;     // Keine vorherige Stufe [%1]
+                }
+                else
+                {
+                    // Prüfung, ob bereits ein Korrektursatz besteht
+                    refRecId = unitOfMeasureConversionTmp.RecId;
+                    
+                    select firstonly unitOfMeasureConversionTmp
+                        where   unitOfMeasureConversionTmp.Product == unitOfMeasureConversionLast.Product
+                        &&  unitOfMeasureConversionTmp.FromUnitOfMeasure == unitOfMeasureConversionLast.FromUnitOfMeasure
+                            &&  unitOfMeasureConversionTmp.ToUnitOfMeasure   == unitOfMeasureConversionLast.ToUnitOfMeasure;
+
+                    if (unitOfMeasureConversionTmp.RecId != 0)
+                    {
+                        buf2Buf(unitOfMeasureConversionTmp, unitOfMeasureConversionLast);
+                    }
+
+                    select forupdate unitOfMeasureConversionTmp where unitOfMeasureConversionTmp.RecId == refRecId;
+
+                    if (!unitOfMeasureConversionLast.NDXWeight && _displayInfo)
+                    {
+                        lIsDiff = true;
+                        infoTxt += strfmt("@NDX:NDXUnitConvertCheckInfoTxt2", unitOfMeasureConversionLast.NDXUnitLevel) + #CR;     // Gewicht fehlt in der vorherigen Stufe [%1]
+                    }
+                    else
+                    {
+                        nFactor = 1;
+                        if(unitOfMeasureConversion.Factor && unitOfMeasureConversionLast.Factor)
+                        {
+                            nFactor = unitOfMeasureConversion.Factor / unitOfMeasureConversionLast.Factor;
+                        }
+
+                        unitOfMeasureConversionTmp.NDXWeight = unitOfMeasureConversionLast.NDXWeight * nFactor;
+                        
+                        if (itemNetWeightBOM)
+                        {
+                            unitOfMeasureConversionTmp.NDXWeight += itemNetWeightBOM;          // Gewicht der Verpackung gem. Stückliste
+                        }
+                        else
+                        {
+                            unitOfMeasureConversionTmp.NDXWeight += unit.NDXWeight;       // Gewicht der Verpackung aus Einheitenumrechnung
+                        }
+
+                        unitOfMeasureConversionTmp.NDXWeight = decround(unitOfMeasureConversionTmp.NDXWeight,3);
+                        unitOfMeasureConversionTmp.update();
+                    }
+                }
+            }
+
+            if(!_displayInfo)
+            {
+                return unitOfMeasureConversionTmp;
+            }
+
+            if (nAnzBomItem > 1)
+            {
+                lIsDiff = true;
+                infoTxt += strfmt("@NDX:NDXUnitConvertCheckInfoTxt3", nAnzBomItem) + #CR;           // Es sind [%1] Verpackungen in der Stückliste aufgeführt
+            }
+
+            if (unitOfMeasureConversionTmp.NDXWeight != decround(unitOfMeasureConversion.NDXWeight,3))
+            {
+                ndxRecIdUnitConvert_DiffWeight.DiffWeight = NoYes::Yes;
+                lIsDiff = true;
+                diffWeight = true;
+                infoTxt += strfmt("@NDX:NDXUnitConvertCheckInfoTxt4", unitOfMeasureConversionTmp.NDXWeight - decround(unitOfMeasureConversion.NDXWeight,3)) + #CR; // Gewichtsdifferenz [%1]
+                ndxRecIdUnitConvert_DiffWeight.WeightDiff = unitOfMeasureConversionTmp.NDXWeight - decround(unitOfMeasureConversion.NDXWeight,3);
+            }
+
+            if (unitOfMeasureConversionTmp.NDXHeight != unitOfMeasureConversion.NDXHeight)
+            {
+                ndxRecIdUnitConvert_DiffWeight.DiffHeigth =  NoYes::Yes;
+                lIsDiff = true;
+                diffHeight = true;
+                    
+                infoTxt += strfmt("@NDX:NDXUnitConvertCheckInfoTxt5", unitOfMeasureConversionTmp.NDXHeight - unitOfMeasureConversion.NDXHeight) + #CR;      // Höhendifferenz [%1]
+                ndxRecIdUnitConvert_DiffWeight.HeightDiff = unitOfMeasureConversionTmp.NDXHeight - unitOfMeasureConversion.NDXHeight;
+            }
+            if (unitOfMeasureConversionTmp.NDXWidth != unitOfMeasureConversion.NDXWidth)
+            {
+                ndxRecIdUnitConvert_DiffWeight.DiffWidth =  NoYes::Yes;
+                lIsDiff = true;
+                infoTxt += strfmt("@NDX:NDXUnitConvertCheckInfoTxt6", unitOfMeasureConversionTmp.NDXWidth - unitOfMeasureConversion.NDXWidth) + #CR;        // Breitendifferenz [%1]
+                ndxRecIdUnitConvert_DiffWeight.WidthDiff = unitOfMeasureConversionTmp.NDXWidth - unitOfMeasureConversion.NDXWidth;
+            }
+            if (unitOfMeasureConversionTmp.NDXLength != unitOfMeasureConversion.NDXLength)
+            {
+                ndxRecIdUnitConvert_DiffWeight.DiffLength =  NoYes::Yes;
+                lIsDiff = true;
+                diffLength = true;
+                infoTxt += strfmt("@NDX:NDXUnitConvertCheckInfoTxt7", unitOfMeasureConversionTmp.NDXLength - unitOfMeasureConversion.NDXLength) + #CR;      // Längendifferenz [%1]
+                ndxRecIdUnitConvert_DiffWeight.LengthDiff = unitOfMeasureConversionTmp.NDXLength - unitOfMeasureConversion.NDXLength;
+            }
+            if (unitOfMeasureConversionTmp.ndxDispVolume() != unitOfMeasureConversion.ndxDispVolume())
+            {
+                ndxRecIdUnitConvert_DiffWeight.DiffVolume = NoYes::Yes;
+                lIsDiff = true;
+                diffVolume = true;
+                Volume volDiff = unitOfMeasureConversionTmp.ndxDispVolume() - unitOfMeasureConversion.ndxDispVolume();
+                volDiff = EcoResProductUnitConverter::convertForReleasedProduct('','', volDiff, unitOfMeasureConversionTmp.NDXVolumeUnitOfMeasure, UnitOfMeasure::findBySymbol('M3').RecId, false, false);
+                //volDiff = UnitOfMeasureConverter::convert(volDiff, unitOfMeasureConversionTmp.NDXVolumeUnitOfMeasure, UnitOfMeasure::findBySymbol('M3').RecId, false, 0 , false);
+                
+                infoTxt +=  strfmt("@NDX:NDXUnitConvertCheckInfoTxt8", num2Str(volDiff,3,6,1,0)) + #CR;        // Volumendifferenz [%1] m³
+                ndxRecIdUnitConvert_DiffWeight.VolumeDiff = volDiff;
+            }
+
+            if (unitOfMeasureConversionTmp.NDXUnitMaxQty != unitOfMeasureConversion.NDXUnitMaxQty)
+            {
+                ndxRecIdUnitConvert_DiffWeight.DiffMaxQty = NoYes::Yes;
+                lIsDiff = true;
+                diffMaxQty = true;
+                infoTxt += strfmt("@NDX:NDXUnitConvertCheckInfoTxt9", unitOfMeasureConversionTmp.NDXUnitMaxQty - unitOfMeasureConversion.NDXUnitMaxQty) + #CR;        // Höchstmengendifferenz [%1]
+                ndxRecIdUnitConvert_DiffWeight.MaxQtyDiff = unitOfMeasureConversionTmp.NDXUnitMaxQty - unitOfMeasureConversion.NDXUnitMaxQty;
+            }
+            
+            lIsDiff = diffLength || diffWidth || diffHeight || diffWeight || diffVolume || diffMaxQty;     // Prüfung auf Differenzen
+            
+            // unterschiedliche Datensätze referenzieren
+            if (lIsDiff && _createNDXRecIdUnitConvert)
+            {
+                ndxRecIdUnitConvert_DiffWeight.Differences   = NoYes::Yes;
+                ndxRecIdUnitConvert_DiffWeight.RefRecId      = unitOfMeasureConversion.RecId;
+                ndxRecIdUnitConvert_DiffWeight.RefRecId2     = unitOfMeasureConversionTmp.RecId;
+                ndxRecIdUnitConvert_DiffWeight.FromBOM       = nAnzBomItem ? NoYes::Yes : NoYes::No;
+                ndxRecIdUnitConvert_DiffWeight.AnzBOMItem    = nAnzBomItem;
+                ndxRecIdUnitConvert_DiffWeight.Memo          += infoTxt;
+                ndxRecIdUnitConvert_DiffWeight.Signature     = this.signature;
+                ndxRecIdUnitConvert_DiffWeight.write();
+                Info(infoTxt);
+            }
+        }
+        return unitOfMeasureConversionTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>saveUnitConvertWeight</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Saves the unit conversion
+    /// </summary>
+    /// <param name = "_unitOfMeasureConversion">UnitOfMeasureConversion record</param>
+    void saveUnitConvertWeight(UnitOfMeasureConversion _unitOfMeasureConversion)
+    {
+        UnitOfMeasureConversion     lUnitOfMeasureConversion;
+        ;
+        select forUpdate firstOnly lUnitOfMeasureConversion
+            where   lUnitOfMeasureConversion.Product     == _unitOfMeasureConversion.Product
+            &&  lUnitOfMeasureConversion.FromUnitOfMeasure   == _unitOfMeasureConversion.FromUnitOfMeasure;
+
+        if (lUnitOfMeasureConversion)
+        {
+            ttsbegin;
+            lUnitOfMeasureConversion.initFromUnitConvert(_unitOfMeasureConversion);
+            lUnitOfMeasureConversion.update();
+            this.deleteNDXRecIdUnitConvert(_unitOfMeasureConversion);
+            ttscommit;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>clearUnitOfMeasureConversionTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Clears unitOfMeasureConversionTmp
+    /// </summary>
+    void clearUnitOfMeasureConversionTmp()
+    {
+        delete_from unitOfMeasureConversionTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteNDXRecIdUnitConvert</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Deletes NDXReciIdUnitConvert records for UnitOfMeasureConversion record
+    /// </summary>
+    /// <param name = "_unitOfMeasureConversion">UnitOfMeasureConversion record</param>
+    void deleteNDXRecIdUnitConvert(UnitOfMeasureConversion _unitOfMeasureConversion)
+    {
+        NDXRecIdUnitConvert lNDXReciIdUnitConvert;
+
+        delete_from lNDXReciIdUnitConvert
+            where lNDXReciIdUnitConvert.RefRecId2 == _unitOfMeasureConversion.RecId
+            && lNDXReciIdUnitConvert.Signature == this.signature;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isDoubleAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if amount is twice as much
+    /// </summary>
+    /// <param name = "_unitOfMeasureConversion">UnitOfMeasureConversion record</param>
+    /// <returns>true or false</returns>
+    static NDXUnitDoubleAmount isDoubleAmount(UnitOfMeasureConversion _unitOfMeasureConversion)
+    {
+        UnitOfMeasureConversion unitOfMeasureConversion;
+        boolean         ret = false;
+
+        if (_unitOfMeasureConversion.NDXUnitLevel > 1)
+        {
+            select firstonly unitOfMeasureConversion
+                where unitOfMeasureConversion.Product == _unitOfMeasureConversion.Product
+                    && unitOfMeasureConversion.NDXUnitLevel == _unitOfMeasureConversion.NDXUnitLevel;
+            
+            if (unitOfMeasureConversion && decround(unitOfMeasureConversion.Factor / 2,2) == decround(unitOfMeasureConversion.Factor,2))
+            {
+                ret = true;
+            }
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setMinMaxFromFactor</Name>
+				<Source><![CDATA[
+    static void setMinMaxFromFactor()
+    {
+        UnitOfMeasureConversion  unitOfMeasureConversion;
+        DialogButton    dbAnswer;
+        int nAnz;
+        
+        dbAnswer = box::yesNo("@NDX:NDXUnitConvertCheckInfoTxt20", DialogButton::No);
+        
+        while select forUpdate unitOfMeasureConversion
+            where  unitOfMeasureConversion.Product != 0
+                && unitOfMeasureConversion.NDXUnitMaxQty == 0
+                && unitOfMeasureConversion.NDXUnitMinQty == 0
+                && unitOfMeasureConversion.Factor > 0
+        {
+            ++nAnz;
+            if (dbAnswer == DialogButton::No)
+            {
+                info(strfmt("@NDX:NDXUnitConvertCheckInfoTxt21", EcoResProduct::find(unitOfMeasureConversion.Product).DisplayProductNumber, unitOfMeasureConversion.Factor, nAnz ));
+            }
+            else
+            {
+                unitOfMeasureConversion.NDXUnitMaxQty  = unitOfMeasureConversion.Factor;
+                unitOfMeasureConversion.NDXUnitMinQty  = unitOfMeasureConversion.Factor;
+                ttsbegin;
+                unitOfMeasureConversion.doUpdate();
+                ttscommit;
+
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>saveUnitConvertWeight_DS</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Saves diferences to UnitOfMeasureConversion records
+    /// </summary>
+    /// <param name = "_unitOfMeasureConversion">UnitOfMeasureConversion record</param>
+    void saveUnitConvertWeight_DS(UnitOfMeasureConversion  _unitOfMeasureConversion)
+    {
+        FormDataSource      unitOfMeasureConversion_DS;
+        UnitOfMeasureConversion unitOfMeasureConversion;
+        int                 nAnz;
+
+        if (!FormDataUtil::isFormDataSource(_unitOfMeasureConversion))
+        {
+            Error("@NDX:NDXCallOutOfAForm");              // Aufruf muss aus einer Form heraus erfolgen
+            return;
+        }
+
+        info(strfmt("@NDX:NDXUnitConvertCheckInfoTxt13", datetime2Str(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()))));      // [%1] Start: Speicherung der Änderungen in der Einheitenumrechnung
+
+        unitOfMeasureConversion_DS = FormDataUtil::getFormDataSource(_unitOfMeasureConversion);
+        
+        if (unitOfMeasureConversion_DS.anyMarked())
+        {
+            for (unitOfMeasureConversion = unitOfMeasureConversion_DS.getFirst(1); unitOfMeasureConversion; unitOfMeasureConversion = unitOfMeasureConversion_DS.getNext())
+            {
+                this.saveUnitConvertWeight(unitOfMeasureConversion);
+                ++nAnz;
+            }
+        }
+        else
+        {
+            if (box::yesNo("@NDX:NDXUnitConvertCheckInfoTxt15", DialogButton::Yes, "@NDX:NDXUnitConvertCheckInfoTxt16") == DialogButton::Yes) // Mit (Ja) wird nur die aktuelle, mit (Nein) werden alle abzugleichenden Verpackungsdimensionen gespeichert.
+            {
+                unitOfMeasureConversion = unitOfMeasureConversion_DS.cursor();
+                this.saveUnitConvertWeight(unitOfMeasureConversion);
+                ++nAnz;
+            }
+            else
+            {
+                while select _unitOfMeasureConversion
+                {
+                    this.saveUnitConvertWeight(_unitOfMeasureConversion);
+                    ++nAnz;
+                }
+            }
+
+        }
+        info(strfmt("@NDX:NDXUnitConvertCheckInfoTxt14",  datetime2Str(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())), nAnz ));        // [%1] Ende: Speicherung der Änderungen in der Einheitenumrechnung (Anzahl [%2])
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    static public void main(Args _args = new Args())
+    {
+        NDXUnitConvert unitConvert;
+
+        if(_args.record() == null || _args.parmObject() == null || !(_args.parmObject() is NDXUnitConvert))
+        {
+            throw Error("@NDX:NDXWrongCall");
+        }
+
+        unitConvert = _args.parmObject();
+
+        switch(_args.dataset())
+        {
+            case  tableNum(UnitOfMeasureConversion):
+                UnitOfMeasureConversion unitOfMeasureConversion = _args.record();
+                unitConvert.checkUnitConvertWeight_DS(unitOfMeasureConversion);
+                break;
+            case  tableNum(NDXRecIdUnitConvert):
+                new MenuFunction(menuItemDisplayStr(NDXUnitConvertCheckDiff), MenuItemType::Display).run(_args);
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

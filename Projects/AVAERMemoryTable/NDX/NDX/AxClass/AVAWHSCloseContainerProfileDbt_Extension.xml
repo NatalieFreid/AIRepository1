@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAWHSCloseContainerProfileDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// The <c>AVAWHSCloseContainerProfileDbt_Extension</c> represents a extension of WHSCloseContainerProfile table.
+/// </summary>
+/// <remarks>
+/// AVA_7360_8266_ContainerPrint
+/// </remarks>
+[
+    ExtensionOf(tableStr(WHSCloseContainerProfile))
+]
+final class AVAWHSCloseContainerProfileDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaPrinterName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// display Methode for the printer name
+    /// </summary>
+    /// <returns>
+    /// Returns the Name of the printer
+    /// </returns>
+    display public PrinterName avaPrinterName()
+    {
+        SRSPrintDestinationSettings printJobSettings;
+        PrinterName                 printerName;
+
+        printJobSettings = new SRSPrintDestinationSettings(this.AVAPrinter);
+
+        if (this.PrintContainerContents != NoYes::No)
+        {
+            if (printJobSettings.printMediumType() == SRSPrintMediumType::Printer)
+            {
+                printerName = printJobSettings.printerName();
+            }
+            else
+            {
+                printerName = strFmt('%1', printJobSettings.printMediumType());
+            }
+        }
+
+        return printerName;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetPrinterSettings</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Get the Printer Setting from rable
+    /// </summary>
+    /// <returns>
+    /// Returns the Printer settings for the closing container profil
+    /// </returns>
+    public SRSPrintDestinationSettings avaGetPrinterSettings()
+    {
+        SRSPrintDestinationSettings printDestinationSettings;
+
+        if (this.PrintContainerContents != NoYes::No)
+        {
+            printDestinationSettings = new SRSPrintDestinationSettings(this.AVAPrinter);
+        }
+
+        return printDestinationSettings;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetupPrinter</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// The <c>AVAWHSCloseContainerProfileDbt_Extension</c> represents a extension of WHSCloseContainerProfile table.
+    /// </summary>
+    /// <remarks>
+    /// AVA_7360_8266_ContainerPrint
+    /// </remarks>
+    public void avaSetupPrinter()
+    {
+        SRSPrintDestinationSettings printJobSettings;
+
+        printJobSettings = new SRSPrintDestinationSettings(this.AVAPrinter);
+
+        SrsReportRunUtil::showSettingsDialog(printJobSettings);
+
+        this.AVAPrinter = printJobSettings.pack();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canPrintContainerContents</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// CoC for canPrintContainerContents
+    /// </summary>
+    /// <returns>
+    /// returns if it can print or not
+    /// </returns>
+    public boolean canPrintContainerContents()
+    {
+        boolean                                 avaCanPrint;
+
+        avaCanPrint = next canPrintContainerContents();
+
+        //Call now because no other option in WHSContainerTale::closeContainerUsingParam(...)
+        AVAPrintContainerLabelHelper::checkAndPrintContainerLabel(this);
+
+        return avaCanPrint;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// CoC for validateWrite
+    /// </summary>
+    /// <returns>
+    /// returns if the validation for saving
+    /// </returns>
+    public boolean validateWrite()
+    {
+        boolean ret;
+
+        ret = next validateWrite();
+
+        if (!ret
+         && (this.AVAPrinter                != this.orig().AVAPrinter
+          || this.AVAPrintContainerLabel    != this.orig().AVAPrintContainerLabel))
+        {
+            if (this.crossCheck())
+            {
+                ret = true;
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>crossCheck</Name>
+				<Source><![CDATA[
+    private boolean crossCheck()
+    {
+        boolean ret;
+
+        ret = true;
+
+        if (this.ManifestAtContainerClose && this.ManifestRequirementsForContainer == WHSManifestRequirement::None)
+        {
+            ret = false;
+        }
+
+        if (this.ContainerClosingWorkCreationProcess == WHSWarehouseContainerClosingWorkCreationProcess::Automatic)
+        {
+            if (this.PrintPackingSlip)
+            {
+                ret = false;
+            }
+
+            if (this.DefaultFinalShipLoc)
+            {
+                ret = false;
+            }
+
+            WHSParameters warehouseParameters = WHSParameters::find();
+
+            if (warehouseParameters.PackingLocType)
+            {
+                ret = false;
+            }
+        }
+        else if (this.ContainerClosingWorkCreationProcess == WHSWarehouseContainerClosingWorkCreationProcess::None && this.WorkTemplateCode)
+        {
+            ret = false;
+        }
+
+        if (this.PrintPackingSlipAsynchronously && !this.PackingSlipPostingParameters)
+        {
+            ret = false;
+        }
+
+        switch (this.WarehouseGroupAll)
+        {
+            case WhsWarehouseGroupAll::Group:
+                if (!this.WarehouseGroupId)
+                {
+                    ret = false;
+                }
+                break;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

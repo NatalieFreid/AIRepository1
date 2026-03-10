@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVATmpCustVendTransDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA
+/// </summary>
+[ExtensionOf(tableStr(TmpCustVendTrans))]
+internal final class AVATmpCustVendTransDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>AVAinsertTmpCustVendTransForNetCustBalance</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_tmpCustVendTrans">TmpCustVendTrans</param>
+    /// <param name = "_accountNum">CustAccount</param>
+    /// <returns>TmpCustVendTrans</returns>
+    static TmpCustVendTrans AVAinsertTmpCustVendTransForNetCustBalance(
+        TmpCustVendTrans _tmpCustVendTrans,
+        CustAccount     _accountNum)
+    {
+        TmpCustVendTrans::AVApopulateTmpCustVendTransForNetCustBalance(_tmpCustVendTrans, _accountNum);
+        _tmpCustVendTrans.insert();
+
+        return _tmpCustVendTrans;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVApopulateTmpCustVendTransForNetCustBalance</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_tmpCustVendTrans">TmpCustVendTrans</param>
+    /// <param name = "_accountNum">CustAccount</param>
+    static void AVApopulateTmpCustVendTransForNetCustBalance(
+        TmpCustVendTrans _tmpCustVendTrans,
+        CustAccount     _accountNum)
+    {
+        //_tmpCustVendTrans.TotalAmountMst = AVAFCMGroupTable::getInvoicedAmountWithoutTaxesByCustTable(custTable::find(_accountNum));
+        _tmpCustVendTrans.TotalAmountMst = AVAFCMGroupTable::getInvoicedAmountWithoutTaxesWithMarkupsByCustTable(CustTable::find(_accountNum));
+        _tmpCustVendTrans.AmountMst      = _tmpCustVendTrans.TotalAmountMst;
+        _tmpCustVendTrans.Txt            = "@NDX:NXACRLNetBalance";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertTmpCustVendTransForCustBalance</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_tmpCustVendTrans">TmpCustVendTrans</param>
+    /// <param name = "_accountNum">CustAccount</param>
+    /// <param name = "_custTrans">CustTrans</param>
+    /// <param name = "_custTransOpen">CustTransOpen</param>
+    /// <returns>TmpCustVendTrans</returns>
+    protected static TmpCustVendTrans insertTmpCustVendTransForCustBalance(
+        TmpCustVendTrans _tmpCustVendTrans,
+        CustAccount     _accountNum,
+        CustTrans       _custTrans,
+        CustTransOpen   _custTransOpen)
+    {
+        TmpCustVendTrans::AVAinsertTmpCustVendTransForNetCustBalance(_tmpCustVendTrans, _accountNum);
+        next insertTmpCustVendTransForCustBalance(_tmpCustVendTrans, _accountNum, _custTrans, _custTransOpen);
+        return _tmpCustVendTrans;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcustTransBalanceCurrency</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_008475_CustCredit
+    /// </summary>
+    /// <param name = "_accountNum">CustAccount</param>
+    /// <param name = "_addTotalAndCredit">boolean</param>
+    /// <param name = "_currencyCode">CurrencyCode</param>
+    /// <param name = "_bankLCBankDocument">BankLCBankDocument</param>
+    /// <returns>TmpCustVendTrans</returns>
+    static TmpCustVendTrans AVAcustTransBalanceCurrency(
+        CustAccount         _accountNum,
+        boolean             _addTotalAndCredit      = false,
+        CurrencyCode        _currencyCode           = '',
+        BankLCBankDocument  _bankLCBankDocument     = BankLCBankDocumentType::All)
+    {
+        TmpCustVendTrans    tmpCustVendTrans = null;
+        CustTrans           custTrans;
+        CustTransOpen       custTransOpen;
+        //BankLCCustTrans     bankLCCustTrans;
+
+        AmountMST           sumAmountMST;
+        AmountMST           creditRemain;
+        AmountMST           creditLimit;
+
+        container           displayFields;
+        AmountMST           balanceEstimate;
+        AmountMST           balanceCreditCard;
+        boolean             useEstimated;
+        AmountMSTSecondary  sumReportingCurrencyAmount;
+        CredManBlockExclusionRule           CredManBlockExclusionRule;
+        AmountMST           threshold;
+        CredManCreditLimitCustGroupLine crlCustGroupLine;
+        CredManCreditLimitCustGroup     crlCustGroup;
+
+        sumAmountMST        = 0;
+        creditRemain        = 0;
+       
+        QueryRun queryRun = new QueryRun(TmpCustVendTrans::getCustTransForCurrencyCodeAndDoumentTypeQuery(_accountNum, _bankLCBankDocument));
+        while (queryRun.next())
+        {
+            custTrans  = queryRun.get(tableNum(custTrans));
+            custTransOpen  = queryRun.get(tableNum(custTransOpen));
+            
+            tmpCustVendTrans = TmpCustVendTrans::insertTmpCustVendTransForCustBalance(
+                tmpCustVendTrans,
+                _accountNum,
+                custTrans,
+                custTransOpen);
+
+            sumAmountMST += tmpCustVendTrans.AmountMst;
+            sumReportingCurrencyAmount += tmpCustVendTrans.ReportingCurrencyAmount;
+        }
+
+        if (_addTotalAndCredit)
+        {
+            tmpCustVendTrans.data(TmpCustVendTrans::populateLineTotal(sumAmountMST));
+            tmpCustVendTrans.insert();
+
+            tmpCustVendTrans.data(TmpCustVendTrans::populateLineTotalReportingCurrency(sumReportingCurrencyAmount));
+            tmpCustVendTrans.insert();
+
+            // Add line with packing slip or orderd amount
+            if  (CustParameters::find().CreditMaxCheck != TypeOfCreditmaxCheck::None)
+            {
+                //Return back the credit card balance.
+                [displayFields, balanceEstimate, useEstimated, balanceCreditCard] = TmpCustVendTrans::custCalcSalesTotals(_accountNum, _currencyCode);
+
+                TmpCustVendTrans::insertTmpCustVendTransBasedOnTypeOfCreditmaxCheck(tmpCustVendTrans, balanceEstimate, useEstimated);
+
+                //creditLimit = conpeek(displayFields, TradeTotals::posCreditMax());
+                creditLimit = CustTable::find(_accountNum).AVAcredManCreditMax();
+
+                select firstonly CredManBlockExclusionRule
+                where CredManBlockExclusionRule.RuleId == CredManBlockExclusionRuleType::ExceedCreditLimit
+                && CredManBlockExclusionRule.TableGroupAll == TableGroupAll::Table
+                && CredManBlockExclusionRule.CustRelation == _accountNum;
+                if (!CredManBlockExclusionRule)
+                {
+                    select firstonly crlCustGroupLine where crlCustGroupLine.CustAccount == _accountNum
+                                                         && crlCustGroupLine.company == curExt()
+                        join crlCustGroup where crlCustGroup.RecId == crlCustGroupLine.CreditLimitCustGroup;
+                    select firstonly CredManBlockExclusionRule
+                    where CredManBlockExclusionRule.RuleId == CredManBlockExclusionRuleType::ExceedCreditLimit
+                        && CredManBlockExclusionRule.TableGroupAll == TableGroupAll::GroupId
+                        && CredManBlockExclusionRule.CustRelation == crlCustGroup.CreditLimitId;
+                }
+                if (!CredManBlockExclusionRule)
+                {
+                    select firstonly CredManBlockExclusionRule
+                    where CredManBlockExclusionRule.RuleId == CredManBlockExclusionRuleType::ExceedCreditLimit
+                    && CredManBlockExclusionRule.TableGroupAll == TableGroupAll::All;               
+                }
+                if (CredManBlockExclusionRule)
+                {
+                    threshold = CredManBlockExclusionRule.CreditLimitThreshold;
+                    if (threshold)
+                    {
+                        threshold = creditLimit * threshold / 100;
+                    }
+                }
+
+                creditRemain -= TmpCustVendTrans::getAmountToDecreaseCreditRemaining(balanceEstimate, useEstimated);
+
+                //creditRemain = creditRemain - AVAFCMGroupTable::getInvoicedAmountWithoutTaxesByCustTable(custTable::find(_accountNum));
+                creditRemain = creditRemain - AVAFCMGroupTable::getInvoicedAmountWithoutTaxesWithMarkupsByCustTable(custTable::find(_accountNum));
+    
+                //Display any unposted credit card amount
+                /*if (useEstimated && balanceCreditCard
+                    && isConfigurationkeyEnabled(configurationKeyNum(MCRCallCenter)))
+                {
+                    tmpCustVendTrans.data(TmpCustVendTrans::MCRCreateLineCreditCard(-balanceCreditCard, false));
+                    tmpCustVendTrans.insert();
+                    //Add the credit card unposted back to the balance.
+                    creditRemain += balanceCreditCard;
+                }*/
+                if (threshold)
+                {
+                    creditRemain += threshold;
+                }
+                else 
+                {
+                    if (creditLimit)
+                    {
+                        //creditRemain += conpeek(displayFields, TradeTotals::posCreditMax());
+                        creditRemain += creditLimit;
+                    }
+                    else
+                    {
+                        creditRemain = 0;
+                    }
+                }
+
+                tmpCustVendTrans.data(TmpCustVendTrans::populateLineCreditLimit(creditLimit, false));
+                tmpCustVendTrans.insert();
+
+                if (threshold)
+                {
+                    tmpCustVendTrans.data(tmpCustVendTrans::avaPopulateThreshold(threshold, false));
+                    tmpCustVendTrans.insert();
+                }
+
+                tmpCustVendTrans.data(TmpCustVendTrans::populateLineCreditRemain(creditRemain, false));
+                tmpCustVendTrans.insert();
+            }
+        }
+        return tmpCustVendTrans;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaPopulateThreshold</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/08/26 AVA_013471_ExclusionRulesInCRLInfo
+    /// </summary>
+    /// <param name = "_ordered">AmountMST</param>
+    /// <param name = "_showAmountAsTotal">boolean</param>
+    /// <returns>TmpCustVendTrans</returns>
+    static TmpCustVendTrans avaPopulateThreshold(
+        AmountMST   _ordered,
+        boolean     _showAmountAsTotal
+        )
+    {
+        TmpCustVendTrans tmpCustVendTrans;
+
+        tmpCustVendTrans.Txt = "@AVAFCM:CreditLimitThreshold";
+        if (_showAmountAsTotal)
+        {
+            tmpCustVendTrans.TotalAmountMst = _ordered;
+        }
+        else
+        {
+            tmpCustVendTrans.AmountMst      = _ordered;
+        }
+        return tmpCustVendTrans;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public void insert()
+    {
+        if (this.AVAFPLNetDeliveredAmount && !this.AVAFPLNetEstimatedAmount)
+        {
+            this.AVAFPLNetEstimatedAmount = this.AVAFPLNetDeliveredAmount;
+        }
+        next insert();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,680 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>AVASalesLineBackOrderReservation</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class AVASalesLineBackOrderReservation extends FormRun
+{
+    Args                        frmArgs;
+    AVASalesLineBackOrderTmp    frmAVASalesLineBackOrderTmpArgs;
+    FormRun                     frmFormRunCaller;
+    SalesLine                   frmSalesLine;
+    SalesLine                   frmSalesLineArgs;
+    SalesLine                   frmSalesLineItemSet;
+    SalesLine                   frmSalesLineComponent;
+    InventTable                 frmInventTable;
+    InventItemSalesSetup        frmInventItemSalesSetup;
+    InventTable                 frmInventTableItemSet;
+    InventItemSalesSetup        frmInventItemSalesSetupItemSet;
+    InventTable                 frmInventTableComponent;
+    InventItemSalesSetup        frmInventItemSalesSetupComponent;
+
+    SalesQty                    frmReservedPhysicalInSalesUnit;
+    InventQty                   frmReservedPhysical;
+    SalesQty                    frmReservedPhysicalInSalesUnitItemSet;
+    InventQty                   frmReservedPhysicalItemSet;
+    SalesQty                    frmReservable;
+    SalesQty                    frmItemSetQtyFactor;
+    SalesQty                    remainInventQtyItemSet;
+
+
+    boolean                     frmItemSetMode;
+
+    Qty     reservedQty;
+    Qty     toReserveAvailableQty;
+    Qty     canBeReserved;
+    Qty     reserveNow;
+    Qty     remainInventQty;
+    Qty     multipleQty;
+    
+        
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>init</c> method.
+    /// </summary>
+    public void init()
+    {
+       
+
+        frmItemSetQtyFactor = 1;
+
+        super();
+        frmArgs             = new Args();
+        frmArgs             = this.args();
+        if(frmArgs)
+        {
+            if (frmArgs.caller())
+            {
+                frmFormRunCaller = frmArgs.caller();
+                if(frmFormRunCaller.name() == formStr(AVASalesLineBackOrder))
+                {
+                    if(frmArgs.record().TableId == tableNum(AVASalesLineBackOrderTmp))
+                    {
+                        frmAVASalesLineBackOrderTmpArgs = frmArgs.record();
+                        // get corresponding SalesLine from tmp
+                        frmSalesLineArgs                = frmAVASalesLineBackOrderTmpArgs.salesLine();
+                        // set actual form SalesLine to handle in form to calling SalesLine
+                        frmSalesLine                    = frmSalesLineArgs;
+                        frmInventTable                          = InventTable::find(frmSalesLine.ItemId);
+                        frmInventItemSalesSetup                 = InventItemSalesSetup::findDefault(frmInventTable.ItemId);
+
+                        if(frmSalesLine.AVAItemSetComponent)
+                        {
+                            // Item set
+                            frmSalesLineItemSet                 = frmSalesLine.avaItemSetSalesLine();
+                            frmInventTableItemSet               = InventTable::find(frmSalesLineItemSet.ItemId);
+                            frmInventItemSalesSetupItemSet      = InventItemSalesSetup::findDefault(frmInventTableItemSet.ItemId);
+                            // Item set component
+                            frmSalesLineComponent               = SalesLine::findRecId(frmSalesLine.RecId);
+                            frmInventTableComponent             = InventTable::find(frmSalesLineComponent.ItemId);
+                            frmInventItemSalesSetupComponent    = InventItemSalesSetup::findDefault(frmInventTableComponent.ItemId);
+                            
+                            frmItemSetMode                      = true;
+                        }
+                        else
+                        {
+                            frmSalesLineComponent               = null;
+                            frmSalesLineItemSet                 = null;
+                            frmItemSetMode                      = false;
+                        }
+                        
+                        this.calcReservableQty();
+                    }
+                }
+            }
+        }
+        this.setSalesLinesValues();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcReservableQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 27.09.2024
+    /// </summary>
+    public void calcReservableQty()
+    {
+        if (frmItemSetMode)
+        {
+            Qty  locCompReservedQty; 
+           
+
+            locCompReservedQty        = frmSalesLineComponent.reservedPhysicalInSalesUnit();
+            reservedQty               = frmSalesLineComponent.AVAItemSetCompQtyPerSerie != 0 ? locCompReservedQty * frmSalesLineComponent.AVAItemSetSerie / frmSalesLineComponent.AVAItemSetCompQtyPerSerie : locCompReservedQty * frmSalesLineComponent.AVAItemSetSerie;
+            toReserveAvailableQty     = frmSalesLineItemSet.AVAgetMinAvailToReserveQtyFromItemSetComponents(true,reservedQty);
+            multipleQty               = frmInventItemSalesSetupItemSet.MultipleQty;
+            remainInventQty           = frmSalesLineComponent.AVAItemSetCompQtyPerSerie != 0 ? frmSalesLineComponent.RemainInventPhysical * frmSalesLineComponent.AVAItemSetSerie / frmSalesLineComponent.AVAItemSetCompQtyPerSerie : frmSalesLineComponent.RemainInventPhysical * frmSalesLineComponent.AVAItemSetSerie;
+            
+        }
+        else
+        {
+            reservedQty               = frmSalesLine.reservedPhysicalInSalesUnit();
+            toReserveAvailableQty     = (frmSalesLine.RemainInventPhysical - reservedQty) < frmSalesLine.AVAAvailToReserveQty() ? (frmSalesLine.RemainInventPhysical - reservedQty) : frmSalesLine.AVAAvailToReserveQty();
+            multipleQty               = frmInventItemSalesSetup.MultipleQty;
+            remainInventQty           = frmSalesLine.RemainInventPhysical;
+        }
+        canBeReserved = toReserveAvailableQty +  reservedQty;
+        reserveNow    = canBeReserved - (canBeReserved mod multipleQty); 
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setSalesLinesValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>setSalesLinesValues</c> method.
+    /// </summary>
+    public void setSalesLinesValues()
+    {
+        // ItemSetGroup
+        if(frmItemSetMode)
+        {
+            ItemSetGroup.visible(true);
+            ItemSetComponentGroup.visible(true);
+        }
+        else
+        {
+            SalesLineGroup.visible(true);
+            ReserveQtyGrp.caption("@NDX:NXAQuantites");
+        }
+
+        InventTable_ItemId.text(frmSalesLine.ItemId);
+        SalesLineGrp_RemainInventPhys.realValue(frmSalesLine.RemainInventPhysical);
+        SalesLineGrp_Unit.text(frmSalesLine.SalesUnit);
+        SalesLineGrp_MultipleQty.realValue(frmInventItemSalesSetup.MultipleQty);
+
+        ItemSetComponentGroup_ItemId.text(frmSalesLineComponent.ItemId);
+        SalesLineComp_RemainSalesPhysical.realValue(frmSalesLineComponent.RemainInventPhysical);
+        SalesLineComp_SalesUnit.text(frmSalesLineComponent.SalesUnit);
+        frmReservedPhysicalInSalesUnit = frmSalesLineComponent.reservedPhysicalInSalesUnit();
+        SalesLineComp_ReservedSalesUnit.realValue(frmReservedPhysicalInSalesUnit);
+       
+        ItemSetGroup_ItemId.text(frmSalesLineItemSet.ItemId);      
+        ItemSetGroup_RemainInventPhys.realValue(remainInventQty);
+        ItemSetGroup_Unit.text(frmSalesLineItemSet.SalesUnit);
+        ItemSetGroup_MultipleQty.realValue(frmInventItemSalesSetupItemSet.MultipleQty);
+        
+
+        ReservedQtyCtrl.realValue(reservedQty);
+        ToReserveAvailQtyCtrl.realValue(toReserveAvailableQty);
+        canBeReservedCtrl.realValue(canBeReserved);
+        reserveNowCtrl.realValue(reserveNow);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>closeOk</c> method.
+    /// </summary>
+    public void closeOk()
+    {
+        FormRun             locFormRunCaller;
+        boolean             canBeClose = true;
+
+        locFormRunCaller = frmArgs.caller();
+        reserveNow = reserveNowCtrl.realValue();
+
+        if (reserveNow > remainInventQty)
+        {
+            if (frmItemSetMode)
+            {
+                canBeClose = checkFailed("@NDX:NXABiggerEsRemainQtyErrorSet");
+            }
+            else
+            {
+                canBeClose = checkFailed("@NDX:NXABiggerEsRemainQtyError");
+            }
+        }
+
+        if (reserveNow  > (toReserveAvailableQty + ReservedQty))
+        {
+            canBeClose = checkFailed("@NDX:NXANorReservedQtyError");
+        }
+
+        if ((reserveNow mod multipleQty) != 0)
+        {
+            canBeClose = checkFailed("@NDX:NXAReserveNowMultipleQtyError");
+        }
+
+        if(!canBeClose)
+        {
+            return;
+        }
+
+        super();
+
+
+        if(frmItemSetMode)
+        {
+            SalesLine               locCompSalesLine;
+            real                    compFactor;
+            Qty                     reserveNowComp;
+
+            while select locCompSalesLine
+                where locCompSalesLine.SalesId          == frmSalesLineItemSet.SalesId
+                   && locCompSalesLine.AVAItemSetParent == frmSalesLineItemSet.InventTransId
+            {
+                compFactor = locCompSalesLine.AVAItemSetSerie != 0 ? locCompSalesLine.AVAItemSetCompQtyPerSerie / locCompSalesLine.AVAItemSetSerie : locCompSalesLine.AVAItemSetCompQtyPerSerie;
+                //reserveNowComp = (toReserveAvailableQty * compFactor) - locCompSalesLine.reservedPhysicalInSalesUnit();
+                //reserveNowComp = (toReserveAvailableQty * compFactor);
+                reserveNowComp = ((reserveNow - reservedQty) * compFactor);
+                locCompSalesLine.avaReserveSalesLine(locCompSalesLine,reserveNowComp);
+            }
+        }
+        else
+        {
+            frmSalesLine.avaReserveSalesLine(frmSalesLine,reserveNow - reservedQty);    
+        }
+
+
+        if (formHasMethod(locFormRunCaller, literalStr(afterAVASalesLineBackOrderReservation)))
+        {
+            locFormRunCaller.afterAVASalesLineBackOrderReservation(frmAVASalesLineBackOrderTmpArgs);
+        }
+
+        
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>Cancel</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>clicked</c> method.
+        /// </summary>
+        public void clicked()
+        {
+            super();
+
+            ttsbegin;
+            frmAVASalesLineBackOrderTmpArgs.selectForUpdate(true);
+            frmAVASalesLineBackOrderTmpArgs.KCS_SOCPickingReleaseIndicator = NoYes::No;
+            frmAVASalesLineBackOrderTmpArgs.update();
+            ttscommit;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>AVASalesLineBackOrderTmp</Name>
+			<Table>AVASalesLineBackOrderTmp</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AVAStockAvailability</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventTransId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_SOCPickingReleaseIndicator</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Processed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesLineRefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesQtyEffective</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesQtyPossible</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@Res:ReservationDetails</Caption>
+		<Pattern xmlns="">Dialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">Dialog</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>GroupFields</Name>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Pattern>Custom</Pattern>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>SalesLineGroup</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Group</Type>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>InventTable_ItemId</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>ItemId</ExtendedDataType>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>SalesLine_QtyGrp</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>Group</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>SalesLineGrp_RemainInventPhys</Name>
+										<AllowEdit>No</AllowEdit>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<ExtendedDataType>InventQty</ExtendedDataType>
+										<Label>@SYS22556</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>SalesLineGrp_Unit</Name>
+										<AllowEdit>No</AllowEdit>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<ExtendedDataType>SalesUnit</ExtendedDataType>
+									</AxFormControl>
+								</Controls>
+								<Columns>2</Columns>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>SalesLineGrp_MultipleQty</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>QtyMultiples</ExtendedDataType>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS91933</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>ItemSetGroup</Name>
+						<AllowEdit>No</AllowEdit>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Group</Type>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ItemSetGroup_ItemId</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>ItemId</ExtendedDataType>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>ItemSetGroup_QtyGrp</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>Group</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>ItemSetGroup_RemainInventPhys</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<ExtendedDataType>InventQty</ExtendedDataType>
+										<Label>@SYS22556</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>ItemSetGroup_Unit</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<ExtendedDataType>SalesUnit</ExtendedDataType>
+									</AxFormControl>
+								</Controls>
+								<Columns>2</Columns>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>ItemSetGroup_MultipleQty</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>QtyMultiples</ExtendedDataType>
+							</AxFormControl>
+						</Controls>
+						<Caption>@AVAItemSet:ItemSet</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>ItemSetComponentGroup</Name>
+						<AllowEdit>No</AllowEdit>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Group</Type>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ItemSetComponentGroup_ItemId</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>ItemId</ExtendedDataType>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>ItemSetCompGrp</Name>
+								<Type>Group</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>SalesLineComp_RemainSalesPhysical</Name>
+										<AllowEdit>No</AllowEdit>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<Type>Real</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<ExtendedDataType>SalesQty</ExtendedDataType>
+										<Label>@SYS22556</Label>
+										<ShowZero>Yes</ShowZero>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>SalesLineComp_SalesUnit</Name>
+										<AllowEdit>No</AllowEdit>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<Type>String</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<ExtendedDataType>SalesUnit</ExtendedDataType>
+									</AxFormControl>
+								</Controls>
+								<Columns>2</Columns>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>SalesLineComp_ReservedSalesUnit</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>SalesQtyReservPhysical</ExtendedDataType>
+								<ShowZero>Yes</ShowZero>
+							</AxFormControl>
+						</Controls>
+						<Caption>@AVAItemSet:ItemSetComponent</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>ReserveQtyGrp</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>ReservedQtyCtrl</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>InventQty</ExtendedDataType>
+								<Label>@NDX:NXAIsAlreadyReserved</Label>
+								<ShowZero>Yes</ShowZero>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>ToReserveAvailQtyCtrl</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>InventQty</ExtendedDataType>
+								<Label>@NDX:NXAToReserveAvail</Label>
+								<ShowZero>Yes</ShowZero>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>CanBeReservedCtrl</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>InventQty</ExtendedDataType>
+								<Label>@NDX:NXACanBeReserved</Label>
+								<ShowZero>Yes</ShowZero>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>ReserveNowCtrl</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>InventQty</ExtendedDataType>
+								<Label>@NDX:NXAReserveNow</Label>
+								<ShowZero>Yes</ShowZero>
+							</AxFormControl>
+						</Controls>
+						<Caption>@NDX:NXAItemSetQtyGroup</Caption>
+					</AxFormControl>
+				</Controls>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<ElementPosition>1717986916</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<LeftMode>AutoRight</LeftMode>
+				<Top>0</Top>
+				<TopMode>BottomEdge</TopMode>
+				<Type>ButtonGroup</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>OK</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1073741822</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<ButtonDisplay>TextOnly</ButtonDisplay>
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>Cancel</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1610612733</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<ButtonDisplay>TextOnly</ButtonDisplay>
+						<Command>Cancel</Command>
+						<SaveRecord>No</SaveRecord>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

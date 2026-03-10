@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAEDIAddressDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(tableStr(AVAEDIAddress))]
+internal final class AVAEDIAddressDbt_Extension
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initFromLogisticsPostalAddress</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_logisticsPostalAddress">_logisticsPostalAddress</param>
+    protected void initFromLogisticsPostalAddress(LogisticsPostalAddress _logisticsPostalAddress)
+    {
+        next initFromLogisticsPostalAddress(_logisticsPostalAddress);
+        this.NDXLogisticsLocationName1  = _logisticsPostalAddress.NDXLogisticsLocationName1;
+        this.NDXLogisticsLocationName2  = _logisticsPostalAddress.NDXLogisticsLocationName2;
+        this.NDXLogisticsLocationName3  = _logisticsPostalAddress.NDXLogisticsLocationName3;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromEDIAddress</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_ediAddress">_ediAddress</param>
+    protected void initFromEDIAddress(AVAEDIAddress _ediAddress)
+    {
+        next initFromEDIAddress(_ediAddress);
+        this.NDXLogisticsLocationName1  = _ediAddress.NDXLogisticsLocationName1;
+        this.NDXLogisticsLocationName2  = _ediAddress.NDXLogisticsLocationName2;
+        this.NDXLogisticsLocationName3  = _ediAddress.NDXLogisticsLocationName3;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void insert()
+    {
+        if (this.Address == '')
+        {
+            this.setAddress();    
+        }
+
+        next insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setAddress</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void setAddress()
+    {
+        LogisticsPostalAddressStringBuilderParameters addressStringBuilderParameters = new LogisticsPostalAddressStringBuilderParameters();
+        addressStringBuilderParameters.parmCityName(this.CityExt);
+        addressStringBuilderParameters.parmCountryRegionId(this.CountryRegionExt);
+        addressStringBuilderParameters.parmCountyId(this.CountyExt);
+        addressStringBuilderParameters.parmDistrictName(this.NameExt);
+        addressStringBuilderParameters.parmStateId(this.StateExt);
+        addressStringBuilderParameters.parmStreet(this.StreetExt);
+        addressStringBuilderParameters.parmZipCodeId(this.ZIPCodeExt);
+
+        this.Address = LogisticsPostalAddressStringBuilder::buildAddressStringFromParameters(addressStringBuilderParameters);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void update()
+    {
+        AVAEDIAddress       origAVAEDIAddress = this.orig();
+
+        if(this.CityExt   != origAVAEDIAddress.CityExt
+        || this.CountryRegionExt != origAVAEDIAddress.CountryRegionExt
+        || this.CountyExt        != origAVAEDIAddress.CountyExt 
+        || this.NameExt          != origAVAEDIAddress.NameExt
+        || this.StateExt         != origAVAEDIAddress.StateExt
+        || this.StreetExt        != origAVAEDIAddress.StreetExt
+        || this.ZIPCodeExt       != origAVAEDIAddress.ZIPCodeExt)
+        {
+            this.setAddress();
+        }
+
+        next update();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVA
+    /// </summary>
+    /// <param name = "_fieldId">_fieldId</param>
+    public void modifiedField(FieldId _fieldId)
+    {
+        next modifiedField(_fieldId);
+
+        switch (_fieldId)
+        {
+            case fieldNum (AVAEDIAddress,CityExt) :
+                LogisticsAddressCity  logisticsAddressCity = LogisticsAddressCity::findCity(this.CityExt);
+                this.CountryRegionExt = LogisticsAddressCity.CountryRegionId;
+                this.StateExt         = logisticsAddressCity.StateId;
+                this.CountyExt        = logisticsAddressCity.CountyId;
+                break;
+
+            case fieldNum(AVAEDIAddress,ZIPCodeExt) :
+                LogisticsAddressZipCode logisticsAddressZipCode = LogisticsAddressZipCode::findZipCodeCountryRegion(this.ZIPCodeExt,this.CountryRegionExt);
+                this.CityExt = logisticsAddressZipCode.City;
+                break;
+            case fieldNum(AVAEDIAddress,CountryRegionExt) :
+                this.CityExt     = '';
+                this.ZIPCodeExt  = '';
+                break;
+
+            default : 
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createCustomerAddress</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN 2024/03/28   AVA_011627_BuyerGLN
+    /// </summary>
+    /// <param name = "_callerRecord">Common</param>
+    public static void createCustomerAddress(Common _callerRecord)
+    {
+        AVAEDIAddress           ediAddress;
+        AVAChangeBuyerGLN       buyerGLN;
+        LogisticsLocation       logisticsLocation;
+        logisticsPostalAddress  logisticsPostalAddress;
+
+        next createCustomerAddress(_callerRecord);
+
+        ediaddress = AVAEDIAddress::find(_callerRecord.TableId, _callerRecord.RecId, AVAEDIAddressType::Customer, true);
+
+        select firstonly buyerGLN where buyerGLN.GLNFrom == ediAddress.GLN
+                                     && buyerGLN.Active;
+        if (buyerGLN.GLNTo)
+        {
+            if (ediAddress.RecId)
+            {
+                ttsbegin;
+                ediAddress.selectForUpdate(true);
+                ediAddress.GLN = buyerGLN.GLNTo;
+                logisticsLocation   = AVAEDISalesTableImportClass::findLocationByGLN(buyerGLN.GLNTo);
+                logisticsPostalAddress = LogisticsPostalAddress::findByLocation(logisticsLocation.RecId); 
+                ediAddress.StreetExt              = logisticsPostalAddress.Street;
+                ediAddress.ZIPCodeExt             = logisticsPostalAddress.ZipCode;
+                ediAddress.CityExt                = logisticsPostalAddress.City;
+                ediAddress.CountryRegionExt       = logisticsPostalAddress.CountryRegionId;
+                ediAddress.CountyExt              = logisticsPostalAddress.County;
+                ediAddress.StateExt               = logisticsPostalAddress.State;
+                ediAddress.Address                = logisticsPostalAddress.Address;
+                ediAddress.Description            = LogisticsPostalAddress::locationNameFromRecId(logisticsPostalAddress.RecId);
+                ediAddress.NameExt                = ediAddress.Description;
+                ediAddress.LogisticsPostalAddress = logisticsPostalAddress.RecId;
+                ediAddress.update();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createSupplierAddress</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// create the supplier address
+    /// </summary>
+    /// <param name = "_callerRecord">_callerRecord</param>
+    public static void createSupplierAddress(Common _callerRecord)
+    {
+        AVAEDIAddress aVAEDIAddress;
+        next createSupplierAddress(_callerRecord);
+
+        ttsbegin;
+        aVAEDIAddress = AVAEDIAddress::find(_callerRecord.TableId, _callerRecord.RecId, AVAEDIAddressType::Supplier,true);
+        aVAEDIAddress.NDXCoRegNum = Companyinfo::find().CoRegNum;
+        aVAEDIAddress.update();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

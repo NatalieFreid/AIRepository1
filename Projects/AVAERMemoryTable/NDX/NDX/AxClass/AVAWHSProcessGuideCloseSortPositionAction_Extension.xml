@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAWHSProcessGuideCloseSortPositionAction_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+#WHSRF
+/// <summary>
+///  M.essl 11.03.2024
+/// Extension of WHSControlContainerIdOrLicensePlateId
+/// </summary>
+[ExtensionOf(classStr(WHSProcessGuideCloseSortPositionAction))]
+final class AVAWHSProcessGuideCloseSortPositionAction_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>doExecute</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  M.essl 11.03.2024
+    /// </summary>
+    protected void doExecute()
+    {
+        try
+        {
+            ProcessGuideSessionState sessionState = controller.parmSessionState();
+            WhsrfPassthrough passTemp;
+
+            passTemp = sessionState.parmPass();
+          
+            WHSContainerId containerId;
+            if (WHSContainerTable::existForContainerId(passTemp.lookup(WHSSortPutawayConstants::ConOrLP)))
+            {
+                containerId = passTemp.lookup(WHSSortPutawayConstants::ConOrLP);
+            }
+            WHSRFMenuItemTable WHSRFMenuItemTable = WHSRFMenuItemTable::find(passTemp.lookup(#MenuItem));
+            NoYesId AVAAutoConfirmLoad = WHSRFMenuItemTable.AVAAutoConfirmLoad;
+
+            next doExecute();
+
+            if (AVAAutoConfirmLoad)
+            {
+                WHSContainerTable containerTable = WHSContainerTable::findByContainerId(containerId);
+                WHSShipmentTable whsShipmentTable = WHSShipmentTable::find(containerTable.ShipmentId);
+                InventLocation inventLocation = InventLocation::find(whsShipmentTable.InventLocationId);
+
+                if (containerTable
+                && inventLocation.AVAAutoShippingProcess)
+                {
+                    WHSLoadTable whsLoadTable = WHSLoadTable::find(whsShipmentTable.LoadId);
+
+                    if (whsLoadTable)
+                    {
+                        using (AVASplitShipConfirmUpdateContainerDisposal instance = AVASplitShipConfirmUpdateContainerDisposal::construct())
+                        {
+                            instance.loadId = whsLoadTable.LoadId;
+
+                            ttsbegin;
+                            WHSSplitShipConfirm::splitLoadShipConfirmNoPrompt(whsLoadTable, WHSLoadSplitShipConfirmMethod::SplitQty);
+                            ttscommit;
+
+                            instance.whsMenuItemName = WHSRFMenuItemTable.MenuItemName;
+
+                            ttsbegin;
+                            WHSShipConfirm::performActionOnBuffer(WHSShipConfirmAction::ConfirmShipment, whsLoadTable);
+                            ttscommit;
+
+                            if (inventLocation.AVAAutoPackingSlipProcess)
+                            {
+                                whsShipmentTable = WHSShipmentTable::find(containerTable.ShipmentId);
+                                whsLoadTable = WHSLoadTable::find(whsShipmentTable.LoadId);
+                            
+                                SalesFormLetter salesFormLetter = SalesFormLetter::construct(DocumentStatus::PackingSlip);
+                                salesFormLetter.allowEmptyTable(salesFormLetter.initAllowEmptyTable(true));
+                                salesFormLetter.parmLoadFromSysLastValue(false);
+                                salesFormLetter.multiForm(true);
+                                salesFormLetter.getLast();
+                                SalesFormletter.parmShipmentId(whsShipmentTable.ShipmentId);
+                                SalesFormletter.parmWHSLoadId(whsLoadTable.LoadId);
+                                SalesFormletter.update(whsLoadTable, DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), SalesUpdate::PickingList, AccountOrder::None, false, true, true);
+                            }
+
+                            if (inventLocation.AVAAutoBillofLoadingProcess)
+                            {
+                                List loadIdList = new List(Types::String);
+                                loadIdList.addEnd(whsLoadTable.LoadId);
+
+                                WHSShipConfirm::printBOLForAllLoads(loadIdList);
+                            }
+                        }
+                    }
+                }               
+            }
+        }
+        catch 
+        {
+            throw error ("@SYS138340");
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

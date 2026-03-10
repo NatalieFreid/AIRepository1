@@ -1,0 +1,502 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXMarginEqualizing_NDX_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// DebuC 15.05.25
+/// </summary>
+[ExtensionOf(classStr(NDXMarginEqualizing))]
+final class NDXMarginEqualizing_NDX_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>checkQuotationPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 15.05.25
+    /// </summary>
+    /// <param name = "lNDXMEDataFromExcelTable">NDXMEDataFromExcelTable</param>
+    /// <param name = "NDXMEDataFromExcelLine">NDXMEDataFromExcelLine</param>
+    /// <param name = "lCheckAnyway">boolean</param>
+    /// <param name = "lCheckOnly1">boolean</param>
+    /// <param name = "NDXMEDataFromExcelLineSelected">NDXMEDataFromExcelLine</param>
+    static void checkQuotationPrice(NDXMEDataFromExcelTable   lNDXMEDataFromExcelTable,
+                                NDXMEDataFromExcelLine    NDXMEDataFromExcelLine = null,
+                                boolean                     lCheckAnyway = false,
+                                boolean                     lCheckOnly1 = false,
+                                NDXMEDataFromExcelLine    NDXMEDataFromExcelLineSelected = null)
+    {
+        #define.QuotationIdSplitter('-')
+        NDXMEDataFromExcelLine    lNDXMEDataFromExcelLine;
+        SalesQuotationLine          salesQuotationLine;
+        NDXMEParameters           NDXMEParameters = NDXMEParameters::find();
+
+        PriceDisc                   priceDisc;
+        PriceUnit                   priceUnit;
+        LineAmount                  lineAmount;
+        int                         faktor1, faktor2;
+        int                         total = 1;
+        int                         counter = 0;
+        SalesPrice                  salesPrice;
+        Query                       q = new Query();
+        QueryBuildDataSource        qbds, qbds2;
+        QueryRun                    qr;
+        FormDataSource              fds, fds2;
+        boolean                     anyMarked = false;
+        MultiSelectionHelper        helper;
+        NDXSignature                signature;
+        NDXRecId                    nDXRecId;
+        str                         infoTxt;
+        NoYes                       setEndDiscAllow;
+        DialogButton                dialogButtonEndDiscAllow;
+        real                        priceDiffOK;
+        int secondsStart = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+        ;
+
+        if (NDXMEParameters.PriceDiffOKCent)
+        {
+            priceDiffOK = NDXMEParameters.PriceDiffOKCent / 100;
+        }
+        qbds = q.addDataSource(tablenum(NDXMEDataFromExcelLine));
+        qbds.update(true);
+        qbds.addRange(fieldnum(NDXMEDataFromExcelLine, RefRecIdNDXMEDataFromExcelTable)).value(QueryValue(lNDXMEDataFromExcelTable.RecId));
+
+        if (NDXMEDataFromExcelLine && NDXMEDataFromExcelLine.isFormDataSource())
+        {
+            fds2 =  NDXMEDataFromExcelLine.dataSource();
+        }
+        // sollen nur selektierte DS geprüft werden?
+        if ((NDXMEDataFromExcelLineSelected && NDXMEDataFromExcelLineSelected.isFormDataSource()) || lCheckOnly1)
+        {
+            signature = NDXHelperCommon::Signature();
+            total = 0;
+            if (lCheckOnly1)
+            {
+                ++total;
+                nDXRecId.Signature = signature;
+                nDXRecId.RefRecId  = NDXMEDataFromExcelLine.RecId;
+                nDXRecId.insert();
+            }
+            else
+            {
+                fds = NDXMEDataFromExcelLineSelected.dataSource();
+                helper = MultiSelectionHelper::construct();
+                helper.parmDatasource(fds);
+                lNDXMEDataFromExcelLine = helper.getFirst();
+                while (lNDXMEDataFromExcelLine)
+                {
+                    ++total;
+                    nDXRecId.Signature = signature;
+                    nDXRecId.RefRecId  = lNDXMEDataFromExcelLine.RecId;
+                    nDXRecId.insert();
+                    lNDXMEDataFromExcelLine = helper.getNext();
+                }
+            }
+            anyMarked = total;
+        }
+        if (anyMarked)
+        {
+            if (!lCheckOnly1)
+            {
+                if (total == 1)
+                {
+                    infoTxt = "@NDXME:NDXMEPriceCheckInfo1";               // Sollen beim aktuellen Datensatz die Sonderrabatte berücksichtigt werden?
+                }
+                else
+                {
+                    infoTxt = strfmt("@NDXME:NDXMEPriceCheckInfo2", total);        // Sollen bei den [%1] markierten Datensätze die Sonderrabatte berücksichtigt werden?
+                }
+                dialogButtonEndDiscAllow = box::yesNoCancel(infoTxt, DialogButton::Yes, "@NDXME:NDXMEPriceCheckInfo3");        // Sonderrabatte berücksichtigen
+                switch (dialogButtonEndDiscAllow)
+                {
+                    case DialogButton::No       :
+                        setEndDiscAllow = NoYes::No;
+                        break;
+                    case DialogButton::Yes      :
+                        setEndDiscAllow = NoYes::Yes;
+                        break;
+                    default                     :
+                        return;
+                }
+            }
+
+            qbds2 = qbds.addDataSource(tablenum(nDXRecId));
+            qbds2.joinMode(JoinMode::InnerJoin);
+            qbds2.addLink(fieldnum(NDXMEDataFromExcelLine, RecId), fieldnum(nDXRecId, RefRecId));
+            qbds2.fetchMode(QueryFetchMode::One2One);
+        }
+        else
+        {
+            info(strfmt("@NDXME:NDXMEPriceCheckInfo4", NDXHelperCommon::seconds2Str()));           // [%1] Start: Prüfung der Angebotspreise
+            total = int642int((select count(recid)
+            from   NDXMEDataFromExcelLine
+            where  NDXMEDataFromExcelLine.RefRecIdNDXMEDataFromExcelTable == lNDXMEDataFromExcelTable.RecId
+                && NDXMEDataFromExcelLine.QuotationId
+                && NDXMEDataFromExcelLine.ItemId).RecId);
+            if (!lCheckAnyway)
+            {
+                qbds.addRange(fieldnum(NDXMEDataFromExcelLine, QuotationId))  .value(SysQuery::valueNotEmptyString());
+                qbds.addRange(fieldnum(NDXMEDataFromExcelLine, ItemId))       .value(SysQuery::valueNotEmptyString());
+            }
+
+        }
+
+        qr = new QueryRun(q);
+        while (qr.next())
+        {
+            lNDXMEDataFromExcelLine = qr.get(tablenum(NDXMEDataFromExcelLine));
+
+            if (anyMarked && !lCheckOnly1)
+            {
+                lNDXMEDataFromExcelLine.EndDiscAllow = setEndDiscAllow;
+            }
+
+            ++counter;
+
+            select firstOnly salesQuotationLine
+            where   salesQuotationLine.QuotationId == lNDXMEDataFromExcelLine.QuotationId
+                &&  salesQuotationLine.ItemId      == lNDXMEDataFromExcelLine.ItemId;
+
+            if (salesQuotationLine)
+            {
+                salesPrice = salesQuotationLine.SalesPrice;
+                priceUnit  = salesQuotationLine.PriceUnit ? salesQuotationLine.PriceUnit : 1;
+                if (lNDXMEDataFromExcelLine.Liefermenge)
+                {
+                    salesPrice =  salesPrice * lNDXMEDataFromExcelLine.Liefermenge;
+                    if (priceUnit != 1)
+                    {
+                        salesPrice = salesPrice / salesQuotationLine.PriceUnit;
+                    }
+                    lNDXMEDataFromExcelLine.LineAmountBrutto = salesPrice;        // Angebotspreis vor Sonderrabatt
+                    salesPrice = NDXMarginEqualizing::SalesPriceEndDisc(salesPrice, salesQuotationLine.QuotationId);
+                    lNDXMEDataFromExcelLine.LineAmountNetto  = salesPrice;        // Angebotspreis inkl. Sonderrabatt
+                }
+                else
+                {
+                    salesPrice = 0;
+                    lNDXMEDataFromExcelLine.LineAmountBrutto = salesPrice;
+                    lNDXMEDataFromExcelLine.LineAmountNetto  = salesPrice;
+                }
+                
+                lNDXMEDataFromExcelLine.LineAmountNettoPerUnit = (lNDXMEDataFromExcelLine.LineAmountNetto /
+                                                               (lNDXMEDataFromExcelLine.Liefermenge ? lNDXMEDataFromExcelLine.Liefermenge : 1)) *
+                                                               (lNDXMEDataFromExcelLine.PriceUnit   ? lNDXMEDataFromExcelLine.PriceUnit   : 1);
+                
+
+            }
+            else
+            {
+                priceUnit = 1;
+            }
+
+            // Bestpreis für den Debitor und den Artikel ermitteln
+            lNDXMEDataFromExcelLine.InvoiceDate = lNDXMEDataFromExcelLine.getInvoiceDate();
+
+            if (lNDXMEDataFromExcelTable.CustAccount &&
+            lNDXMEDataFromExcelLine.ItemId)
+            {
+                //TODO: DebuC Bestpreisprüfung Dec: 7323
+                priceDisc = PriceDisc::NDX_getBestPrice(lNDXMEDataFromExcelTable.CustAccount,
+                                                    lNDXMEDataFromExcelLine.ItemId,
+                                                    lNDXMEDataFromExcelLine.Liefermenge ? lNDXMEDataFromExcelLine.Liefermenge : 1,
+                                                    lNDXMEDataFromExcelLine.InvoiceDate);
+                lNDXMEDataFromExcelLine.LineAmountHV = priceDisc.parmNDXLineAmount();
+                lNDXMEDataFromExcelLine.deleteError(NDXMECheckTypes::BestpriceCheck);
+
+                // Preis zum aktuellen Zeitpunkt
+                priceDisc = PriceDisc::NDX_getBestPrice(lNDXMEDataFromExcelTable.CustAccount,
+                                                    lNDXMEDataFromExcelLine.ItemId,
+                                                    lNDXMEDataFromExcelLine.Liefermenge ? lNDXMEDataFromExcelLine.Liefermenge : 1);
+                lNDXMEDataFromExcelLine.LineAmountHVNow   = priceDisc.parmNDXLineAmount();
+                lNDXMEDataFromExcelLine.PricedateHVNow    = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+            }
+            else
+            {
+                lNDXMEDataFromExcelLine.LineAmountHV = 0;
+                if (!lNDXMEDataFromExcelTable.CustAccount)
+                {
+                    lNDXMEDataFromExcelLine.saveErrorFlag(fieldnum(NDXMEDataFromExcelLine, BestpriceCheckNotPossible), NoYes::Yes);
+                    // Bestpreisprüfung nicht möglich: Debitoren-Angabe fehlt.
+                    lNDXMEDataFromExcelLine.saveError(NDXMECheckTypes::BestpriceCheck, "@NDXME:NDXMEPriceCheckInfo5");
+                }
+                if (!lNDXMEDataFromExcelLine.ItemId)
+                {
+                    lNDXMEDataFromExcelLine.saveErrorFlag(fieldnum(NDXMEDataFromExcelLine, BestpriceCheckNotPossible), NoYes::Yes);
+                    // Bestpreisprüfung nicht möglich: Artikelnummer-Angabe fehlt.
+                    lNDXMEDataFromExcelLine.saveError(NDXMECheckTypes::BestpriceCheck, "@NDXME:NDXMEPriceCheckInfo6");
+                }
+            }
+
+            // Falls keine HV-Preis-Summe übergeben wurde, wird diese berechnet
+            if (!lNDXMEDataFromExcelLine.PreisHVGesamt && lNDXMEDataFromExcelLine.PreisHV)
+            {
+                lNDXMEDataFromExcelLine.PreisHVGesamt = (lNDXMEDataFromExcelLine.PreisHV * lNDXMEDataFromExcelLine.Liefermenge) / priceUnit;
+            }
+
+            // falls keine Netto-Angebotssumme übergeben wurde, diese berechnen
+            if (!lNDXMEDataFromExcelLine.PreisAngebotGesamt && lNDXMEDataFromExcelLine.PreisAngebot)
+            {
+                // handelt es sich beim übergebenen Preis um den Gesamt- oder Einzel-Positionspreis?
+                lineAmount = (lNDXMEDataFromExcelLine.PreisAngebot * lNDXMEDataFromExcelLine.Liefermenge) / priceUnit;
+                faktor1 = lNDXMEDataFromExcelLine.LineAmountNetto  && abs(lNDXMEDataFromExcelLine.LineAmountNetto)  >= 1 ? lineAmount DIV lNDXMEDataFromExcelLine.LineAmountNetto: 0;
+                faktor2 = lNDXMEDataFromExcelLine.LineAmountBrutto && abs(lNDXMEDataFromExcelLine.LineAmountBrutto) >= 1 ? lineAmount DIV lNDXMEDataFromExcelLine.LineAmountBrutto: 0;
+                if (!lNDXMEDataFromExcelLine.LineAmountBrutto)
+                {
+                    lNDXMEDataFromExcelLine.PreisAngebotGesamt = lineAmount;
+                }
+                else if ((faktor1 >= 0 && faktor1 <= 1) ||
+                     (faktor2 >= 0 && faktor2 <= 1))
+                {
+                    lNDXMEDataFromExcelLine.PreisAngebotGesamt = lineAmount;
+                }
+                else
+                {
+                    lNDXMEDataFromExcelLine.PreisAngebotGesamt = lNDXMEDataFromExcelLine.PreisAngebot;
+                }
+            }
+            lNDXMEDataFromExcelLine.CustomerQuotationLineAmount = lNDXMEDataFromExcelLine.PreisAngebotGesamt;
+            // Falls Sonderrabatt angegeben wurde, ist dieser vom Angebotspreis abzuziehen
+            if (lNDXMEDataFromExcelLine.RabattSonder)
+            {
+                lNDXMEDataFromExcelLine.CustomerQuotationLineAmount = lNDXMEDataFromExcelLine.CustomerQuotationLineAmount -
+                                                                    ((lNDXMEDataFromExcelLine.CustomerQuotationLineAmount * lNDXMEDataFromExcelLine.RabattSonder) / 100);
+            }
+
+            // Differenz Angebotssumme netto zu der vom Kunden übermittelten Netto-Angebotssumme
+            lNDXMEDataFromExcelLine.LineAmountDiff        = (lNDXMEDataFromExcelLine.CustomerQuotationLineAmount    - (lNDXMEDataFromExcelLine.EndDiscAllow == NoYes::No ?
+                                                                                                                       lNDXMEDataFromExcelLine.LineAmountBrutto :
+                                                                                                                       lNDXMEDataFromExcelLine.LineAmountNetto)) * -1;
+            // Differenz Angebotssumme netto zu der vom Kunden übermittelten Netto-Angebotssumme (%)
+            lNDXMEDataFromExcelLine.LineAmountDiffPercent = (lNDXMEDataFromExcelLine.LineAmountDiff * 100) / (lNDXMEDataFromExcelLine.CustomerQuotationLineAmount ?
+                                                                                                              lNDXMEDataFromExcelLine.CustomerQuotationLineAmount : 1);
+            // Differenz Bestpreis zu Angebotspreis netto
+            if (lNDXMEDataFromExcelLine.ZahlwertGesamt)
+            {
+                lNDXMEDataFromExcelLine.LineAmountBruNetDiff  = lNDXMEDataFromExcelLine.ZahlwertGesamt      - lNDXMEDataFromExcelLine.LineAmountNetto;
+            }
+            else
+            {
+                lNDXMEDataFromExcelLine.LineAmountBruNetDiff  = lNDXMEDataFromExcelLine.LineAmountHV        - lNDXMEDataFromExcelLine.LineAmountNetto;
+            }
+
+            // Differenz Differenzgutschrift des Kunden zu errechneter Differenz (HV - Angebotspreis netto)
+            if (lNDXMEDataFromExcelLine.bereitsBelastet)
+            {
+                lNDXMEDataFromExcelLine.LineAmountDiffGutschr = (lNDXMEDataFromExcelLine.Differenzgutschrift  + lNDXMEDataFromExcelLine.bereitsBelastet)
+                                                            - (lNDXMEDataFromExcelLine.LineAmountBruNetDiff - lNDXMEDataFromExcelLine.bereitsBelastet);
+            }
+            else
+            {
+                lNDXMEDataFromExcelLine.LineAmountDiffGutschr = lNDXMEDataFromExcelLine.Differenzgutschrift     - lNDXMEDataFromExcelLine.LineAmountBruNetDiff;
+            }
+
+            // Differenz Differenzgutschrift des Kunden zu errechneter Differenz (HV - Angebotspreis netto) (%)
+            lNDXMEDataFromExcelLine.LineAmountDiffGutschrPercent = (lNDXMEDataFromExcelLine.LineAmountDiffGutschr * 100) / (lNDXMEDataFromExcelLine.Differenzgutschrift ?
+                                                                                                                            lNDXMEDataFromExcelLine.Differenzgutschrift : 1);
+            // Differenzwert zu Gunsten von Niedax?
+            lNDXMEDataFromExcelLine.DiffAmountCustPositivForNDX = lNDXMEDataFromExcelLine.ErrorInLine == NoYes::No  &&
+                                                                decround(lNDXMEDataFromExcelLine.LineAmountDiffGutschr,2) <= (0 + priceDiffOK);
+            lNDXMEDataFromExcelLine.AXBemerkung2 = '';
+            if (lNDXMEDataFromExcelLine.ErrorInLine == NoYes::No && lNDXMEDataFromExcelLine.DiffAmountCustPositivForNDX == NoYes::No)
+            {
+                if (NDXMEParameters.DiffNotOKText)
+                {
+                    lNDXMEDataFromExcelLine.AXBemerkung2 = strfmt(NDXMEParameters.DiffNotOKText, lNDXMEDataFromExcelLine.LineAmountBruNetDiff, lNDXMEDataFromExcelLine.LineAmountDiffGutschr);
+                }
+            }
+
+            ttsbegin;
+            lNDXMEDataFromExcelLine.saveErrorFlag(fieldnum(NDXMEDataFromExcelLine, ErrorInLine), lNDXMEDataFromExcelLine.checkErrorInLine());
+            lNDXMEDataFromExcelLine.update();
+            if (fds2 && (anyMarked) && total == 1)
+            {
+                fds2.reread();
+                fds2.refresh();
+            }
+            ttscommit;
+        }
+        if (anyMarked)
+        {
+            nDXRecId::deleteFromSignature(signature);
+            if (total > 1)
+            {
+                fds.research(true);
+            }
+        }
+        else
+        {
+            info(strfmt("@NDXME:NDXMEPriceCheckInfo7", NDXHelperCommon::seconds2Str(), counter));      // [%1] Ende: Prüfung der Angebotspreise [%2]
+        }
+        NDXMEHistory::add(lNDXMEDataFromExcelTable.RecId, NDXMEEventEnum::PriceCheck, DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()) - secondsStart, counter);
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesPriceEndDisc</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 15.05.25
+    /// </summary>
+    /// <param name = "salesPrice">SalesPrice</param>
+    /// <param name = "quotationId">QuotationId</param>
+    /// <returns>SalesPrice</returns>
+    static SalesPrice SalesPriceEndDisc(SalesPrice salesPrice, QuotationId quotationId)
+    {
+        AVASpecialDiscQuotation   specialDiscQuotation;
+        salesPrice      endDisc1, endDisc2, endDisc3;
+        ;
+
+        specialDiscQuotation = AVASpecialDiscQuotation::find(quotationId);
+        if (specialDiscQuotation)
+        {
+            if (specialDiscQuotation.SpecialDiscountPct1)
+            {
+                endDisc1 = (specialDiscQuotation.SpecialDiscountPct1 * salesPrice) / 100;
+            }
+            if (specialDiscQuotation.SpecialDiscountPct2)
+            {
+                endDisc2 = (specialDiscQuotation.SpecialDiscountPct2 * (salesPrice-endDisc1)) / 100;
+            }
+            if (specialDiscQuotation.SpecialDiscountPct3)
+            {
+                endDisc3 = (specialDiscQuotation.SpecialDiscountPct3 * (salesPrice-endDisc2-endDisc1)) / 100;
+            }
+            salesPrice -= (endDisc1 + endDisc2 + endDisc3);
+        }
+        return salesPrice;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkValuesInSalesOrder</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 15.05.25
+    /// </summary>
+    /// <param name = "lNDX_ME_DataFromExcelTable">NDXMEDataFromExcelTable</param>
+    /// <param name = "lNDX_ME_DataFromExcelLine">NDXMEDataFromExcelLine</param>
+    /// <param name = "lCheckAnyway">boolean</param>
+    static void checkValuesInSalesOrder(NDXMEDataFromExcelTable lNDX_ME_DataFromExcelTable, NDXMEDataFromExcelLine lNDX_ME_DataFromExcelLine = null, boolean lCheckAnyway = false)
+    {
+        #define.tolerance(0.02)
+        NDXMEDataFromExcelLine    lNDX_ME_DataFromExcelLine2;
+        NDXMESalesLine            nDX_ME_SalesIine;
+        SalesLine                   salesLine;
+
+        Query                       q = new Query();
+        Query                       q2;
+        QueryBuildDataSource        qbds;
+        QueryRun                    qr, qr2;
+        boolean                     anyMarked = false;
+        int                         total;
+        int counter;
+        int secondsStart = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+        SalesQty    salesQtySum;
+        NDXAmountPerUnit   amountPerUnitSales;
+        NDXAmountPerUnit   amountPerUnitQuotation;
+
+        RefRecId                    refRecId_SalesLine;
+        List                        listSalesLine;
+        ItemId                      itemIdTest = '1-KSR 20 A';
+        ;
+        info(strfmt("@NDXME:NDXInSalesCheck", NDXHelperCommon::seconds2Str()));       // [%1] Start 'Bereits in Auftrag'-Prüfung
+        [total, anyMarked] = NDXMarginEqualizing::getQbdsNDXMEDataFromExcelLine(q, lNDX_ME_DataFromExcelTable, lNDX_ME_DataFromExcelLine);
+
+        qbds = q.dataSourceTable(tablenum(NDXMEDataFromExcelLine));
+        qbds.addRange(fieldnum(NDXMEDataFromExcelLine, QuotationId)).value(SysQuery::valueNotEmptyString());
+        qbds.addRange(fieldnum(NDXMEDataFromExcelLine, ItemId)).value(SysQuery::valueNotEmptyString());
+
+        qr = new QueryRun(q);
+        while (qr.next())
+        {
+            ++counter;
+
+            lNDX_ME_DataFromExcelLine2 = qr.get(tablenum(NDXMEDataFromExcelLine));
+            if (lNDX_ME_DataFromExcelLine2.ItemId == itemIdTest)
+            {
+                itemIdTest = itemIdTest;
+            }
+            NDXMESalesLine::initializeFromExcelLine(lNDX_ME_DataFromExcelLine2.RecId);
+            amountPerUnitQuotation = lNDX_ME_DataFromExcelLine2.lineAmountNettoPerUnit();
+            q2 = new Query();
+            qbds = q2.addDataSource(tablenum(SalesLine));
+            qbds.addRange(fieldnum(SalesLine, AVAOrigQuotationId)).value(lNDX_ME_DataFromExcelLine2.QuotationId);
+            qbds.addRange(fieldnum(SalesLine, ItemId)).value(lNDX_ME_DataFromExcelLine2.ItemId);
+
+            // Salesline mit diesem Verkaufspreis (+- Toleranz)
+            qr2 = new QueryRun(q2);
+            salesQtySum = 0;
+            refRecId_SalesLine  = 0;
+            listSalesLine = new List(Types::Record);
+            while (qr2.next())
+            {
+                salesLine = qr2.get(tablenum(SalesLine));
+                amountPerUnitSales = salesLine.NDXLineAmountNetto();
+
+                if ((amountPerUnitSales >= (amountPerUnitQuotation - #tolerance)) &&
+                (amountPerUnitSales <= (amountPerUnitQuotation + #tolerance)))
+                {
+                    nDX_ME_SalesIine    = NDXMESalesLine::findOrCreate(lNDX_ME_DataFromExcelLine2.QuotationId, salesLine, amountPerUnitSales, true);
+
+                    if (nDX_ME_SalesIine.SalesQtySalesLine == lNDX_ME_DataFromExcelLine2.Liefermenge
+                    && !nDX_ME_SalesIine.SalesQty
+                    && salesQtySum < lNDX_ME_DataFromExcelLine2.Liefermenge)
+                    {
+                        nDX_ME_SalesIine.SalesQty                       = lNDX_ME_DataFromExcelLine2.Liefermenge;
+                        nDX_ME_SalesIine.RefRecIdNDXMEDataFromExcelLine = lNDX_ME_DataFromExcelLine2.RecId;
+                        nDX_ME_SalesIine.Aktiv                          = NoYes::Yes;
+                        ttsbegin;
+                        nDX_ME_SalesIine.update();
+                        ttscommit;
+                        salesQtySum += nDX_ME_SalesIine.SalesQty;
+                    }
+                }
+            }
+            if (salesQtySum)
+            {
+                if (salesQtySum >= lNDX_ME_DataFromExcelLine2.Liefermenge)
+                {
+                    lNDX_ME_DataFromExcelLine2.LineAmountDiffGutschrMan = -lNDX_ME_DataFromExcelLine2.Differenzgutschrift;
+                }
+                else
+                {
+                    lNDX_ME_DataFromExcelLine2.LineAmountDiffGutschrMan = -((lNDX_ME_DataFromExcelLine2.LineAmountBruNetDiff / lNDX_ME_DataFromExcelLine2.Liefermenge) * salesQtySum);
+                }
+                ttsbegin;
+                lNDX_ME_DataFromExcelLine2.DiffValueInSalesOrder = NoYes::Yes;
+                lNDX_ME_DataFromExcelLine2.modifiedField(fieldnum(NDXMEDataFromExcelLine, DiffValueInSalesOrder));
+                lNDX_ME_DataFromExcelLine2.update();
+                ttscommit;
+            }
+            else
+            {
+                if (lNDX_ME_DataFromExcelLine2.DiffValueInSalesOrder == NoYes::Yes)
+                {
+                    ttsbegin;
+                    lNDX_ME_DataFromExcelLine2.DiffValueInSalesOrder    = NoYes::No;
+                    lNDX_ME_DataFromExcelLine2.LineAmountDiffGutschrMan = 0;
+                    lNDX_ME_DataFromExcelLine2.modifiedField(fieldnum(NDXMEDataFromExcelLine, DiffValueInSalesOrder));
+                    lNDX_ME_DataFromExcelLine2.update();
+                    ttscommit;
+                }
+            }
+        }
+        info(strfmt("@NDXME:NDXInSalesCheck2", NDXHelperCommon::seconds2Str(), counter));       // [%1] Ende 'Bereits in Auftrag'-Prüfung [%2]
+        if (!anyMarked)
+        {
+            NDXMEHistory::add(lNDX_ME_DataFromExcelTable.RecId, NDXMEEventEnum::ValueInSalesOrder, DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()) - secondsStart, counter);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,570 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>AVAAllocationJournalTrans</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class AVAAllocationJournalTrans extends FormRun
+{
+    avaallocationJournalTransTmp    jourTransTmp;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>lookupJournal</Name>
+				<Source><![CDATA[
+    public void lookupJournal(FormControl  _fromFormControl)
+    {
+        SysTableLookup          sysTableLookup = SysTableLookup::newParameters(tableNum(LedgerJournalTable), _fromFormControl);
+        Query                   query = new Query();
+        QueryBuildDataSource    queryBuildDataSource;
+        QueryBuildRange         queryBuildRange;
+ 
+        queryBuildDataSource = query.addDataSource(tableNum(LedgerJournalTable));
+        queryBuildRange = queryBuildDataSource.addRange(fieldNum(LedgerJournalTable, AVACopiedWithDifLayer));
+        queryBuildRange.value(queryValue(NoYes::Yes));
+
+        sysTableLookup.addLookupfield(fieldNum(LedgerJournalTable, JournalNum));
+        sysTableLookup.addLookupfield(fieldNum(LedgerJournalTable, Name));
+        sysTableLookup.addLookupfield(fieldNum(LedgerJournalTable, JournalName));
+        sysTableLookup.addLookupfield(fieldNum(LedgerJournalTable, JournalType));
+        sysTableLookup.addLookupfield(fieldNum(LedgerJournalTable, Posted));
+ 
+        sysTableLookup.parmQuery(query);
+        sysTableLookup.performFormLookup();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>AVAAllocationJournalTransTmp</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            AVAAllocationJournalTransTmp.linkPhysicalTableInstance(jourTransTmp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            super();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>findData</Name>
+						<Source><![CDATA[
+        public void findData()
+        {
+            LedgerJournalTrans  allocationJourTrans;
+            LedgerJournalTable  jourTable;
+            String50            dimStr;
+
+            FromDate    fromDate = FromDateControl.dateValue();
+            ToDate      toDate = ToDateControl.dateValue();
+            //utcdatetime fromDate = FromDateControl.dateValue();
+            //utcdatetime todate = ToDateControl.dateValue();
+            LedgerJournalId fromJour = fromJournalNum.valueStr();
+            LedgerJournalId toJour = toJournalnum.valueStr();
+            
+            if (!fromDate)
+            {
+                fromDate = DateTimeUtil::date(DateTimeUtil::minValue());
+            }
+
+            if (!toDate)
+            {
+                toDate = DateTimeUtil::date(DateTimeUtil::maxValue());
+            }
+
+            if (!fromJour)
+            {
+                select firstonly JournalNum from jourTable order by JournalNum;
+                fromjour = jourTable.JournalNum;
+            }
+            if (!toJour)
+            {
+                select firstonly JournalNum from jourTable order by JournalNum desc;
+                toJour = jourTable.JournalNum;
+            }
+
+            delete_from jourTransTmp;
+
+            while select jourTable where jourTable.JournalNum >= fromJour
+                                      && jourTable.JournalNum <= toJour
+                                      //&& jourTable.CreatedDateTime >= fromDate
+                                      //&& jourTable.CreatedDateTime <= toDate
+                                      && jourTable.AVACopiedWithDifLayer
+            join allocationJourTrans where allocationJourTrans.TransDate >= fromDate
+                                                && allocationJourTrans.TransDate <= toDate
+                                                && allocationJourTrans.JournalNum == jourTable.JournalNum
+            //join allocationJourTrans where allocationJourTrans.JournalNum == jourTable.JournalNum
+            {
+                jourTransTmp.AmountCurCredit    = allocationJourTrans.AmountCurCredit;
+                jourTransTmp.AmountCurDebit     = allocationJourTrans.AmountCurDebit;
+                jourTransTmp.SumAmounts         = jourTransTmp.AmountCurDebit - jourTransTmp.AmountCurCredit;
+                jourTransTmp.Voucher            = allocationJourTrans.Voucher;
+                jourTransTmp.TransDate          = allocationJourTrans.TransDate;
+                jourTransTmp.AccountType        = allocationJourTrans.AccountType;
+                jourTransTmp.company            = allocationJourTrans.company;
+                jourTransTmp.CurrencyCode       = allocationJourTrans.CurrencyCode;
+                jourTransTmp.DefaultDimension   = allocationJourTrans.DefaultDimension;
+                jourTransTmp.JournalNum         = allocationJourTrans.JournalNum;
+                jourTransTmp.CreationDate       = DateTimeUtil::date(jourTable.CreatedDateTime);
+                jourTransTmp.LedgerDimension    = allocationJourTrans.LedgerDimension;
+                jourTransTmp.Txt                = allocationJourTrans.Txt;
+                jourTransTmp.MainAccountNum     = MainAccount::findByLedgerDimension(allocationJourTrans.LedgerDimension).MainAccountId;
+                DimStr = DimensionAttributeValueCombination::find(jourTransTmp.LedgerDimension).DisplayValue;
+                dimStr = subStr(dimStr, strLen(jourTransTmp.MainAccountNum)+1, strLen(dimStr));
+                dimStr = strRem(dimStr, '-');
+                jourTransTmp.DimString = dimStr;
+               
+                jourTransTmp.insert();
+            }
+
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>FromJournalNum</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            element.lookupJournal(this);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ToJournalNum</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            element.lookupJournal(this);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Process</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        public void clicked()
+        {
+            super();
+
+            AVAAllocationJournalTransTmp_ds.findData();
+            //AVAAllocationJournalTransTmp_ds.executeQuery();
+
+            //AVAAllocationJournalTransTmp_ds.reread();
+            AVAAllocationJournalTransTmp_ds.research();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>AVAAllocationJournalTransTmp</Name>
+			<Table>AVAAllocationJournalTransTmp</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AccountType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountCurCredit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountCurDebit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Company</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreationDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CurrencyCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DimString</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>JournalNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LedgerDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MainAccountNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumAmounts</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Txt</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Voucher</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<Index>JourVoucherIdx</Index>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@NDX:NXAAllocationJourTrans</Caption>
+		<Pattern xmlns="">Custom</Pattern>
+		<Style xmlns="">SimpleList</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>ActionPane</Name>
+				<Type>ActionPane</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>QuickFilterGroup</Name>
+				<Pattern>CustomAndQuickFilters</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl>
+						<Name>QuickFilter</Name>
+						<Visible>No</Visible>
+						<FormControlExtension>
+							<Name>QuickFilterControl</Name>
+							<ExtensionComponents />
+							<ExtensionProperties>
+								<AxFormControlExtensionProperty>
+									<Name>targetControlName</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>placeholderText</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>defaultColumnName</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+							</ExtensionProperties>
+						</FormControlExtension>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>FromDateControl</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Date</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@SYS24050</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>ToDateControl</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Date</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@SYS35904</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>FromJournalNum</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>LedgerJournalId</ExtendedDataType>
+						<Label>@NDX:NXAFromJournalId</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ToJournalNum</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>LedgerJournalId</ExtendedDataType>
+						<Label>@NDX:NXAToJournalId</Label>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+				<FrameType>None</FrameType>
+				<Style>CustomFilter</Style>
+				<ViewEditMode>Edit</ViewEditMode>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>FormGroupControl1</Name>
+				<Type>Group</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonControl">
+						<Name>Process</Name>
+						<Type>Button</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Text>@NDX:NXAProcessFilter</Text>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGridControl">
+				<Name>Grid</Name>
+				<Type>Grid</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AVAAllocationJournalTransTmp_Company</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Company</DataField>
+						<DataSource>AVAAllocationJournalTransTmp</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AVAAllocationJournalTransTmp_JournalNum</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>JournalNum</DataField>
+						<DataSource>AVAAllocationJournalTransTmp</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>AVAAllocationJournalTransTmp_CreationDate</Name>
+						<Type>Date</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>CreationDate</DataField>
+						<DataSource>AVAAllocationJournalTransTmp</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AVAAllocationJournalTransTmp_Voucher</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Voucher</DataField>
+						<DataSource>AVAAllocationJournalTransTmp</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>AVAAllocationJournalTransTmp_TransDate</Name>
+						<Type>Date</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>TransDate</DataField>
+						<DataSource>AVAAllocationJournalTransTmp</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormComboBoxControl">
+						<Name>AVAAllocationJournalTransTmp_AccountType</Name>
+						<Type>ComboBox</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AccountType</DataField>
+						<DataSource>AVAAllocationJournalTransTmp</DataSource>
+						<Items />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormSegmentedEntryControl">
+						<Name>AVAAllocationJournalTransTmp_LedgerDimension</Name>
+						<FilterExpression>%1</FilterExpression>
+						<Type>SegmentedEntry</Type>
+						<FormControlExtension>
+							<Name>SegmentedEntryControl</Name>
+							<ExtensionComponents />
+							<ExtensionProperties>
+								<AxFormControlExtensionProperty>
+									<Name>parmControllerClassName</Name>
+									<Type>String</Type>
+									<Value>DimensionDynamicAccountController</Value>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>parmAccountTypeEnumName</Name>
+									<Type>String</Type>
+									<Value>AccountType</Value>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>parmIsDefaultAccount</Name>
+									<Type>Enum</Type>
+									<TypeName>boolean</TypeName>
+									<Value>False</Value>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>parmValidateBlockedForManualEntry</Name>
+									<Type>Enum</Type>
+									<TypeName>NoYes</TypeName>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>parmLockMainAccountSegment</Name>
+									<Type>Enum</Type>
+									<TypeName>NoYes</TypeName>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>parmPostingType</Name>
+									<Type>Enum</Type>
+									<TypeName>LedgerPostingType</TypeName>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>parmIncludeTotalAccounts</Name>
+									<Type>Enum</Type>
+									<TypeName>NoYes</TypeName>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>parmIncludeFinancialAccounts</Name>
+									<Type>Enum</Type>
+									<TypeName>NoYes</TypeName>
+								</AxFormControlExtensionProperty>
+							</ExtensionProperties>
+						</FormControlExtension>
+						<DataSource>AVAAllocationJournalTransTmp</DataSource>
+						<ReferenceField>LedgerDimension</ReferenceField>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>AVAAllocationJournalTransTmp_AmountCurDebit</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AmountCurDebit</DataField>
+						<DataSource>AVAAllocationJournalTransTmp</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>AVAAllocationJournalTransTmp_AmountCurCredit</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AmountCurCredit</DataField>
+						<DataSource>AVAAllocationJournalTransTmp</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>AVAAllocationJournalTransTmp_SumAmounts</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>SumAmounts</DataField>
+						<DataSource>AVAAllocationJournalTransTmp</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AVAAllocationJournalTransTmp_CurrencyCode</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>CurrencyCode</DataField>
+						<DataSource>AVAAllocationJournalTransTmp</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AVAAllocationJournalTransTmp_Txt</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Txt</DataField>
+						<DataSource>AVAAllocationJournalTransTmp</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AVAAllocationJournalTransTmp_MainAccountNum</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>MainAccountNum</DataField>
+						<DataSource>AVAAllocationJournalTransTmp</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AVAAllocationJournalTransTmp_DimString</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>DimString</DataField>
+						<DataSource>AVAAllocationJournalTransTmp</DataSource>
+					</AxFormControl>
+				</Controls>
+				<DataSource>AVAAllocationJournalTransTmp</DataSource>
+				<Style>Tabular</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

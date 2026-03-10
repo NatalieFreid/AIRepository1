@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXTRUMPF_cls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of NDXTRUMPF class
+/// </summary>
+[ExtensionOf(classStr(NDXTRUMPF))]
+internal final class NDXTRUMPF_cls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getJmgJobIdFromProdId</Name>
+				<Source><![CDATA[
+    static JmgJobId getJmgJobIdFromProdId(ProdId _prodId)
+    {
+        ProdRouteJob prodRouteJob;
+
+        select firstOnly JobId from prodRouteJob order by OprNum
+            where prodRouteJob.ProdId == _prodId
+                && prodRouteJob.OprPriority == RouteOprPriority::Primary;
+
+        return prodRouteJob.JobId;
+    }
+
+   /* static void genBDE2(NDXTRUMPFPDATable _nDXTRUMPFPDATable, boolean _lShowInfo = true)
+    {
+        AVASFCFeedback      kCS_SFCFeedback;
+        AVASFCFeedback      kCS_SFCFeedback2;
+        NDXTRUMPFParameters nDX_TRU_Parameters = NDXTRUMPFParameters::find();
+        //WrkCtrId            nDX_TRU_WrkCtrId = NDXTRUMPFMachines::find(_nDXTRUMPFPDATable.WorkPlace).WrkCtrId;
+
+        NDXTRUMPFMachines   lNDXTRUMPFMachines = NDXTRUMPFMachines::find(_nDXTRUMPFPDATable.WorkPlace);
+        WrkCtrTable         wrkCtrTable = WrkCtrTable::findByRecId(lNDXTRUMPFMachines.RefRecIdWrkCtrTable);
+        WrkCtrId            nDX_TRU_WrkCtrId = wrkCtrTable.WrkCtrId;
+
+        NDXTrumpfCheckUnitIdFromProdTable   nDX_TrumpfCheckUnitIdFromProdTable;
+
+        ExtendedTypeId      idKCS_NdxSFCId = extendedtypenum(AVANdxSFCId);
+        NumberSeq           num;
+        AVANdxSFCId         kcs_NdxSFCId;
+        ProdTable           prodTable = ProdTable::find(_nDXTRUMPFPDATable.OrderNo);
+
+        // Generierung schon erfolgt?
+        if (_nDXTRUMPFPDATable.NdxSFCId)
+        {
+            if(_lShowInfo)
+            {
+                Warning(strfmt("@NDX:NDX_TRU_Warn1", _nDXTRUMPFPDATable.NdxSFCId));        // Aufbereitung nicht möglich, da dies bereits mit der SFCId [%1] erfolgt ist
+            }
+            return;
+        }
+
+        // Status für die BDE-Aufbereitung ok?
+        if (!_nDXTRUMPFPDATable.OperationStatus == 90)
+        {
+            Warning("@NDX:NDX_TRU_Warn2");                                                   // Der Status der Trumpf-BDE-Rückmeldung läßt eine BDE-Generierung nicht zu!
+            return;
+        }
+
+        if (!lNDXTRUMPFMachines || !wrkCtrTable)
+        {
+            if (_lShowInfo)
+            {
+                Error(strfmt("@NDXTrumpf:NDX_TRU_Error1", _nDXTRUMPFPDATable.ReportedBy));            // Für die Maschine [%1] wurde keine SNL-Ressource zugeordnet!
+            }
+            return;
+        }
+
+        ttsbegin;
+        // KCS_NdxSFCId ermitteln
+        num = NumberSeq::newGetNum(NumberSequenceReference::find(NUMBERSEQUENCEDATATYPE::findByDatatypeId(idKCS_NdxSFCId).RecId));
+        num.used();
+        kcs_NdxSFCId = num.num();
+
+        // KCS_SFCFeedback füllen
+        //TODO: kCS_SFCFeedback.InventSiteId          = InventLocation::find(CompanyInfo::find().DEL_FallbackInventLocationId).InventSiteId;
+
+        kCS_SFCFeedback.ProdId                  = _nDXTRUMPFPDATable.OrderNo;
+        kCS_SFCFeedback.NdxSFCId                = kcs_NdxSFCId;
+        
+        kCS_SFCFeedback.WrkCtrId                =  nDX_TRU_WrkCtrId;
+        kCS_SFCFeedback.TransactionType         = AVASFCTransactionType::JobProcessing;
+        
+        kCS_SFCFeedback.JmgDate                 = DateTimeUtil::date(_nDXTRUMPFPDATable.TimeStamp);
+        kCS_SFCFeedback.EmplIdOrig              = HcmWorker::find(nDX_TRU_Parameters.RefRecIdHcmWorker).PersonnelNumber;
+        kCS_SFCFeedback.JmgTermRegType          = JmgTermRegType::JobStart;
+        kCS_SFCFeedback.CapacityValue           = 0;
+        kCS_SFCFeedback.JmgJobIdAbs             = '';
+
+        kCS_SFCFeedback.JmgDateTime             = _nDXTRUMPFPDATable.orderStart();
+
+        kCS_SFCFeedback.JobPilote               = '';
+        kCS_SFCFeedback.ProdQtyStUp             = 0;
+        kCS_SFCFeedback.CostCategory            = '';
+        kCS_SFCFeedback.LineNum                 = 1;
+        
+        kCS_SFCFeedback.DefaultDimension        = wrkCtrTable.DefaultDimension;
+        //ToDO: kCS_SFCFeedback.InventLocationId        = wrkCtrTable.InventLocationId;
+        kCS_SFCFeedback.JmgJobId                = NDXTRUMPF::getJmgJobIdFromProdId(kCS_SFCFeedback.ProdId);
+        
+        if (!kCS_SFCFeedback.JmgJobId)
+        {
+            kCS_SFCFeedback.JmgJobId            = nDX_TRU_Parameters.NDXJobId;
+        }
+        kCS_SFCFeedback.NDXTRUMPFPDATableRefRecId = _nDXTRUMPFPDATable.RecId;
+        kCS_SFCFeedback.insert();
+
+        buf2Buf(kCS_SFCFeedback, kCS_SFCFeedback2);
+
+        kCS_SFCFeedback2.JmgDateTime        = _nDXTRUMPFPDATable.TimeStamp;
+        kCS_SFCFeedback2.JmgTermRegType     = JmgTermRegType::JobStop;
+
+        kCS_SFCFeedback2.ProdReportedGood   = _nDXTRUMPFPDATable.ProcessedPartsTotal;
+        kCS_SFCFeedback2.ProdReportedError  = _nDXTRUMPFPDATable.MissingPartsTotal;
+        
+        nDX_TrumpfCheckUnitIdFromProdTable = NDXTRUMPFCheckUnitIdFromProdTable::constructFromProdTable(prodTable);
+        nDX_TrumpfCheckUnitIdFromProdTable.checkUnitIdFromProdTable();
+
+        if (nDX_TrumpfCheckUnitIdFromProdTable.parmLMEOK() && nDX_TrumpfCheckUnitIdFromProdTable.parmUnitConvertFactor() != 1)
+        {
+            _nDXTRUMPFPDATable.UnitConvertFactor = nDX_TrumpfCheckUnitIdFromProdTable.parmUnitConvertFactor();
+            _nDXTRUMPFPDATable.UnitConvertDirection   = nDX_TrumpfCheckUnitIdFromProdTable.parmUnitConvertDirection();
+            
+            if (_nDXTRUMPFPDATable.UnitConvertDirection == NDXTRUMPFUnitConvertDirection::FromUnit2ToUnit)
+            {
+                kCS_SFCFeedback2.ProdReportedGood   = _nDXTRUMPFPDATable.ProcessedPartsTotal  * nDX_TrumpfCheckUnitIdFromProdTable.parmUnitConvertFactor();
+                kCS_SFCFeedback2.ProdReportedError  = _nDXTRUMPFPDATable.MissingPartsTotal    * nDX_TrumpfCheckUnitIdFromProdTable.parmUnitConvertFactor();
+            }
+            else
+            {
+                kCS_SFCFeedback2.ProdReportedGood   = _nDXTRUMPFPDATable.ProcessedPartsTotal  / nDX_TrumpfCheckUnitIdFromProdTable.parmUnitConvertFactor();
+                kCS_SFCFeedback2.ProdReportedError  = _nDXTRUMPFPDATable.MissingPartsTotal    / nDX_TrumpfCheckUnitIdFromProdTable.parmUnitConvertFactor();
+            }
+        }
+        kCS_SFCFeedback2.LineNum    = 2;
+        kCS_SFCFeedback2.RefRecJobStart = kCS_SFCFeedback.RecId;
+
+        kCS_SFCFeedback2.insert();
+
+        // in/out buchen
+        //TODO: KCS_SFCFeedback::createClockinClockout(kcs_NdxSFCId);
+
+        // Transferkennung speichern
+        _nDXTRUMPFPDATable.selectForUpdate(true);
+        _nDXTRUMPFPDATable.NdxSFCId = kcs_NdxSFCId;
+        _nDXTRUMPFPDATable.update();
+        ttscommit;
+    }
+
+    public static void main(Args _args)
+    {
+        if(_args != null && _args.dataset() == tableNum(NDXTRUMPFPDATable) && _args.record())
+        {
+            NDXTRUMPF::genBDE2(_args.record());
+        }
+    }*/
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

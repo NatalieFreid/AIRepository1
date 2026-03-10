@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVABPJobsUpdateStatus</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>AVABPJobsUpdateStatus</c> class is the execution class for <c>BP-Jobs</c>
+/// </summary>
+class AVABPJobsUpdateStatus
+{
+    QueryRun                    queryRun;
+    boolean                     lJobMode;
+    KCS_KBVBuildingProjectID    kcs_KBVBuildingProjectID;
+    container                   processinginterval;
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>init</c> method.
+    /// </summary>
+    public void init()
+    {
+        lJobMode = false;   
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmProcessingInterval</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 12.09.2025
+    /// </summary>
+    /// <param name = "_processingInterval">_processingInterval</param>
+    /// <returns>container</returns>
+    public container parmProcessingInterval(container       _processingInterval = processingInterval)
+    {
+        processinginterval = _processingInterval;
+        return processinginterval;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>initQuery</c> method.
+    /// </summary>
+    public void initQuery()
+    {
+        Query                   query;
+        QueryBuildDataSource    queryBuildDataSource;
+        QueryBuildRange         qbr;
+        str                     fromBVNum, toBVNum,zeroRecord;
+
+        query = new Query();
+        queryBuildDataSource = query.addDataSource(tablenum(KCS_KBVBuildingProjectTable));
+        queryBuildDataSource.addRange(fieldnum(KCS_KBVBuildingProjectTable, KCS_KBVBuildingProjectID));
+       
+
+       
+
+        //Filter Bauvorhaben
+        qbr = AVABPJobsExecution::setKBVBuildingProjectIdRange( query,
+                                                                tablenum(KCS_KBVBuildingProjectTable),
+                                                                fieldnum(KCS_KBVBuildingProjectTable, KCS_KBVBuildingProjectID),
+                                                                kcs_KBVBuildingProjectID);
+
+
+        queryBuildDataSource.addRange(fieldNum(KCS_KBVBuildingProjectTable,KCS_KBVStatus)).value(strFmt('%1,%2,%3,%4',SysQuery::valueNot(KCS_KBVStatus::Locked),
+            SysQuery::valueNot(KCS_KBVStatus::Won),SysQuery::valueNot(KCS_KBVStatus::Lost),SysQuery::valueNot(KCS_KBVStatus::Declined)));
+
+        if (conLen(processinginterval) > 0)
+        {
+            fromBVNum = conPeek(processinginterval,1);
+            toBVNum   = conPeek(processinginterval,2);
+            zeroRecord = conPeek(processinginterval,3);
+            
+            if (toBVNum != zeroRecord)
+            {
+                qbr.value(strFmt('%1..%2', fromBVNum, toBVNum));
+            }
+            else
+            {
+                qbr.value(strFmt('%1..', fromBVNum));
+            }
+        }
+
+        queryRun = new QueryRun(query);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmKCS_KBVBuildingProjectID</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>parmKCS_KBVBuildingProjectID</c> method.
+    /// </summary>
+    /// <param name="_parmValue">
+    ///     <c>KCS_KBVBuildingProjectID</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>KCS_KBVBuildingProjectID</c> as return value
+    /// </returns>
+    public KCS_KBVBuildingProjectID parmKCS_KBVBuildingProjectID(KCS_KBVBuildingProjectID _parmValue = kcs_KBVBuildingProjectID)
+    {
+        kcs_KBVBuildingProjectID = _parmValue;
+
+        return kcs_KBVBuildingProjectID;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmlJobMode</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>parmlJobMode</c> method.
+    /// </summary>
+    /// <param name="_parmValue">
+    ///     <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>boolean</c> as return value
+    /// </returns>
+    public boolean parmlJobMode(boolean _parmValue = lJobMode)
+    {
+        lJobMode = _parmValue;
+
+        return lJobMode;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>run</c> method.
+    /// </summary>
+    public void run()
+    {
+        KCS_KBVBuildingProjectTable locKCS_KBVBuildingProjectTable;
+        NDX_KBVJobProt              nDX_KBVJobProt;
+
+        container                   companiesAffected;
+        DataAreaId                  currentDataAreaId;
+        int                         i;
+        
+        #OCCRetryCount
+
+        nDX_KBVJobProt.createProt(NDX_KBVJob::KBV_PeriodicUpdate, lJobMode);
+        
+        try
+        {
+
+            while (queryRun.next())
+            {
+                if (queryRun.changed(tablenum(KCS_KBVBuildingProjectTable)))
+                {
+                    locKCS_KBVBuildingProjectTable = queryRun.get(tablenum(KCS_KBVBuildingProjectTable));
+
+                    companiesAffected = AVABPJobsExecution::getCompaniesKCS_KBVBPCompanySpecific(locKCS_KBVBuildingProjectTable.KCS_KBVBuildingProjectID);
+
+                    for(i = 1; i <= conlen(companiesAffected); i++)
+                    {
+                        currentDataAreaId = conpeek(companiesAffected, i);
+                        changecompany(currentDataAreaId)
+                        {
+                            //locKCS_KBVBPCompanySpecific = KCS_KBVBPCompanySpecific::find(locKCS_KBVBuildingProjectTable.KCS_KBVBuildingProjectID);
+                            KCS_KBVBPCompanySpecific::updateCompanySpecStatus(locKCS_KBVBuildingProjectTable.KCS_KBVBuildingProjectID, !lJobMode);
+                        }
+                    }
+                    locKCS_KBVBuildingProjectTable.selectForUpdate(true);
+                    locKCS_KBVBuildingProjectTable.StatusModified = DateTimeUtil::getSystemDateTime();
+                    ttsbegin;
+                    locKCS_KBVBuildingProjectTable.update();
+                    ttscommit;
+
+                    //info(strFmt('Test %1',locKCS_KBVBuildingProjectTable.KCS_KBVBuildingProjectID));
+                }
+            }
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw Exception::Deadlock;
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    if (conLen(this.parmProcessingInterval()) > 0)
+                    {
+                        error(strFmt("@NDX:NXABPUpdateConflictBatch",locKCS_KBVBuildingProjectTable.KCS_KBVBuildingProjectID));
+                    }
+                    else
+                    {
+                        throw Exception::UpdateConflictNotRecovered;
+                    }
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw;
+            }
+        }
+
+        nDX_KBVJobProt.createProt(NDX_KBVJob::KBV_PeriodicUpdate, lJobMode, false);
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>StatusPerProductGroup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>StatusPerProductGroup</c> method.
+    /// </summary>
+    /// <param name="_kcs_KBVBuildingProjectID">
+    ///     <c>KCS_KBVBuildingProjectID</c> as type
+    /// </param>
+    /// <param name="_kcs_DirProductGroupID">
+    ///     <c>KCS_DirProductGroupID</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>int</c> as return value
+    /// </returns>
+    static int StatusPerProductGroup(   KCS_KBVBuildingProjectID    _kcs_KBVBuildingProjectID, 
+                                        KCS_DirProductGroupID       _kcs_DirProductGroupID  )
+    {
+        SalesQuotationTable salesQuotationTable;
+        int                 numOfQuotations, numOfLostQuot;
+
+        while select QuotationStatus, KCS_KBVBuildingProjectID, KCS_KBVProductGroupID 
+        from    salesQuotationTable
+        where   salesQuotationTable.KCS_KBVBuildingProjectID    == _KCS_KBVBuildingProjectID 
+            &&  salesQuotationTable.KCS_KBVProductGroupID       == _kcs_DirProductGroupID
+        {
+            numOfQuotations++;
+            if (salesQuotationTable.QuotationStatus == SalesQuotationStatus::Confirmed)
+            {
+                return 1;
+            }
+
+            if (salesQuotationTable.QuotationStatus == SalesQuotationStatus::Lost)
+            {
+                numOfLostQuot++;
+            }
+        }
+
+        if (numOfLostQuot == numOfQuotations)
+        {
+            return 2;
+        }
+        return 0;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,296 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesLineTbl_EventHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+class AVASalesLineTbl_EventHandler
+{          
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>SalesLine_onDeleted</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  designed from AVA
+    /// </summary>
+    /// <param name="sender">sender</param>
+    /// <param name="e">e</param>
+    [DataEventHandler(tableStr(SalesLine), DataEventType::Deleted),
+     SuppressBPWarning('BPParameterNotUsed', 'False positive')]
+    public static void SalesLine_onDeleted(Common sender, DataEventArgs e)
+    {
+        SalesLine       salesLine = sender;
+        AVASpecialDiscSalesLine         specialDiscSalesLine;
+
+        delete_from specialDiscSalesLine
+            where specialDiscSalesLine.InventTransId == salesLine.InventTransId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesLine_Post_itemIdChanged</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name="args">args</param>
+    [PostHandlerFor(tableStr(SalesLine), tableMethodStr(SalesLine, itemIdChanged))]
+    public static void SalesLine_Post_itemIdChanged(XppPrePostArgs args)
+    {
+        Salesline          salesLine = args.getThis();
+        
+        salesLine.AVApriceCalculation();
+        if (salesLine.PriceUnit == 0)
+        {
+            salesLine.PriceUnit = salesLine.inventTable().salesPriceUnit();
+        }
+        salesLine.LineAmount = salesLine.calcLineAmountForced();
+        
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesLine_Post_modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   desigend from AVA
+    /// </summary>
+    /// <param name="args">args</param>
+    [PostHandlerFor(tableStr(SalesLine), tableMethodStr(SalesLine, modifiedField))]
+    public static void SalesLine_Post_modifiedField(XppPrePostArgs args)
+    {
+        SalesLine      salesLine = args.getThis();
+        FieldId                 fieldId = args.getArgNum(1);
+        switch (fieldId)
+        {
+            case fieldNum(SalesLine,KCS_PriceDate) :
+                salesLine.AVApriceCalculation();
+                if (salesLine.PriceUnit == 0)
+                {
+                    salesLine.PriceUnit = salesLine.inventTable().salesPriceUnit();
+                }
+                salesLine.LineAmount = salesLine.calcLineAmount();
+                break;
+
+            case fieldnum(salesLine,LineDisc) :
+                salesLine.AVApriceCalculation(false,true,false,false);
+                if (salesLine.PriceUnit == 0)
+                {
+                    salesLine.PriceUnit = salesLine.inventTable().salesPriceUnit();
+                }
+                if (!salesLine.returnItem())
+                {
+                    salesLine.LineAmount = salesLine.calcLineAmount();
+                }
+                else
+                {
+                    salesLine.LineAmount = salesLine.calcLineAmount(salesLine.ExpectedRetQty);
+                }
+                break;
+
+            case fieldNum(SalesLine,LinePercent) :
+                if (!salesLine.returnItem())
+                {
+                    salesLine.LineAmount = salesLine.calcLineAmount();
+                }
+                else
+                {
+                    salesLine.LineAmount = salesLine.calcLineAmount(salesLine.ExpectedRetQty);
+                }
+                break;
+
+
+            case fieldNum(SalesLine,AVAQuotationId) :
+                SalesQuotationLine          salesQuotationLine;
+                SalesQuotationTable         salesQuotationTable = salesQuotationTable::find(salesLine.AVAQuotationId);
+                boolean isReturnItem = salesLine.returnItem();
+
+                salesLine.KCS_BOSCommissCutPct = salesQuotationTable.AVACBSCommissCutPct;
+
+               
+                if (salesLine.AVAQuotationId != '')
+                {
+                    select firstonly QuotationId from salesQuotationLine
+                                where salesQuotationLine.QuotationId == salesLine.AVAQuotationId
+                                   && salesQuotationLine.ItemId      == salesLine.ItemId;
+                    if (!salesQuotationLine.QuotationId)
+                    {
+                        //ok =checkFailed("@NDX:NXAQuotationLineNotFound");
+                        error("@NDX:NXAQuotationLineNotFound");
+                        salesLine.AVAQuotationId = '';
+                        salesLine.AVAEDIQuotationStatus = AVAEDIQuotationStatus::Error;
+                    }
+                    AVASalesParameters      avaSalesParameters = AVASalesParameters::find();
+
+                    int   maxNumOfDays;
+                    maxNumOfDays = !salesQuotationTable.AVANoExpiryOverrun ?  avaSalesParameters.SalesQuotationNumOfDays : 0;
+                    
+                    if (!isReturnItem)
+                    {
+                        SalesTable      locSalesTable = salesLine.salesTable();
+                        TransDate                   checkBasicDate = locSalesTable.KCS_PurchRefDate != dateNull() ? locSalesTable.KCS_PurchRefDate  :  DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                        
+                        if (salesQuotationTable.CustAccount != salesLine.salesTable().CustAccount)
+                        {
+                            warning("@NDX:NXADeviantCustAcount");
+                            salesLine.AVAQuotAAEError = NoYes::Yes;
+                            salesLine.AVAEDIQuotationStatus = AVAEDIQuotationStatus::Error;
+                        }
+                        if (salesQuotationTable.QuotationExpiryDate  < checkBasicDate - maxNumOfDays)
+                        {
+                            Error(strFmt("@NDX:NXAExpiredQuotation", salesQuotationTable.QuotationId, salesQuotationTable.QuotationExpiryDate));
+                            //ok = checkFailed();
+                            salesLine.AVAQuotationId = '';
+                            salesLine.AVAEDIQuotationStatus = AVAEDIQuotationStatus::Error;
+                        }
+                    }
+                }
+                if (salesLine.AVAQuotationId != '')
+                {
+                    if (salesLine.PriceUnit == 0)
+                    {
+                        salesLine.PriceUnit = salesLine.inventTable().salesPriceUnit();
+                    }
+                    salesLine.AVAQuotANError = NoYes::No;
+                    salesLine.AVAQuotAAError = NoYes::No;
+                    salesLine.AVAQuotAGError = NoYes::No;
+                    salesLine.AVAEDIQuotationStatus = AVAEDIQuotationStatus::OK;
+                }
+                salesLine.AVApriceCalculation();
+                salesLine.LineAmount = salesLine.calcLineAmount();
+                break;
+
+            case fieldNum(SalesLine,SalesPrice) :
+                if (!salesLine.returnItem())
+                {
+                    salesLine.LineAmount = salesLine.calcLineAmount();
+                }
+                else
+                {
+                    salesLine.LineAmount = salesLine.calcLineAmount(salesLine.ExpectedRetQty);
+                }
+                break;
+
+            case fieldNum(SalesLine,SalesQty) :
+                salesLine.LineAmount = salesLine.calcLineAmount();
+                break;
+
+            default: 
+                break;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesLine_onInserted</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  designed from AVA
+    /// </summary>
+    /// <param name="sender">sender</param>
+    /// <param name="e">e</param>
+    [DataEventHandler(tableStr(SalesLine), DataEventType::Inserted),
+     SuppressBPWarning('BPParameterNotUsed', 'False positive')]
+    public static void SalesLine_onInserted(Common sender, DataEventArgs e)
+    {
+        SalesLine       salesLine;
+        FormDataSource  salesLineDS;
+
+        salesLine   = sender;
+        salesLineDS =  FormDataUtil::getFormDataSource(salesLine);
+
+        if(salesLine.InventTransIdReturn == '') // not a credit note position
+        {
+            salesLine.initSpecialDiscFromQuotation();
+        }
+
+        if (salesLineDS)
+        {
+            salesLineDS.reread();
+            salesLineDS.refresh();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesLine_onUpdated</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  designed from AVA
+    /// </summary>
+    /// <param name="sender">sender</param>
+    /// <param name="e">e</param>
+    [DataEventHandler(tableStr(SalesLine), DataEventType::Updated),
+     SuppressBPWarning('BPParameterNotUsed', 'False positive')]
+    public static void SalesLine_onUpdated(Common sender, DataEventArgs e)
+    {
+        SalesLine   salesLine = sender;
+        SalesLine   salesLineOrig = salesLine.orig();
+        FormDataSource  salesLineDS;
+        salesLineDS =  FormDataUtil::getFormDataSource(salesLine);
+        if (salesLine.AVAQuotationId != salesLineOrig.AVAQuotationId)
+        {
+            if(salesLine.InventTransIdReturn == '') // not a credit note position
+            {
+                salesLine.initSpecialDiscFromQuotation();
+            }
+            salesLine.AVAQuotANError = NoYes::No;
+            salesLine.AVAQuotAAError = NoYes::No;
+            salesLine.AVAQuotAGError = NoYes::No;
+            salesLine.AVAEDIQuotationStatus = AVAEDIQuotationStatus::OK;
+            
+            //salesLine.setSalesQuotationStatus();
+            salesLine.copyCommissSplitFromQuotation(salesLine.AVAQuotationId);
+            
+        }
+        if (salesLine.AVAItemSet && 
+           (salesLine.AVAShippingDateRequested != salesLineOrig.AVAShippingDateRequested
+         || salesLine.AVADispoDate             != salesLineOrig.AVADispoDate))
+        {
+            SalesLine   componentSalesLines;
+            while select componentSalesLines
+                where componentSalesLines.AVAItemSetParent == salesLine.inventTransId
+                   && componentSalesLines.SalesId          == salesLine.SalesId
+            {
+                if (salesLine.AVAShippingDateRequested != salesLineOrig.AVAShippingDateRequested)
+                {
+                    componentSalesLines.AVAShippingDateRequested = salesLine.AVAShippingDateRequested;
+                }
+                if (salesLine.AVADispoDate             != salesLineOrig.AVADispoDate)
+                {
+                    componentSalesLines.AVADispoDate = salesLine.AVADispoDate;
+                    componentSalesLines.AVADispoDateModifiedDateTime    =  DateTimeUtil::utcNow();
+                    componentSalesLines.AVADispoDateModifiedById        =  curUserId();
+                }
+                componentSalesLines.setCalculatedShippingDate();
+                ttsbegin;
+                componentSalesLines.selectForUpdate(true);
+                componentSalesLines.doUpdate();
+                ttscommit;
+            }
+
+        }
+      
+        if (salesLineDS)
+        {
+            salesLineDS.reread();
+            salesLineDS.refresh();
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

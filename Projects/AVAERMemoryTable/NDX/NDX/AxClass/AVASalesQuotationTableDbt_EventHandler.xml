@@ -1,0 +1,503 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesQuotationTableDbt_EventHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVASalesQuotationTableDbt_EventHandler
+/// </summary>
+class AVASalesQuotationTableDbt_EventHandler
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>SalesQuotationTable_onInserting</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name="sender">sender</param>
+    /// <param name="e">e</param>
+    [SuppressBPWarning('BPParameterNotUsed', 'Parameter e required in signature'),
+        DataEventHandler(tableStr(SalesQuotationTable), DataEventType::Inserting)]
+    public static void SalesQuotationTable_onInserting(Common sender, DataEventArgs e)
+    {
+        SalesQuotationTable         salesQuotationTable  = sender;
+        //AVASalesParameters          avaSalesParameters = AVASalesParameters::find();
+        salesQuotationTable.AVAExchangeRateDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+        salesQuotationTable.AVAinitFromNiedaxSalesParameter();
+
+        if (salesQuotationTable.CustAccount)
+        {
+            CustTable           custTable = CustTable::find(salesQuotationTable.CustAccount);
+            salesQuotationTable.PriceGroupId        = custTable.PriceGroup;
+            salesQuotationTable.AVANetPG1           = custTable.AVANetPG1;
+            salesQuotationTable.AVANetPG2           = custTable.AVANetPG2;
+            salesQuotationTable.KCS_LimitGroupName  = custTable.KCS_LimitGroupName;
+            salesQuotationTable.KCS_MaxBonusAmount  = custTable.KCS_MaxBonusAmount;
+            salesQuotationTable.AVASendExcel        = custTable.AVASendExcel;
+            salesQuotationTable.KCS_CustCity        = custTable.postalAddress().City;
+            if (custTable.MainContactWorker)
+            {
+                salesQuotationTable.WorkerSalesResponsible = custTable.MainContactWorker;
+            }
+            else
+            {
+                salesQuotationTable.SalesUnitId = custTable.SalesDistrictId;
+            }
+            if (salesQuotationTable.SalesUnitId == '')
+            {
+                salesQuotationTable.SalesUnitId = smmSalesUnitMembers::findMemberPrimaryUnit(salesQuotationTable.WorkerSalesResponsible, false);
+            }
+             
+            smmBusRelChainGroup     smmBusRelChainGroup;
+            select firstonly  smmBusRelChainGroup
+                where smmBusRelChainGroup.ChainId == custTable.CompanyChainId;
+
+            salesQuotationTable.PriceGroupId = salesQuotationTable.PriceGroupId ?    salesQuotationTable.PriceGroupId :  smmBusRelChainGroup.AVAPriceGroupId;
+            salesQuotationTable.AVANetPG1 = salesQuotationTable.AVANetPG1 ?    salesQuotationTable.AVANetPG1 :  smmBusRelChainGroup.AVANetPG1;
+            salesQuotationTable.AVANetPG2 = salesQuotationTable.AVANetPG2 ?    salesQuotationTable.AVANetPG2 :  smmBusRelChainGroup.AVANetPG2;
+            salesQuotationTable.LineDisc  = salesQuotationTable.LineDisc  ?    salesQuotationTable.LineDisc  :  smmBusRelChainGroup.AVALineDisc;
+            salesQuotationTable.KCS_ChainLineDiscCode  = smmBusRelChainGroup.AVALineDisc;
+            salesQuotationTable.DlvTerm   = salesQuotationTable.DlvTerm   ?    salesQuotationTable.DlvTerm   :  smmBusRelChainGroup.AVADlvTerm;
+            salesQuotationTable.DlvMode   = salesQuotationTable.DlvMode   ?    salesQuotationTable.DlvMode   :  smmBusRelChainGroup.AVADlvMode;
+            salesQuotationTable.Payment   = salesQuotationTable.Payment   ?    salesQuotationTable.Payment   :  smmBusRelChainGroup.AVAPayment;
+            salesQuotationTable.CashDisc  = salesQuotationTable.CashDisc  ?    salesQuotationTable.CashDisc  :  smmBusRelChainGroup.AVACashDisc;
+            salesQuotationTable.KCS_MaxBonusAmount   = salesQuotationTable.KCS_MaxBonusAmount != 0   ?    salesQuotationTable.KCS_MaxBonusAmount   :  smmBusRelChainGroup.AVAMaxBonusAmount;
+        
+            AVASalesParameters      avaSalesParameters = AVASalesParameters::find();
+            salesQuotationTable.PriceGroupId = salesQuotationTable.PriceGroupId ?  salesQuotationTable.PriceGroupId : avaSalesParameters.CustPriceGroup;
+            salesQuotationTable.KCS_LimitGroupName = salesQuotationTable.KCS_LimitGroupName ?  salesQuotationTable.KCS_LimitGroupName : avaSalesParameters.LimitGroupName;
+            salesQuotationTable.KCS_CommissSalesGroup   = custTable.SalesGroup;
+            if (SysUserInfo::find(curUserId()).AVADataImportUser)
+            {
+                salesQuotationTable.initFromCustTable(true);
+            }
+        }
+        else if (salesQuotationTable.BusRelAccount)
+        {
+            salesQuotationTable.KCS_CommissSalesGroup   = salesQuotationTable.smmBusRelTable().KCS_SalesGroup;
+        }
+
+        
+        ExchRate        avaExchangeRate, limitPriceExchangeRatge;
+        [avaExchangeRate,limitPriceExchangeRatge]  =   salesQuotationTable.AVAcalcExchRate();
+        salesQuotationTable.AVAExchangeRate = avaExchangeRate;
+        salesQuotationTable.KCS_LimitPriceExchRate = limitPriceExchangeRatge;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesQuotationTable_onInserted</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// defined from AVA FRN
+    /// </summary>
+    /// <param name = "sender">sender</param>
+    /// <param name = "e">e</param>
+    [SuppressBPWarning('BPParameterNotUsed', 'Parameter e required in signature'),
+        DataEventHandler(tableStr(SalesQuotationTable), DataEventType::Inserted)]
+    public static void SalesQuotationTable_onInserted(Common sender, DataEventArgs e)
+    {
+        SalesQuotationTable         salesQuotationTable  = sender;
+        DirPartyRecId               party;
+
+    
+        if (salesQuotationTable.BusRelAccount)
+        {
+            party = smmBusRelTable::find(salesQuotationTable.BusRelAccount).Party;
+            //salesQuotationTable.KCS_CommissSalesGroup   = salesQuotationTable.smmBusRelTable().KCS_SalesGroup;
+        }
+        else if (salesQuotationTable.CustAccount)
+        {
+            party = CustTable::find(salesQuotationTable.CustAccount).Party;
+        }
+        
+        if (party)
+        {
+            KCS_HDMSalesQuotationTableInfoFields::initInfoFields(party, salesQuotationTable.QuotationId);
+        }
+
+        salesQuotationTable.createSpecialDiscQuotation();
+        salesQuotationTable.AVAKBVRequestTableUpdate();
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesQuotationTable_onModifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// SalesQuotationTable_onModifiedField
+    /// </summary>
+    /// <param name="sender">SalesQuotationTable</param>
+    /// <param name="e">DataEventArgs</param>
+    [DataEventHandler(tableStr(SalesQuotationTable), DataEventType::ModifiedField)]
+    public static void SalesQuotationTable_onModifiedField(Common sender, DataEventArgs e)
+    {
+        ModifyFieldEventArgs    event = e as DataEventArgs;
+        FieldId                 fieldId = event.parmFieldId();
+        DirPartyRecId           party;
+        SalesQuotationTable     salesQuotationTable = sender as salesQuotationTable;
+        SalesQuotationLine      salesQuotationLine;
+
+        switch(fieldId)
+        {
+            case fieldNum(SalesQuotationTable, BusRelAccount):
+                if (salesQuotationTable.RecId)
+                {
+                    party = smmBusRelTable::find(salesQuotationTable.BusRelAccount).Party;
+                    if (party)
+                    {
+                        KCS_HDMSalesQuotationTableInfoFields::initInfoFields(party, salesQuotationTable.QuotationId);
+                    }
+                }
+                break;
+            case fieldNum(SalesQuotationTable, CustAccount):
+                if (salesQuotationTable.RecId)
+                {
+                    party = CustTable::find(salesQuotationTable.CustAccount).Party;
+                    if (party)
+                    {
+                        KCS_HDMSalesQuotationTableInfoFields::initInfoFields(party, salesQuotationTable.QuotationId);
+                    }
+                }
+                break;
+
+            case fieldNum(SalesQuotationTable,KCS_PriceDate) :
+                while select  salesQuotationLine
+                    where salesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+                {
+                    salesQuotationLine.AVApriceCalculation();
+                    salesQuotationLine.LineAmount = salesQuotationLine.calcLineAmountForced();
+                    salesQuotationLine.selectForUpdate(true);
+                    ttsbegin;
+                    salesQuotationLine.doUpdate();
+                    ttscommit;
+                }
+                break;
+
+            case fieldNum(SalesQuotationTable,PriceGroupId) :
+                while select  salesQuotationLine
+                    where salesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+                {
+                    salesQuotationLine.AVApriceCalculation(true,false,false,false);
+                    salesQuotationLine.LineAmount = salesQuotationLine.calcLineAmountForced();
+                    salesQuotationLine.selectForUpdate(true);
+                    ttsbegin;
+                    salesQuotationLine.doUpdate();
+                    ttscommit;
+                }
+                break;
+
+            case fieldNum(SalesQuotationTable,AVANetPG1) :
+                while select  salesQuotationLine
+                    where salesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+                {
+                    salesQuotationLine.AVApriceCalculation(false,false,true,false);
+                    salesQuotationLine.LineAmount = salesQuotationLine.calcLineAmountForced();
+                    salesQuotationLine.selectForUpdate(true);
+                    ttsbegin;
+                    salesQuotationLine.doUpdate();
+                    ttscommit;
+                }
+                break;
+
+            case fieldNum(SalesQuotationTable,AVANetPG2) :
+                while select  salesQuotationLine
+                    where salesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+                {
+                    salesQuotationLine.AVApriceCalculation(false,false,false,true);
+                    salesQuotationLine.LineAmount = salesQuotationLine.calcLineAmountForced();
+                    salesQuotationLine.selectForUpdate(true);
+                    ttsbegin;
+                    salesQuotationLine.doUpdate();
+                    ttscommit;
+                }
+                break;
+            case fieldNum(SalesQuotationTable, KCS_LimitGroupName) :
+                while select  salesQuotationLine
+                    where salesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+                {
+                    salesQuotationLine.KCS_LimitUnitFactor = salesQuotationLine.AVAcalcLimitUnitFactor();
+                    salesQuotationLine.selectForUpdate(true);
+                    ttsbegin;
+                    salesQuotationLine.doUpdate();
+                    ttscommit;
+                }
+                break;
+            case fieldNum(SalesQuotationTable, KCS_MaxBonusAmount) :
+                while select  salesQuotationLine
+                    where salesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+                {
+                    salesQuotationLine.KCS_LimitPrice           = salesQuotationLine.AVAcalcLimitPrice();
+                    salesquotationLine.KCS_LimitPricePuffer     = salesquotationLine.AVAcalcLimitPricePuffer();
+                    salesQuotationLine.selectForUpdate(true);
+                    ttsbegin;
+                    salesQuotationLine.doUpdate();
+                    ttscommit;
+                }
+                break;
+            case fieldNum(SalesQuotationTable, KCS_QuotationShorttext) :
+                while select  salesQuotationLine
+                where salesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+                {
+                    salesQuotationLine.KCS_QuotationShorttext = salesQuotationTable.KCS_QuotationShorttext;
+                    salesQuotationLine.selectForUpdate(true);
+                    ttsbegin;
+                    salesQuotationLine.doUpdate();
+                    ttscommit;
+                }
+                break;   
+            case fieldNum(SalesQuotationTable, LanguageId) :
+                while select  salesQuotationLine
+                where salesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+                {
+                    InventTable   locInventTable = salesQuotationLine.inventTable();
+                    salesQuotationLine.Name = SalesParameters::nameAndOrDescription(locInventTable, salesQuotationTable.LanguageId, salesQuotationLine.InventDimId, EcoResCategory::find(salesQuotationLine.SalesCategory));
+
+                    EcoResProductTranslation ecoResProductTranslation;
+
+                    ecoResProductTranslation = EcoResProductTranslation::findByProductLanguage(locInventTable.Product, salesQuotationTable.LanguageId);
+  
+                    salesQuotationLine.NDXProductName1 = ecoResProductTranslation.NDXProductName1;
+                    salesQuotationLine.NDXProductName2 = ecoResProductTranslation.NDXProductName2;
+                    salesQuotationLine.selectForUpdate(true);
+                    ttsbegin;
+                    salesQuotationLine.doUpdate();
+                    ttscommit;
+                }
+
+              
+                break;
+            default : 
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesQuotationTable_Post_initFromBusinessRelationTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  designed from AVA FRN
+    /// </summary>
+    /// <param name="args">args</param>
+    [PostHandlerFor(tableStr(SalesQuotationTable), tableMethodStr(SalesQuotationTable, initFromBusinessRelationTable))]
+    public static void SalesQuotationTable_Post_initFromBusinessRelationTable(XppPrePostArgs args)
+    {
+        SalesQuotationTable salesQuotationTable = args.getThis() as salesQuotationTable;
+        if (salesQuotationTable.BusRelAccount)
+        {
+            smmBusRelTable           smmBusRelTable = salesQuotationTable.smmBusRelTable();
+            
+            salesQuotationTable.KCS_LimitGroupName  = smmBusRelTable.KCS_LimitGroupName;
+            salesQuotationTable.KCS_MaxBonusAmount  = smmBusRelTable.KCS_MaxBonusAmount;
+            salesQuotationTable.AVASendExcel        = smmBusRelTable.AVASendExcel;
+            salesQuotationTable.KCS_CustCity        = smmBusRelTable.postalAddress().City;
+            salesQuotationTable.Payment             = smmBusRelTable.KCS_CRMPaymTermId;
+            salesQuotationTable.PaymMode            = smmBusRelTable.KCS_CRMPaymMode;
+            salesQuotationTable.CashDisc            = smmBusRelTable.KCS_CRMCashDisc;
+             
+            smmBusRelChainGroup     smmBusRelChainGroup;
+            select firstonly  smmBusRelChainGroup
+                where smmBusRelChainGroup.ChainId == smmBusRelTable.CompanyChain;
+
+            salesQuotationTable.PriceGroupId = salesQuotationTable.PriceGroupId ?    salesQuotationTable.PriceGroupId :  smmBusRelChainGroup.AVAPriceGroupId;
+            salesQuotationTable.AVANetPG1    = salesQuotationTable.AVANetPG1 ?    salesQuotationTable.AVANetPG1 :  smmBusRelChainGroup.AVANetPG1;
+            salesQuotationTable.AVANetPG2    = salesQuotationTable.AVANetPG2 ?    salesQuotationTable.AVANetPG2 :  smmBusRelChainGroup.AVANetPG2;
+            salesQuotationTable.LineDisc     = salesQuotationTable.LineDisc  ?    salesQuotationTable.LineDisc  :  smmBusRelChainGroup.AVALineDisc;
+            salesQuotationTable.KCS_ChainLineDiscCode  = smmBusRelChainGroup.AVALineDisc;
+            salesQuotationTable.DlvTerm      = salesQuotationTable.DlvTerm   ?    salesQuotationTable.DlvTerm   :  smmBusRelChainGroup.AVADlvTerm;
+            salesQuotationTable.DlvMode      = salesQuotationTable.DlvMode   ?    salesQuotationTable.DlvMode   :  smmBusRelChainGroup.AVADlvMode;
+            salesQuotationTable.Payment      = salesQuotationTable.Payment   ?    salesQuotationTable.Payment   :  smmBusRelChainGroup.AVAPayment;
+            salesQuotationTable.CashDisc     = salesQuotationTable.CashDisc  ?    salesQuotationTable.CashDisc  :  smmBusRelChainGroup.AVACashDisc;
+            salesQuotationTable.KCS_MaxBonusAmount   = salesQuotationTable.KCS_MaxBonusAmount != 0   ?    salesQuotationTable.KCS_MaxBonusAmount   :  smmBusRelChainGroup.AVAMaxBonusAmount;
+            if (smmBusRelTable.MainContactWorker)
+            {
+                salesQuotationTable.WorkerSalesResponsible = smmBusRelTable.MainContactWorker;
+            }
+            salesQuotationTable.SalesUnitId = smmSalesUnitMembers::findMemberPrimaryUnit(salesQuotationTable.WorkerSalesResponsible, false);
+        
+            AVASalesParameters      avaSalesParameters = AVASalesParameters::find();
+            salesQuotationTable.PriceGroupId = salesQuotationTable.PriceGroupId ?  salesQuotationTable.PriceGroupId : avaSalesParameters.CustPriceGroup;
+            salesQuotationTable.KCS_LimitGroupName = salesQuotationTable.KCS_LimitGroupName ?  salesQuotationTable.KCS_LimitGroupName : avaSalesParameters.LimitGroupName;           
+
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesQuotationTable_onUpdated</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name="sender">sender</param>
+    /// <param name="e">e</param>
+    [SuppressBPWarning('BPParameterNotUsed', 'Parameter e required in signature'),
+        DataEventHandler(tableStr(SalesQuotationTable), DataEventType::Updated)]
+    public static void SalesQuotationTable_onUpdated(Common sender, DataEventArgs e)
+    {
+        SalesQuotationTable     salesQuotationTable = sender;
+        SalesQuotationTable     salesQuotationTableOrig = salesQuotationTable.orig();
+        SalesQuotationLine      salesQuotationLine;
+        boolean                 updateSalesPrice = salesQuotationTable.PriceGroupId != salesQuotationTableOrig.PriceGroupId  ||
+                                                    salesQuotationTable.KCS_PriceDate != salesQuotationTableOrig.KCS_PriceDate;
+
+        boolean                 updatePriceDiscount = salesQuotationTable.LineDisc != salesQuotationTableOrig.LineDisc  ||
+                                                       salesQuotationTable.KCS_PriceDate != salesQuotationTableOrig.KCS_PriceDate;
+
+        boolean                 updatePG1Price = salesQuotationTable.AVANetPG1 != salesQuotationTableOrig.AVANetPG1  ||
+                                                    salesQuotationTable.KCS_PriceDate != salesQuotationTableOrig.KCS_PriceDate;
+
+        boolean                 updatePG2Price = salesQuotationTable.AVANetPG2 != salesQuotationTableOrig.AVANetPG2  ||
+                                                    salesQuotationTable.KCS_PriceDate != salesQuotationTableOrig.KCS_PriceDate;
+
+
+        if ( updateSalesPrice ||   updatePriceDiscount ||  updatePG1Price ||  updatePG2Price)
+        {
+            while select salesQuotationLine
+                where salesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+            {
+                salesQuotationLine.selectForUpdate(true);
+                if ( updateSalesPrice ||   updatePriceDiscount ||  updatePG1Price ||  updatePG2Price)
+                {
+                    salesQuotationLine.KCS_PriceDate =   salesQuotationTable.KCS_PriceDate != salesQuotationTableOrig.KCS_PriceDate ? salesQuotationTable.KCS_PriceDate : salesQuotationLine.KCS_PriceDate;
+                    salesQuotationLine.AVApriceCalculation(updateSalesPrice,updatePriceDiscount,updatePG1Price,updatePG2Price);
+                    salesQuotationLine.avaUpdateHK2();
+
+                    salesQuotationLine.LineAmount = salesQuotationLine.calcLineAmountForced();
+                }
+           
+
+                salesQuotationLine.update();
+            }
+        }
+
+        salesQuotationTable.AVAKBVRequestTableStatusUpdate();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesQuotationTable_onDeleted</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name="sender">sender</param>
+    /// <param name="e">e</param>
+    [SuppressBPWarning('BPParameterNotUsed', 'Parameter e required in signature'),
+        DataEventHandler(tableStr(SalesQuotationTable), DataEventType::Deleted)]
+    public static void SalesQuotationTable_onDeleted(Common sender, DataEventArgs e)
+    {
+        SalesQuotationTable         salesQuotationTable = sender;
+        AVASpecialDiscQuotation     specialDiscQuotation;
+        KCS_KBVRequestTable         locKCS_KBVRequestTable;
+        salesQuotationTable         otherSQT;
+
+        delete_from specialDiscQuotation
+            where specialDiscQuotation.quotationId   == salesQuotationTable.QuotationId;
+
+        if(salesQuotationTable.KCS_KBVRequestId)
+        {
+            locKCS_KBVRequestTable = KCS_KBVRequestTable::find(salesQuotationTable.KCS_KBVRequestId, true);
+            if(locKCS_KBVRequestTable.Recid)
+            {
+                select firstonly RecId from otherSQT where otherSQT.KCS_KBVRequestId == salesQuotationTable.KCS_KBVRequestId && otherSQT.RecId != salesQuotationTable.RecId;
+                ttsbegin;
+                if (!otherSQT.RecId)
+                {
+                    locKCS_KBVRequestTable.KCS_KBVRequestStatus = KCS_KBVRequestStatus::Assigned;
+                }
+                locKCS_KBVRequestTable.KCS_KBVModifiedBy    = 0;
+                locKCS_KBVRequestTable.KCS_KBVModifiedDate  = dateNull();
+                locKCS_KBVRequestTable.update();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesQuotationTable_Post_initFromCustTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  designed from AVAFRN
+    /// </summary>
+    /// <param name="args">args</param>
+    [PostHandlerFor(tableStr(SalesQuotationTable), tableMethodStr(SalesQuotationTable, initFromCustTable))]
+    public static void SalesQuotationTable_Post_initFromCustTable(XppPrePostArgs args)
+    {
+        SalesQuotationTable     salesQuotationTable = args.getThis();
+        if (salesQuotationTable.CustAccount)
+        {
+            CustTable       custTable = CustTable::find(salesQuotationTable.CustAccount);
+            if (custTable.MainContactWorker)
+            {
+                salesQuotationTable.WorkerSalesResponsible = custTable.MainContactWorker;
+                salesQuotationTable.SalesUnitId = smmSalesUnitMembers::findMemberPrimaryUnit(salesQuotationTable.WorkerSalesResponsible, false);
+            }
+
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesQuotationTable_Post_validateWrite</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  designed from AVAFRN
+    /// </summary>
+    /// <param name="args">args</param>
+    [PostHandlerFor(tableStr(SalesQuotationTable), tableMethodStr(SalesQuotationTable, validateWrite))]
+    public static void SalesQuotationTable_Post_validateWrite(XppPrePostArgs args)
+    {
+        boolean ret = args.getReturnValue();
+        SalesQuotationTable     salesQuotationTable = args.getThis();
+        if (salesQuotationTable.CustAccount)
+        {
+            smmBusRelTable        smmBusRelTable = smmBusRelTable::findByParty(CustTable::find(salesQuotationTable.CustAccount).Party);
+            CustTable           custTable = custTable::find(salesQuotationTable.CustAccount);
+           // custTable.Party;
+            smmBusRelTable = smmBusRelTable::findByParty(custTable.Party);
+            if (smmBusRelTable.RecId && !smmBusRelTable.KCS_QuotationEnabled)
+            {
+                ret = ret && checkFailed("@NDX:NXAQuotForBusRelError");
+            }
+        }
+        
+        
+        AVASalesParameters      salesParameters =  AVASalesParameters::find();
+        if (salesParameters.KBVQuotationOnly == NoYes::Yes &&    salesQuotationTable.KCS_KBVRequestId == '')
+        {
+            ret = ret && checkFailed("@NDX:NXAQuotationOnlyForKBV");
+        }
+
+        if (salesQuotationTable.KCS_RefQuotationId != "")
+        {
+            if (!SalesQuotationTable::find(salesQuotationTable.KCS_RefQuotationId).RecId)
+            {
+                ret = ret && checkFailed(strFmt("@NDX:NXAMasterPriceNotExist",salesQuotationTable.KCS_RefQuotationId));
+            }
+        }
+
+
+
+        args.setReturnValue(ret);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

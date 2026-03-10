@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAInventJournalTransDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// NS Zelinka 20.02.24
+/// Extension of table InventJournalTrans
+/// </summary>
+[ExtensionOf(tableStr(InventJournalTrans))]
+final class AVAInventJournalTransDbt_Extension
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaInitProjProd</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Inits values from InventJournalTable, ProjTable and ProdTable records
+    /// </summary>
+    /// <param name = "_inventJournalTable">InventJournalTable</param>
+    /// <param name = "_projTable">ProjTable</param>
+    /// <param name = "_prodTable">ProdTable</param>
+    /// <param name = "_qty">Qty, if no value provided set to 0 and QtySched from ProdTable is used</param>
+    public void avaInitProjProd(
+        InventJournalTable _inventJournalTable,
+        ProjTable _projTable,
+        ProdTable _prodTable,
+        Qty _qty  = 0)
+    {
+        this.initValue();
+        this.initFromInventJournalTable(_inventJournalTable);
+        this.avaInitFromProdTable(_prodTable);
+
+        if(_qty)
+        {
+            this.Qty = _qty;
+        }
+
+        this.ProjId = _projTable.ProjId;
+        this.initFromProjTable(_projTable);
+
+        this.ProjUnitID = this.unitId();
+
+        if(_projTable.Type == ProjType::TimeMaterial)
+        {
+            this.CostPrice = 1;
+            this.CostAmount = this.calcCostAmount();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitFromProdTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// inits values from ProdTable
+    /// </summary>
+    /// <param name = "_prodTable">ProdTable</param>
+    public void avaInitFromProdTable(ProdTable _prodTable)
+    {
+        this.initFromInventTable(_prodTable.inventTable());
+        this.Qty    = _prodTable.QtySched;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromInventTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 20.02.24
+    /// </summary>
+    /// <param name = "_inventTable">InventTable record</param>
+    /// <param name = "_initQty">boolean - true or false</param>
+    /// <param name = "_initInventDim">boolean - true or false</param>
+    /// <param name = "_initCostPrice">boolean - true or false</param>
+    /// <param name = "_initInventoryStatus">boolean - true or false</param>
+    public void initFromInventTable(InventTable     _inventTable,
+                                    boolean         _initQty,
+                                    boolean         _initInventDim,
+                                    boolean         _initCostPrice,
+                                    boolean         _initInventoryStatus)
+    {
+        InventJournalTable                  inventJournalTable = this.inventJournalTable();
+        DimensionValue                      jourHeadCostCenterValue,
+                                            jourLineCostCenterValue;
+
+        DefaultDimensionView                defaultDimensionView;
+        DimensionAttributeValueSetStorage   dimensionAttributeValueSetStorage;
+        DimensionAttributeValue             dimensionAttributeValue;
+        DimensionAttribute                  dimensionAttribute;
+        Name                                costCenterDimensionName;
+        const   str                         dimAttribute = 'DimAttribute%1';
+        InventDim                           inventdim;
+
+        RefTableId getDimensionViewId(OMOperatingUnitType _omOperatingUnitType)
+        {
+            Dictionary dict = new Dictionary();
+
+            return dict.tableName2Id(strFmt(dimAttribute,
+                                            enum2Symbol(enumNum(OMOperatingUnitType),
+                                                        enum2int(_omOperatingUnitType))));
+        }
+
+        select firstonly DisplayValue, Name
+            from    defaultDimensionView
+            where   defaultDimensionView.BackingEntityType  == getDimensionViewId(OMOperatingUnitType::OMCostCenter) &&
+                    defaultDimensionView.DefaultDimension   == inventJournalTable.AVADefaultDimension;
+
+        jourHeadCostCenterValue = defaultDimensionView.DisplayValue;
+        costCenterDimensionName = defaultDimensionView.Name;
+
+        if (this.JournalType == InventJournalType::Transfer)
+        {
+            inventdim = this.inventDim();
+            inventdim.wMSLocationId = InventLocation::find(inventdim.InventLocationId).WMSLocationIdDefaultReceipt;
+            inventdim = InventDim::findOrCreate(inventdim);
+            this.InventDimId = inventdim.inventDimId;
+
+            inventdim = this.toInventDim();
+            if (WHSInventEnabled::exist(this.ItemId))
+            {
+                inventdim.InventStatusId = WhsInvent::getDefaultStatus(inventdim);
+                inventdim = inventdim::findOrCreate(inventdim);
+                this.ToInventDimId = inventdim.inventDimId;
+            }
+
+        }
+
+        next initFromInventTable(   _inventTable,
+                                    _initQty,
+                                    _initInventDim,
+                                    _initCostPrice,
+                                    _initInventoryStatus);
+        
+        if ((   inventJournalTable.JournalType == InventJournalType::LossProfit ||
+                inventJournalTable.JournalType == InventJournalType::Movement       ) &&
+            jourHeadCostCenterValue != ''                                                   )
+        {
+            select firstonly DisplayValue
+                from    defaultDimensionView
+                where   defaultDimensionView.BackingEntityType  == getDimensionViewId(OMOperatingUnitType::OMCostCenter) &&
+                        defaultDimensionView.DefaultDimension   == this.DefaultDimension;
+
+            jourLineCostCenterValue = defaultDimensionView.DisplayValue;
+
+            if (jourHeadCostCenterValue != jourLineCostCenterValue)
+            {
+                dimensionAttributeValueSetStorage   = DimensionAttributeValueSetStorage::find(this.DefaultDimension);
+                dimensionAttribute                  = DimensionAttribute::findByName(costCenterDimensionName);
+                dimensionAttributeValue             = DimensionAttributeValue::findByDimensionAttributeAndValue(dimensionAttribute, jourHeadCostCenterValue, false, false);
+
+                if (dimensionAttributeValue)
+                {
+                    dimensionAttributeValueSetStorage.addItem(dimensionAttributeValue);
+                    this.DefaultDimension = dimensionAttributeValueSetStorage.save();
+                }
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateDelete</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 26.02.24
+    /// CoC method for validateDelete
+    /// </summary>
+    /// <returns>boolean value - true or false</returns>
+    public boolean validateDelete()
+    {
+        boolean             ret = next validateDelete();
+        InventJournalTable  inventJournalTable;
+
+        if  (ret &&
+            (   this.JournalType == InventJournalType::Movement         ||
+                this.JournalType == InventJournalType::LossProfit       ||
+                this.JournalType == InventJournalType::Transfer         ||
+                this.JournalType == InventJournalType::BOM              ||
+                this.JournalType == InventJournalType::OwnershipChange  ||
+                this.JournalType == InventJournalType::Count            ||
+                this.JournalType == InventJournalType::TagCounting)         )
+        {
+            inventJournalTable = this.inventJournalTable();
+
+            if (inventJournalTable.Posted)
+            {
+                ret = checkFailed("@NDX:NXAPostedRecordCanNotDeleted");
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setInventDimId</Name>
+				<Source><![CDATA[
+    public void setInventDimId(
+        InventDimId     _inventDimId,
+        InventDim       _inventDim)
+    {
+        InventDim   inventDim;
+        if (_inventDim.inventDimId)
+        {
+            inventDim.data(_inventDim);
+        }
+        else
+        {
+            inventDim = inventDim::find(_inventDimId);
+        }
+
+        if (inventDim.InventSiteId && !inventDim.InventLocationId)
+        {
+            inventDim.InventLocationId = InventSite::find(inventDim.InventSiteId).AVAInventLocationIdDefault;
+            inventDim = inventDim::findOrCreate(inventdim);
+        }
+        
+        next setInventDimId(inventDim.inventDimId, inventDim);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetAmountDiffPercent</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/08/25  AVA_013362_InventJournal_Count
+    /// </summary>
+    void avaSetAmountDiffPercent()
+    {
+        this.NDXAmountDiffPercent  = this.InventOnHand ? (this.Qty / this.InventOnHand) * 100 : 100;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

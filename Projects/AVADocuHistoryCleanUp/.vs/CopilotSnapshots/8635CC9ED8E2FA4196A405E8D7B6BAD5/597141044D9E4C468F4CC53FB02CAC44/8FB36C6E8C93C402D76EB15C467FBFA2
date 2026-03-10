@@ -1,0 +1,94 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADocuHistoryCleanupService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Service class for DocuHistory cleanup batch job.
+/// Contains the business logic for deleting old DocuHistory records.
+/// </summary>
+public class AVADocuHistoryCleanupService extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>cleanupDocuHistory</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Performs the DocuHistory cleanup operation.
+    /// Deletes records from DocuHistory table based on the specified date range.
+    /// </summary>
+    /// <param name="_contract">The data contract containing cleanup parameters.</param>
+    [SysEntryPointAttribute(false)]
+    public void cleanupDocuHistory(AVADocuHistoryCleanupContract _contract)
+    {
+        DocuHistory     docuHistory;
+        Query           query;
+        QueryRun        queryRun;
+        QueryBuildDataSource qbds;
+        int             deletedCount = 0;
+        TransDateTime   cleanupToDateTime;
+        
+        // Validate contract
+        if (!_contract.validate())
+        {
+            throw error("@SYS18447"); // Invalid parameters
+        }
+
+        cleanupToDateTime = _contract.parmCleanupToDateTime();
+
+        // Build query from AOT
+        query = new Query(queryStr(AVADocuHistoryCleanupQuery));
+        qbds = query.dataSourceTable(tableNum(DocuHistory));
+        
+        // Apply date range filter
+        qbds.addRange(fieldNum(DocuHistory, CreatedDateTime)).value(
+            strFmt('..%1', dateTimeUtil::toStr(cleanupToDateTime)));
+
+        // Execute query and delete records
+        queryRun = new QueryRun(query);
+
+        ttsbegin;
+        
+        try
+        {
+            while (queryRun.next())
+            {
+                docuHistory = queryRun.get(tableNum(DocuHistory));
+                
+                if (docuHistory)
+                {
+                    docuHistory.delete();
+                    deletedCount++;
+                    
+                    // Commit in batches to avoid long transactions
+                    if (deletedCount % 100 == 0)
+                    {
+                        ttscommit;
+                        ttsbegin;
+                    }
+                }
+            }
+            
+            ttscommit;
+            
+            // Log completion message
+            info(strFmt("@SYS317693", deletedCount)); // %1 records deleted
+            info(strFmt("DocuHistory cleanup completed. %1 records deleted up to %2.", 
+                        deletedCount, 
+                        dateTimeUtil::toStr(cleanupToDateTime)));
+        }
+        catch (Exception::Error)
+        {
+            ttsabort;
+            error("@SYS19306"); // An error occurred during the operation
+            throw;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

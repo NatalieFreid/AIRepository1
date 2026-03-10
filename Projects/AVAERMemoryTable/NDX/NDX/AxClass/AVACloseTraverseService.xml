@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACloseTraverseService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN 2014/02/21
+/// </summary>
+class AVACloseTraverseService extends SysOperationServiceBase
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_contract">AVACloseTraverseContract</param>
+    public void process(AVACloseTraverseContract _contract)
+    {
+        #OCCRetryCount
+
+        try
+        {
+            this.setClosed(_contract);
+        }
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setClosed</Name>
+				<Source><![CDATA[
+    private void setClosed(AVACloseTraverseContract _contract)
+    {
+        AVATraverseTrans    travTrans;
+        AVATraverseNum      travNum = _contract.parmTraverseNum();
+
+        while select forupdate travTrans where travTrans.TravNum == travNum
+                                            && travTrans.TravStatus == AVATravStatus::InProcess
+        {
+            ttsbegin;
+            travTrans.TravStatus = AVATravStatus::Closed;
+            travTrans.update();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

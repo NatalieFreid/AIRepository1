@@ -1,0 +1,193 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADAIReportExportWorkCleanUpService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Service class for AVADAIReportExportWork cleanup operations
+/// Performs the actual cleanup of ReportData field content based on date criteria
+/// </summary>
+class AVADAIReportExportWorkCleanUpService extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>runCleanup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Main service method that performs the cleanup operation
+    /// Clears ReportData field content from AVADAIReportExportWork table
+    /// based on date range criteria from the parent AVADAIReportExportTable
+    /// </summary>
+    /// <param name="_dataContract">Data contract containing query parameters</param>
+    [SysEntryPointAttribute]
+    public void runCleanup(AVADAIReportExportWorkCleanUpDataContract _dataContract)
+    {
+        QueryRun                        queryRun;
+        AVADAIReportExportTable         reportExportTable;
+        AVADAIReportExportWork          reportExportWork;
+        Query                           query;
+        SysOperationProgress            progress;
+        Counter                         processedCount = 0;
+        Counter                         totalCount = 0;
+        RecordInsertList                updateList;
+        
+        try
+        {
+            // Initialize progress tracking
+            progress = new SysOperationProgress();
+            progress.setCaption("@AVADAI:CleaningUpReportData");
+            
+            // Get the query from data contract
+            query = _dataContract.getQuery();
+            if (!query)
+            {
+                throw error("@SYS318705"); // Query not found
+            }
+            
+            // Count total records for progress tracking
+            totalCount = this.countRecordsToProcess(query);
+            progress.setTotal(totalCount);
+            
+            if (totalCount == 0)
+            {
+                info("@SYS23321"); // No records found
+                return;
+            }
+            
+            // Set up query for execution
+            query.dataSourceTable(tableNum(AVADAIReportExportTable)).update(false);
+            queryRun = new QueryRun(query);
+            
+            // Process records in batches for better performance
+            updateList = new RecordInsertList(tableNum(AVADAIReportExportWork), true);
+            
+            info(strFmt("@AVADAI:StartingCleanupProcess", totalCount));
+            
+            // Main processing loop
+            ttsbegin;
+            
+            while (queryRun.next())
+            {
+                reportExportTable = queryRun.get(tableNum(AVADAIReportExportTable));
+                
+                // Process all related work records
+                this.cleanupWorkRecords(reportExportTable.ExportId, updateList);
+                
+                processedCount++;
+                
+                // Update progress
+                progress.incCount();
+                progress.setText(strFmt("@AVADAI:ProcessingRecord", processedCount, totalCount));
+                
+                // Commit in batches to avoid lock escalation
+                if (processedCount % 100 == 0)
+                {
+                    ttscommit;
+                    ttsbegin;
+                }
+            }
+            
+            ttscommit;
+            
+            // Final message
+            info(strFmt("@AVADAI:CleanupCompleted", processedCount));
+        }
+        catch (Exception::Error)
+        {
+            ttsabort;
+            error("@AVADAI:CleanupFailed");
+            throw;
+        }
+    }
+]]></Source>
+			</Method>
+			<Method>
+				<Name>cleanupWorkRecords</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Cleans up work records for a specific export ID
+    /// Clears the ReportData field content
+    /// </summary>
+    /// <param name="_exportId">Export ID to process</param>
+    /// <param name="_updateList">Record insert list for batch operations</param>
+    private void cleanupWorkRecords(AVADAIExportId _exportId, RecordInsertList _updateList)
+    {
+        AVADAIReportExportWork workRecord;
+        
+        // Find all work records for this export ID
+        while select forupdate workRecord
+            where workRecord.ReportExportTable == _exportId
+        {
+            if (workRecord.ReportData != conNull())
+            {
+                // Clear the report data content
+                workRecord.ReportData = conNull();
+                workRecord.update();
+            }
+        }
+    }
+]]></Source>
+			</Method>
+			<Method>
+				<Name>countRecordsToProcess</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Counts the total number of records to be processed for progress tracking
+    /// </summary>
+    /// <param name="_query">Query to count records for</param>
+    /// <returns>Number of records that will be processed</returns>
+    private Counter countRecordsToProcess(Query _query)
+    {
+        QueryRun queryRun;
+        Counter count = 0;
+        
+        // Clone the query to avoid modifying the original
+        Query countQuery = new Query(_query.pack());
+        countQuery.dataSourceTable(tableNum(AVADAIReportExportTable)).update(false);
+        
+        queryRun = new QueryRun(countQuery);
+        
+        while (queryRun.next())
+        {
+            count++;
+        }
+        
+        return count;
+    }
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateParameters</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Validates the parameters in the data contract
+    /// </summary>
+    /// <param name="_dataContract">Data contract to validate</param>
+    /// <returns>true if valid, false otherwise</returns>
+    private boolean validateParameters(AVADAIReportExportWorkCleanUpDataContract _dataContract)
+    {
+        boolean ret = true;
+        Query query;
+        
+        if (!_dataContract)
+        {
+            ret = checkFailed("@SYS26332"); // Data contract not found
+            return ret;
+        }
+        
+        query = _dataContract.getQuery();
+        if (!query)
+        {
+            ret = checkFailed("@SYS318705"); // Query not found
+            return ret;
+        }
+        
+        return ret;
+    }
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

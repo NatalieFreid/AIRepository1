@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDX_MultipleS_KBV_BuildingProject_Item</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// NDX_MultipleS_KBV_BuildingProject_Item
+/// </summary>
+class NDX_MultipleS_KBV_BuildingProject_Item extends NDX_MultipleSelect_KBV_BuildingProject
+{
+    InventTable inventTable;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    protected void new(InventTable _inventTable, KCS_KBVBuildingProjectTable  _kcs_KBVBuildingProjectTable = null)
+    {
+        NDXMultipleS_KBV_BuildingProject   nDX_MultipleS_KBV_BuildingProject;
+        ;
+        super();
+
+        inventTable  = _inventTable;
+        if(_kcs_KBVBuildingProjectTable)
+        {
+            lKCS_KBVBuildingProjectTable = _kcs_KBVBuildingProjectTable;
+            bvId    = _kcs_KBVBuildingProjectTable.KCS_KBVBuildingProjectID;
+        }
+
+        itemValidityErrors.ValidityCheckType = NDXValidityCheckType::BV;
+        itemValidityErrors.checkMessage      = strfmt("@NDX:NDXItemValidityBuildingProjectTest", bvId);
+
+        //???? Warum
+        while select  nDX_MultipleS_KBV_BuildingProject
+            where     nDX_MultipleS_KBV_BuildingProject.RefRecId_InventTable == inventTable.RecId
+        {
+            nDX_SelectionTmp.RefRecId_KCS_KBVBuildingProject = nDX_MultipleS_KBV_BuildingProject.RefRecId_KCS_KBVBuildingProject;
+            nDX_SelectionTmp.doInsert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    static public NDX_MultipleS_KBV_BuildingProject_Item construct(InventTable _inventTable, KCS_KBVBuildingProjectTable  _kcs_KBVBuildingProjectTable = null)
+    {
+        return new NDX_MultipleS_KBV_BuildingProject_Item(_inventTable, _kcs_KBVBuildingProjectTable);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new_FromNDX_ItemValidity</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Constructor
+    /// </summary>
+    /// <param name = "obj">NDX_ItemValidity</param>
+    /// <param name = "_kcs_KBVBuildingProjectTable">KCS_KBVBuildingProjectTable</param>
+    /// <returns>NDX_MultipleS_KBV_BuildingProject_Item obejct</returns>
+    static NDX_MultipleS_KBV_BuildingProject_Item new_FromNDX_ItemValidity(NDX_ItemValidity obj, KCS_KBVBuildingProjectTable  _kcs_KBVBuildingProjectTable)
+    {
+        NDX_MultipleS_KBV_BuildingProject_Item      nDX_MultipleS_KBV_BuildingProject_Item;
+        ;
+        nDX_MultipleS_KBV_BuildingProject_Item = new NDX_MultipleS_KBV_BuildingProject_Item(obj.parmInventTable(), _kcs_KBVBuildingProjectTable);
+        nDX_MultipleS_KBV_BuildingProject_Item.parmOItemValidity(obj);
+        return nDX_MultipleS_KBV_BuildingProject_Item;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isValid</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if item is valid for a building project
+    /// </summary>
+    /// <returns>container</returns>
+    public container isValid()
+    {
+        KCS_KBVBuildingProjectTable     kCS_KBVBuildingProjectTable;
+
+        NDXValidityMessage         validityMessage = '';
+        boolean                     lIsValid = true;
+        KCS_KBVBuildingProjectID    bvIdParent;
+        ;
+        // keine Gültigkeitsprüfung hinterlegt
+        if (nDX_SelectionTmp.RecId == 0)
+        {
+            return [lIsValid, validityMessage];
+        }
+
+        select firstonly nDX_SelectionTmp where nDX_SelectionTmp.RefRecId_KCS_KBVBuildingProject == lKCS_KBVBuildingProjectTable.RecId;
+
+        if (nDX_SelectionTmp)
+        {
+            return [lIsValid, validityMessage];
+        }
+
+        // Prüfung, ob dem BV ein übergeordnetes BV zugeordnet ist
+        bvIdParent = lKCS_KBVBuildingProjectTable.KCS_KBVParentBuildingProjectID;
+        if (bvIdParent)
+        {
+            kCS_KBVBuildingProjectTable = KCS_KBVBuildingProjectTable::find(bvIdParent);
+            select firstonly nDX_SelectionTmp where nDX_SelectionTmp.RefRecId_KCS_KBVBuildingProject == kCS_KBVBuildingProjectTable.RecId;
+
+            if (nDX_SelectionTmp)
+            {
+                return [lIsValid, validityMessage];
+            }
+        }
+
+        lIsValid        = false;
+
+        // Der Artikel darf nur in Angeboten die den Bauvorhaben (oder übergeordneten BV's) [%1] zugeordnet sind angeboten werden!
+        validityMessage = strFmtLB(strfmt("@NDX:NDXItemValidityBuildingProject", NDXMultipleS_KBV_BuildingProject::range2String(inventTable.RecId)));
+        itemValidityErrors.ErrorMessage = validityMessage;
+        oItemValidity.addErrorMessage(itemValidityErrors);
+
+        return [lIsValid, validityMessage];
+    }
+
+   /* void closedSelectForm()
+    {
+        NDXMultipleS_KBV_BuildingProject   nDX_MultipleS_KBV_BuildingProject;
+
+        // Selektion speichern
+       // nDX_MultipleS_KBV_BuildingProject.NDX_MultipleS::saveNewData(itemId, nDX_SelectionTmp, NDX_ValidityCheckType::BV);
+    }
+
+    static void main(Args args = new Args())
+    {
+        InventTable     inventTable;
+        NDX_MultipleSelect_KBV_BuildingProject      multipleSelectClass;
+        ;
+        if (args.dataset() == tablenum(InventTable))
+        {
+            inventTable = args.record();
+            multipleSelectClass = new NDX_MultipleS_KBV_BuildingProject_Item(inventTable);
+            multipleSelectClass.openSelectForm();
+        }
+    }
+*/
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

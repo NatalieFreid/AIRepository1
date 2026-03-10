@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAItemCycleRecount</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// N.Freidenberger 30-07-20285
+/// </summary>
+internal final class AVAItemCycleRecount
+{
+    WHSWorkLineCycleCount       whsWorkLineCycleCount;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 30-07-2025
+    /// </summary>
+    /// <param name = "_args">_args</param>
+    public static void main(Args        _args)
+    {
+        AVAItemCycleRecount     avaItemCycleRecount = new AVAItemCycleRecount();       
+        if (_args.dataset() == tableNum(WHSWorkLineCycleCount))
+        {
+            avaItemCycleRecount.parmWHSWorkLineCycleCount(_args.record());
+        }
+        avaItemCycleRecount.run();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmWHSWorkLineCycleCount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 30-07-2025
+    /// </summary>
+    /// <param name = "_whsWorkLineCycleCount">_whsWorkLineCycleCount</param>
+    /// <returns>WHSWorkLineCycleCount</returns>
+    public WHSWorkLineCycleCount parmWHSWorkLineCycleCount(WHSWorkLineCycleCount      _whsWorkLineCycleCount = whsWorkLineCycleCount)
+    {
+        WHSWorkLineCycleCount  = _whsWorkLineCycleCount;
+        return whsWorkLineCycleCount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 30-07-2025
+    /// </summary>
+    public void run()
+    {
+        AVAItemCycleCountOverviewLine       avaItemCycleCountOverviewLine;
+        avaItemCycleCountOverviewObject     avaItemCycleCountOverviewObject;
+        WHSWorkTable                        whsWorkTable;
+        WHSWorkLine                         whsWorkLine;
+        InventDim                           workLineInventDim;
+        InventDim                           countLineInventDim = InventDim::find(whsWorkLineCycleCount.InventDimId);
+        AVAItemCycleCountStart              avaItemCycleCountStart;
+
+        select firstonly  avaItemCycleCountOverviewLine
+            where avaItemCycleCountOverviewLine.ItemId == whsWorkLineCycleCount.ItemId
+                && avaItemCycleCountOverviewLine.InventLocationId == countLineInventDim.InventLocationId
+                    join avaItemCycleCountOverviewObject
+                        where avaItemCycleCountOverviewObject.ItemCycleCountOverviewLine == avaItemCycleCountOverviewLine.RecId
+                                && avaItemCycleCountOverviewObject.ItemCycleCountObject       == AVAItemCycleCountObject::WorkTable
+                        join whsWorkTable
+                            where whsWorkTable.WorkId == avaItemCycleCountOverviewObject.ObjectId
+                          join whsWorkLine
+                            where whsWorkLine.WorkId == whsWorkTable.WorkId  
+                               && whsWorkLine.ItemId == whsWorkLineCycleCount.ItemId
+                                    join workLineInventDim
+                                        where workLineInventDim.inventDimId == whsWorkLine.InventDimId  
+                                           && workLineInventDim.wMSLocationId == countLineInventDim.wMSLocationId;
+        if (avaItemCycleCountOverviewLine)
+        {
+            if (whsWorkTable.recId)
+            {
+                whsWorkTable.selectForUpdate(true);
+                whsWorkTable.WorkStatus= WHSWorkStatus::Cancelled;
+                whsWorkTable.WorkCancelledByUser = curUserId();
+                whsWorkTable.WorkCancelledUTCDateTime = DateTimeUtil::getSystemDateTime();
+                ttsbegin;
+                whsWorkTable.update();
+
+                avaItemCycleCountOverviewObject.selectForUpdate(true);
+                avaItemCycleCountOverviewObject.delete();
+                ttscommit;
+            }
+
+            avaItemCycleCountStart = AVAItemCycleCountStart::newFromItemCycleCountOverviewLine(avaItemCycleCountOverviewLine);
+            avaItemCycleCountStart.parmRecountWMSLocationId(countLineInventDim.wMSLocationId);
+            avaItemCycleCountStart.start();
+        }
+
+       
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,3514 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesLineDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(tableStr(SalesLine))]
+final class AVASalesLineDbt_Extension
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>initValue</c> method.
+    /// </summary>
+    /// <param name="_salesType">
+    ///    <c>SalesType</c> as type
+    /// </param>
+    public void initValue(SalesType _salesType)
+    {
+        next initValue(_salesType);
+
+        this.avaInitValue();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaInitValue</c> method.
+    /// </summary>
+    public void avaInitValue()
+    {
+        this.AVACBSSpecialPrice = this.salesTable().KCS_BOSSpecialPrice;
+        this.DEL_KCS_CustShipDateReq = this.salesTable().DEL_KCS_CustShipDateReq;
+        // this.MatchingAgreementLine = !AVASalesParameters::find().PriceSearch;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetInventTransQtyReserved</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns the phsyically reserved qty from invent trans for this salesLine
+    /// </summary>
+    /// <returns>AVAQtyReserved</returns>
+    public AVAQtyReserved avaGetInventTransQtyReserved()
+    {
+        InventTrans         inventTrans;
+        InventTransOrigin   inventTransOrig;
+
+        select sum(Qty) from inventTrans
+             where inventTrans.StatusReceipt == StatusReceipt::None
+                   && inventTrans.StatusIssue == StatusIssue::ReservPhysical
+                exists join inventTransOrig
+                    where inventTransOrig.RecId == inventTrans.InventTransOrigin
+                         && inventTransOrig.InventTransId == this.InventTransId;
+
+        return  inventTrans.Qty * -1;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVApriceCalculation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_calcSalesPrice">_calcSalesPrice</param>
+    /// <param name = "_calcPriceDiscount">_calcPriceDiscount</param>
+    /// <param name = "_netPG1Price">_netPG1Price</param>
+    /// <param name = "_netPG2Price">_netPG2Price</param>
+    /// <param name = "_calcMasterPrice">_calcMasterPrice</param>
+    public void AVApriceCalculation(boolean    _calcSalesPrice = true,
+                                    boolean    _calcPriceDiscount = true,
+                                    boolean    _netPG1Price = true,
+                                    boolean    _netPG2Price = true,
+                                    boolean    _calcMasterPrice = true)
+    {
+        SalesLine               salesLine = this;
+        SalesTable              salesTable = salesLine.salesTable();
+        PriceDiscTable          priceDiscTable;
+
+        SalesPrice              lpSalesPrice;
+        SalesPrice              lpPriceDiscount;
+        SalesPrice              lpPriceDiscounted;
+        SalesPrice              AVANetPG1Price;
+        SalesPrice              AVANetPG2Price;
+        SalesPrice              bestPrice;
+        SalesPrice              quotPrice;
+        SalesQuotationLine      salesQuotationline;
+
+        if (_calcSalesPrice)
+        {
+            priceDiscTable =  AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,
+                                                                      salesTable.PriceGroupId,
+                                                                      salesTable.KCS_ChainLineDiscCode,
+                                                                      this.itemId,
+                                                                      this.KCS_PriceDate != dateNull() ? this.KCS_PriceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                      Ledger::accountingCurrency(CompanyInfo::current()));
+
+            //lpSalesPrice = salesTable.CurrencyCode == priceDiscTable.Currency ? priceDiscTable.Amount : CurrencyExchangeHelper::amount(priceDiscTable.Amount,priceDiscTable.Currency);
+            lpSalesPrice = priceDiscTable.Amount;
+            
+        }
+        if (_calcPriceDiscount)
+        {
+            lpPriceDiscount = AVAPriceDiscGroupSearch::findPriceDisc(PriceType::LineDiscSales,
+                                                                      salesTable.LineDisc,
+                                                                      salesTable.KCS_ChainLineDiscCode,
+                                                                      this.itemId,
+                                                                      this.KCS_PriceDate != dateNull() ? this.KCS_PriceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                      Ledger::accountingCurrency(CompanyInfo::current())).Percent1;
+        }
+
+        lpPriceDiscounted = lpSalesPrice * (1 -   lpPriceDiscount/100);
+        if(_netPG1Price)
+        {
+            priceDiscTable =   AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,
+                                                                      salesTable.AVANetPG1,
+                                                                      salesTable.KCS_ChainLineDiscCode,
+                                                                      this.itemId,
+                                                                      this.KCS_PriceDate != dateNull() ? this.KCS_PriceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                      Ledger::accountingCurrency(CompanyInfo::current()));
+
+            //AVANetPG1Price = salesTable.CurrencyCode == priceDiscTable.Currency ? priceDiscTable.Amount :
+            //                                                            CurrencyExchangeHelper::amount(priceDiscTable.Amount,priceDiscTable.Currency);
+            AVANetPG1Price = priceDiscTable.Amount;
+        }
+        if(_netPG2Price)
+        {
+            priceDiscTable = AVAPriceDiscGroupSearch::findPriceDisc(PriceType::PriceSales,
+                                                                      salesTable.AVANetPG2,
+                                                                      '',
+                                                                      this.itemId,
+                                                                      this.KCS_PriceDate != dateNull() ? this.KCS_PriceDate : DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                      Ledger::accountingCurrency(CompanyInfo::current()));
+
+            //AVANetPG2Price = salesTable.CurrencyCode == priceDiscTable.Currency ? priceDiscTable.Amount :
+            //                                                            CurrencyExchangeHelper::amount(priceDiscTable.Amount,priceDiscTable.Currency);
+            AVANetPG2Price =  priceDiscTable.Amount;
+        }
+       
+        bestPrice = lpPriceDiscounted;
+        bestPrice = AVANetPG1Price > 0 ? (bestPrice > 0  ? min( bestPrice, AVANetPG1Price) : AVANetPG1Price) :   bestPrice;
+        bestPrice = AVANetPG2Price > 0 ? (bestPrice > 0  ? min( bestPrice, AVANetPG2Price) : AVANetPG2Price) :   bestPrice;
+
+        if ( salesLine.AVAQuotationId != '' && salesTable.KCS_NoUseQuotPrice == NoYes::No)
+        {
+            select firstonly   salesQuotationline
+                order by SalesPrice ASC
+                where salesQuotationLine.QuotationId == salesLine.AVAQuotationId
+                && salesQuotationline.ItemId      == this.ItemId;
+
+            quotPrice = salesQuotationline.SalesPrice;
+        }
+
+        bestPrice = (quotPrice > 0 && bestPrice > 0) ? min(bestPrice,quotPrice) : bestPrice > 0 ? bestPrice : quotPrice;
+        // this.SalesPrice = bestPrice;
+
+        this.SalesPrice     = bestPrice == lpPriceDiscounted ? lpSalesPrice : bestPrice;
+        this.LinePercent    = bestPrice == lpPriceDiscounted ? lpPriceDiscount : 0;
+        // this.LineDisc       =  bestPrice == lpPriceDiscounted ?  (lpSalesPrice * lpPriceDiscount)/100 : 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>mustResetPriceAndDiscounts</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// defined from AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    protected boolean mustResetPriceAndDiscounts()
+    {
+        boolean ret = next mustResetPriceAndDiscounts();
+        ret = AVASalesParameters::find().PriceSearch;
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromInventTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the <c>SalesLine</c> based on the given item.
+    /// </summary>
+    /// <param name="_inventTable">
+    ///     The <c>InventTable</c> buffer to initialize from.
+    /// </param>
+    /// <param name="_resetPrice">
+    ///     A Boolean value indicating whether to reset price.
+    /// </param>
+    /// <param name="_matchingAgreement">
+    /// The record ID of the agreement header that is associated with the sales order. Used for the
+    /// automatic association with an agreement line.
+    /// </param>
+    /// <param name="_performVariantValidation">
+    ///     A Boolean value indicating whether to perform variant validation.
+    /// </param>
+    public void initFromInventTable(InventTable                     _inventTable,
+                                    boolean                         _resetPrice,
+                                    SalesAgreementHeaderRefRecId    _matchingAgreement,
+                                    boolean                         _performVariantValidation)
+    {
+        KCS_PriceDate locKCS_PriceDate;
+        
+        next initFromInventTable(   _inventTable,
+                                    _resetPrice,
+                                    _matchingAgreement,
+                                    _performVariantValidation   );
+    
+        locKCS_PriceDate = this.AVAPriceDate();
+        
+        this.AVAPriceSurchargeCode          = _inventTable.avaGetPriceSurchargeCode();
+
+        if(this.AVAPriceSurchargeCode)
+        {
+            if(this.KCS_PriceDate == dateNull())
+            {
+                this.AVAPriceSurchargePercentage    = _inventTable.avaGetPriceSurchargePercentage(this.AVAPriceSurchargeCode);
+            }
+            else
+            {
+                this.avaSetSurchargeValues();
+            }
+        }
+        
+        this.NDX_PreferenceAuthorized       = _inventTable.NDX_PreferenceAuthorized;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetSurchargeValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaSetSurchargeValues</c> method.
+    /// </summary>
+    public void avaSetSurchargeValues()
+    {
+        if(this.AVAPriceSurchargeCode)
+        {
+            if(this.KCS_PriceDate == dateNull())
+            {
+                this.AVAPriceSurchargePercentage    = AVAPriceSurchargeValues::find(this.AVAPriceSurchargeCode).Percentage;
+            }
+            else
+            {
+                this.AVAPriceSurchargePercentage    = AVAPriceSurchargeValues::findAtDate(this.AVAPriceSurchargeCode, this.KCS_PriceDate).Percentage;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaPriceDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaPriceDate</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>KCS_PriceDate</c> as return value
+    /// </returns>
+    KCS_PriceDate avaPriceDate()
+    {
+        if (this.KCS_PriceDate)
+        {
+            return this.KCS_PriceDate;
+        }
+
+        if (this.salesTable().KCS_PriceDate)
+        {
+            return this.salesTable().KCS_PriceDate;
+        }
+
+        return DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetStockAvailablityStandard</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesLine">_salesLine</param>
+    /// <returns>AVAStockAvailability</returns>
+    public AVAStockAvailability avaGetStockAvailablityStandard(SalesLine _salesLine = this)
+    {
+        AVAStockAvailability    retVal;
+
+        InventQty               tmpQty;
+        InventQty               locInventQtyAvailable;
+        InventQty               locInventQtyRemaining;
+        InventQty               locInventQtyPicked;
+        InventQty               locInventQtyReserved;
+
+        locInventQtyRemaining   = _salesLine.RemainSalesPhysical;
+        locInventQtyPicked      = _salesLine.pickedInTotalSalesUnit();
+        locInventQtyReserved    = _salesLine.reservedPhysicalInSalesUnit();
+
+        if(this.avaHasShippingAbility())
+        {
+            if(locInventQtyRemaining - locInventQtyReserved <= 0.0)
+            {
+                return AVAStockAvailability::Available;
+            }
+            locInventQtyAvailable   = _salesLine.avaPhysicalAvailForShipping();
+            // locInventQtyReserved    = _salesLine.avaPhysicalReservedAbilityForShipping();
+            // allready contained in locInventQtyAvailable
+            locInventQtyReserved    = 0.0;
+            // locInventQtyAvailable already without reserved qty, so tmpQty calculation will be corrected
+        }
+        else
+        {
+            locInventQtyAvailable   = _salesLine.avaAvailPhysical();
+        }
+
+        tmpQty                  = locInventQtyRemaining - locInventQtyPicked - locInventQtyReserved;
+
+        if(locInventQtyAvailable >= tmpQty)
+        {
+            retVal = AVAStockAvailability::Available;
+        }
+        else if(    locInventQtyAvailable > 0
+                &&  locInventQtyAvailable < tmpQty  )
+        {
+            retVal = AVAStockAvailability::PartitialAvailable;
+        }
+        else if(locInventQtyAvailable <= 0)
+        {
+            retVal = AVAStockAvailability::NotAvailable;
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckForTransferInventSiteAndLocation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaCheckTransferInventSiteAndLocation</c> method.
+    /// </summary>
+    /// <param name="_from">
+    ///    <c>InventDim</c> as type
+    /// </param>
+    /// <param name="_to">
+    ///    <c>InventDim</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>boolean</c> as type
+    /// </returns>
+    public boolean avaCheckForTransferInventSiteAndLocation(InventDim _from = this.inventDim(), InventDim _to = this.inventDim())
+    {
+        boolean                 retVal;
+        boolean                 locCheckFailed;
+        boolean                 locPysicalReservatedFound;
+        boolean                 locOpenScanActivityFound;
+
+        SalesLine               locItemSetSalesLineParent;
+        SalesLine               locItemSetSalesLineSearch;
+
+        void checkSingleSalesLine(SalesLine _salesLine)
+        {
+            if(!locPysicalReservatedFound && _salesLine.reservedPhysicalInSalesUnit() > 0)
+            {
+                locCheckFailed              = checkFailed("@NDX:NXATransferOfSalesLineReservatedNotPossible");
+                retVal                      = false;
+                locPysicalReservatedFound   = true;
+            }
+            if(!locOpenScanActivityFound && _salesLine.avaOpenWHSWorkTableExists().RecId)
+            {
+                locCheckFailed              = checkFailed("@NDX:NXATransferOfSalesLineWithOpenScanActivityNotPossible");
+                retVal                      = false;
+                locOpenScanActivityFound    = true;
+            }
+        }
+
+        retVal = true;
+        
+        if(     this.AVAItemSetComponent
+            ||  (this.AVAItemSet && this.avaIsItemSetExpanded()) )
+        {
+            if(this.AVAItemSet)
+            {
+                locItemSetSalesLineParent = this;
+            }
+            if(this.AVAItemSetComponent && this.AVAItemSetParent)
+            {
+                locItemSetSalesLineParent = SalesLine::findInventTransId(this.AVAItemSetParent);
+            }
+            while select locItemSetSalesLineSearch
+                where   locItemSetSalesLineSearch.SalesId           == locItemSetSalesLineParent.SalesId
+                    &&  locItemSetSalesLineSearch.AVAItemSetParent  == locItemSetSalesLineParent.InventTransId
+            {
+                checkSingleSalesLine(locItemSetSalesLineSearch);
+            }
+        }
+        else
+        {
+            checkSingleSalesLine(this);
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetStockAvailablity</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>AVAStockAvailability</returns>
+    public AVAStockAvailability avaGetStockAvailablity()
+    {
+        AVAStockAvailability    retVal;
+
+        ProdTable               locProdtable;
+        ReqGroup                locReqGroup;
+
+        AVAStockAvailability    retValBundle;
+        SalesLine               locItemSetSalesLineParent;
+        SalesLine               locItemSetSalesLineSearch;
+
+
+        retVal = AVAStockAvailability::Unknown;
+        
+        locReqGroup = ReqGroup::find(this.inventTable().ReqGroupId);        // Item coverage group /  Artikeldeckungsgruppe
+
+        if (    locReqGroup.CovRule                 == ReqCovType::Req      // Requirement / Einzelbedarf
+            &&  locReqGroup.AuthorizationTimeFence  > 0                 )   // Automatic firming time fence (days) / Automatischer Sofortanlagezeitraum (Tage)
+        {
+            select firstonly locProdtable
+            where   locProdtable.InventRefType      == InventRefType::Sales
+                &&  locProdtable.InventRefId        == this.SalesId
+                &&  locProdtable.InventRefTransId   == this.InventTransId;
+
+            if (locProdtable.prodstatus == prodstatus::StartedUp)
+            {
+                if (InventTrans::findTransId(locProdtable.InventTransId).StatusReceipt == StatusReceipt::Ordered)
+                {
+                    retVal = AVAStockAvailability::IndividualRequired;
+                }
+                else
+                {
+                    retVal = AVAStockAvailability::Available;
+                }
+            }
+        }
+        else
+        {
+            if(     this.AVAItemSetComponent
+                ||  (this.AVAItemSet && this.avaIsItemSetExpanded()) )
+            {
+                if(this.AVAItemSet)
+                {
+                    locItemSetSalesLineParent = this;
+                }
+                if(this.AVAItemSetComponent && this.AVAItemSetParent)
+                {
+                    locItemSetSalesLineParent = SalesLine::findInventTransId(this.AVAItemSetParent);
+                }
+                while select locItemSetSalesLineSearch
+                where   locItemSetSalesLineSearch.SalesId           == locItemSetSalesLineParent.SalesId
+                    &&  locItemSetSalesLineSearch.AVAItemSetParent  == locItemSetSalesLineParent.InventTransId
+                {
+                    retValBundle = this.avaGetStockAvailablityStandard(locItemSetSalesLineSearch);
+
+                    if(retVal == AVAStockAvailability::Unknown)
+                    {
+                        retVal = retValBundle;
+                    }
+                    if(     retVal          == AVAStockAvailability::Available
+                        &&  (retValBundle   == AVAStockAvailability::PartitialAvailable || retValBundle   == AVAStockAvailability::NotAvailable)  )
+                    {
+                        retVal = retValBundle;
+                    }
+                    if(     retVal          == AVAStockAvailability::PartitialAvailable
+                        &&  retValBundle    == AVAStockAvailability::NotAvailable       )
+                    {
+                        retVal = retValBundle;
+                    }
+                }
+            }
+            else  // bundle not exploded or standard sales line
+            {
+                retVal = this.avaGetStockAvailablityStandard(this);
+            }
+
+        }
+        if (retVal == AVAStockAvailability::Unknown)  // bundle not exploded or standard sales line
+        {
+            retVal = this.avaGetStockAvailablityStandard(this);
+        }
+
+        if(this.AVAisInCylceCount())
+        {
+            retVal = AVAStockAvailability::InCycleCount;
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAisInCylceCount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 27.01.2025
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean AVAisInCylceCount()
+    {
+        boolean ret;
+        WHSWorkLineCycleCount       whsWorkLineCycleCount;
+
+        select firstonly whsWorkLineCycleCount
+            where whsWorkLineCycleCount.ItemId == this.ItemId  
+               && whsWorkLineCycleCount.AcceptReject ==   WHSAcceptReject::None;
+
+        if(whsWorkLineCycleCount)
+        {
+            WHSWorkTable        whsWorkTable = WHSWorkTable::find(whsWorkLineCycleCount.WorkId);        
+            InventDim           locInventDim = this.inventDim();
+            if (whsWorkTable.InventLocationId == locInventDim.InventLocationId)
+            {
+                if (!InventSite::find(locInventDim.InventSiteId).AVAShippingAbility)
+                {
+                    ret =true;
+                }
+                else
+                {
+                    WMSLocation     wmsLocation;
+                    WHSZone         whsZone;
+                    WHSZoneGroup    whsZoneGroup;
+                    select firstonly wmsLocation
+                        where wmsLocation.wMSLocationId == locInventDim.wMSLocationId
+                            join  whsZone
+                                where whsZone.ZoneId ==wmsLocation.ZoneId
+                                join whsZoneGroup
+                                where whsZoneGroup.ZoneGroupId == whsZone.ZoneGroupId
+                                   && whsZoneGroup.AVAWHSZoneGroupShipment == NoYes::Yes;
+
+                    if(wmsLocation.RecId != 0)
+                    {
+                        ret = true;
+                    }
+                }
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaStockAvailabilityIcon</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaStockAvailabilityIcon</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>container</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display container avaStockAvailabilityIcon()
+    {
+        container               retVal;
+        AVAStockAvailability    locAVAStockAvailability;
+
+        ImageReference          locImageReference;
+
+        locAVAStockAvailability = this.avaGetStockAvailablity();
+
+        switch (locAVAStockAvailability)
+        {
+            case AVAStockAvailability::Unknown:
+                retVal = conNull();
+                break;
+                
+            case AVAStockAvailability::Available:
+                locImageReference   = ImageReference::constructForSymbol(ImageReferenceSymbol::GreenSquare);
+                break;
+                
+            case AVAStockAvailability::PartitialAvailable:
+                locImageReference   = ImageReference::constructForSymbol(ImageReferenceSymbol::YellowSquare);
+                break;
+                
+            case AVAStockAvailability::NotAvailable:
+                locImageReference   = ImageReference::constructForSymbol(ImageReferenceSymbol::RedSquare);
+                break;
+                
+            case AVAStockAvailability::IndividualRequired:
+                locImageReference   = ImageReference::constructForSymbol(ImageReferenceSymbol::BlueSquare);
+                break;
+
+            case AVAStockAvailability::InCycleCount:
+                locImageReference   = ImageReference::constructForSymbol(ImageReferenceSymbol::Warning);
+                break;
+
+            default:
+                retVal = conNull();
+        }
+
+        if(locImageReference)
+        {
+            retVal = locImageReference.pack();
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaOpenWHSWorkTableExists</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaOpenWHSWorkTableExists</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>WHSWorkTable</c> as type
+    /// </returns>
+    public WHSWorkTable avaOpenWHSWorkTableExists()
+    {
+        WHSWorkTable    retVal;
+
+        WHSWorkTable    locWHSWorkTable;
+        WHSWorkLine     locWHSWorkLine;
+
+        select firstonly locWHSWorkTable
+        where   locWHSWorkTable.WorkTransType   == WHSWorkTransType::Sales
+            &&  locWHSWorkTable.WorkStatus      == WHSWorkStatus::Open
+            &&  locWHSWorkTable.OrderNum        == this.SalesId
+            join locWHSWorkLine
+            where   locWHSWorkLine.WorkId       == locWHSWorkTable.WorkId
+                &&  locWHSWorkLine.WorkStatus   == WHSWorkStatus::Open
+                &&  locWHSWorkLine.ItemId       == this.ItemId;
+
+        retVal = locWHSWorkTable;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaOpenWHSWorkTableQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaOpenWHSWorkTableExists</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>WHSQtyWork</c> as type
+    /// </returns>
+    public WHSQtyWork avaOpenWHSWorkTableQty()
+    {
+        WHSQtyWork      retVal;
+
+        WHSWorkTable    locWHSWorkTable;
+        WHSWorkLine     locWHSWorkLine;
+
+        while select locWHSWorkTable
+        where   locWHSWorkTable.WorkTransType   == WHSWorkTransType::Sales
+            &&  locWHSWorkTable.WorkStatus      == WHSWorkStatus::Open
+            &&  locWHSWorkTable.OrderNum        == this.SalesId
+        {
+            select sum(QtyWork)
+            from    locWHSWorkLine
+            where   locWHSWorkLine.WorkId       == locWHSWorkTable.WorkId
+                &&  locWHSWorkLine.WorkStatus   == WHSWorkStatus::Open
+                &&  locWHSWorkLine.ItemId       == this.ItemId
+                &&  locWHSWorkLine.InventDimId  == this.InventDimId;
+
+            retVal += locWHSWorkLine.QtyWork;
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaWorkStatusIcon</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaWorkStatusIcon</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>container</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display container avaWorkStatusIcon()
+    {
+        container               retVal;
+
+        ImageReference          locImageReference;
+
+        if(this.SalesStatus == SalesStatus::Backorder && this.avaOpenWHSWorkTableExists().RecId)
+        {
+            locImageReference   = ImageReference::constructForSymbol(ImageReferenceSymbol::YellowTriangle);
+        }
+
+        if(locImageReference)
+        {
+            retVal = locImageReference.pack();
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaWHSWorkTableWorkStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaWHSWorkTableWorkStatus</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>WHSWorkStatus</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display WHSWorkStatus avaWHSWorkTableWorkStatus()
+    {
+        WHSWorkTable    locWHSWorkTable;
+
+        select firstonly locWHSWorkTable
+        where   locWHSWorkTable.WorkTransType   == WHSWorkTransType::Sales
+            && locWHSWorkTable.OrderNum         == this.SalesId;
+           
+        return locWHSWorkTable.WorkStatus;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaAvailPhysical</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaAvailPhysical</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>InventQtyAvailPhysical</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display InventQtyAvailPhysical avaAvailPhysical()
+    {
+        InventQtyAvailPhysical  retVal;
+
+        retVal  = InventSum::avaAvailPhysicalForRelease(this.ItemId, this.inventDim());
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaPhysicalAvailAbilityForShipping</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaPhysicalAvailAbilityForShipping</c> method.
+    ///     AVA - Schneider 24.07.2024
+    /// </summary>
+    /// <returns>
+    ///     <c>AVAPhysicalAvailAbilityForShipping</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display AVAPhysicalAvailAbilityForShipping avaPhysicalAvailAbilityForShipping()
+    {
+        InventQtyAvailPhysical  retVal;
+
+        //return 0.0;
+        //return this.avaAvailPhysical();
+
+        if(!this.AVAItemSet)
+        {
+            retVal = InventSum::avaPhysicalAvailAbilityForShipping(this.ItemId, this.inventDim());
+        }
+        else
+        {
+            retVal = InventSum::avaPhysicalAvailAbilityForShippingCommon(this);
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaPhysicalReservedAbilityForShipping</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaPhysicalReservedAbilityForShipping</c> method.
+    ///     AVA - Schneider 24.07.2024
+    /// </summary>
+    /// <returns>
+    ///     <c>AVAPhysicalReservedAbilityForShipping</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display AVAPhysicalReservedAbilityForShipping avaPhysicalReservedAbilityForShipping()
+    {
+        InventQtyAvailPhysical  retVal;
+
+        retVal = InventSum::avaPhysicalReservedAbilityForShipping(this.ItemId, this.inventDim());
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaPhysicalReservedAbilityForShippingInSalesUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaPhysicalReservedAbilityForShippingInSalesUnit</c> method.
+    ///     AVA - Schneider 26.08.2024
+    /// </summary>
+    /// <returns>
+    ///     <c>SalesQtyReservPhysical</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public display SalesQtyReservPhysical avaPhysicalReservedAbilityForShippingInSalesUnit()
+    {
+        SalesQtyReservPhysical  salesQtyReservPhysical;
+
+        salesQtyReservPhysical = this.avaPhysicalReservedAbilityForShipping();
+
+        if (!salesQtyReservPhysical)
+        {
+            return 0;
+        }
+
+        return this.unitConvertInvent2Sales(salesQtyReservPhysical);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaPhysicalAvailForShipping</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaPhysicalAvailForShipping</c> method.
+    ///     AVA - Schneider 24.07.2024
+    /// </summary>
+    /// <returns>
+    ///     <c>AVAPhysicalAvailForShipping</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display AVAPhysicalAvailForShipping avaPhysicalAvailForShipping()
+    {
+        AVAPhysicalAvailForShipping locAVAPhysicalAvailForShipping;
+        InventQtyAvailPhysical      locInventQtyAvailPhysical;
+
+        locAVAPhysicalAvailForShipping  = this.avaPhysicalAvailAbilityForShipping();// - this.avaPhysicalReservedAbilityForShipping();
+        locInventQtyAvailPhysical       = this.avaAvailPhysical();
+        if(     locInventQtyAvailPhysical
+            &&  locInventQtyAvailPhysical < locAVAPhysicalAvailForShipping)
+        {
+            locAVAPhysicalAvailForShipping = locInventQtyAvailPhysical;
+        }
+
+        return locAVAPhysicalAvailForShipping;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaHasShippingAbility</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaHasShippingAbility</c> method.
+    ///     AVA - Schneider 22.08.2024
+    /// </summary>
+    /// <returns>
+    ///     <c>boolean</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display boolean avaHasShippingAbility()
+    {
+        boolean retVal;
+
+        retVal = this.inventDim().inventSite().avaHasShippingAbility();
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaShippingAbility</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaHasShippingAbility</c> method.
+    ///     AVA - Schneider 26.08.2024
+    /// </summary>
+    /// <returns>
+    ///     <c>AVAShippingAbility</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display AVAShippingAbility avaShippingAbility()
+    {
+        AVAShippingAbility retVal;
+
+        retVal = this.inventDim().inventSite().AVAShippingAbility;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDateNextArrival</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaDateNextArrival</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>TransDate</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display TransDate avaDateNextArrival()
+    {
+        TransDate retVal;
+
+        retVal  = this.avaCheckNextAvailability(false,
+                                                false,
+                                                true    );
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDateNextAvailable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaDateNextAvailable</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>TransDate</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display TransDate avaDateNextAvailable()
+    {
+        TransDate retVal;
+
+        retVal  = this.avaCheckNextAvailability(false,
+                                                true,
+                                                false   );
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetGrossWeight</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaGetGrossWeight</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>ItemGrossWeight</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display ItemGrossWeight avaGetGrossWeight()
+    {
+        ItemGrossWeight retVal;
+
+        retVal = this.QtyOrdered * this.avaGetItemGrossWeightFromInventUnit();
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetItemGrossWeightFromInventUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaGetItemGrossWeightFromInventUnit</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>ItemGrossWeight</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public ItemGrossWeight avaGetItemGrossWeightFromInventUnit()
+    {
+        ItemGrossWeight retVal;
+
+        InventTable     locInventTable;
+        /*
+        UnitOfMeasure       locUnitOfMeasureInvent;
+        UnitOfMeasure       locUnitOfMeasureKg;
+        UnitOfMeasure       locUnitOfMeasureG;
+
+        UnitOfMeasureClass  locUnitOfMeasureClassInvent;
+        UnitOfMeasureClass  locUnitOfMeasureClassKg;
+        UnitOfMeasureClass  locUnitOfMeasureClassG;
+
+        UnitOfMeasureSymbol locUnitOfMeasureSymbolInvent;
+        UnitOfMeasureSymbol locUnitOfMeasureSymbolKg;
+        UnitOfMeasureSymbol locUnitOfMeasureSymbolG;
+
+        #define.targetWeightSymbolKg('kg');
+        #define.targetWeightSymbolG('g');
+        */
+
+        #define.targetWeightSymbol('kg');
+
+        locInventTable  = this.inventTable();
+
+        retVal          = locInventTable.grossWeight();
+        // no unit conversion, InventTable.grossWeight() in g used instead
+        /*
+        retVal          = EcoResProductUnitConverter::convertForReleasedProduct(this.ItemId,
+                                                                                this.InventDimId,
+                                                                                retVal,
+                                                                                UnitOfMeasure::unitOfMeasureIdBySymbol(locInventTable.inventUnitId()),
+                                                                                UnitOfMeasure::findBySymbol(#targetWeightSymbol).RecId                  );
+        */
+        
+        /*
+        locUnitOfMeasureInvent          = UnitOfMeasure::findBySymbol(locInventTable.inventUnitId());
+        locUnitOfMeasureClassInvent     = locUnitOfMeasureInvent.UnitOfMeasureClass;
+        locUnitOfMeasureSymbolInvent    = locUnitOfMeasureInvent.Symbol;
+
+        locUnitOfMeasureKg              = UnitOfMeasure::findBySymbol(#targetWeightSymbolKg);
+        if(!locUnitOfMeasureKg.RecId)
+        {
+            locUnitOfMeasureKg          = UnitOfMeasure::findBySymbol(strUpr(#targetWeightSymbolKg));
+        }
+        locUnitOfMeasureClassKg         = locUnitOfMeasureKg.UnitOfMeasureClass;
+        locUnitOfMeasureSymbolKg        = locUnitOfMeasureKg.Symbol;
+
+        locUnitOfMeasureG               = UnitOfMeasure::findBySymbol(#targetWeightSymbolG);
+        if(!locUnitOfMeasureG.RecId)
+        {
+            locUnitOfMeasureG           = UnitOfMeasure::findBySymbol(strUpr(#targetWeightSymbolG));
+        }
+        locUnitOfMeasureClassG          = locUnitOfMeasureG.UnitOfMeasureClass;
+        locUnitOfMeasureSymbolG         = locUnitOfMeasureG.Symbol;
+        */
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetNetWeight</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaGetNetWeight</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>ItemNetWeight</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display ItemNetWeight avaGetNetWeight()
+    {
+        ItemNetWeight retVal;
+
+        retVal = this.QtyOrdered * this.avaGetItemNetWeightFromInventUnit();
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetItemNetWeightFromInventUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaGetItemNetWeightFromInventUnit</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>ItemNetWeight</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public ItemNetWeight avaGetItemNetWeightFromInventUnit()
+    {
+        ItemNetWeight   retVal;
+
+        InventTable     locInventTable;
+
+        #define.targetWeightSymbol('kg');
+
+        locInventTable  = this.inventTable();
+
+        retVal          = locInventTable.NetWeight;
+        // no unit conversion, InventTable.NetWeight in g used instead
+        /*
+        retVal          = EcoResProductUnitConverter::convertForReleasedProduct(this.ItemId,
+                                                                                this.InventDimId,
+                                                                                retVal,
+                                                                                UnitOfMeasure::unitOfMeasureIdBySymbol(locInventTable.inventUnitId()),
+                                                                                UnitOfMeasure::findBySymbol(#targetWeightSymbol).RecId                  );
+        */
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckNextAvailability</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaCheckAvailable</c> method.
+    /// </summary>
+    /// <param name="_showInfo">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <param name="_nextArrival">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <param name="_nextAvailability">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>TransDate</c> as type
+    /// </returns>
+    public TransDate avaCheckNextAvailability(  boolean _showInfo           = true,
+                                                boolean _nextArrival        = false,    //next arrival date - nur feinterminierte PA
+                                                boolean _nextAvailability   = true  )   //next availabilty date - auch grobgeplante PA
+    {
+        // 2009: SalesLine.KCS_CheckAvailableV2()
+        AVAStockAvailability    locAVAStockAvailability;
+
+        InventTrans             locInventTrans;
+        InventTransOrigin       locInventTransOrigin;
+        InventTrans             locInventTransReserved;
+
+        Transdate               nextArrivalDate;
+        boolean                 nextArrivalDatefound;
+        Transdate               nextAvailabilityDate;
+        Transdate               locDateExpected;
+
+        InventDim               locInventDimSalesLine;
+        ReqItemTable            locReqItemTable;
+        InventSum               locInventSum;
+        InventDim               locInventDim;
+        Qty                     locQtyAvailable;
+
+        str                     locStrStatus;
+        boolean                 locIgnoreInstance;
+
+        #define.Production('F')
+        #define.Purch('B')
+
+
+        nextArrivalDate         = dateNull();
+        nextAvailabilityDate    = dateNull();
+        locDateExpected         = dateNull();
+
+
+        locAVAStockAvailability = this.avaGetStockAvailablity();
+        if(     locAVAStockAvailability != AVAStockAvailability::PartitialAvailable
+            &&  locAVAStockAvailability != AVAStockAvailability::NotAvailable       )
+        {
+            if (_nextArrival || _nextAvailability)
+            {
+                return dateNull();
+            }
+        }
+
+        //Bestellt reserviert
+        select firstOnly locInventTrans
+        where   locInventTrans.StatusIssue    == StatusIssue::ReservOrdered
+            join    locInventTransOrigin
+            where   locInventTransOrigin.RecId          == locInventTrans.InventTransOrigin
+                &&  locInventTransOrigin.InventTransId  == this.InventTransId;
+
+        if (locInventTransOrigin.InventTransId)
+        {
+            select firstOnly locInventTransReserved
+            where   locInventTransReserved.StatusReceipt == StatusReceipt::Ordered
+                join    locInventTransOrigin
+                where   locInventTransOrigin.RecId          == locInventTransReserved.InventTransOrigin
+                    &&  locInventTransOrigin.InventTransId  == this.InventTransId;
+
+            if (locInventTransReserved.RecId)
+            {
+                if (_showInfo)
+                {
+                    info(strfmt("@NDX:NXAOrderedReservedP1P2P3P4P5",    locInventTransReserved.DateExpected,
+                                                                        locInventTransOrigin.ReferenceCategory,
+                                                                        locInventTransOrigin.ReferenceId,
+                                                                        locInventTransReserved.Qty,
+                                                                        this.RemainInventPhysical               )   );
+                }
+
+                if (_nextArrival)
+                {
+                    if (locInventTransOrigin.ReferenceCategory == InventTranstype::Production)
+                    {
+                        if (ProdTable::findTransId(locInventTransOrigin.InventTransId).SchedStatus == ProdSchedStatus::JobScheduled)
+                        {
+                            return locInventTransReserved.DateExpected;
+                        }
+                        else
+                        {
+                            return datenull();
+                        }
+                    }
+                    else
+                    {
+                        return locInventTransReserved.DateExpected;
+                    }
+                }
+                
+                if (_showInfo || _nextAvailability)
+                {
+                    return locInventTransReserved.DateExpected;
+                }
+            }
+        }
+
+        //Lagerauffüllung prüfen
+        locInventDimSalesLine                = this.inventDim();
+        locInventDimSalesLine.wMSLocationId  = '';
+        locInventDimSalesLine                = InventDim::findOrCreate(locInventDimSalesLine);
+
+        select firstOnly locReqItemTable
+        where   locReqItemTable.ItemId          == this.ItemId
+            &&  locReqItemTable.ReqPOType       == ReqPoType::Transfer
+            &&  locReqItemTable.CovInventDimId  == locInventDimSalesLine.inventDimId;
+
+        if (locReqItemTable)
+        {
+            if (_showInfo)
+            {
+                info(strfmt("@NDX:NXAP1P2IsFilledUpFromP3", this.itemid,
+                                                            locInventDimSalesLine.InventColorId,
+                                                            locReqItemTable.InventLocationIdReqMain )   );
+            }
+        }
+        else
+        {
+            if (_showInfo)
+            {
+                info(strfmt("@NDX:NXAP1P2NoFilledUp",   this.itemid,
+                                                        locInventDimSalesLine.InventColorId )   );
+            }
+        }
+
+        //Verfügbare Lagermenge
+        select sum(AvailPhysical), sum(PhysicalInvent)
+        from locInventSum
+            join locInventDim
+            where   locInventSum.InventDimId        == locInventDim.inventDimId
+                &&  locInventSum.ItemId             == this.ItemId
+                &&  locInventSum.PhysicalInvent     > 0
+                &&  locInventDim.InventColorId      == locInventDimSalesLine.InventColorId
+                &&  (locInventDim.InventLocationId  == locInventDimSalesLine.InventLocationId || locInventDim.InventLocationId == locReqItemTable.InventLocationIdReqMain);
+
+        locQtyAvailable = locInventSum.AvailPhysical;
+
+        if (_showInfo)
+        {
+            info(strfmt("@NDX:NXAPhysicalP1PhysicalAvailableP2",    locInventSum.PhysicalInvent,
+                                                                    locInventSum.AvailPhysical  )   );
+        }
+
+        if (locQtyAvailable > this.RemainInventPhysical)
+        {
+            nextAvailabilityDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+            
+            if (_showInfo)
+            {
+                info(strfmt("@NDX:NXANextAvailabilityP1",nextAvailabilityDate));
+            }
+            if (_nextAvailability)
+            {
+                return nextAvailabilityDate;
+            }
+        }
+
+        //nicht reservierte Abgänge mit führeren DateExpected
+        locDateExpected = InventTrans::findTransId(this.InventTransId).DateExpected;
+        
+        select sum(qty)
+        from    locInventTrans
+        join    locInventDim
+        where   locInventTrans.DateExpected     < locDateExpected
+            &&  locInventTrans.StatusIssue      == StatusIssue::OnOrder
+            &&  locInventTrans.inventdimid      == locInventDim.inventDimId
+            &&  locInventTrans.ItemId           == this.ItemId
+            &&  locInventDim.InventColorId      == locInventDimSalesLine.InventColorId
+            &&  (locInventDim.InventLocationId  == locInventDimSalesLine.InventLocationId || locInventDim.InventLocationId == locReqItemTable.InventLocationIdReqMain);
+
+        locQtyAvailable += locInventTrans.Qty;
+        
+        if (_showInfo && locInventTrans.Qty)
+        {
+            info(strfmt("@NDX:NXAUnreservedOutgoingBeforeP1P2SubtotalP3",   locDateExpected,
+                                                                            locInventTrans.Qty,
+                                                                            locQtyAvailable     )   );
+        }
+
+        //Aufträge mit gleichen Datum und kleinerer Nummer inkl. dem eigenen Auftrages
+        select sum(qty)
+        from    locInventTrans
+            join    locInventTransOrigin
+            where   locInventTransOrigin.RecId              == locInventTrans.InventTransOrigin
+                &&  locInventTransOrigin.InventTransId      == this.InventTransId
+            join    locInventDim
+            where   locInventTrans.DateExpected             == locDateExpected
+                &&  locInventTrans.StatusIssue              == StatusIssue::OnOrder
+                &&  locInventTrans.inventdimid              == locInventDim.inventDimId
+                &&  locInventTrans.ItemId                   == this.ItemId
+                &&  locInventDim.InventColorId              == locInventDimSalesLine.InventColorId
+                &&  (locInventDim.InventLocationId          == locInventDimSalesLine.InventLocationId || locInventDim.InventLocationId == locReqItemTable.InventLocationIdReqMain)
+                &&  locInventTransOrigin.ReferenceCategory  == InventTranstype::Sales
+                &&  locInventTransOrigin.ReferenceId        <= this.SalesId;
+
+        locQtyAvailable += locInventTrans.Qty;
+        
+        if (_showInfo && locInventTrans.Qty)
+        {
+            info(strfmt("@NDX:NXAUnreservedOutgoingAtP1ToOrderP2SubtotalP3",    locDateExpected,
+                                                                                locInventTrans.Qty,
+                                                                                locQtyAvailable     )   );
+        }
+
+        //Ermittlung der Zugänge
+        while select locInventTrans
+            join    locInventTransOrigin
+            where   locInventTransOrigin.RecId          == locInventTrans.InventTransOrigin
+            //    &&  locInventTransOrigin.InventTransId  == this.InventTransId   // open, not related to actual SalesLine     
+            join    locInventDim
+            order by locInventTrans.DateExpected asc
+            where   locInventTrans.inventdimid          == locInventDim.inventDimId
+                &&  locInventTrans.ItemId               == this.ItemId
+                &&  locInventTrans.StatusReceipt        == StatusReceipt::Ordered  // mehr Statis?
+                &&  locInventDim.InventColorId          == locInventDimSalesLine.InventColorId
+                &&  (locInventDim.InventLocationId      == locInventDimSalesLine.InventLocationId || locInventDim.InventLocationId == locReqItemTable.InventLocationIdReqMain)
+        {
+            locIgnoreInstance   = false;
+            locStrStatus        = '';
+
+            switch(locInventTransOrigin.ReferenceCategory)
+            {
+                case Inventtranstype::Sales:
+                    break;
+                
+                case Inventtranstype::Purch:
+                    if (Purchline::findInventTransId(locInventTransOrigin.InventTransId).ConfirmedDlv != global::dateNull())
+                    {
+                        locStrStatus = locStrStatus + #Purch;
+                    }
+                    if (!nextArrivalDate)
+                    {
+                        nextArrivalDatefound = true;
+                    }
+                    break;
+                
+                case Inventtranstype::Production:
+                    if (ProdTable::findTransId(locInventTransOrigin.InventTransId).SchedStatus == ProdSchedStatus::JobScheduled)
+                    {
+                        locStrStatus = locStrStatus + #Production;
+                        if (!nextArrivalDate)
+                        {
+                            nextArrivalDatefound = true;
+                        }
+                    }
+                    break;
+                
+                case Inventtranstype::ProdLine:
+                    break;
+                
+                case Inventtranstype::TransferOrderReceive:
+                    if (!nextArrivalDate)
+                    {
+                        nextArrivalDatefound = true;
+                    }
+                    break;
+                
+                case Inventtranstype::TransferOrderShip:
+                    break;
+                
+                default:
+                    locIgnoreInstance = true;
+                    break;
+            }
+            if (!locIgnoreInstance)
+            {
+                locQtyAvailable += locInventTrans.Qty;
+
+                if(_showInfo)
+                {
+                    info(strfmt("@NDX:NXAP1P2P3P4P5SubtotalP6", locInventTrans.DateExpected,
+                                                                locInventTransOrigin.ReferenceCategory,
+                                                                locInventTransOrigin.ReferenceId,
+                                                                locStrStatus,
+                                                                locInventTrans.Qty,
+                                                                locQtyAvailable                         )   );
+                }
+
+                if (locQtyAvailable >= 0 && !nextAvailabilityDate)
+                {
+                    nextAvailabilityDate = locInventTrans.DateExpected;
+                    
+                    if (_showInfo)
+                    {
+                        info(strfmt("@NDX:NXANextAvailabilityP1", nextAvailabilityDate));
+                    }
+                    if (_nextAvailability)
+                    {
+                        return nextAvailabilityDate;
+                    }
+                }
+                
+                if (!nextArrivalDate && nextArrivalDatefound)
+                {
+                    nextArrivalDate = locInventTrans.DateExpected;
+                    
+                    if (_showInfo)
+                    {
+                        info(strfmt("@NDX:NXANextGoodsReceiptP1", nextArrivalDate));
+                    }
+                    if (_nextArrival)
+                    {
+                        return nextArrivalDate;
+                    }
+                }
+            }
+        }
+
+        //wenn nächste Verfügbarkeit keinen Wert hat, dann errechnetes Versanddatum
+        if (_nextAvailability)
+        {
+            if (_showInfo)
+            {
+                info(strfmt("@NDX:NXANextAvailabilityCalculatedShippingDateP1", this.ShippingDateRequested));
+            }
+            return this.ShippingDateRequested;
+        }
+        else
+        {
+            return datenull();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updatePricingOnInventDimSetModified</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_enumerator">_enumerator</param>
+    /// <param name = "_inventDim">_inventDim</param>
+    /// <param name = "_resetPrice">_resetPrice</param>
+    protected void updatePricingOnInventDimSetModified( SetEnumerator   _enumerator,
+                                                        InventDim       _inventDim,
+                                                        boolean         _resetPrice )
+    {
+        next updatePricingOnInventDimSetModified(   _enumerator,
+                                                    _inventDim,
+                                                    false       );
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifyInventDimSet</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// desigend from AVA
+    /// </summary>
+    /// <param name = "_inventDim">_inventDim</param>
+    /// <param name = "_dimFieldIdSet">_dimFieldIdSet</param>
+    /// <param name = "_resetPrice">_resetPrice</param>
+    /// <param name = "_skipInventDimDefaulting">_skipInventDimDefaulting</param>
+    /// <returns>booelan</returns>
+    public boolean modifyInventDimSet(  InventDim   _inventDim,
+                                        Set         _dimFieldIdSet,
+                                        boolean     _resetPrice,
+                                        boolean     _skipInventDimDefaulting    )
+    {
+        return next modifyInventDimSet( _inventDim,
+                                        _dimFieldIdSet,
+                                        false,
+                                        _skipInventDimDefaulting);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifySalesQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesLine">_salesLine</param>
+    /// <param name = "_inventDim">_inventDim</param>
+    /// <param name = "_resetPrice">_resetPrice</param>
+    /// <param name = "_uiEnabled">_uiEnabled</param>
+    public static void modifySalesQty(SalesLine    _salesLine,
+                                      InventDim    _inventDim,
+                                      boolean      _resetPrice,
+                                      boolean      _uiEnabled)
+    {
+        boolean resetPrice;
+        boolean uiEnabled;
+        
+        resetPrice  = _resetPrice;
+        uiEnabled   = _uiEnabled;
+        
+        resetPrice  = !AVASalesParameters::find().PriceSearch;
+        uiEnabled   = true;
+
+        next modifySalesQty(_salesLine,
+                            _inventDim,
+                            resetPrice,
+                            uiEnabled);
+
+        _salesLine.avaCheckActiveAltItemId();
+        _salesLine.avaCheckPreferredUnit();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckPreferredUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_011033
+    /// </summary>
+    public void avaCheckPreferredUnit()
+    {
+        UnitOfMeasureConversion     conversion;
+        Qty qtyPreferredUnit, roundedQtyPreferredUnit, convPreferredQty;
+        UnitOfMeasureSymbol preferredUnit, transUnit;
+        EcoResReleasedProductUnitConverter	unitConverter = EcoResReleasedProductUnitConverter::construct();
+
+        if (AVASalesParameters::find().PreferredQtyForCentralWH && this.salesTable().KCS_CentralWarehouse)
+        {
+            transUnit = this.SalesUnit;
+
+            select firstonly conversion where conversion.Product == this.inventTable().Product
+            && conversion.ToUnitOfMeasure == UnitOfMeasure::findBySymbol(transUnit).RecId
+            && conversion.NDXisDeliveryUnitPreferred;
+            if (conversion.RecId)
+            {
+                preferredUnit = UnitOfMeasure::find(conversion.FromUnitOfMeasure).Symbol;
+                qtyPreferredUnit    = this.SalesQty;
+                qtyPreferredUnit =  unitConverter.convertGivenUnitSymbols(qtyPreferredUnit,
+                                                     transUnit,
+                                                     preferredUnit,
+                                                     NoYes::Yes,
+                                                     this.ItemId,
+                                                     this.InventDimId,
+                                                     NoYes::No);
+                roundedQtyPreferredUnit = roundUp(qtyPreferredUnit, 1);
+                convPreferredQty = unitConverter.convertGivenUnitSymbols(roundedQtyPreferredUnit,
+                                                     preferredUnit,
+                                                     transUnit,
+                                                     NoYes::Yes,
+                                                     this.ItemId,
+                                                     this.InventDimId,
+                                                     NoYes::No);
+                if (qtyPreferredUnit != roundedQtyPreferredUnit)
+                {
+                    warning(strFmt("@NDX:NXAPreferredUnitQty", convPreferredQty, this.LineNum, this.ItemId));
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckActiveAltItemId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_011033
+    /// </summary>
+    public void avaCheckActiveAltItemId()
+    {
+        InventTable inventTable = this.inventTable();
+
+        if (this.ItemId != inventTable.AltItemId)
+        {
+            if (inventTable.AltItemId && inventTable.UseAltItemId == ItemNumAlternative::Never)
+            {
+                warning(strFmt("@NDX:NXAAltItemExists", this.ItemId, inventTable.AltItemId));
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>mustRecalcDiscOnSalesTypeChanged</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>mustRecalcDiscOnSalesTypeChanged</c> method.
+    /// </summary>
+    /// <param name="_salesLineOrig">
+    ///    <c>SalesLine</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    protected boolean mustRecalcDiscOnSalesTypeChanged(SalesLine _salesLineOrig)
+    {
+        boolean ret;
+
+        ret = next   mustRecalcDiscOnSalesTypeChanged(_salesLineOrig);
+        ret = !AVASalesParameters::find().PriceSearch;
+
+        return       ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromCustQuotationTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_custQuotationTrans">CustQuotationTrans</param>
+    /// <param name = "_copyPrecisely">boolean</param>
+    /// <param name = "_copyPriceDisc">boolean</param>
+    /// <param name = "_copyQty">boolean</param>
+    /// <param name = "_qty">Qty</param>
+    public void  initFromCustQuotationTrans(CustQuotationTrans  _custQuotationTrans,
+                                            boolean             _copyPrecisely,
+                                            boolean             _copyPriceDisc,
+                                            boolean             _copyQty,
+                                            Qty                 _qty                )
+    {
+        CustQuotationJour   locCustQuotationJour;
+        SalesQuotationTable locSalesQuotationTable;
+        UnitOfMeasure       locUnitOfMeasure;
+
+        
+        locCustQuotationJour    = _custQuotationTrans.custQuotationJour();
+        locSalesQuotationTable  = locCustQuotationJour.salesQuotationTable();
+
+        next initFromCustQuotationTrans(_custQuotationTrans, 
+                                        _copyPrecisely, 
+                                        _copyPriceDisc, 
+                                        _copyQty, 
+                                        _qty                );
+
+        locUnitOfMeasure = UnitOfMeasure::find(UnitOfMeasure::unitOfMeasureIdBySymbol(_custQuotationTrans.SalesUnit));
+        if(     locUnitOfMeasure.RecId
+                &&  locUnitOfMeasure.DecimalPrecision   == 0
+                &&  locUnitOfMeasure.UnitOfMeasureClass == UnitOfMeasureClass::Quantity)
+        {
+            // InventMovement::setMinMaxQty(this, false, false, false, false);  // not working as expected, defaulting to minimum quantity of item with autocorrection 
+            this.SalesQty = roundUp(this.SalesQty, 1);
+        }                               
+        else
+        {
+            InventMovement::setMinMaxMultipleQty(this, false);
+        }
+        this.QtyOrdered     = this.calcQtyOrdered(this.SalesQty);
+        this.AVAQuotationId = locCustQuotationJour.KCS_QuotationId;
+        this.AVApriceCalculation();
+        this.LineAmount     = this.calcLineAmountForced();
+
+        if(locSalesQuotationTable.QuotationExpiryDate < DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+        {
+            //this.AVAOrigQuotExpiredDate = locSalesQuotationTable.QuotationExpireDate; // no field, display QuotationExpiryDate AVAOrigQuotExpiredDate() on salesLine
+            this.AVAQuotAGError = NoYes::Yes;
+        }
+        this.NDX_PAInfo = _custQuotationTrans.AVAPAInfo;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromSalesQuotationLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/10/23   AVA_012570_PAInfo
+    /// </summary>
+    /// <param name = "_salesQuotationLine">SalesQuotationLine</param>
+    public void initFromSalesQuotationLine(SalesQuotationLine      _salesQuotationLine)
+    {
+        next initFromSalesQuotationLine(_salesQuotationLine);
+        this.NDX_PAInfo = _salesQuotationLine.AVAPAInfo;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaReserveSalesLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaReserveSalesLine</c> method.
+    /// </summary>
+    /// <param name="_salesLine">
+    ///    <c>SalesLine</c> as type
+    /// </param>
+    /// <param name="_qtyToReserve">
+    ///    <c>InventQty</c> as type
+    /// </param>
+    /// <param name="_unreserve">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaReserveSalesLine( SalesLine   _salesLine      = this, 
+                                        InventQty   _qtyToReserve   = 0, 
+                                        boolean     _unreserve      = false )
+    {
+        boolean                         retVal;
+        
+        InventTransIdSumSingleStatus    locInventTransIdSumSingleStatus;
+        SalesLine                       locSalesLine;
+        InventMovement                  locInventMovement;
+        InventDim                       locInventDim;
+        InventDimParm                   locInventDimParmCriteria;
+        InventQtyReservPhysical         locOldReservedQty;
+        InventQtyReservPhysical         locNewReservedQty;
+        InventUpd_Reservation           locInventUpd_Reservation;
+        InventQty                       locInventQtyToReserve;
+
+        // Inline method to get current reserved quantity for specific inventDim
+        InventQtyReservPhysical getReservedQty()
+        {
+            locInventDimParmCriteria.initFromInventDim(locInventDim);
+
+            locInventTransIdSumSingleStatus = InventTransIdSumSingleStatus::newTransOriginIdStatus( InventTransOriginSalesLine::findInventTransOriginId(locSalesLine.DataAreaId, locSalesLine.InventTransId),
+                                                                                                    StatusReceipt::None,
+                                                                                                    StatusIssue::ReservPhysical);
+            locInventTransIdSumSingleStatus.parmInventDimCriteria(locInventDim);
+            locInventTransIdSumSingleStatus.parmInventDimParmCriteria(locInventDimParmCriteria);
+
+            return locInventTransIdSumSingleStatus.reservPhysical();
+        }
+
+        retVal              = true;
+
+        // Sales order line
+        locSalesLine        = _salesLine;
+        locInventMovement   = InventTrans::findTransId(locSalesLine.InventTransId).inventMovement(true);
+
+        // Build inventDim-Record, where the quantity should be reserved
+        locInventDim.clear();
+        locInventDim = InventDim::findOrCreate(locSalesLine.inventDim());
+
+        // Get current physical reserved Quantity
+        locOldReservedQty           = getReservedQty();
+
+        // Set quanity which should be reserved (negative values to reserve, postive value to unreserve)
+        if(_qtyToReserve)
+        {
+            locInventQtyToReserve   = -_qtyToReserve;
+        }
+        else
+        {
+            locInventQtyToReserve   = _salesLine.reserveQty();
+        }
+
+        if(_unreserve)
+        {
+            locInventQtyToReserve = locInventQtyToReserve * (-1);
+        }
+
+        locInventUpd_Reservation    = InventUpd_Reservation::newInventDim(  locInventMovement,
+                                                                            locInventDim,
+                                                                            locInventQtyToReserve,
+                                                                            true                    );
+        locInventUpd_Reservation.updateNow();
+
+        // Get new reserved quantity
+        locNewReservedQty = getReservedQty();
+
+        // Compare old and new reserved quantity to identify if reservation failed
+      /*  if(     locOldReservedQty   == locNewReservedQty
+            &&  _qtyToReserve       > 0)
+        {
+            error("@NDX:NXAReservationFailed");
+            retVal = false;
+        } */
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetReservableQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaGetReservableQty</c> method.
+    /// </summary>
+    /// <param name="_salesLine">
+    ///    <c>SalesLine</c> as type
+    /// </param>
+    /// <param name="_reservedIncluding">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>SalesQty</c> as return value
+    /// </returns>
+    public SalesQty avaGetReservableQty(SalesLine _salesLine = this, boolean _reservedIncluding = true)
+    {
+        SalesQty                retVal;
+
+        SalesLine               locItemSetSalesLineParent;
+        SalesLine               locItemSetSalesLineSearch;
+        AVAStockAvailability    locAVAStockAvailability;
+        AVAStockAvailability    locAVAStockAvailabilitySub;
+
+        SalesQty                qtyPerItemSet;
+        SalesQty                qtyItemSetsNeeded;
+        SalesQty                qtyItemSetsAvailable;
+        SalesQty                qtyItemSetsReserved;
+        SalesQty                qtyItemSetsCovered;
+        SalesQty                qtyItemSetsCoveredCurrent;
+        SalesQty                qtyItemSetsCoveredTotal;
+
+        InventTransId           weakestInventTransId;
+
+        void calculateNeededItemSetQty()
+        {
+            boolean                 locHasShippingAbility;
+            AVAShippingAbility      locShippingAbility;
+
+            qtyPerItemSet               = locItemSetSalesLineSearch.SalesQty / minOne(locItemSetSalesLineParent.SalesQty);
+            qtyItemSetsNeeded           = locItemSetSalesLineSearch.RemainSalesPhysical / minOne(qtyPerItemSet);
+ 
+            locShippingAbility          = locItemSetSalesLineSearch.avaShippingAbility();
+            locHasShippingAbility       = locShippingAbility == AVAShippingAbility::Control;
+        
+            if(locHasShippingAbility)
+            {
+                qtyItemSetsAvailable    = locItemSetSalesLineSearch.avaPhysicalAvailForShipping() / minOne(qtyPerItemSet);
+                //qtyItemSetsReserved     = locItemSetSalesLineSearch.avaPhysicalReservedAbilityForShipping() / minOne(qtyPerItemSet);
+                qtyItemSetsReserved     = locItemSetSalesLineSearch.reservedPhysicalInSalesUnit() / minOne(qtyPerItemSet);
+            }
+            else
+            {
+                qtyItemSetsAvailable    = locItemSetSalesLineSearch.avaAvailPhysical() / minOne(qtyPerItemSet);
+                qtyItemSetsReserved     = locItemSetSalesLineSearch.reservedPhysicalInSalesUnit() / minOne(qtyPerItemSet);
+            }
+            qtyItemSetsCovered          = qtyItemSetsAvailable;
+            if(_reservedIncluding)
+            {
+                qtyItemSetsCovered      += qtyItemSetsReserved;
+            }
+            qtyItemSetsCoveredCurrent   = qtyItemSetsCovered / minOne(qtyItemSetsNeeded);
+            //qtyItemSetsCoveredCurrent   = locItemSetSalesLineSearch.avaAvailPhysical() / minOne(locItemSetSalesLineSearch.RemainSalesPhysical);
+            if(qtyItemSetsCoveredCurrent > qtyItemSetsNeeded)
+            {
+                qtyItemSetsCoveredCurrent = qtyItemSetsNeeded;
+            }
+            else
+            {
+                qtyItemSetsCoveredCurrent = qtyItemSetsCovered;
+            }
+        }
+
+        locAVAStockAvailability = this.avaGetStockAvailablity();
+
+        if(locAVAStockAvailability == AVAStockAvailability::NotAvailable)
+        {
+            retVal = 0;
+        }
+        else if(locAVAStockAvailability == AVAStockAvailability::Available)
+        {
+            retVal = this.RemainSalesPhysical;
+        }
+        else if(locAVAStockAvailability == AVAStockAvailability::PartitialAvailable)
+        {
+            retVal = this.RemainSalesPhysical;
+
+            if(     this.AVAItemSetComponent
+                ||  (this.AVAItemSet && this.avaIsItemSetExpanded()) )
+            {
+                if(this.AVAItemSet)
+                {
+                    locItemSetSalesLineParent = this;
+                }
+                if(this.AVAItemSetComponent && this.AVAItemSetParent)
+                {
+                    locItemSetSalesLineParent = SalesLine::findInventTransId(this.AVAItemSetParent);
+                }
+
+                qtyItemSetsCoveredTotal = locItemSetSalesLineParent.RemainSalesPhysical;
+
+                while select locItemSetSalesLineSearch
+                where   locItemSetSalesLineSearch.SalesId           == locItemSetSalesLineParent.SalesId
+                    &&  locItemSetSalesLineSearch.AVAItemSetParent  == locItemSetSalesLineParent.InventTransId
+                {
+                    locAVAStockAvailabilitySub = locItemSetSalesLineSearch.avaGetStockAvailablity();
+                    if(locAVAStockAvailabilitySub == AVAStockAvailability::Available)
+                    {
+                        calculateNeededItemSetQty();
+                    }
+                    else if(locAVAStockAvailabilitySub == AVAStockAvailability::PartitialAvailable)
+                    {
+                        calculateNeededItemSetQty();
+                    }
+
+                    if(qtyItemSetsCoveredCurrent < qtyItemSetsCoveredTotal)
+                    {
+                        qtyItemSetsCoveredTotal = qtyItemSetsCoveredCurrent;
+                        weakestInventTransId    = locItemSetSalesLineSearch.InventTransId;
+                    }
+                }
+                // calculate with weakest salesLine
+                locItemSetSalesLineSearch = SalesLine::findInventTransId(weakestInventTransId);
+                calculateNeededItemSetQty();
+
+                retVal = qtyItemSetsCoveredCurrent;
+            }
+            else  // item set not exploded or standard sales line
+            {
+                retVal = this.avaAvailPhysical();
+            }
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAnewLineNumAfterBundle</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "salesId">SalesId</param>
+    /// <param name = "_BundleRefId">InventTransId</param>
+    /// <returns>LineNum</returns>
+    public static LineNum  AVAnewLineNumAfterBundle(SalesId salesId, InventTransId _BundleRefId)
+    {
+        LineNum         lastBundleLineNum;
+        salesLine       localSalesLine;
+
+        lastBundleLineNum    = Salesline::AVAlastBundleLineNum(salesId, _BundleRefId);
+
+        if (lastBundleLineNum == SalesLine::lastLineNum(salesId))
+        {
+            return  lastBundleLineNum + 1;
+        }
+        else
+        {
+            localSalesLine   = SalesLine::find(salesId,lastBundleLineNum);
+            return (localSalesLine.nextLineNum() - lastBundleLineNum) / 2 + lastBundleLineNum;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAlastBundleLineNum</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "salesId">SalesId</param>
+    /// <param name = "_BundleRefId">InventTransId</param>
+    /// <returns>LineNum</returns>
+    public static LineNum  AVAlastBundleLineNum(SalesId salesId, InventTransId _BundleRefId)
+    {
+        return (select maxof(LineNum) from salesLine
+                            where salesLine.SalesId == salesId 
+                               && salesLine.AVAItemSetParent == _BundleRefId).LineNum;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaItemUsageId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaItemUsageId</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>KCS_ItemUsageId</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display KCS_ItemUsageId avaItemUsageId()
+    {
+        KCS_ItemUsageId  itemUsageId;
+
+        itemUsageId =  InventTable::find(this.ItemId).KCS_ItemUsageId;
+
+        return itemUsageId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initSpecialDiscFromQuotation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void initSpecialDiscFromQuotation()
+    {
+       
+        QuotationId          quotationId = this.AVAQuotationId ? this.AVAQuotationId : this.AVAEDIQuotationId;
+        AVASpecialDiscSalesLine::copyFromQuotationJour(QuotationId,this);
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAQuotationIdLookup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_ctrl">_ctrl</param>
+    public static void AVAQuotationIdLookup(FormStringControl        _ctrl)
+    {
+        SysTableLookup          sysTableLookup = SysTableLookup::newParameters(tableNum(SalesQuotationTable),_ctrl);
+        Query                   query = new Query();
+        QueryBuildDataSource    salesQuotationTableDS;
+
+        salesQuotationTableDS = query.addDataSource(tableNum(SalesQuotationtable));
+
+
+        sysTableLookup.addLookupfield(fieldNum(SalesQuotationtable,QuotationId),true);
+        sysTableLookup.addLookupfield(fieldNum(SalesQuotationtable,QuotationName));
+        sysTableLookup.addLookupfield(fieldNum(SalesQuotationtable,QuotationExpiryDate));
+
+        sysTableLookup.parmQuery(query);
+
+        sysTableLookup.performFormLookup();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setSalesQuotationStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void setSalesQuotationStatus()
+    {
+        //field AVASalesParameters.EDIQuotationStatusId is obsolete
+        /*if (this.AVAQuotationId)
+        {
+            SalesQuotationTable     salesQuotationTable;
+            if (this.AVAQuotationId)
+            {
+
+                salesQuotationTable = SalesQuotationTable::find(this.AVAQuotationId);
+
+                salesQuotationTable = SalesQuotationTable::find(this.AVAQuotationId);
+                if (salesQuotationTable.RecId && salesQuotationTable.QuotationStatus != SalesQuotationStatus::Confirmed
+                                              && salesQuotationTable.QuotationStatus != SalesQuotationStatus::Submitted
+                                              && salesQuotationTable.QuotationStatus != SalesQuotationStatus::Approved)
+                {
+                    salesQuotationTable.KCS_StatusId = AVASalesParameters::find().EDIQuotationStatusId;
+                    salesQuotationTable.selectForUpdate(true);
+                    salesQuotationTable.doUpdate();
+                }
+            }
+        }*/
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateSalesTableKCS_PickingReleaseIndicator</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaUpdateSalesTableKCS_PickingReleaseIndicator</c> method.
+    /// </summary>
+    public void avaUpdateSalesTableKCS_PickingReleaseIndicator()
+    {
+        SalesTable                  locSalesTable;
+        KCS_PickingReleaseIndicator locKCS_PickingReleaseIndicator;
+        KCS_PickingReleaseIndicator locKCS_PickingReleaseIndicatorCalc;
+
+        locSalesTable =  this.salesTable();
+
+        locKCS_PickingReleaseIndicator      = locSalesTable.KCS_PickingReleaseIndicator;
+
+        locKCS_PickingReleaseIndicatorCalc  = locSalesTable.avaCalcKCS_PickingReleaseIndicator();
+
+        if(locKCS_PickingReleaseIndicator != locKCS_PickingReleaseIndicatorCalc)
+        {
+            ttsbegin;
+            locSalesTable.selectForUpdate(true);
+            locSalesTable.KCS_PickingReleaseIndicator = locKCS_PickingReleaseIndicatorCalc;
+            locSalesTable.avaUpdateKCS_SOCSalesOrderPickingReleasedBy();
+            locSalesTable.update();
+            ttsCommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaRemainInventQtyNotReserved</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaRemainQtyNotReserved</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>InventQty</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display InventQty avaRemainInventQtyNotReserved()
+    {
+        InventQty retVal;
+        
+        retVal = this.RemainInventPhysical - this.reservedPhysical();
+        if(retVal < 0.0)
+        {
+            retVal = 0.0;
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaRemainInventQtyReservable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaRemainInventQtyReservable</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>InventQty</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display InventQty avaRemainInventQtyReservable()
+    {
+        InventQty retVal;
+        InventQty locInventQty;
+
+        retVal = 0.0;
+        
+        if(this.RemainInventPhysical > 0.0)                 // inventQty remaining
+        {
+            retVal = this.avaRemainInventQtyNotReserved();
+  
+            if(retVal > 0.0)                                // inventQty remaining not reserved
+            {
+                locInventQty = this.avaGetReservableQty();
+                if(locInventQty > 0.0)                      // inventQty to reserve exist
+                {
+                    if(retVal > locInventQty)
+                    {
+                        retVal = locInventQty;
+                    }
+                }
+            }
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaNDX_StockItemIdentifier</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaNDX_StockItemIdentifier</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>LabelString</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display LabelString avaNDX_StockItemIdentifier()
+    {
+        LabelString retVal;
+
+        retVal = strFmt('%1', this.inventTable().NDX_StockItemIdentifier);
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showDocTextImage</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVANADE
+    /// </summary>
+    /// <param name = "_this">SalesLine</param>
+    /// <returns>Container</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public static display container showDocTextImage(SalesLine _this)
+    {
+        ImageReference  imageReference;
+        container       imageContainer;
+        #resAppl
+
+        if ((select firstonly docuRef
+            where docuRef.RefCompanyId  == _this.DataAreaId
+                && docuRef.RefTableId   == _this.TableId
+                && docuRef.RefRecId     == _this.RecId).RecId)
+        
+        {
+            imageReference = ImageReference::constructForSymbol(ImageReferenceSymbol::Attach);
+            return imageReference.pack();
+        }
+        else
+        {
+            return imageContainer;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVASalesPriceRebateIncluded</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVASalesPriceRebateIncluded</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>AVASpecialDiscountSalesPrice</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display AVASpecialDiscountSalesPrice displayAVASalesPriceRebateIncluded()
+    {
+        SalesPrice  retVal;
+
+        retVal = this.SalesPrice  * (100 - this.LinePercent) / 100;
+        retVal = decRound(retVal, 2);
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSpecialDiscSalesLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaSpecialDiscSalesLine</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>AVASpecialDiscSalesLine</c> as return value
+    /// </returns>
+    public AVASpecialDiscSalesLine avaSpecialDiscSalesLine()
+    {
+        AVASpecialDiscSalesLine  retVal;
+
+        retVal = AVASpecialDiscSalesLine::find(this.InventTransId);
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVASpecialDiscSalesLineSP1</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVASpecialDiscSalesLineSP1</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>AVASpecialDiscountPct1</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display AVASpecialDiscountPct1 displayAVASpecialDiscSalesLineSP1()
+    {
+        Percent  retVal;
+
+        retVal = this.avaSpecialDiscSalesLine().SpecialDiscountPct1;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVASpecialDiscSalesLineSP2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVASpecialDiscSalesLineSP2</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>AVASpecialDiscountPct2</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display AVASpecialDiscountPct2 displayAVASpecialDiscSalesLineSP2()
+    {
+        Percent  retVal;
+
+        retVal = this.avaSpecialDiscSalesLine().SpecialDiscountPct2;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVASpecialDiscSalesLineSP3</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVASpecialDiscSalesLineSP3</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>AVASpecialDiscountPct3</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display AVASpecialDiscountPct3 displayAVASpecialDiscSalesLineSP3()
+    {
+        Percent  retVal;
+
+        retVal = this.avaSpecialDiscSalesLine().SpecialDiscountPct3;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVASpecialDiscSalesLineSP4</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVASpecialDiscSalesLineSP4</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>AVASpecialDiscountPct4</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display AVASpecialDiscountPct4 displayAVASpecialDiscSalesLineSP4()
+    {
+        Percent  retVal;
+
+        retVal = this.avaSpecialDiscSalesLine().SpecialDiscountPct4;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVASpecialDiscSalesLineSP5</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVASpecialDiscSalesLineSP5</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>AVASpecialDiscountPct5</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display AVASpecialDiscountPct5 displayAVASpecialDiscSalesLineSP5()
+    {
+        Percent  retVal;
+
+        retVal = this.avaSpecialDiscSalesLine().SpecialDiscountPct5;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVASpecialDiscSalesLineSP6</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVASpecialDiscSalesLineSP6</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>AVASpecialDiscountPct6</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display AVASpecialDiscountPct6 displayAVASpecialDiscSalesLineSP6()
+    {
+        Percent  retVal;
+
+        retVal = this.avaSpecialDiscSalesLine().SpecialDiscountPct6;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVASpecialDiscSalesLineSP7</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVASpecialDiscSalesLineSP7</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>AVASpecialDiscountPct7</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display AVASpecialDiscountPct7 displayAVASpecialDiscSalesLineSP7()
+    {
+        Percent  retVal;
+
+        retVal = this.avaSpecialDiscSalesLine().SpecialDiscountPct7;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmQuantityErrorCorrectionMethods</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA 
+    /// </summary>
+    /// <param name = "_errorCorrectionMethods">_errorCorrectionMethods</param>
+    /// <returns>InventMovementQuantityErrorCorrectionMethods</returns>
+    public InventMovementQuantityErrorCorrectionMethods parmQuantityErrorCorrectionMethods(InventMovementQuantityErrorCorrectionMethods _errorCorrectionMethods)
+    {
+        InventMovementQuantityErrorCorrectionMethods    locInventMovementQuantityErrorCorrectionMethods;
+
+        if(_errorCorrectionMethods == null)
+        {
+            if(this.QuantityErrorCorrectionMethods)
+            {
+                locInventMovementQuantityErrorCorrectionMethods = InventMovementQuantityErrorCorrectionMethods::newFromPacked(this.QuantityErrorCorrectionMethods);
+            }
+            if(locInventMovementQuantityErrorCorrectionMethods == null)
+            {
+                locInventMovementQuantityErrorCorrectionMethods = InventMovementQuantityErrorCorrectionMethods::newStandard();
+            }
+        }
+        else
+        {
+            locInventMovementQuantityErrorCorrectionMethods = _errorCorrectionMethods;
+        }
+
+        locInventMovementQuantityErrorCorrectionMethods = next parmQuantityErrorCorrectionMethods(locInventMovementQuantityErrorCorrectionMethods);
+
+        if (this.salesQty == 0)
+        {
+            locInventMovementQuantityErrorCorrectionMethods.setAllErrorCorrectionMethods(InventMovementQuantityErrorCorrectionMethod::AcceptUserInput);
+        }
+       
+        return locInventMovementQuantityErrorCorrectionMethods;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcheckOrigQuotation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesTable">_salesTable</param>
+    /// <returns>boolean</returns>
+    public container AVAcheckOrigQuotation(SalesTable _salesTable = null)
+    {
+        SalesQuotationTable     salesQuotationTable;
+        SalesQuotationLine      salesQuotationLine;
+        boolean     hasLineError = false;
+        boolean     hasLineWarnung = false;
+        SalesTable  locSalesTable;
+        boolean   isReturnItem = this.returnItem();
+
+        this.AVAQuotANError  = false;
+        this.AVAQuotAAError  = false;
+        this.AVAQuotAGError  = false;
+        this.AVAQuotAAEError = false;
+
+        locSalesTable = _salesTable ? _salesTable : this.salesTable();
+
+        select firstonly QuotationId, CustAccount, QuotationExpiryDate, AVANoExpiryOverrun from salesQuotationTable
+                where salesQuotationTable.QuotationId == this.AVAOrigQuotationId;
+
+        this.AVAQuotANError = !salesQuotationTable.QuotationId ? NoYes::Yes : NoYes::No;
+
+        if (!this.AVAQuotANError)
+        {
+            
+            this.AVAQuotAAEError = (!isReturnItem && salesQuotationTable.QuotationId &&  salesQuotationTable.CustAccount != locSalesTable.CustAccount) ? NoYes::Yes : NoYes::No;
+            
+            select firstonly ItemId, RecId  from salesQuotationLine
+            where salesQuotationLine.QuotationId == this.AVAOrigQuotationId
+               && salesQuotationLine.ItemId      == this.ItemId;
+
+            this.AVAQuotAAError = (salesQuotationTable.QuotationId && !salesQuotationLine.RecId) ? NoYes::Yes : NoYes::No;
+
+            if (!this.AVAQuotAAError)
+            {
+                AVASalesParameters          salesParameters = AVASalesParameters::find();
+
+                TransDate                   checkBasicDate = locSalesTable.KCS_PurchRefDate != dateNull() ? locSalesTable.KCS_PurchRefDate  :  DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+
+                SalesQuotationNumOfDays     expNumOfDays = !salesQuotationTable.AVANoExpiryOverrun  ? salesParameters.SalesQuotationNumOfDays : 0;
+
+                this.AVAQuotAGError = !isReturnItem && salesQuotationTable.QuotationId &&  salesQuotationTable.QuotationExpiryDate < checkBasicDate - expNumOfDays;
+                
+            }
+        }
+
+        if (this.AVAQuotANError || this.AVAQuotAAError || this.AVAQuotAGError)
+        {
+            hasLineError = true;
+        }
+
+        if (this.AVAQuotAAEError)
+        {
+            hasLineWarnung = true;
+        }
+        return [hasLineError,hasLineWarnung];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAOrigQuotExpiredDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>QuotationExpiryDate</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display QuotationExpiryDate AVAOrigQuotExpiredDate()
+    {
+        ExpirationDate      origQuotExpiredDate = SalesQuotationTable::find(this.AVAOrigQuotationId).QuotationExpiryDate;
+
+        //return (this.AVAQuotationId == '' && this.AVAOrigQuotationId != '' && !this.AVAQuotANError && !this.AVAQuotAAError) ? SalesQuotationTable::find(this.AVAOrigQuotationId).QuotationExpiryDate : dateNull();
+        return (this.AVAOrigQuotationId != ''  && origQuotExpiredDate <  DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())) ? origQuotExpiredDate : dateNull();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAOrigQuotationName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designedfromAVA
+    /// </summary>
+    /// <returns>Name</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display Name AVAOrigQuotationName()
+    {
+        Name        custBusRelName, custRelNameOrig;
+
+        if (this.AVAQuotationId)
+        {
+            SalesQuotationTable         salesQuotationTable = SalesQuotationTable::find(this.AVAQuotationId);
+            custBusRelName  = salesQuotationTable.CustAccount ? salesQuotationTable.customerName() : salesQuotationTable.smmBusRelTable().name();
+        }
+        if (this.AVAOrigQuotationId)
+        {
+            SalesQuotationTable         salesQuotationTableOrig = SalesQuotationTable::find(this.AVAOrigQuotationId);
+            custRelNameOrig  = salesQuotationTableOrig.CustAccount ? salesQuotationTableOrig.customerName() : salesQuotationTableOrig.smmBusRelTable().name();
+        }
+        return this.AVAQuotAAEError == NoYes::Yes ? 
+               (this.AVAQuotationId != '' ? custBusRelName : (this.AVAOrigQuotationId != '' ? custRelNameOrig : '')) :
+                '';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaItemSetSalesLineSetKCS_SOCPickingReleaseIndicator</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA <c>avaItemSetSalesLineSetKCS_SOCPickingReleaseIndicator</c> method.
+    /// </summary>
+    /// <param name = "_includingSiblingComponents">boolean</param>
+    public void avaItemSetSalesLineSetKCS_SOCPickingReleaseIndicator(boolean _includingSiblingComponents = false)
+    {
+        SalesLine  locSalesLine;
+
+        ttsbegin;
+
+        if(this.AVAItemSetComponent)
+        {
+            if(_includingSiblingComponents)
+            {
+                while select locSalesLine
+                where   locSalesLine.InventTransId      != this.InventTransId
+                    &&  locSalesLine.AVAItemSetParent   == this.AVAItemSetParent
+                {
+                    if(locSalesLine.RecId && locSalesLine.KCS_SOCPickingReleaseIndicator != this.KCS_SOCPickingReleaseIndicator)
+                    {
+                        locSalesLine.selectForUpdate(true);
+                        locSalesLine.KCS_SOCPickingReleaseIndicator = this.KCS_SOCPickingReleaseIndicator;
+                        locSalesLine.update();
+                    }
+                }
+            }
+
+            select firstonly locSalesLine
+            where   locSalesLine.AVAItemSet
+                &&  locSalesLine.InventTransId == this.AVAItemSetParent;
+
+            if(locSalesLine.RecId && locSalesLine.KCS_SOCPickingReleaseIndicator != this.KCS_SOCPickingReleaseIndicator)
+            {
+                locSalesLine.selectForUpdate(true);
+                locSalesLine.KCS_SOCPickingReleaseIndicator = this.KCS_SOCPickingReleaseIndicator;
+                locSalesLine.update();
+            }
+        }
+
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>modifiedField</c> method.
+    /// </summary>
+    /// <param name="_fieldId">
+    ///    <c>FieldId</c> as type
+    /// </param>
+    public void modifiedField(FieldId _fieldId)
+    {
+        SalesLine   locSalesLineOrig;
+
+        locSalesLineOrig = this.orig();
+
+        next modifiedField(_fieldId);
+
+        switch(_fieldId)
+        {
+            case fieldNum(SalesLine, AVADispoDate):
+                this.AVADispoDateModifiedDateTime       = DateTimeUtil::utcNow();
+                this.AVADispoDateModifiedById           = curUserId();
+                this.setCalculatedShippingDate();
+                break;
+            
+            case fieldNum(SalesLine, AVAProdSchedDate):
+                this.AVAProdSchedDateModifiedDateTime   = DateTimeUtil::utcNow();
+                this.AVAProdSchedDateModifiedById       = curUserId();
+                this.setCalculatedShippingDate();
+                break;
+
+            case fieldNum(SalesLine,AVAShippingDateRequested) :
+                this.setCalculatedShippingDate();
+                break;
+            
+            case fieldNum(SalesLine, KCS_BOSCommissCutPct) :
+                this.avaItemSetSetCommissionCutPctToComponents();
+                break;
+            
+            default:
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifyExpectedRetQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesLine">_salesLine</param>
+    /// <param name = "_inventDim">_inventDim</param>
+    /// <param name = "_resetPrice">_resetPrice</param>
+    static void modifyExpectedRetQty(SalesLine    _salesLine,
+                                     InventDim    _inventDim,
+                                     boolean      _resetPrice)
+    {
+
+        next modifyExpectedRetQty(_salesLine,_inventDim,_resetPrice);
+        _salesLine.AVApriceCalculation();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyCommissSplitFromQuotation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>copyCommissSplitFromQuotation</c> method.
+    /// </summary>
+    /// <param name="_quotationId">
+    ///    <c>QuotationId</c> as type
+    /// </param>
+    public void copyCommissSplitFromQuotation(QuotationId _quotationId)
+    {
+        KCS_BOSSalesQuotatCommissSplit      quotatSplit;
+        KCS_BOSSalesOrderCommissSplit       salesOrderSplit;
+        RecordInsertList                    recordInsertListQuotatSplit;
+
+        delete_from salesOrderSplit
+        where salesOrderSplit.SalesId           == this.SalesId
+            && salesOrderSplit.InventTransId    == this.InventTransId
+            && salesOrderSplit.RecipientBasic   == AVACBSRecipientBasic::Line;
+        
+        recordInsertListQuotatSplit = new RecordInsertList(tableNum(KCS_BOSSalesOrderCommissSplit));
+
+        while select RecipientID, CommissSplit, SalesGroup, QuotationId from quotatSplit
+        where   quotatSplit.QuotationId     == _quotationId
+            &&  quotatSplit.RecipientBasic  == AVACBSRecipientBasic::Order
+        {
+            salesOrderSplit.SalesId          = this.SalesId;
+            salesOrderSplit.InventTransId    = this.InventTransId;
+            salesOrderSplit.RecipientBasic   = AVACBSRecipientBasic::Line;
+            salesOrderSplit.RecipientID      = quotatSplit.RecipientID;
+            salesOrderSplit.CommissSplit     = quotatSplit.CommissSplit;
+            salesOrderSplit.SalesGroup       = quotatSplit.SalesGroup;
+            
+            recordInsertListQuotatSplit.add(salesOrderSplit);
+        }
+
+        recordInsertListQuotatSplit.insertDatabase();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCalculatedShippingDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>SalesShippingDateRequested</returns>
+    public SalesShippingDateRequested   getCalculatedShippingDate()
+    {
+        SalesShippingDateRequested       calcShipDate;
+        SalesShippingDateRequested       calcShipDateTmp;
+
+        if (this.AVAProdSchedDate != dateNull())
+        {
+            calcShipDate = this.AVAProdSchedDate;
+        }
+        else if (this.AVADispoDate != dateNull())
+        {
+            calcShipDate = this.AVADispoDate;
+        }
+        else if (this.AVAShippingDateRequested != dateNull())
+        {
+            calcShipDate = this.AVAShippingDateRequested;
+        }
+
+        calcShipDateTmp = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        if (calcShipDate < calcShipDateTmp) //BP: today())
+        {
+            calcShipDate = calcShipDateTmp;
+        }
+
+        return calcShipDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setCalculatedShippingDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// desigbed from AVA
+    /// </summary>
+    public void setCalculatedShippingDate()
+    {
+        this.ShippingDateRequested = this.getCalculatedShippingDate();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initShippingDateFromSalesTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void initShippingDateFromSalesTable()
+    {
+        SalesTable      locSalesTable = this.salesTable();
+        this.AVAShippingDateRequested = locSalesTable.ShippingDateRequested;
+        this.AVADispoDate             = locSalesTable.AVADispoDate;
+        this.setCalculatedShippingDate();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaItemSetReserveSalesLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaItemSetReserveSalesLine</c> method.
+    /// </summary>
+    /// <param name="_salesLine">
+    ///    <c>SalesLine</c> as type
+    /// </param>
+    /// <param name="_qtyToReserve">
+    ///    <c>InventQty</c> as type
+    /// </param>
+    /// <param name="_unreserve">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaItemSetReserveSalesLine(  SalesLine   _salesLine      = this,
+                                                InventQty   _qtyToReserve   = 0,
+                                                boolean     _unreserve      = false )
+    {
+        boolean     retVal;
+
+        SalesLine   locSalesLine;
+        InventQty   locQtyToReserve;
+        boolean     locUnreserve;
+
+        SalesLine   locSalesLineSearch;
+        SalesQty    locQtyToReserveTmp;
+            
+        retVal          = true;
+        locSalesLine    = _salesLine;
+        locQtyToReserve = _qtyToReserve;
+        locUnreserve    = _unreserve;
+
+
+        if(     locSalesLine.RecId
+            &&  locQtyToReserve     )
+        {
+            if(locSalesLine.AVAItemSetExpanded)
+            {
+                while select locSalesLineSearch
+                where   locSalesLineSearch.SalesId          == locSalesLine.SalesId
+                    &&  locSalesLineSearch.AVAItemSetParent == locSalesLine.InventTransId
+                {
+                    locQtyToReserveTmp = locQtyToReserve * locSalesLineSearch.AVAItemSetCompQtyPerSerie / minOne(locSalesLineSearch.AVAItemSetSerie);
+
+                    this.avaReserveSalesLine(   locSalesLineSearch,
+                                                locQtyToReserveTmp,
+                                                locUnreserve        );
+                }
+            }
+            else if(locSalesLine.AVAItemSetComponent)
+            {
+                locSalesLineSearch = locSalesLine.avaItemSetSalesLine();
+
+                locQtyToReserveTmp = locQtyToReserve * locSalesLine.AVAItemSetSerie / minOne(locSalesLine.AVAItemSetCompQtyPerSerie);
+
+                this.avaItemSetReserveSalesLine(locSalesLineSearch,
+                                                locQtyToReserveTmp,
+                                                locUnreserve        );
+            }
+            else
+            {
+                this.avaReserveSalesLine(   locSalesLine,
+                                            locQtyToReserve,
+                                            locUnreserve    );
+            }
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaConvertQtyFromUnitToUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaConvertQtyFromUnitToUnit</c> method.
+    /// </summary>
+    /// <param name="_qty">
+    ///    <c>Qty</c> as type
+    /// </param>
+    /// <param name="_fromUnitId">
+    ///    <c>UnitIDBase</c> as type
+    /// </param>
+    /// <param name="_toUnitId">
+    ///    <c>UnitIDBase</c> as type
+    /// </param>
+    /// <param name="_saleLine">
+    ///    <c>SalesLine</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>Qty</c> as return value
+    ///    Without parameters returns the invent quantity of the sales line
+    /// </returns>
+    public Qty avaConvertQtyFromUnitToUnit( Qty         _qty        = this.SalesQty,
+                                            UnitIDBase  _fromUnitId = this.SalesUnit,
+                                            UnitIDBase  _toUnitId   = this.inventTable().inventUnitid(),
+                                            SalesLine   _saleLine   = this                                  )
+    {
+        Qty                                 retVal;
+
+        EcoResReleasedProductUnitConverter  releasedProductUnitConverter;
+
+        retVal              = _qty;
+
+        if(_qty == 0.0)
+        {
+            retVal          = 0.0;
+        }
+        else if(_fromUnitId == _toUnitId)
+        {
+            retVal          = _qty;
+        }
+        else
+        {
+            if(_qty)
+            {
+                releasedProductUnitConverter = EcoResReleasedProductUnitConverter::construct();
+                if (releasedProductUnitConverter.canBeConverted(UnitOfMeasure::unitOfMeasureIdBySymbol(_fromUnitId),
+                                                                UnitOfMeasure::unitOfMeasureIdBySymbol(_toUnitId),
+                                                                _saleLine.ItemId,
+                                                                _saleLine.InventDimId                               )   )
+                {
+                    retVal  = releasedProductUnitConverter.convert( _qty,
+                                                                    UnitOfMeasure::unitOfMeasureIdBySymbol(_fromUnitId),
+                                                                    UnitOfMeasure::unitOfMeasureIdBySymbol(_toUnitId),
+                                                                    NoYes::No,
+                                                                    _saleLine.ItemId,
+                                                                    _saleLine.InventDimId,
+                                                                    NoYes::Yes                                          );
+                }
+            }
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVAQtyCreditNoteReturnOrder</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVAQtyCreditNoteReturnOrder</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>AVAQtyCreditNoteReturnOrder</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display AVAQtyCreditNoteReturnOrder displayAVAQtyCreditNoteReturnOrder()
+    {
+        AVAQtyCreditNoteReturnOrder retVal;
+
+        SalesLine                   locSalesLine;
+
+        if(this.InventTransId)
+        {
+            select  sum(SalesQty)
+            from    locSalesLine
+            where   locSalesLine.InventTransIdReturn == this.InventTransId;
+
+            retVal = locSalesLine.SalesQty;
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of validateWrite method
+    /// </summary>
+    /// <param name = "_skipCreditLimitCheck">boolean</param>
+    /// <returns>boolean</returns>
+    public boolean  validateWrite(boolean _skipCreditLimitCheck)
+    {
+        boolean         ok = next validateWrite(_skipCreditLimitCheck);
+
+        this.avaValidatePAInfo();
+        this.ndxValidateColor();
+
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaValidatePAInfo</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// throws a warning if current SalesLine needs and has a PA Info, error for header check
+    /// </summary>
+    /// <param name = "_isHeaderCheck">boolean</param>
+    public void avaValidatePAInfo(boolean _isHeaderCheck = false)
+    {
+        if(this.NDX_PAInfo == ''
+            && this.inventTable().AVAPAInfo
+            && !_isHeaderCheck)
+        {
+            warning(strFmt("@NDX:NXAPAInfoCheckFailed", this.ItemId, this.LineNum));
+        }
+        else if(this.NDX_PAInfo == ''
+            && this.inventTable().AVAPAInfo
+            && _isHeaderCheck)
+        {
+            throw error(strFmt("@NDX:NXAPAInfoCheckFailed", this.ItemId, this.LineNum));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setAlternativeItem</Name>
+				<Source><![CDATA[
+    public void setAlternativeItem(SalesAlternativeItem _salesAlternativeItem, boolean _showInfo)
+    {
+        ItemId                          itemIdOrig = _salesAlternativeItem.parmItemId();
+        //InventDimId                     inventDimIdOrig = _salesAlternativeItem.parmInventDim().inventDimId;
+        //InventSum                       inventsum = InventSum::find(itemIdOrig, inventDimIdOrig);
+        InventSum                       inventsum;
+        InventTable                     inventTable = inventTable::find(itemIdOrig);
+        //if (!inventsum)
+        //{
+        select sum(AvailPhysical) from inventsum where inventsum.ItemId == itemIdOrig
+                                        && inventsum.InventSiteId == _salesAlternativeItem.parmInventDim().InventSiteId
+                                        && inventsum.inventLocationId == _salesAlternativeItem.parmInventDim().InventLocationId;
+        //}
+
+        if (inventTable.UseAltItemId == ItemNumAlternative::InventWhen0)
+        {
+            warning(strFmt("@NDX:NXAWarningSetAltItem", itemIdOrig, inventsum.AvailPhysical, _salesAlternativeItem.parmQtyOrdered()));
+        }
+
+        next setAlternativeItem(_salesAlternativeItem, _showInfo);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createAlternativeItem</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_011033
+    /// </summary>
+    /// <param name = "_inventDim">InventDim</param>
+    /// <param name = "_newlyCreatedSalesLine">SalesLine</param>
+    /// <returns>boolean</returns>
+    public boolean createAlternativeItem(InventDim _inventDim, SalesLine _newlyCreatedSalesLine)
+    {
+        InventTable inventTable = inventTable::find(this.ItemId);
+        //InventSum   inventsum = InventSum::find(this.ItemId, _inventDim.inventDimId);
+        InventSum   inventsum;
+        //if (!inventsum.AvailPhysical)
+        //{
+        select sum(AvailPhysical) from inventsum where inventsum.ItemId == this.ItemId
+                                        && inventsum.InventSiteId == _inventDim.InventSiteId
+                                        && inventsum.inventLocationId == _inventDim.InventLocationId;
+        //}
+        Qty availPhys = inventsum.AvailPhysical;
+
+        if (inventTable.AltItemId && inventTable.UseAltItemId == ItemNumAlternative::Never && availPhys < this.SalesQty)
+        {
+            warning(strFmt("@NDX:NXAWarningSetAltItem", this.ItemId, availPhys, this.SalesQty));
+        }
+        boolean ret = next createAlternativeItem(_inventDim, _newlyCreatedSalesLine);
+
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaItemSetSetCommissionCutPctToComponents</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaItemSetSetCommissionCutPctToComponents</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaItemSetSetCommissionCutPctToComponents()
+    {
+        boolean     retVal;
+
+        SalesLine   locSalesLine;
+        SalesLine   locSalesLineSearch;
+
+        locSalesLine    = this;
+
+        if(     locSalesLine.RecId
+            &&  locSalesLine.AVAItemSet )
+        {
+            if(locSalesLine.AVAItemSetExpanded)
+            {
+                ttsbegin;
+                while select locSalesLineSearch
+                where   locSalesLineSearch.SalesId          == locSalesLine.SalesId
+                    &&  locSalesLineSearch.AVAItemSetParent == locSalesLine.InventTransId
+                {
+                    locSalesLineSearch.selectForUpdate(true);
+                    locSalesLineSearch.KCS_BOSCommissCutPct = locSalesLine.KCS_BOSCommissCutPct;
+                    locSalesLineSearch.update();
+                    retVal = true;
+                }
+                ttscommit;
+            }
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAdisplayCustomerName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 21.02.24
+    /// display customer name
+    /// </summary>
+    /// <returns>customer name</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display Name AVAdisplayCustomerName()
+    {
+        return CustTable::find(this.CustAccount).name();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAdisplayCustomerPrimaryAddressCity</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 21.02.24
+    /// display customer primary address
+    /// </summary>
+    /// <returns>customer primary address</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display LogisticsAddressCityName AVAdisplayCustomerPrimaryAddressCity()
+    {
+        return CustTable::find(this.CustAccount).postalAddress().City;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAdisplayPurchOrderFormNum</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 21.02.24
+    /// display PurchOrderFormNum
+    /// </summary>
+    /// <returns>PurchOrderFormNum</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display CustPurchaseOrder AVAdisplayPurchOrderFormNum()
+    {
+        return this.salesTable().PurchOrderFormNum;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAdisplayLineAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 21.02.24
+    /// Calculate line amount. Method considers Item is a set or component.
+    /// </summary>
+    /// <returns>calculated LineAmount</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display LineAmount AVAdisplayLineAmount()
+    {
+        LineAmount  amount;
+       
+        if (this.AVAItemSetComponent || this.SalesQty == 0)
+        {
+            amount = 0;
+        }
+        else
+        {
+            amount = (this.LineAmount / this.SalesQty) * this.RemainSalesPhysical;
+        }
+
+        return amount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetOrDoUpdateQuotationIdAfterImport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaSetOrDoUpdateQuotationIdAfterImport</c> method.
+    ///     AVA - Schneider 22.07.2024
+    /// </summary>
+    /// <param name="_doUpdate">
+    ///     <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaSetOrDoUpdateQuotationIdAfterImport(boolean _doUpdate = false)
+    {
+        boolean retVal;
+        boolean locValuesChanged;
+
+        retVal = true;
+        
+        if(     this.AVAQuotationId     == '' 
+            &&  this.AVAOrigQuotationId != '')
+        {
+            this.AVAQuotationId = this.AVAOrigQuotationId;
+            locValuesChanged = true;
+        }
+
+        if(_doUpdate && locValuesChanged)
+        {
+            ttsbegin;
+            this.selectForUpdate(_doUpdate);
+            this.doUpdate();
+            ttscommit;
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateSalesTableEstimate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/03/27     AVA_013075_CalcCreditLimit
+    /// </summary>
+    public void avaUpdateSalesTableEstimate()
+    {
+        SalesTable      locSalesTable;
+        SalesTotals     salesTotalsSales;
+
+        locSalesTable = this.salesTable();
+
+        salesTotalsSales = salesTotals::construct(locSalesTable);
+        salesTotalssales.parmCalcEstimate(NoYes::Yes);
+        salesTotalsSales.calc();
+        //locSalesTable.setEstimate();
+        if (locsalesTable.setEstimate(salesTotalsSales))
+        {
+            ttsbegin;
+            locSalesTable.selectForUpdate();
+            locsalesTable.update();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    public void  update(boolean  _dropInvent,
+                        Common   _childBuffer,
+                        boolean  _updateOrderLineOfDeliverySchedule,
+                        boolean  _mcrAutoallocate,
+                        boolean  _cameFromCreate,
+                        boolean  _promptSuppItem
+                        )
+    {
+        boolean     updateEstimate = false;
+
+        if(this.SalesQty != this.orig().salesQty)
+        {
+            ProdTable avaProdTable = this.avaSalesLineHasProduction();
+
+            if(avaProdTable.RecId)
+            {
+                this.SalesQty = this.orig().salesQty;
+                throw error(strFmt("@NDX:NXAQtyChangeProdTableError", avaProdTable.ProdId, avaProdTable.ProdStatus));
+            }
+        }
+
+        if (this.LineAmount != this.orig().lineAmount || this.SalesPrice != this.orig().salesPrice)
+        {
+            updateEstimate = true;
+        }
+
+        next update(_dropInvent, _childBuffer, _updateOrderLineOfDeliverySchedule, _mcrAutoallocate, _cameFromCreate, _promptSuppItem);
+
+        if (updateEstimate)
+        {
+            this.avaUpdateSalesTableEstimate();
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>delete</Name>
+				<Source><![CDATA[
+    void delete(Common childBuffer, boolean updateOrderLineOfDeliverySchedule)
+    {
+        ProdTable avaProdTable = this.avaSalesLineHasProduction();
+
+        if(avaProdTable.RecId)
+        {
+            throw error(strFmt("@NDX:NXAInventLineDeleteProdTableError", this.ItemId, avaProdTable.ProdId, avaProdTable.ProdStatus));
+        }
+
+        next delete(childBuffer, updateOrderLineOfDeliverySchedule);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSalesLineHasProduction</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if any associated SalesLine record is connected to a ProdTable record
+    /// </summary>
+    /// <returns>ProdTable</returns>
+    public ProdTable avaSalesLineHasProduction()
+    {
+        InventTrans         avaInventTrans;
+        InventTransOrigin   avaInventTransOrigin, avaInventTransOrigin_Prod;
+        ProdTable           avaProdTable;
+
+        select firstonly avaInventTrans
+            join avaInventTransOrigin
+            join avaInventTransOrigin_Prod
+            join avaProdTable
+            where avaInventTrans.InventTransOrigin          == avaInventTransOrigin.RecId
+            && avaInventTrans.MarkingRefInventTransOrigin   == avaInventTransOrigin_Prod.RecId
+            && avaProdTable.InventTransId                   == avaInventTransOrigin_Prod.InventTransId
+            && (avaInventTransOrigin.InventTransId      == this.InventTransId
+                || avaInventTransOrigin.InventTransId   == this.InventTransIdReturn);
+
+        return avaProdTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaPhysAvailInventLocation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 27.02.2024
+    /// </summary>
+    /// <returns>Qty</returns>
+    public Qty  avaPhysAvailInventLocation()
+    {
+        InventDimParm              inventDimParm;
+        Qty                        availQty;
+
+        inventDimParm.InventSiteIdFlag     = NoYes::Yes;
+        inventDimParm.InventLocationIdFlag = NoYes::Yes;
+        inventDimParm.InventStatusFlag   = NoYes::Yes;
+        InventDimParm.InventColorIdFlag    = NoYes::Yes;
+        
+        InventOnHandQty     inventOnHandQty = InventOnHandQty::newItemDim(this.ItemId,this.inventDim(),inventDimParm);
+        availQty   =  inventOnHandQty.availPhysical();
+
+        return availQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAAvailToReserveQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger  27.09.2024
+    /// </summary>
+    /// <returns>Qty</returns>
+    public Qty AVAAvailToReserveQty()
+    {
+        Qty     availToReserveQty;
+        
+        if(this.avaShippingAbility() == AVAShippingAbility::Control)     
+        {
+            availToReserveQty = InventSum::avaPhysicalAvailAbilityForShipping(this.ItemId,this.inventDim());
+        }
+        else
+        {
+            availToReserveQty = this.avaPhysAvailInventLocation();
+        }
+
+        return  availToReserveQty;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAgetMinAvailToReserveQtyFromItemSetComponents</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger  27.09.2024
+    /// </summary>
+    /// <param name = "_isReservedQtyPreCalc">boolean</param>
+    /// <param name = "_reservedQty">Qty</param>
+    /// <returns>Qty</returns>
+    public Qty AVAgetMinAvailToReserveQtyFromItemSetComponents(boolean  _isReservedQtyPreCalc = false, Qty          _reservedQty = 0)
+    {
+        Qty         itemSetAvailToReservQty;
+        Qty         itemSetreservedQty;
+        Qty         componentAvailPhys;
+        Qty         itemSetAvailPhys;
+        SalesLine   componentSalesLine;
+        boolean     firstComp = true;
+
+        while select componentSalesLine
+            where componentSalesLine.SalesId == this.SalesId
+            && componentSalesLine.AVAItemSetComponent == NoYes::Yes
+            && componentSalesLine.AVAItemSetParent    == this.InventTransId
+        {
+            if (firstComp)
+            {
+                if (_isReservedQtyPreCalc)
+                {
+                    itemSetreservedQty = _reservedQty;
+                }
+                else
+                {
+                    SalesQty locCompReservedQty        = componentSalesLine.reservedPhysicalInSalesUnit();
+                    itemSetreservedQty               = componentSalesLine.AVAItemSetCompQtyPerSerie != 0 ? locCompReservedQty * componentSalesLine.AVAItemSetSerie / componentSalesLine.AVAItemSetCompQtyPerSerie : locCompReservedQty * componentSalesLine.AVAItemSetSerie;
+                }
+                itemSetAvailToReservQty = componentSalesLine.AVAItemSetCompQtyPerSerie != 0 ? roundDown((componentSalesLine.RemainInventPhysical * componentSalesLine.AVAItemSetSerie / componentSalesLine.AVAItemSetCompQtyPerSerie),0) : componentSalesLine.RemainInventPhysical * componentSalesLine.AVAItemSetSerie;
+                //itemSetAvailToReservQty -= itemSetreservedQty;
+                firstComp = false;
+            }
+            componentAvailPhys = componentSalesLine.AVAAvailToReserveQty();
+            itemSetAvailPhys   = componentSalesLine.AVAItemSetCompQtyPerSerie != 0 ? roundDown((componentAvailPhys * componentSalesLine.AVAItemSetSerie / componentSalesLine.AVAItemSetCompQtyPerSerie),0) : componentAvailPhys * componentSalesLine.AVAItemSetSerie;
+            itemSetAvailToReservQty   =  itemSetAvailPhys < itemSetAvailToReservQty ? itemSetAvailPhys : itemSetAvailToReservQty;
+        }
+        return      itemSetAvailToReservQty;
+        //return      itemSetAvailToReservQty - _reservedQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public void  insert(boolean     _dropInvent,
+                        boolean     _findMarkup,
+                        Common      _childBuffer,
+                        boolean     _skipCreditLimitCheck,
+                        boolean     _skipWHSProcesses,
+                        InventRefTransId _interCompanyInventTransId)
+    {
+        next insert(_dropInvent, _findMarkup, _childBuffer, _skipCreditLimitCheck, _skipWHSProcesses, _interCompanyInventTransId);
+        if (!this.AVAItemSetComponent)
+        {
+            this.avaUpdateSalesTableEstimate();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setInventDimIdFromInventDim</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/06/02  AVA_013382_FallbackInventLocation
+    /// </summary>
+    /// <param name = "_inventDim">InventDim</param>
+    public void setInventDimIdFromInventDim(InventDim _inventDim)
+    {
+        InventDim   inventDim;
+
+        inventDim = InventDim::findOrCreate(_inventDim);
+        if (inventDim.InventSiteId && !inventDim.InventLocationId)
+        {
+            inventDim.InventLocationId = InventSite::find(inventDim.InventSiteId).AVAInventLocationIdDefault;
+        }
+
+        next setInventDimIdFromInventDim(inventDim);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ndxValidateColor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NDX Check if Color is set
+    /// </summary>
+    /// <param name = "_isHeaderCheck"></param>
+    public void ndxValidateColor(boolean _isHeaderCheck = false)
+    {
+        InventDim lInventDim = InventDim::find(this.InventDimId);
+
+        if(lInventDim && _isHeaderCheck && lInventDim.InventColorId == 'RAL 0000')
+        {
+            throw error(strfmt("@NDX:NDXColorCheckFailed", this.ItemId, this.LineNum));
+        }
+        else if(lInventDim && _isHeaderCheck && lInventDim.InventColorId == 'RAL 0000')
+        {
+            warning(strFmt("@NDX:NDXColorCheckFailed", this.ItemId, this.LineNum));
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

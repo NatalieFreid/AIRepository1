@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADimensionAttributeValueTotallingCriteria_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA_007510_SumLedgerAccounts update RuleSources after Update on SumAccount
+/// </summary>
+[ExtensionOf(tableStr(DimensionAttributeValueTotallingCriteria))]
+final class AVADimensionAttributeValueTotallingCriteria_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>delete</Name>
+				<Source><![CDATA[
+    public void delete()
+    {
+        next delete();
+        this.AVAupdateLedgerAllocRules();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    public void update()
+    {
+        next update();
+        this.AVAupdateLedgerAllocRules();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public void insert()
+    {
+        next insert();
+        this.AVAupdateLedgerAllocRules();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAupdateLedgerAllocRules</Name>
+				<Source><![CDATA[
+    private void AVAupdateLedgerAllocRules(RefRecId _dimAttributeValue = this.DimensionAttributeValue)
+    {
+        MainAccount                                 mainAccount;
+        DimensionAttributeValue                     dimensionAttributeValue;
+        DimensionAttributeValueTotallingCriteria    totallingCriteria;
+        LedgerAllocationRuleSource                  ruleSource;
+        LedgerAllocationBasisRuleSource             basisRuleSource;
+
+        select firstonly dimensionAttributeValue
+             where dimensionAttributeValue.RecId == _dimAttributeValue
+                && dimensionAttributeValue.DimensionAttribute == DimensionAttribute::getWellKnownDimensionAttribute(DimensionAttributeType::MainAccount)
+            join MainAccount where MainAccount.RecId == dimensionAttributeValue.EntityInstance
+            && mainAccount.Type == DimensionLedgerAccountType::Total;
+        if (mainAccount.MainAccountId)
+        {
+            while select forupdate ruleSource where ruleSource.FieldSetting == LedgerAllocationAccountDimension::SumAccount
+                                                && ruleSource.SourceCriteria == mainAccount.MainAccountId
+            {
+                ruleSource.update();
+            }
+            while select forupdate basisRuleSource where basisRuleSource.FieldSetting == LedgerAllocationAccountDimension::SumAccount
+                                                && basisRuleSource.BasisCriteria == mainAccount.MainAccountId
+            {
+                basisRuleSource.update();
+            }
+            while select totallingCriteria
+                where mainAccount.MainAccountId >= totallingCriteria.FromValue
+                    && mainAccount.MainAccountId <= totallingCriteria.ToValue
+            {
+                select firstonly dimensionAttributeValue
+                         where dimensionAttributeValue.RecId == totallingCriteria.DimensionAttributeValue
+                            && dimensionAttributeValue.DimensionAttribute == DimensionAttribute::getWellKnownDimensionAttribute(DimensionAttributeType::MainAccount)
+                        join MainAccount where MainAccount.RecId == dimensionAttributeValue.EntityInstance
+                        && mainAccount.Type == DimensionLedgerAccountType::Total;
+                if (mainAccount.MainAccountId)
+                {
+                    while select forupdate ruleSource where ruleSource.FieldSetting == LedgerAllocationAccountDimension::SumAccount
+                                                && ruleSource.SourceCriteria == mainAccount.MainAccountId
+                    {
+                        ruleSource.update();
+                    }
+                    while select forupdate basisRuleSource where basisRuleSource.FieldSetting == LedgerAllocationAccountDimension::SumAccount
+                                                && basisRuleSource.BasisCriteria == mainAccount.MainAccountId
+                    {
+                        basisRuleSource.update();
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

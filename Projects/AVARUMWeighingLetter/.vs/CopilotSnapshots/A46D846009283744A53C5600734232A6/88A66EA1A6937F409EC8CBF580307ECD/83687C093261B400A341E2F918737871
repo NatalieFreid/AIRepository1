@@ -1,0 +1,132 @@
+﻿# AVARUMWeighingLetter SSRS Report
+
+## Overview
+This D365 Finance & Operations SSRS report generates Weighing Letter documents from Sales or Purchase weighing result records. It replaces legacy form-based report logic with a clean SSRS Report Data Provider (RDP) architecture.
+
+## Model
+**AVARubinMuehle**
+
+## Created Objects
+
+### 1. Temporary Table
+- **AVARUMWeighingLetterTmp** (`AxTable/AVARUMWeighingLetterTmp.xml`)
+  - Type: TempDB
+  - Contains all denormalized fields for weighing letter output
+  - Fields: Company info, customer/vendor details, weighing data
+
+### 2. Classes
+- **AVARUMWeighingLetterContract** (`AxClass/AVARUMWeighingLetterContract.xml`)
+  - Data contract extending `SysOperationDataContractBase`
+  - Parameters: weighingType, callerTableId, callerRecId
+  
+- **AVARUMWeighingLetterDP** (`AxClass/AVARUMWeighingLetterDP.xml`)
+  - Data provider extending `SrsReportDataProviderPreProcessTempDB`
+  - Processes both Sales and Purchase weighing results
+  - Helper method: `timeStamp2Str()` for date/time formatting
+
+- **AVARUMWeighingLetterController** (`AxClass/AVARUMWeighingLetterController.xml`)
+  - Controller extending `SrsReportRunController`
+  - Selects design based on `RUMWeighingParameters.WeighingLetterBlank`
+  - Handles printer settings configuration
+
+### 3. Report
+- **AVARUMWeighingLetter** (`AxReport/AVARUMWeighingLetter.xml`)
+  - Dataset: AVARUMWeighingLetterDS
+  - Two designs:
+    - **AVARUMWeighingLetterBlankPaper** - Full layout with company header
+    - **AVARUMWeighingLetterPrePrinted** - Minimal layout for pre-printed forms
+
+### 4. Menu Item
+- **AVARUMWeighingLetter** (`AxMenuItemOutput/AVARUMWeighingLetter.xml`)
+  - Type: Output
+  - Object: AVARUMWeighingLetterController
+  - EnumTypeParam: RUMWeighingType
+
+### 5. Labels
+- **AVARUMWeighingLetter_en-US.xml** - English labels
+- **AVARUMWeighingLetter_de.xml** - German labels
+
+## Label IDs
+All labels use the prefix `@AVARUMWeighingLetter:`
+
+| Label ID | en-US | de |
+|----------|-------|-----|
+| MenuItemLabel | Weighing Letter | Wiegebrief |
+| SalesIdCaption | Sales Order | Verkaufsauftrag |
+| PurchIdCaption | Purchase Order | Bestellung |
+| CompanyNameCaption | Company | Unternehmen |
+| DeliveryLocationCaption | Delivery Location | Lieferort |
+| VoucherCaption | Voucher No. | Belegnummer |
+| TimestampCaption | Timestamp | Zeitstempel |
+| IdentificationCaption | Identification | Identifikation |
+| SecondWeighCaption | Second Weighing | Zweite Wiegung |
+| FirstWeighCaption | First Weighing | Erste Wiegung |
+
+## Usage
+The menu item is called from the action pane of forms displaying:
+- RUMSalesWeighingResult
+- RUMPurchWeighingResult
+
+The weighing type (FirstWeighing/SecondWeighing) is passed via `parmEnum()`.
+
+## Technical Details
+
+### Data Flow
+1. User invokes menu item from weighing result form
+2. Controller reads `RUMWeighingParameters` to select design
+3. Contract receives caller record and weighing type
+4. Data provider:
+   - Reads weighing result record (Sales or Purchase)
+   - Populates company information
+   - Formats timestamps and identification
+   - Inserts record into temp table
+5. SSRS renders selected design
+
+### Design Selection
+- **BlankPaper**: Used when `RUMWeighingParameters.WeighingLetterBlank = Yes`
+  - Includes full company header with logo
+  - Complete field labels
+- **PrePrinted**: Used when `RUMWeighingParameters.WeighingLetterBlank = No`
+  - Minimal layout
+  - Assumes pre-printed letterhead
+
+### Conditional Visibility
+The second weighing section is conditionally visible based on:
+```
+=IIF(Fields!SecondWeighing.Value = 1, False, True)
+```
+
+## File Structure
+```
+AVARubinMuhle/
+├── AxTable/
+│   └── AVARUMWeighingLetterTmp.xml
+├── AxClass/
+│   ├── AVARUMWeighingLetterContract.xml
+│   ├── AVARUMWeighingLetterDP.xml
+│   └── AVARUMWeighingLetterController.xml
+├── AxReport/
+│   └── AVARUMWeighingLetter.xml
+├── AxMenuItemOutput/
+│   └── AVARUMWeighingLetter.xml
+└── AxLabelFile/
+    ├── AVARUMWeighingLetter_en-US.xml
+    └── AVARUMWeighingLetter_de.xml
+```
+
+## Dependencies
+- RUMSalesWeighingResult (table)
+- RUMPurchWeighingResult (table)
+- RUMWeighingParameters (table)
+- RUMWeighingType (enum)
+- SalesTable, SalesLine
+- PurchTable, PurchLine
+- CompanyInfo
+
+## Next Steps
+1. Import all XML files into Visual Studio D365FO project
+2. Build and synchronize database
+3. Add menu item to weighing result forms
+4. Test with both Sales and Purchase weighing results
+5. Verify design switching based on parameters
+6. Test printer settings suppression for second weighing

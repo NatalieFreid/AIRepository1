@@ -1,0 +1,576 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVARUMDSDFeeManager</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Handles the DSD Fee process, including calculation, reporting, and optional journal creation.
+/// </summary>
+public class AVARUMDSDFeeManager extends RunBaseReport
+{
+    Query localQuery;
+    QueryRun localQueryRun;
+    str aCode;
+    real fee;
+    FromDate aFromDate;
+    ToDate aToDate;
+    NoYes doPrint;
+    AllOpenPosted doPosted;
+    NoYes createJournal;
+    str lastClass;
+    DialogField dialogFromDate;
+    DialogField dialogToDate;
+    DialogField dialogPosted;
+    DialogField dialogPrint;
+    DialogField dialogCreateJournal;
+    AVARUMDSDFeeTable feeTable;
+    AVARUMDSDFeeTable feeTableTmp;
+    Map recordsForUpdate;
+    NumberSequenceCode numberSequenceCode;
+
+    #define.CurrentVersion(5)
+    #localmacro.CurrentList
+        aFromDate,
+        aToDate,
+        doPrint,
+        doPosted,
+        createJournal
+    #endmacro
+               
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns the class description label.
+    /// </summary>
+    /// <returns>The class description label.</returns>
+    static classDescription description()
+    {
+        return "@AVARUM:DSDFeePeriod";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Main entry point for the DSD Fee process.
+    /// </summary>
+    /// <param name="args">Arguments for the process.</param>
+    static void main(Args args)
+    {
+        AVARUMDSDFeeManager  manager;
+        
+        manager = new AVARUMDSDFeeManager();
+
+        if (manager.prompt())
+        {
+            manager.run();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Executes the main logic for the DSD Fee process, including report and update.
+    /// </summary>
+    void run()
+    {
+        MenuFunction menuFunction;
+        Args localArgs = new Args();
+
+        if (this.createLedgerJournal())
+        {
+            if (doPrint && fee != 0)
+            {
+                //super();
+
+                /* ToDo: Transfered from AX2009. Not implemented yet.*/
+                // localArgs.caller(this);
+
+                //menuFunction = new MenuFunction(ReportStr("AVARUMDSDDutyRep"), MenuItemType::Output);
+                //menuFunction.run(localArgs);
+
+                this.updateFeeTable();
+            }
+            else
+            {
+                Global::info("@AVARUM:NoMatchingRecordsFoundForQuery");
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createLedgerJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates a ledger journal if required and calculates the fee.
+    /// </summary>
+    /// <returns>True if the process completes successfully.</returns>
+    boolean createLedgerJournal()
+    {
+        VendAccount vendAccount;
+        LedgerAccount refLedgerAcc;
+        LedgerJournalNameId journalName;
+        AVARUMDSDParameters parameter;
+        LedgerJournalName ledgerJournalName;
+        LedgerJournalTable journalTable;
+        LedgerJournalEngine journalEngine;
+        LedgerJournalTrans journalTrans;
+        Voucher voucher;
+        vendTable VendTable;
+        currency currency;
+        int counter;
+
+        currency = Currency::find(Ledger::accountingCurrency(CompanyInfo::current()));
+
+        ttsbegin;
+
+        feeTableTmp.setTmp();
+        feeTableTmp.clear();
+
+        this.initLocalQuery();
+
+        recordsForUpdate = new Map(Types::Integer, Types::Int64);
+        localQueryRun = new QueryRun(localQuery);
+        counter = 0;
+
+        while (localQueryRun.next())
+        {
+            if (localQueryRun.changed(tableNum(AVARUMDSDFeeTable)))
+            {
+                feeTable = localQueryRun.get(tableNum(AVARUMDSDFeeTable));
+            }
+
+            if (lastClass && lastClass != feeTable.Code)
+            {
+                fee = currency.amount_Instance(fee);
+            }
+
+            lastClass = feeTable.Code;
+            fee = fee + feeTable.Fee;
+
+            counter ++;
+            recordsForUpdate.insert(counter, feeTable.RecId);
+        }
+
+        parameter = AVARUMDSDParameters::find();
+        fee = currency.amount_Instance(fee);
+        fee = currency.amount_Instance(fee * (1 - parameter.AdditionDiscount/100));
+
+        if (fee && createJournal)
+        {
+            /* ToDo: Transfered from AX2009. Not implemented yet.
+            parameter =AVARUMDSDParameters::find();
+            vendAccount = parameter.VendAccount;
+            refLedgerAcc = parameter.RefLedgerAccount;
+            journalName = parameter.JournalName;
+
+            vendTable = VendTable::find(vendAccount);
+            ledgerJournalName = LedgerJournalName::find(journalName);
+
+            if (ledgerJournalName.RecId == 0)
+            {
+                ttsabort;
+                throw error(strFmt(LedgerJournalName::txtNotExist(),journalName));
+            }
+
+            journalTable.Name = 'DSD-Abgabe ' + Date2Str(systemdateGet(),123,2,2,2,2,4);
+
+            //journalTable.journalNum = lj.newJournalNum(true);
+            journalTable.JournalNum = NumberSeq::newGetNum(LedgerParameters::numRefJournalNum(), false).num();
+
+            journalTable.JournalName = ledgerJournalName.JournalName;
+            journalTable.initFromLedgerJournalName();
+            journalTable.CurrencyCode = vendTable.Currency;
+            journalTable.insert();
+
+            //journalEngine = new LedgerJournalEngine();
+            journalEngine = LedgerJournalEngine::construct(ledgerJournalName.JournalType);
+            journalEngine.ledgerJournalTable(journalTable);
+
+            if (journalTable.RecId == 0)
+            {
+                ttsabort;
+                throw error("@AVARUM:DSDFeeCouldNotCreateJournal");
+            }
+            else
+            {
+                journalTrans.initValue();
+                journalTrans.JournalNum = journalTable.JournalNum;
+                journalTrans.taxItemGroup = TaxParameters::find().taxItemGroup;
+
+                if (journalTable.fixedOffsetAccount)
+                {
+                    journalTrans.offsetAccountType = journalTable.offsetAccountType;
+                    journalTrans.offsetAccount = journalTable.offsetAccount;
+                }
+
+                journalTrans.dimension = journalTable.dimension;
+                voucher = journalEngine.newVoucher(journalTrans);
+                this.newVoucherReserved(voucher);
+
+                if (!voucher)
+                {
+                    ttsabort;
+                    throw error("@SYS26396");
+                }
+
+                journalTrans.voucher = voucher;
+
+                journalTrans.DocumentNum = 'DSD'+Date2Str(systemdateGet(),321,2,0,2,0,2);
+                journalTrans.AccountType = LedgerJournalACType::Vend;
+                journalTrans.  = vendAccount;
+                journalTrans.dosetListCode();
+
+                if (1)
+                {
+                    journalTrans.TaxGroup = '';
+                    journalTrans.postingProfile = VendParameters::find().postingProfile;
+                    journalTrans.tax1099Box = vendTable.tax1099Box;
+                    journalTrans.custVendBankAccountId = vendTable.bankAccount;
+                    journalTrans.bankTransType = VendPaymModeTable::find(vendTable.paymMode).bankTransType;
+                    journalTrans.paymMode = vendTable.paymMode;
+                    journalTrans.paymSpec = vendTable.paymSpec;
+                    journalTrans.payment = vendTable.PaymDayId;
+                    journalTrans.paymId = vendTable.paymId;
+                    journalTrans.cashDiscCode = vendTable.cashDisc;
+                    journalTrans.VATNumJournal = vendTable.VATNum;
+                }
+
+                journalTrans.currencyCode  = journalTable.currencyCode;
+
+                if (journalTable.fixedExchRate)
+                {
+                    journalTrans.exchRate = journalTable.exchRate;
+                    journalTrans.exchRateSecond = journalTable.exchrateSecondary;
+                    journalTrans.triangulation = journalTable.EUROTriangulation;
+                }
+
+                journalTrans.approved = NoYes::Yes;
+                journalTrans.Approver = curUserId();
+
+                //journalTrans.Company
+                journalTrans.Txt = 'DSD-Abgabe ' + Date2Str(systemdateGet(),123,2,2,2,2,4);
+                //journalTrans.CurrencyCode =
+                journalTrans.AmountCurCredit = fee;
+                journalTrans.OffsetAccountType = LedgerJournalACType::Ledger;
+                journalTrans.OffsetAccount = refLedgerAcc;
+                journalTrans.TransDate = systemdateGet();
+                journalTrans.Due = journalTrans.TransDate;
+                journalTrans.calcBaseAmountMSTIncTaxInCostPrice();
+
+                if (journalTrans.validateWrite())
+                {
+                    journalTrans.insert();
+                }
+            }   */
+        }
+
+        ttscommit;
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates and initializes the dialog for user input.
+    /// </summary>
+    /// <param name="dialog">Optional dialog instance.</param>
+    /// <param name="forceOnClient">Whether to force dialog on client.</param>
+    /// <returns>The dialog instance.</returns>
+    public Object dialog(DialogRunbase dialog = null , boolean forceOnClient = false)
+    {
+        DialogRunbase ret;
+
+        ret = super(dialog, forceOnClient);
+
+        doPosted = AllOpenPosted::Open;
+        ret.addGroup("@SYS29158");
+
+        dialogFromDate = ret.addFieldValue(extendedTypeStr(TransDate), aFromDate,"@SYS26401", "@AVARUM:DSDFeePeriodForCalculation");
+        dialogToDate = ret.addFieldValue(extendedTypeStr(TransDate), aToDate, "@SYS27930", "@AVARUM:DSDFeePeriodForCalculation");
+        dialogPrint = ret.addFieldValue(extendedTypeStr(NoYesid), doPrint, "@SYS920", "@AVARUM:DSDFeePrintReport");
+        dialogPosted = ret.addFieldValue(enumStr(AllOpenPosted), doPosted, "@SYS80242", "@AVARUM:DSDFeeRecalculatedAlreadyBookedRecords");
+        dialogCreateJournal = ret.addFieldValue(extendedTypeStr(NoYesid), createJournal, "@SYS24010", "@AVARUM:DSDFeeShouldCreateJournal");
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFromDialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Retrieves values from the dialog and validates them.
+    /// </summary>
+    /// <returns>True if values are valid; otherwise, false.</returns>
+    public boolean getFromDialog()
+    {
+        boolean ret = true;
+
+        aFromDate = dialogFromDate.value();
+        aToDate = dialogToDate.value();
+        doPrint = dialogPrint.value();
+        doPosted = dialogPosted.value();
+        createJournal = dialogCreateJournal.value();
+
+        if (aFromDate && aToDate && aFromDate > aToDate || !aFromDate || !aToDate)
+        {
+            ret = checkFailed("@AVARUM:DSDFeeDatesRequired");
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initLocalQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes the local query for feeTable table records based on dialog input.
+    /// </summary>
+    void initLocalQuery()
+    {
+        QueryBuildDataSource qbds;
+
+        localQuery = new Query();
+        qbds = localQuery.addDataSource(tablenum(AVARUMDSDFeeTable));
+
+        // Group by
+        qbds.orderMode(OrderMode::ORDERBY);
+        qbds.addSortIndex(indexNum(AVARUMDSDFeeTable, TypeClasseRefIdx));
+
+        // Criteria
+        qbds.addRange(fieldNum(AVARUMDSDFeeTable, InvoiceDate)).value(queryRange(Date2Str(aFromDate, 123, 2, 2, 2, 2, 4), Date2Str(aToDate, 123, 2, 2, 2, 2, 4)));
+
+        switch (doPosted)
+        {
+            case AllOpenPosted::Open:
+                qbds.addRange(fieldNum(AVARUMDSDFeeTable, Entered)).value(queryValue(NoYes::No));
+                break;
+
+            case AllOpenPosted::Posted:
+                qbds.addRange(fieldNum(AVARUMDSDFeeTable, Entered)).value(queryValue(NoYes::Yes));
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initParmDefault</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes default parameter values for the dialog.
+    /// </summary>
+    void  initParmDefault()
+    {
+        doPrint = NoYes::Yes;
+        aToDate = EndMth(PrevMth(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())));
+        aFromDate = EndMth(PrevMth(aToDate)) + 1;
+        
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>lastValueElementName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns the name of the last value element for persistence.
+    /// </summary>
+    /// <returns>The report name.</returns>
+    public identifiername lastValueElementName()
+    {
+        identifiername ret;
+
+        //ret = reportStr(AVARUMDSDDutyRep);
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>newVoucherReserved</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Reserves a voucher number if required by the number sequence.
+    /// </summary>
+    /// <param name="_voucher">The voucher to reserve.</param>
+    void newVoucherReserved(Voucher _voucher)
+    {
+        NumberSeq numberSeqReserve;
+
+        if (NumberSequenceTable::findByNaturalKey(numberSequenceCode).mustReserveChangedNumber())
+        {
+            numberSeqReserve = NumberSeq::newReserveVoucherFromCode(numberSequenceCode, NumberSeqScopeFactory::createDefaultScope(),true);
+            numberSeqReserve.reserve(_voucher);
+            numberSeqReserve.used();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Packs the class state for persistence.
+    /// </summary>
+    /// <returns>Packed container.</returns>
+    public container pack()
+    {
+        return [#CurrentVersion,#CurrentList]+[super()];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmDoPosted</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the posting status parameter.
+    /// </summary>
+    /// <returns>The posting status.</returns>
+    public AllOpenPosted parmDoPosted()
+    {
+        return doPosted;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmFromDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the from date parameter.
+    /// </summary>
+    /// <returns>The from date.</returns>
+    FromDate parmFromDate()
+    {
+        return aFromDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmToDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the to date parameter.
+    /// </summary>
+    /// <returns>The to date.</returns>
+    ToDate parmToDate()
+    {
+        return aToDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showQueryValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Indicates whether to show query values in the dialog.
+    /// </summary>
+    /// <returns>False, as query values are not shown.</returns>
+    public boolean showQueryValues()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Unpacks the class state from a packed container.
+    /// </summary>
+    /// <param name="packedClass">The packed container.</param>
+    /// <returns>True if unpacked successfully; otherwise, false.</returns>
+    public boolean unpack(container packedClass)
+    {
+        Integer version;
+        Container baseClass;
+        boolean ret;
+
+        version = conpeek(packedClass,1);
+
+        switch (version)
+        {
+            case #CurrentVersion :
+                [version,#CurrentList,baseClass] = packedClass;
+                ret = super(baseClass);
+                break;
+
+            default :
+                return false;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateFeeTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the Entered field for all feeTable records selected for update.
+    /// </summary>
+    void updateFeeTable()
+    {
+        MapIterator iterator = new MapIterator(recordsForUpdate);
+        Counter counter = 0;
+        Counter numOfRecords;
+        RecId currentRecId;
+        AVARUMDSDFeeTable feeTableLocal;
+
+        numOfRecords = recordsForUpdate.elements();
+                
+        ttsbegin;
+
+        while (iterator.more())
+        {
+            currentRecId = iterator.value();
+
+            select firstonly forupdate feeTableLocal
+                where feeTableLocal.RecId == currentRecId;
+
+            if (feeTableLocal)
+            {
+                feeTableLocal.Entered = NoYes::Yes;
+                feeTableLocal.update();
+            }
+
+            counter++;
+            iterator.next();
+        }
+    
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACredManCreditLimitCustGroupLineDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN/2024/11/19         AVA_012782_UpdateCreditLimitGroupValues
+/// </summary>
+[ExtensionOf(tableStr(CredManCreditLimitCustGroupLine))]
+final class AVACredManCreditLimitCustGroupLineDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaUpdateCreditLimitExceed</Name>
+				<Source><![CDATA[
+    private void avaUpdateCreditLimitExceed(CredManCreditLimitCustGroup _crlCustGroup)
+    {
+        AVACreditLimitExceed            creditLimitExceed;
+        AVACreditLimitGroupValues       creditLimitGroupValues;
+
+        //update record  AVACreditLimitExceed
+        select forupdate firstonly creditLimitExceed where creditLimitExceed.CustAccount == _crlCustGroup.AVARiscDebtor
+            && creditLimitExceed.CredManCreditLimitId == _crlCustGroup.CreditLimitId;
+        if (creditLimitExceed)
+        {
+            select sum(SumOpenTrans), sum(SumOrdered) from creditLimitGroupValues where creditLimitGroupValues.CredManCreditLimitId == _crlCustGroup.CreditLimitId;
+            creditLimitExceed.SumOpenTrans          = creditLimitGroupValues.SumOpenTrans;
+            creditLimitExceed.SumOrdered            = creditLimitGroupValues.SumOrdered;
+            creditLimitExceed.SumUsedLimit          = creditLimitExceed.SumOpenTrans + creditLimitExceed.SumOrdered;
+            creditLimitExceed.WorkingLimit          = creditLimitExceed.TotalLimit - creditLimitExceed.InsuredLimit;
+            if (creditLimitExceed.InsuredLimit > 0 && creditLimitExceed.SumUsedLimit > creditLimitExceed.InsuredLimit)
+            {
+                creditLimitExceed.InsuredExceed     = creditLimitExceed.SumUsedLimit - creditLimitExceed.InsuredLimit;
+            }
+            if (!creditLimitExceed.InsuredLimit)
+            {
+                creditLimitExceed.InsuredExceed     = creditLimitExceed.SumUsedLimit;
+            }
+            if (creditLimitExceed.SumUsedLimit > creditLimitExceed.TotalLimit)
+            {
+                creditLimitExceed.TotalExceed       = creditLimitExceed.SumUsedLimit - creditLimitExceed.TotalLimit;
+            }
+            creditLimitExceed.update();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCreateGroupValuesCalculation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/11/19         AVA_012782_UpdateCreditLimitGroupValues
+    /// </summary>
+    public void avaCreateGroupValuesCalculation()
+    {
+        AVACreditLimitGroupValues       creditLimitGroupValues;
+        CredManCreditLimitCustGroup     crlCustGroup;
+        SalesTable                      salesTable;
+        CustTable                       custTable;
+
+        select firstonly crlCustGroup where crlCustGroup.RecId == this.CreditLimitCustGroup;
+        custTable       = CustTable::find(this.CustAccount);
+        
+        //insert new record  AVACreditLimitGroupValues
+        creditLimitGroupValues.selectForUpdate();
+        creditLimitGroupValues.CredManCreditLimitId = crlCustGroup.CreditLimitId;
+        creditLimitGroupValues.CustAccount          = this.CustAccount;
+        creditLimitGroupValues.CustName             = custTable.name();
+        creditLimitGroupValues.AVARiscDebtor        = crlCustGroup.AVARiscDebtor;
+        creditLimitGroupValues.SumOpenTrans         = AVAFCMGroupTable::getInvoicedAmountWithoutTaxesWithMarkupsByCustTable(custTable);
+        select sum(AVAFPLNetEstimate) from Salestable where salesTable.CustAccount == this.CustAccount && salesTable.SalesStatus != SalesStatus::Invoiced;
+        creditLimitGroupValues.SumOrdered           = AVAFCMGroupTable::getNotInvoicedBalanceMSTByCustTable(custTable);
+        creditLimitGroupValues.SumUsedLimit         = creditLimitGroupValues.SumOpenTrans + creditLimitGroupValues.SumOrdered;
+        creditLimitGroupValues.insert();  
+        this.avaUpdateCreditLimitExceed(crlCustGroup);
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDeleteGroupValuesCalculation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/11/19         AVA_012782_UpdateCreditLimitGroupValues
+    /// </summary>
+    public void avaDeleteGroupValuesCalculation()
+    {
+        AVACreditLimitGroupValues       creditLimitGroupValues;
+        CredManCreditLimitCustGroup     crlCustGroup;
+
+        select firstonly crlCustGroup where crlCustGroup.RecId == this.CreditLimitCustGroup;
+ 
+        delete_from creditLimitGroupValues where creditLimitGroupValues.CredManCreditLimitId == crlCustGroup.CreditLimitId
+                                              && creditLimitGroupValues.CustAccount == this.CustAccount;
+
+        this.avaUpdateCreditLimitExceed(crlCustGroup);
+   
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>delete</Name>
+				<Source><![CDATA[
+    public void delete()
+    {
+        this.avaDeleteGroupValuesCalculation();
+
+        next delete();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

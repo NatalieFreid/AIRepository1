@@ -1,0 +1,315 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADAIReportService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Summary setup data for report.
+/// </summary>
+class AVADAIReportService
+{
+    AVADAIParameters        parameters;
+    AVADAIReport            reportSetup;
+    Map                     dataSources;
+    Map                     aliases;
+    Map                     ignoreArchive;
+    //report setup
+    AVADAIReportMetadata    metadata;
+    //document key
+    TableId                 documentNumTableId;
+    AVADAITableFieldMethod  documentNumFieldName;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>findRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   init metadata and setup
+    /// </summary>
+    /// <param name = "_report">The report name.</param>
+    /// <param name = "_design">The design name.</param>
+    private void findRecord(AVADAIReportName _report, AVADAIReportDesign _design)
+    {
+        AVADAIReportMetadataField   exportMetadata;
+        Set                         fieldsMethods;
+        str                         fieldMethod;
+
+        if (AVADAIServer::findServer(parameters.ServerId).ExportActive == NoYes::No)
+        {
+            reportSetup.clear();
+            return;
+        }
+
+        if (_report != reportSetup.Report && _design != reportSetup.Design)
+        {
+            //find report setup
+            reportSetup = AVADAIReport::find(parameters.ServerId, _report, _design);
+            
+            //make metadata definition
+            dataSources = new Map(Types::Integer, Types::Class);
+            if (this.isDAIMetadataExport())
+            {
+                metadata = AVADAIReportMetadata::find(reportSetup.MetaDataId);
+
+                while select exportMetadata
+                        where exportMetadata.MetaDataId == reportSetup.MetaDataId
+                {
+
+                    fieldMethod = exportMetadata.FieldMethod;
+
+                    //check document number
+                    if (exportMetadata.DocumentKey)
+                    {
+                        documentNumTableId      = tableName2Id(exportMetadata.Table);
+                        documentNumFieldName    = fieldMethod;
+                    }
+
+                    if (dataSources.exists(tableName2Id(exportMetadata.Table)))
+                    {
+                        fieldsMethods = dataSources.lookup(tableName2Id(exportMetadata.Table));
+                    }
+                    else
+                    {
+                        fieldsMethods = new Set(Types::String);
+                    }
+
+                    fieldsMethods.add(fieldMethod);
+
+                    if (exportMetadata.Alias)
+                    {
+                        aliases.insert(strfmt('%1_%2', tableName2Id(exportMetadata.Table), exportMetadata.FieldMethod), exportMetadata.Alias);
+                    }
+
+                    //fill the map with all ignoreArchive
+                    if (exportMetadata.IgnoreArchive)
+                    {
+                        ignoreArchive.insert(strfmt('%1_%2', tableName2Id(exportMetadata.Table), exportMetadata.FieldMethod), exportMetadata.IgnoreArchive);
+                    }
+
+                    dataSources.insert(tableName2Id(exportMetadata.Table), fieldsMethods);
+
+                }
+                        
+            }
+
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   init parameters
+    /// </summary>
+    protected void new()
+    {
+
+        parameters      = AVADAIParameters::find();
+        dataSources     = new Map(Types::Integer, Types::Class);
+        aliases         = new Map(Types::String, Types::String);
+        ignoreArchive   = new Map(Types::String, Types::Enum);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   is report for DMS archive
+    /// </summary>
+    /// <param name="_report">The report to check</param>
+    /// <param name="_design">The design to check</param>
+    public void parmReport(AVADAIReportName _report, AVADAIReportDesign _design)
+    {
+        this.findRecord(_report, _design);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isDAIReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   is report for DMS archive
+    /// </summary>
+    /// <returns>
+    ///  has data
+    /// </returns>
+    public boolean isDAIReport()
+    {
+        return reportSetup.RecId != 0 && reportSetup.Active == NoYes::Yes;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isDAIMetadataExport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   is report for DMS archive
+    /// </summary>
+    /// <returns>
+    ///   export report data
+    /// </returns>
+    public boolean isDAIMetadataExport()
+    {
+
+        return reportSetup.ExportMetadata && (reportSetup.MetaDataId != '') && reportSetup.Active == NoYes::Yes;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isDAIReportExport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   is report for DMS archive
+    /// </summary>
+    /// <returns>
+    ///   PDF archive
+    /// </returns>
+    public boolean isDAIReportExport()
+    {
+        return reportSetup.ExportReport && reportSetup.Active == NoYes::Yes;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMetadata</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   is report for DMS archive
+    /// </summary>
+    /// <returns>
+    ///   
+    /// </returns>
+    public AVADAIReportMetadata getMetadata()
+    {
+        return this.metadata;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMetadataDefinition</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   exported fields
+    /// </summary>
+    /// <returns>
+    ///
+    /// </returns>
+    public Map getMetadataDefinition()
+    {
+        return dataSources;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAliasesDefinition</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   exported fields
+    /// </summary>
+    /// <returns>
+    ///  Alias information
+    /// </returns>
+    public Map getAliasesDefinition()
+    {
+        return aliases;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getIgnoreArchiveDefinition</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   ignoreArchive 
+    /// </summary>
+    /// <returns>
+    ///  map with als ignoreArchive 
+    /// </returns>
+    public Map getIgnoreArchiveDefinition()
+    {
+        return ignoreArchive ;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDocumentKey</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   exported fields
+    /// </summary>
+    /// <returns>
+    ///  document identification
+    /// </returns>
+    public Container getDocumentKey()
+    {
+        return [documentNumTableId, documentNumFieldName];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isDAIEnabled</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   is report for DMS archive
+    /// </summary>
+    /// <returns>
+    ///  report active
+    /// </returns>
+    public boolean isDAIEnabled()
+    {
+        return parameters.Enabled;  
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getReportSetup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   report properties
+    /// </summary>
+    /// <returns>
+    ///  export settings
+    /// </returns>
+    public AVADAIReport getReportSetup()
+    {
+        return reportSetup;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   construct
+    /// </summary>
+    /// <returns>
+    ///  <c>AVADAIReportService</c>
+    /// </returns>
+    public static AVADAIReportService construct()
+    {
+        return new AVADAIReportService();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

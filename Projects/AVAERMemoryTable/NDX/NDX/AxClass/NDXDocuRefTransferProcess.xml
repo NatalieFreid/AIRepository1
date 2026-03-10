@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXDocuRefTransferProcess</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+internal final class NDXDocuRefTransferProcess extends NDXTransferToD365 implements NDXTransferToD365Interface
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>writeDocuRef</Name>
+				<Source><![CDATA[
+    private void writeDocuRef(Niedax.AX.TableRecordModels.TableRecord _record)
+    {
+        System.Exception ex;
+
+        DocuRef lDocuRef;
+        DocuValue lDocuValue;
+        DictTable lDictTable;
+        Common common;
+
+        AVADocuRestrictionReference lAVADocuRestrictionReference;
+    
+        Niedax.AX.TableRecordModels.DocuRef docuRef = _record;
+
+        str message = strFmt("DocRef %1 entered on %2", docuRef.ToString(), this.environment);
+        
+        try
+        {
+            TableId tableid = tableName2Id(docuRef.RefTableName);
+            lDictTable = new DictTable(tableid);
+            common = lDictTable.makeRecord();
+
+            select crosscompany:[docuRef.ActualCompanyId] common
+                where common.RecId == docuRef.RefRecId;
+
+            if(common && docuRef != null)
+            {
+                System.IO.Stream stream;
+                str realFilename;
+
+                if(docuRef.Name == '')
+                {
+                    docuRef.Name = 'N/A';
+                }
+            
+                if(docuRef.DocuValue != null && docuRef.DocuValue.MStream != null)
+                {
+                    stream = docuRef.DocuValue.MStream;
+                    realFilename = docuRef.DocuValue.Filename + '.' + docuRef.DocuValue.FileType;
+                    lDocuRef = DocumentManagement::attachFileToCommon(common, docuRef.TypeId, stream, realFilename , docuRef.DocuValue.FileType, docuRef.Name, docuRef.Notes);
+                }
+                else
+                {
+                    lDocuRef = DocumentManagement::attachNoteToCommon(common, docuRef.TypeId, docuRef.Name, docuRef.Notes);
+                }
+            
+                if(lDocuRef)
+                {
+                    lDocuValue = DocuValue::find(lDocuRef.ValueRecId, true);
+
+                    if(lDocuValue)
+                    {
+                        ttsbegin;
+                        lDocuValue.FileType = docuRef.DocuValue.FileType;
+                        lDocuValue.OriginalFileName =  realFilename;
+                        lDocuValue.doUpdate();
+                        ttscommit;
+                        message = strFmt("Document value file %1 inserted or found on %2", docuRef.DocuValue.Filename, this.environment);
+                    }
+                    else
+                    {
+                        message = strFmt("No Document Value for %1 on %2", docuRef.Name, this.environment);
+                    }
+                
+                    response.Success = true;
+                    
+                    lDocuRef.selectForUpdate(true);
+                    lDocuRef.Restriction = docuRef.Restriction;
+                    
+                    lDocuRef.KCS_GAEBImport = docuRef.KCS_GAEBIMPORT;
+                    lDocuRef.KCS_TCVCopyToProd = docuRef.KCS_TCVCOPYTOPROD;
+                    lDocuRef.KCS_TCVCopyToPurch = docuRef.KCS_TCVCOPYTOPURCH;
+                    lDocuRef.KCS_TCVCopyToPurchRFQ = docuRef.KCS_TCVCOPYTOPURCHRFQ;
+                    lDocuRef.KCS_TCVCopyToSale = docuRef.KCS_TCVCOPYTOSALE;
+                    lDocuRef.KCS_TCVGroupId = docuRef.KCS_TCVGROUPID;
+                    lDocuRef.KCS_TCVId = docuRef.KCS_TCVID;
+                    lDocuRef.KCS_TCVLanguageId = docuRef.KCS_TCVLANGUAGEID;
+                    
+                    //lDocuRef.KCS_TCVLineNum = docuRef.KCS_TCVLINENUM;
+                    
+                    lDocuRef.KCS_TCVNotePosition = docuRef.KCS_TCVNOTEPOSITION;
+                    lDocuRef.KCS_TCVPrintOnConfirm = docuRef.KCS_TCVPRINTONCONFIRM;
+                    lDocuRef.KCS_TCVPrintOnInvoice = docuRef.KCS_TCVPRINTONINVOICE;
+                    lDocuRef.KCS_TCVPrintOnPackingSlip = docuRef.KCS_TCVPRINTONPACKINGSLIP;
+                    lDocuRef.KCS_TCVPrintOnPickingList = docuRef.KCS_TCVPRINTONPICKINGLIST;
+                    lDocuRef.KCS_TCVPrintOnProduction = docuRef.KCS_TCVPRINTONPRODUCTION;
+                    lDocuRef.KCS_TCVPrintOnPurchaseOrder = docuRef.KCS_TCVPRINTONPURCHASEORDER;
+                    lDocuRef.KCS_TCVPrintOnPurchRFQ = docuRef.KCS_TCVPRINTONPURCHRFQ;
+                    lDocuRef.KCS_TCVPrintOnQuotation = docuRef.KCS_TCVPRINTONQUOTATION;
+                    lDocuRef.KCS_TCVWarningNote = docuRef.KCS_TCVWARNINGNOTE;
+
+                    if(docuRef.KCS_PROPFONTBOLD)
+                    {
+                        lDocuRef.AVAFormat = AVAFormat::Bold;
+                    }
+
+                    if(docuRef.KCS_PROPFONTUNDERLINE)
+                    {
+                        lDocuRef.AVAFormat = AVAFormat::Underscore;
+                    }
+
+                    if(docuRef.KCS_PROPFONTBOLD && docuRef.KCS_PROPFONTUNDERLINE)
+                    {
+                        lDocuRef.AVAFormat = AVAFormat::BoldUnderscore;
+                    }
+                    
+                    ttsbegin;
+                    lDocuRef.update();
+                    ttscommit;
+
+                    AVADocuRestrictionReference::updateOrCreate(lDocuRef.RecId, docuRef.NDDocuRestriction, true);
+                }
+                else
+                {
+                    message = strFmt("Document not inserted", docuRef.Name, this.environment);
+                }
+            }
+            else
+            {
+                message = "common or docuRef problems";
+                if(docuRef == null)
+                {
+                    throw error("docuRef is null");
+                }
+                
+                if(!common)
+                {
+                    throw error(strFmt("Common record is null found TableName: %1, Company: %2, RefRecId: %3",docuRef.RefTableName, docuRef.ActualCompanyId, docuRef.RefRecId));
+                }
+
+                
+            }
+        }
+        catch(ex)
+        {
+            response.RecId = 0;
+            message += strFmt("Document not inserted", docuRef.Name, this.environment);
+            message = message + "-" + ex.Message;
+        }
+
+        response.Message = message;
+        response.RecId = lDocuRef.RecId;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>writeRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates or creates corresponding record
+    /// </summary>
+    /// <param name = "_record">record instance</param>
+    /// <returns>Response</returns>
+    public Niedax.D365.API.Models.D365_APIResponse writeRecord(Niedax.AX.TableRecordModels.TableRecord _record)
+    {
+        this.writeDocuRef(_record);
+        return response;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    static void main(Args args = new Args())
+    {
+        KCS_KBVBuildingProjectTable lKCS_KBVBuildingProjectTable;
+        KCS_KBVRequestTable lKCS_KBVRequestTable;
+        SalesQuotationTable lSalesQuotationTable;
+
+        DocuRef lDocuRef;
+
+        Dialog                  dialog;
+        DialogField             dfName;
+        DialogField             dfAmount;
+        str                     bv;
+
+        // Create dialog with title
+        dialog = new Dialog("Clean Docu Refs");
+
+        // Add fields to dialog
+        dfName   = dialog.addField(extendedTypeStr(Name), "BV");
+        
+
+        // Run dialog
+        if (dialog.run())
+        {
+            // Retrieve values entered by user
+            bv   = dfName.value();
+        }
+
+
+        if(bv != '')
+        {        
+            select crosscompany lKCS_KBVBuildingProjectTable
+                where  lKCS_KBVBuildingProjectTable.KCS_KBVBuildingProjectID == bv;
+        
+            if(lKCS_KBVBuildingProjectTable)
+            {
+                delete_from lDocuRef
+                    where lDocuRef.RefRecId == lKCS_KBVBuildingProjectTable.RecId
+                    && lDocuRef.RefTableId == tableNum(KCS_KBVBuildingProjectTable);
+
+            }
+
+
+            while select crosscompany lKCS_KBVRequestTable
+                where lKCS_KBVRequestTable.KCS_KBVBuildingProjectID == bv
+            {
+                changecompany(lKCS_KBVRequestTable.DataAreaId)
+                {
+                    delete_from lDocuRef
+                        where lDocuRef.RefRecId == lKCS_KBVRequestTable.RecId
+                            && lDocuRef.RefTableId == tableNum(KCS_KBVRequestTable);
+                }
+            
+            }
+        
+
+            while select crosscompany lSalesQuotationTable
+                where lSalesQuotationTable.KCS_KBVBuildingProjectID == bv
+            {
+                changecompany(lSalesQuotationTable.DataAreaId)
+                {
+                    delete_from lDocuRef
+                        where lDocuRef.RefRecId == lSalesQuotationTable.RecId
+                            && lDocuRef.RefTableId == tableNum(SalesQuotationTable);
+                }
+            
+            }
+        }
+
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

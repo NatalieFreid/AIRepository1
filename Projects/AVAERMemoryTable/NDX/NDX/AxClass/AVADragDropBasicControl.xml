@@ -1,0 +1,541 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADragDropBasicControl</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+Using Microsoft.Dynamics.Platform.Integration.SharePoint;
+/// <summary>
+/// N.Freidenberger 08.03.2024
+/// </summary>
+[FormControlAttribute('AVADragDropBasicControl','/Resources/html/AVADragDropBasicControl',classStr(AVADragDropBasicControlBuild))]
+internal final class AVADragDropBasicControl        extends FormTemplateControl
+{
+    DocuType                sharePointDocuType;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 08.03.2024
+    /// </summary>
+    /// <param name = "_build">_build</param>
+    /// <param name = "_formRun">_formRun</param>
+    protected void new(FormBuildControl _build, FormRun _formRun)
+    {
+        super(_build, _formRun);
+        this.setTemplateId('AVADragDropBasicControl');
+        this.setResourceBundleName('/Resources/Html/AVADragDropBasicControl');
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>uploadFile</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 08.03.2024
+    /// last modified: Paffh 27.11.24
+    /// </summary>
+    /// <param name = "_fileName">_fileName</param>
+    /// <param name = "_content">_content</param>
+    [FormCommandAttribute("UploadFile")]
+    private void uploadFile(str _fileName = '', str _content = '')
+    {
+        NDXIDragAndDrop nDXDragAndDrop;
+        DocuRef         docuref;
+        Object formRunObj = this.formRun();
+        FormRun locFormRun;
+        boolean uploaded = false;
+        RecId actualRecId;
+        TableId actualTableId;
+        DataAreaId  concreteCompanyId;
+        DataAreaId  refCompanyId;
+        DocuTypeId docuTypeId;
+        if(formRunObj)
+        {
+            locFormRun = this.formRun();
+            boolean createDocuRefFromActiveRec = false;
+            FormDataSource fds;
+            if (formRunObj is NDXIDragAndDrop)
+            {
+                nDXDragAndDrop = formRunObj as NDXIDragAndDrop;
+                createDocuRefFromActiveRec = true;
+                actualRecId = nDXDragAndDrop.actualRecId();
+                actualTableId = nDXDragAndDrop.actualTableId();
+                concreteCompanyId = nDXDragAndDrop.concreteCompanyId();
+                refCompanyId = nDXDragAndDrop.refCompanyId();
+                docuTypeId = nDXDragAndDrop.parmDocuTypeId();
+            }
+            else
+            {
+                if(locFormRun.name() == formStr(DocuView))
+                {
+                    createDocuRefFromActiveRec = true;
+                    if(formHasMethod(locFormRun,formMethodStr(DocuView,actualRecId)))
+                    {
+                        actualRecId = locFormRun.actualRecId();
+                    }
+                    if(formHasMethod(locFormRun,formMethodStr(DocuView,actualTableId)))
+                    {
+                        actualTableId = locFormRun.actualTableId();
+                    }
+
+                    if(formHasMethod(locFormRun,formMethodStr(DocuView,concreteCompanyId)))
+                    {
+                        concreteCompanyId = locFormRun.concreteCompanyId();
+                    }
+
+                    if(formHasMethod(locFormRun,formMethodStr(DocuView,refCompanyId)))
+                    {
+                        refCompanyId = locFormRun.refCompanyId();
+                    }
+                }
+            }
+            if (createDocuRefFromActiveRec)
+            {
+                docuref = this.createDocuRefFromActiveRec(actualRecId,actualTableId,concreteCompanyId,refCompanyId,_fileName, docuTypeId);
+
+                if(locFormRun.name() == formStr(DocuView))
+                {
+                    FormDataSource docuRefDS = locFormRun.dataSource(FormDataSourceStr(DocuView,DocuRef)) ;
+                    if (docurefDS)
+                    {
+                        docurefDS.executeQuery();
+                    }
+                }
+            }
+            else
+            {
+                fds = FormDataUtil::getFormDataSource(this.formRun().docCursor());
+
+                if(fds)
+                {
+                    docuRef = this.createDocuRefFromDataSource(fds, _fileName);
+                }
+            }
+
+            if (docuRef)
+            {
+                str filename, ext, path;
+                [path,Filename,ext] = fileNameSplit(_fileName);
+ 
+                System.Byte[] messageBytes = System.Convert::FromBase64String(_content);
+ 
+                System.IO.MemoryStream memoryStream = new System.IO.MemoryStream(messageBytes);
+
+                DocuActionFile docuActionFile = DocuAction::newDocuRef(docuRef);
+                docuActionFile.attachFile(docuRef,_fileName, ext,memoryStream);
+                uploaded = true;
+            }
+        }
+        if(uploaded)
+        {
+            Info(strFmt('Uploaded File "%1"',_fileName));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createDocuRefFromDataSource</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 08.03.2024
+    /// </summary>
+    /// <param name = "fds">fds</param>
+    /// <param name = "_fileName">_fileName</param>
+    /// <returns>DocuRef</returns>
+    public DocuRef createDocuRefFromDataSource(FormDataSource fds, str _fileName = '')
+    {
+        DocuRef docuRef;
+        Common record = fds.cursor();
+ 
+        docuRef = this.createDocuRefFromCommon(record,_fileName);
+ 
+        return docuRef;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createDocuRefFromCommon</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 08.03.2024
+    /// </summary>
+    /// <param name = "record">record</param>
+    /// <param name = "_fileName">_fileName</param>
+    /// <returns>DocuRef</returns>
+    public DocuRef createDocuRefFromCommon(Common record, str _fileName = '')
+    {
+        DocuRef         docuRef;
+        DocuType        docuType;
+
+        select firstonly docuType
+                    where docuType.TypeGroup == DocuTypeGroup::File;
+
+        docuRef.clear();
+        docuRef.RefTableId = record.TableId;
+        docuRef.RefRecId = record.RecId;
+        docuRef.RefCompanyId = record.dataAreaId;
+        docuRef.Name = _fileName;
+        docuRef.TypeId = docuType.TypeId;
+        docuRef.insert();
+ 
+        return docuRef;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findDocuType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 08.03.2024
+    /// </summary>
+    /// <param name = "_fileName">_fileName</param>
+    /// <returns>DocuTypeId</returns>
+    public DocuTypeId       findDocuType(Filename _fileName)
+    {
+        DocuFileTypes               docuFileTypes;
+        DocuTypeId                  docuTypeId;
+
+        docuTypeId = sharePointDocuType.TypeId;
+
+        if (!docuTypeId)
+        {
+            str extension = subStr(_fileName,strFind(_fileName,'.',1,strLen(_fileName))+1,strLen(_fileName));
+
+            select firstonly docuFileTypes
+            where docuFileTypes.FileType == extension;
+            docuTypeId = docuFileTypes.AVADocuTypeId;
+        }
+
+        if (!docuTypeId)
+        {
+            DocuTypeRecId typeRecId = DocuParameters::find().DefaultFileDocuTypeRecId;
+
+            if (typeRecId)
+            {
+                DocuType type = DocuType::findByRecId(typeRecId);
+
+                if (type)
+                {
+                    docuTypeId = type.TypeId;
+                }
+            }
+        }
+
+        if (!docuTypeId)
+        {
+            DocuType    docuType;
+            select firstonly docuType
+                    where docuType.TypeGroup == DocuTypeGroup::File;
+            docuTypeId = docuType.TypeId;
+        }
+        return docuTypeId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createDocuRefFromActiveRec</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 08.03.2024
+    /// last modified: PaffH 27.11.24
+    /// </summary>
+    /// <param name = "_actualRecId">_actualRecId</param>
+    /// <param name = "_actualTableId">_actualTableId</param>
+    /// <param name = "_concreteCompanyId">_concreteCompanyId</param>
+    /// <param name = "_refCompanyId">_refCompanyId</param>
+    /// <param name = "_fileName">_fileName</param>
+    /// <param name = "_docuTypeId">DocuTypeId</param>
+    /// <returns>DocuRef</returns>
+    public DocuRef createDocuRefFromActiveRec(
+        RecId _actualRecId, 
+        TableId _actualTableId, 
+        DataAreaId _concreteCompanyId = curExt(), 
+        DataAreaId _refCompanyId = curExt(), 
+        str _fileName = '',
+        DocuTypeId _docuTypeId = ''
+        )
+    {
+        DocuRef         docuRef;
+
+        docuRef.clear();
+        docuRef.RefTableId = _actualTableId;
+        docuRef.RefRecId = _actualRecId;
+        docuRef.RefCompanyId = curExt();
+        docuRef.Name = _fileName;
+        docuRef.TypeId = (_docuTypeId == '') ? this.findDocuType(_fileName) : _docuTypeId;
+        docuRef.ActualCompanyId = _concreteCompanyId;
+        docuRef.RefCompanyId    = _refCompanyId;
+        docuRef.insert();
+        return docuRef;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>urlUpload</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 08.03.2024
+    /// </summary>
+    /// <param name = "_urlString">_urlString</param>
+    [FormCommandAttribute("urlUpload")]
+    private void urlUpload(str _urlString = '')
+    {
+        str     hostUrl;
+        str     host;
+        str     site;
+        str     folderPath;
+        str     fileIdStr;
+        str     token;
+
+        const str https = 'https://';
+        const str decodeUrl = "/_api/Web/GetFileByServerRelativePath(decodedurl='";
+        const str sites = '/sites/';
+
+        //Check the string holds any URL relevant information for example (Http)
+        if(strScan(_urlString, 'http', 0, strLen(_urlString)) == 0)
+        {
+            return;
+        }
+
+        DocuParameters       docuParameters = DocuParameters::find();
+
+        [hostUrl,host,site,folderPath,fileIdStr] = this.parseDropedUrl(_urlString);
+
+        sharePointDocuType = this.findSharePointDocuType(host,site,folderPath);
+        //select firstonly sharePointDocuType
+        //    where sharePointDocuType.TypeId == 'Zeich_Ext';
+
+        KeyVaultCertificateTable        certificateTable = KeyVaultCertificateTable::findByName(docuParameters.AVASharePointConnectorCertificate);
+        System.Security.Cryptography.X509Certificates.X509Certificate2  certificate =  KeyVaultCertificateHelper::getDigitalCertificate(certificateTable.RecId);
+       
+        if (sharePointDocuType)
+        {
+            System.UriBuilder     builder = new System.UriBuilder(host);
+            
+            AVASharePointConnector.ConnectorHelper   sharePointConnector      = new AVASharePointConnector.ConnectorHelper();
+            
+            Microsoft.SharePoint.Client.ClientContext ClientContext = sharePointConnector.getClientContextWithOwnAuth(hostUrl,docuParameters.AVASharePointConnectorAppId,docuParameters.AVASharePointConnectorTenantId,certificate);
+            Microsoft.SharePoint.Client.File  file = sharePointConnector.findFileById(clientContext,folderPath,str2Int(fileIdStr));
+       
+            if(file)
+            {
+                DocuRef         docuRef = this.createAttachment(file.Name);
+
+                str accessStr = https + Host + sites  + site + decodeUrl  +  sites + site + '/' + folderPath + '/' + file.Name + "')";
+       
+                str fileNameWithoutExtension = System.IO.Path::GetFileNameWithoutExtension(file.Name);
+                str fileExtension = Docu::GetFileExtension(file.Name);
+
+                DocuValue docValue;
+                docValue.initFromDocuRef(docuRef);
+                docValue.FileId = newGuid();
+                docValue.FileName = fileNameWithoutExtension;
+                docValue.FileType = fileExtension;
+                docValue.OriginalFileName = file.Name;
+                docValue.Type = DocuValueType::Others;
+                docValue.path =  https + host + file.ServerRelativeUrl;
+                DocValue.StorageProviderId = DocuStorageProviderType::SharePoint;
+
+                docValue.AccessInformation = accessStr;
+           
+                ttsbegin;
+                if (docValue.validateWrite())
+                {
+                    docValue.insert();
+                    docuRef.selectForUpdate(true);
+                    docuRef.ValueRecId = docValue.RecId;
+                    docuRef.update();
+                }
+                ttscommit;
+            }
+
+        }
+        else  
+        {
+            warning("@NDX:NXANoSharePointFolder");
+        }   
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parseDropedUrl</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 08.03.2024
+    /// </summary>
+    /// <param name = "_urlString">_urlString</param>
+    /// <returns>container</returns>
+    container parseDropedUrl(str _urlString)
+    {
+        str     hostUrl, pathUrl;
+        str     host;
+        str     site;
+        str     folderPath;
+        str     fileIdStr;
+
+        str  dropedStr = _urlString;
+        List dropedStrList = strSplit(dropedStr,',');
+        ListIterator dropedStrListInt = new ListIterator(dropedStrList);;
+        List hostUrlList, pathUrlList;
+        container       conDropedStr;
+        container       conHostUrl, conPathUrl;
+        int             i;
+
+        while (dropedStrListInt.more())
+        {
+            i++;
+            conDropedStr = conIns(conDropedStr,i,dropedStrListInt.value());
+            dropedStrListInt.next();
+        }
+
+        if (conLen(conDropedStr) >= 5)
+        {
+            hostUrl = strRem(conPeek(conDropedStr,2),'\"');
+            hostUrl = strRem(hostUrl,'\\');
+            pathUrl = strRem(conPeek(conDropedStr,3),'\"');
+            pathUrl = strRem(pathUrl,'\\');
+            fileIdStr = strRem(conPeek(conDropedStr,4),'\"');
+            fileIdStr = strRem(fileIdStr,'\\');
+  
+            hostUrlList =  strSplit(hostUrl,'/');
+            pathUrlList =  strSplit(pathUrl,'/');
+
+            ListIterator  hostUrlListIt = new ListIterator(hostUrlList);
+            ListIterator  pathUrlListIt   = new ListIterator(pathUrlList);
+
+            i= 0;
+            while(hostUrlListIt.more())
+            {
+                i++;
+                conHostUrl = conIns(conHostUrl,i,hostUrlListIt.value());
+                hostUrlListIt.next();
+            }
+
+            i= 0;
+            while(pathUrlListIt.more())
+            {
+                i++;
+                conPathUrl = conIns(conPathUrl,i,pathUrlListIt.value());
+                pathUrlListIt.next();
+            }
+            
+            hostUrl += '/';
+            host =   conPeek(conHostUrl,3);
+            site =   conPeek(conHostUrl,5);
+            folderPath = conPeek(conPathUrl,6);
+
+
+        }
+
+        return [hostUrl,host,site,folderPath,fileIdStr];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createAttachment</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 08.03.2024
+    /// </summary>
+    /// <param name = "_fileName">_fileName</param>
+    /// <returns>createAttachment</returns>
+    public DocuRef createAttachment(Filename    _fileName)
+    {
+        DocuRef         docuref;
+        Object formRunObj = this.formRun();
+        boolean uploaded = false;
+        RecId actualRecId;
+        TableId actualTableId;
+        DataAreaId  concreteCompanyId;
+        DataAreaId  refCompanyId;
+        if(formRunObj)
+        {
+            FormDataSource fds;
+ 
+            FormRun     locFormRun = this.formRun();
+            
+            if(locFormRun.name() == formStr(DocuView))
+            {
+                if(formHasMethod(locFormRun,formMethodStr(DocuView,actualRecId)))
+                {
+                    actualRecId = locFormRun.actualRecId();
+                }
+                if(formHasMethod(locFormRun,formMethodStr(DocuView,actualTableId)))
+                {
+                    actualTableId = locFormRun.actualTableId();
+                }
+
+                if(formHasMethod(locFormRun,formMethodStr(DocuView,concreteCompanyId)))
+                {
+                    concreteCompanyId = locFormRun.concreteCompanyId();
+                }
+
+                if(formHasMethod(locFormRun,formMethodStr(DocuView,refCompanyId)))
+                {
+                    refCompanyId = locFormRun.refCompanyId();
+                }
+
+                docuref = this.createDocuRefFromActiveRec(actualRecId,actualTableId,concreteCompanyId,refCompanyId,_fileName);
+
+                FormDataSource docuRefDS = locFormRun.dataSource(FormDataSourceStr(DocuView,DocuRef)) ;
+                if (docurefDS)
+                {
+                    docurefDS.executeQuery();
+                }
+              
+            }
+            else
+            {
+                fds = FormDataUtil::getFormDataSource(this.formRun().docCursor());
+
+                if(fds)
+                {
+                    docuRef = this.createDocuRefFromDataSource(fds, _fileName);
+                   
+                }
+            }
+        }
+        return docuRef;   
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findSharePointDocuType</Name>
+				<Source><![CDATA[
+    /// <summary>       08.03.2024
+    /// N.Freidenberger 
+    /// </summary>
+    /// <param name = "_host">_host</param>
+    /// <param name = "_site">_site</param>
+    /// <param name = "_folderPath">_folderPath</param>
+    /// <returns></returns>
+    public DocuType findSharePointDocuType(str   _host, str  _site, str     _folderPath)
+    {
+        DocuType        docuType;
+
+        select firstonly DocuType
+            where   docuType.Host == _host 
+               &&   docuType.SIte == '/sites/' + _site
+            &&   docuType.folderPath == _folderPath;
+
+        return docuType;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

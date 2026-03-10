@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXTokenizerNameAlias</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 21.02.23
+/// </summary>
+internal final class NDXTokenizerNameAlias extends NDXTokenizer
+{
+    LogisticsPostalAddress logisticsPostalAddress;
+    NDXNameAliasChange nDXNameAliasChange;
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 21.02.23
+    /// </summary>
+    /// <returns>NDXTokenizerNameAlias</returns>
+    public static NDXTokenizerNameAlias construct()
+    {
+        return new NDXTokenizerNameAlias();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>constructFromLogisticsPostalAddress</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.02.23
+    /// construct with LogisticsPostalAddress
+    /// </summary>
+    /// <param name = "_logisticsPostalAddress">LogisticsPostalAddress</param>
+    /// <returns>NDXTokenizerNameAlias</returns>
+    public static NDXTokenizerNameAlias constructFromLogisticsPostalAddress(LogisticsPostalAddress _logisticsPostalAddress)
+    {
+        NDXTokenizerNameAlias nDXTokenizerNameAlias = new NDXTokenizerNameAlias();
+        nDXTokenizerNameAlias.logisticsPostalAddress = _logisticsPostalAddress;
+        return nDXTokenizerNameAlias;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initialize</Name>
+				<Source><![CDATA[
+    void initialize(str _charWhiteSpace = '',
+        str _strToToken = '',
+        NDXTokenizerExcludeType _TokenizerExcludeType = NDXTokenizerExcludeType::NameAliasAddress)
+    {
+        str charWhiteSpaceLocal = _charWhiteSpace;
+        if (prmIsDefault(_charWhiteSpace))
+        {
+            charWhiteSpaceLocal = this.parmWhiteSpace();
+        }
+        super(charWhiteSpaceLocal, _strToToken, _TokenizerExcludeType);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkNameAlias</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.02.23
+    /// check name alias
+    /// </summary>
+    /// <param name = "_dirPartyTable">DirPartyTable</param>
+    /// <returns>NDXNameAliasChange</returns>
+    public NDXNameAliasChange checkNameAlias(DirPartyTable _dirPartyTable)
+    {
+        nDXNameAliasChange = NDXNameAliasChange::findOrCreate(_dirpartyTable.RecId, true);
+
+        NDXDirPartyTableBaseTypeI nDXDirPartyTableType = logisticsPostalAddress ?
+            NDXDirPartyTableBaseType::CreateInstanceLogisticsPostalAddress(_dirPartyTable, logisticsPostalAddress) :
+            NDXDirPartyTableBaseType::CreateInstance(_dirPartyTable);
+
+        nDXNameAliasChange.NameUnAdjusted = nDXDirPartyTableType.primaryPostalAddressName123();
+        if (!nDXNameAliasChange.NameUnAdjusted)
+        {
+            nDXNameAliasChange.NameUnAdjusted = nDXDirPartyTableType.parmDirPartyTable().Name;
+        }
+        this.initialize(this.parmWhiteSpace(), nDXNameAliasChange.NameUnAdjusted);
+        nDXNameAliasChange.NameAdjusted = this.tokenizerExclude(nDXNameAliasChange.NameUnAdjusted);
+        nDXNameAliasChange.City = nDXDirPartyTableType.primaryPostalAddress().City;
+        nDXNameAliasChange.NameAliasNew = nDXDirPartyTableType.buildNameAliasFromNameParts(
+                nDXNameAliasChange.NameAdjusted,
+                nDXNameAliasChange.City);
+
+        if (!nDXNameAliasChange.NameAliasActual || nDXNameAliasChange.NameAliasActual != _dirpartyTable.NameAlias)
+        {
+            nDXNameAliasChange.NameAliasActual = _dirpartyTable.NameAlias;
+        }
+          
+        nDXNameAliasChange.NameAliasDiff = nDXNameAliasChange.NameAliasActual != nDXNameAliasChange.NameAliasNew;
+        ttsbegin;
+        nDXNameAliasChange.write();
+        ttscommit;
+        return nDXNameAliasChange;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillNDXNameAliasAll</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 21.02.23
+    /// </summary>
+    public void fillNDXNameAliasAll()
+    {
+        int counter, counterDiff;
+        counter = 0;
+        counterDiff = 0;
+        Query q = new Query();
+        QueryBuildDataSource qbdsDirPartyTable = q.addDataSource(tableNum(DirPartyTable));
+        qbdsDirPartyTable.addRange(fieldNum(DirPartyTable, InstanceRelationType)).value(queryValue(tableNum(DirOrganization)));
+        QueryRun qr = new QueryRun(q);
+        Info(strFmt('[%1] Start: Prüfung Suchname', NDXHelperCommon::seconds2Str())); 
+        while (qr.next())
+        {
+            ++counter;
+            DirPartyTable dirpartyTable = qr.get(tableNum(DirPartyTable));
+            nDXNameAliasChange = this.checkNameAlias(dirpartyTable);
+
+            if (nDXNameAliasChange.NameAliasDiff)
+            {
+                ++counterDiff;
+                info(strFmt('%1.%4) NameAlias new [%2] old [%3]', counter, nDXNameAliasChange.NameAliasNew, nDXNameAliasChange.NameAliasActual, counterDiff));
+            }
+        }
+        Info(strFmt('[%1] Ende: Prüfung Suchname [%2] geprüfte DS [%3] Differenzen', NDXHelperCommon::seconds2Str(), counter, counterDiff));
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

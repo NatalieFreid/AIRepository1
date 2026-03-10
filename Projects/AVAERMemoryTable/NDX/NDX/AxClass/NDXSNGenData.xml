@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXSNGenData</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// abstartc record to generat export date for the sales volume report
+/// </summary>
+abstract public class NDXSNGenData implements NDXExcelDMFExport_Interface
+{
+    NDXSalesNoteCustomer nDX_SalesNoteCustomer;
+    AVATOSId alliance;
+    
+    QueryName entityTarget;
+    NDXExcelDMFExport lNDXExcelDMFExport;
+
+    Filename fileName = '';
+    NDXSignature signature;
+
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>deleteGeneratedData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// abstract method override
+    /// </summary>
+    abstract void deleteGeneratedData(){}
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    protected void new(NDXSalesNoteCustomer _nDX_SalesNoteCustomer)
+    {
+        nDX_SalesNoteCustomer = _nDX_SalesNoteCustomer;
+        signature = nDX_SalesNoteCustomer.parmUmsSignature();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pupulateData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// base populates data method
+    /// </summary>
+    protected void pupulateData()
+    {
+        lNDXExcelDMFExport.export(fileName);
+        this.deleteGeneratedData();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>exportToExcel</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// export to excel
+    /// </summary>
+    void exportToExcel()
+    {
+        NDXExcelDMFExportSettings ndxExcelDMFExportSettings;
+
+        DMFDefinitionGroup lDMFDefinitionGroup;
+        DMFDefinitionGroupEntity lDMFDefinitionGroupEntity;
+        DMFEntity lDMFEntity;
+        
+        NDXSNAlliance lNDXSNAlliance;
+
+        if(nDX_SalesNoteCustomer != null && nDX_SalesNoteCustomer.nDX_SNAlliance)
+        {
+            alliance = nDX_SalesNoteCustomer.nDX_SNAlliance.TOSId;
+        }
+
+        if(alliance && nDX_SalesNoteCustomer.nDX_SNAlliance.DMFExportProjectRefRecId)
+        {
+            select firstonly lDMFDefinitionGroup
+                join lNDXSNAlliance
+                    where lNDXSNAlliance.DMFExportProjectRefRecId == lDMFDefinitionGroup.RecId
+                    && lNDXSNAlliance.TOSId == alliance
+                join lDMFDefinitionGroupEntity
+                    where lDMFDefinitionGroupEntity.DefinitionGroup == lDMFDefinitionGroup.DefinitionGroupName
+                join lDMFEntity
+                    where lDMFEntity.EntityName == lDMFDefinitionGroupEntity.Entity
+                    && lDMFEntity.TargetEntity == entityTarget;
+          
+            if(!lDMFDefinitionGroup)
+            {
+                Warning("@NDX:NDXSNExportInfo");
+                return;
+            }
+
+            ndxExcelDMFExportSettings = NDXExcelDMFExportSettings::construct(this.entityTarget, lDMFDefinitionGroup.DefinitionGroupName);
+            lNDXExcelDMFExport = NDXExcelDMFExport::construct(ndxExcelDMFExportSettings);
+            
+            try
+            {
+                this.pupulateData();
+            }
+            catch
+            {
+                Error("@NDX:NDXSNExportInfo1");
+            }
+
+            this.deleteGeneratedData();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// constructor
+    /// </summary>
+    /// <param name = "_nDX_SalesNoteCustomer">NDXSalesNoteCustomer object</param>
+    /// <returns>NDXSNGenData obejct</returns>
+    static NDXSNGenData construct(NDXSalesNoteCustomer _nDX_SalesNoteCustomer)
+    {
+        NDXSNGenData lNDXSNGenData = null;
+        switch(_nDX_SalesNoteCustomer.nDX_SNAlliance.SalesForAllianceId)
+        {
+            case 'MITEGRO':
+                lNDXSNGenData = NDXSNGenDataMitegro::construct(_nDX_SalesNoteCustomer);
+                break;
+            case 'FEGIME':
+                lNDXSNGenData = NDXSNGenDataFegime::construct(_nDX_SalesNoteCustomer);
+                break;
+        }
+
+        return  lNDXSNGenData;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

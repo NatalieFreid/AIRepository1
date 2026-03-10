@@ -1,0 +1,530 @@
+﻿# AVARUMCashInvoice - Complete SSRS Report Solution
+## D365 Finance and Operations
+
+---
+
+## 📋 Solution Overview
+
+This is a complete SSRS report solution for printing Cash Invoices in Microsoft Dynamics 365 Finance and Operations. The report displays cash voucher information including header details, line items, and company information.
+
+**Report Name**: AVARUMCashInvoice  
+**Location**: `C:\Users\n.freidenberger\source\repos\NatalieFreid\AIRepository1\Projects\AVACashInvoiceReport\AVACashInvoiceReport\AVARubinMuehle`
+
+---
+
+## 🗂️ Solution Components
+
+### 1. Temporary Tables (TempDB)
+
+#### AVARUMCashInvoiceTmpHeader
+**File**: `AVARubinMuehle/AxTable/AVARUMCashInvoiceTmpHeader.xml`
+
+**Purpose**: Stores header-level information for the cash invoice report
+
+**Fields**:
+- `CashVoucher` (AVARUMCashVoucher) - Cash voucher number
+- `GrossAmount` (AVARUMGrossAmount) - Gross total amount
+- `NetAmount` (AVARUMNetAmount) - Net amount
+- `AmountMST` (AVARUMVATAmount) - VAT/Tax amount
+- `AmountGiven` (AVARUMCashSalesDeskAmount) - Amount given by customer
+- `AmountBack` (AVARUMCashSalesDeskAmount) - Change returned
+- `CashSalesDeskId` (AVARUMCashSalesDeskId) - Cash desk identifier
+- `CompanyName` (Name) - Company name (100 chars)
+- `CompanyStreet` (LogisticsAddressStreet) - Company street address (250 chars)
+- `CompanyZipCode` (LogisticsAddressZipCodeId) - Company zip code (20 chars)
+- `CompanyPhone` (Phone) - Company phone number (50 chars)
+- `CompanyTaxNo` (TaxRegistrationNumber) - Company tax registration number (50 chars)
+
+**Table Type**: TempDB
+
+---
+
+#### AVARUMCashInvoiceTmpLines
+**File**: `AVARubinMuehle/AxTable/AVARUMCashInvoiceTmpLines.xml`
+
+**Purpose**: Stores line-level information for the cash invoice report
+
+**Fields**:
+- `AVARUMCashVoucher` (AVARUMCashVoucher) - Cash voucher number (link to header)
+- `SalesQty` (SalesQty) - Quantity sold
+- `SalesUnit` (UnitOfMeasureSymbol) - Unit of measure
+- `Item` (ItemId) - Item identifier
+- `ItemName` (ItemName) - Item description (100 chars)
+- `LineAmount` (AmountMST) - Line total amount
+
+**Table Type**: TempDB
+
+---
+
+### 2. Data Contract Class
+
+#### AVARUMCashInvoiceContract
+**File**: `AVARubinMuehle/AxClass/AVARUMCashInvoiceContract.xml`
+
+**Purpose**: Defines the report parameters passed to the data provider
+
+**Attributes**:
+- `[DataContractAttribute]`
+- `[SysOperationContractProcessingAttribute(classstr(AVARUMCashInvoiceUIBuilder))]`
+
+**Parameters**:
+- `parmAVARUMCashVoucher()` - Gets/sets the cash voucher number to report
+
+**Methods**:
+- `parmAVARUMCashVoucher(AVARUMCashVoucher)` - Parameter accessor with attributes:
+  - `[DataMemberAttribute]`
+  - `[SysOperationLabelAttribute]`
+  - `[SysOperationHelpTextAttribute]`
+- `validate()` - Validates that a cash voucher is provided
+
+---
+
+### 3. UI Builder Class
+
+#### AVARUMCashInvoiceUIBuilder
+**File**: `AVARubinMuehle/AxClass/AVARUMCashInvoiceUIBuilder.xml`
+
+**Purpose**: Extends the report dialog to provide custom lookup functionality
+
+**Base Class**: `SrsReportDataContractUIBuilder`
+
+**Methods**:
+- `build()` - Builds the dialog and gets reference to the voucher field
+- `postBuild()` - Registers the lookup override on the voucher control
+- `lookupAVARUMCashVoucher(FormStringControl)` - Provides custom lookup functionality using `SysTableLookup`
+
+**Lookup Configuration**:
+- **Source Table**: AVARUMCashSalesCashVoucher
+- **Display Fields**:
+  - CashVoucher (selection field)
+  - CashSalesDeskId
+  - NetAmount
+  - GrossAmount
+- **Sorting**: CashVoucher descending
+
+---
+
+### 4. Data Provider Class
+
+#### AVARUMCashInvoiceDP
+**File**: `AVARubinMuehle/AxClass/AVARUMCashInvoiceDP.xml`
+
+**Purpose**: Populates temporary tables with data for the report
+
+**Base Class**: `SRSReportDataProviderBase`
+
+**Attributes**:
+- `[SRSReportParameterAttribute(classstr(AVARUMCashInvoiceContract))]`
+
+**Data Methods**:
+- `getHeaderData()` - Returns AVARUMCashInvoiceTmpHeader
+  - Attribute: `[SRSReportDataSetAttribute(tablestr(AVARUMCashInvoiceTmpHeader))]`
+- `getLinesData()` - Returns AVARUMCashInvoiceTmpLines
+  - Attribute: `[SRSReportDataSetAttribute(tablestr(AVARUMCashInvoiceTmpLines))]`
+
+**Processing Methods**:
+- `processReport()` - Main processing method that:
+  1. Reads the contract to get the cash voucher number
+  2. Calls populateHeaderData()
+  3. Calls populateLinesData()
+
+- `populateHeaderData()` - Populates header temp table with:
+  - Cash voucher details from AVARUMCashSalesCashVoucher
+  - Company information using:
+    - `CompanyInfo::find()` - Company name and tax number
+    - `DirPartyTable::findByPartyRecId()` - Party information
+    - `LogisticsLocation::findDefault()` - Primary business location
+    - `LogisticsPostalAddress::findByLocation()` - Street and zip code
+    - `LogisticsElectronicAddress::findByLocation()` - Phone number
+
+- `populateLinesData()` - Populates lines temp table by:
+  - Querying SalesLine table filtered by AVARUMCashVoucher
+  - Joining with InventTable for item details
+  - Joining with EcoResProduct and EcoResProductTranslation for localized item names
+  - Populating quantity, unit, item, name, and amount
+
+---
+
+### 5. SSRS Report Metadata
+
+#### AVARUMCashInvoice (Report Definition)
+**File**: `AVARubinMuehle/AxReport/AVARUMCashInvoice.xml`
+
+**Purpose**: Defines the report metadata and datasets
+
+**Data Source**: DynamicsAXOLDB
+
+**Data Methods**:
+- AVARUMCashInvoiceDP
+
+**Data Sets**:
+
+1. **AVARUMCashInvoiceTmpHeader**
+   - Data Method: AVARUMCashInvoiceDP.getHeaderData
+   - Fields: All header fields (12 fields total)
+
+2. **AVARUMCashInvoiceTmpLines**
+   - Data Method: AVARUMCashInvoiceDP.getLinesData
+   - Fields: All line fields (6 fields total)
+
+**Designs**:
+- Design Name: Report
+- Layout Template: ReportLayoutStyleTemplate
+
+**Parameters**:
+- AX_CompanyName (hidden system parameter)
+
+---
+
+### 6. SSRS Report Design (RDL)
+
+#### AVARUMCashInvoice.Report.rdl
+**File**: `AVARubinMuehle/Reports/AVARUMCashInvoice.Report.rdl`
+
+**Purpose**: SSRS report layout definition
+
+**Page Setup**:
+- Page Size: 8.5" x 11"
+- Margins: 0.5" (all sides)
+
+**Report Sections**:
+
+1. **Company Information Header** (Top)
+   - Company Name (14pt bold)
+   - Company Address (Street, Zip Code)
+   - Company Phone
+   - Company Tax Number
+
+2. **Report Title**
+   - "Cash Invoice" (16pt bold, centered)
+
+3. **Voucher Information**
+   - Voucher Number (11pt bold)
+   - Cash Desk ID
+
+4. **Lines Table (Tablix)**
+   - **Columns**:
+     - Item (1.5")
+     - Item Name (2.5")
+     - Quantity (1", right-aligned)
+     - Unit (0.75")
+     - Amount (1.25", right-aligned)
+   
+   - **Header Row**: Bold with light grey background
+   - **Detail Row**: Data from AVARUMCashInvoiceTmpLines
+   - **Total Row**: Bold with sums for Quantity and Amount
+
+5. **Footer Totals** (Right-aligned)
+   - Net Amount (11pt bold)
+   - VAT Amount (10pt)
+   - Gross Amount (12pt bold, bordered)
+
+6. **Page Footer**
+   - Left: Print date
+   - Right: Page number (Page X of Y)
+
+**Data Binding**:
+- Header dataset: AVARUMCashInvoiceTmpHeader
+- Lines dataset: AVARUMCashInvoiceTmpLines
+
+---
+
+### 7. Output Menu Item
+
+#### AVARUMCashInvoice
+**File**: `AVARubinMuehle/AxMenuItemOutput/AVARUMCashInvoice.xml`
+
+**Purpose**: Menu item to launch the report
+
+**Properties**:
+- Object: AVARUMCashInvoice
+- Object Type: SSRSReport
+- Report Design: Report
+- Needs Record: No
+- Label: @AVARUM:CashInvoice
+- Help Text: @AVARUM:CashInvoiceHelp
+
+---
+
+## 🔄 Data Flow
+
+```
+User Input (Cash Voucher Number)
+         ↓
+AVARUMCashInvoiceContract (validates parameter)
+         ↓
+AVARUMCashInvoiceDP.processReport()
+         ↓
+    ┌────────────────────────────────┐
+    │                                │
+    ↓                                ↓
+populateHeaderData()        populateLinesData()
+    │                                │
+    ↓                                ↓
+AVARUMCashSalesCashVoucher    SalesLine (filtered)
+CompanyInfo                    InventTable
+LogisticsPostalAddress         EcoResProduct
+LogisticsElectronicAddress     EcoResProductTranslation
+    │                                │
+    ↓                                ↓
+AVARUMCashInvoiceTmpHeader    AVARUMCashInvoiceTmpLines
+    │                                │
+    └────────────────┬───────────────┘
+                     ↓
+          SSRS Report Rendering
+                     ↓
+              PDF/Print Output
+```
+
+---
+
+## 📊 Database Schema Dependencies
+
+### Tables Used
+
+1. **AVARUMCashSalesCashVoucher** (Source)
+   - Primary source for header data
+   - Fields: CashVoucher, GrossAmount, NetAmount, AmountMST, AmountGiven, AmountBack, CashSalesDeskId
+
+2. **SalesLine** (Extended)
+   - Source for line items
+   - Extension field: AVARUMCashVoucher
+   - Standard fields: ItemId, SalesQty, SalesUnit, LineAmount
+
+3. **InventTable**
+   - Item master data
+   - Joined for item information
+
+4. **EcoResProduct**
+   - Product master
+   - Linked to InventTable
+
+5. **EcoResProductTranslation**
+   - Localized product names
+   - Filtered by system language
+
+6. **CompanyInfo**
+   - Company master data
+   - Source: Name, TaxRegistrationNumber, CoRegNum
+
+7. **DirPartyTable**
+   - Party information for company
+   - Linked via RecId
+
+8. **LogisticsLocation**
+   - Location data for company
+   - Primary business location
+
+9. **LogisticsPostalAddress**
+   - Postal address details
+   - Source: Street, ZipCode
+
+10. **LogisticsElectronicAddress**
+    - Electronic contact information
+    - Filtered by Phone type
+
+---
+
+## 🚀 Deployment Steps
+
+### 1. Prerequisites
+- D365FO development environment
+- Visual Studio with D365FO extension
+- Access to AVARubinMuehle model
+- AVARUMCashVoucher EDT already exists
+- AVARUMCashSalesCashVoucher table already exists
+- SalesLine table extended with AVARUMCashVoucher field
+
+### 2. Files to Deploy
+All files are located in: `AVACashInvoiceReport/AVACashInvoiceReport/AVARubinMuehle/AVARubinMuehle/`
+
+**Tables**:
+- AxTable/AVARUMCashInvoiceTmpHeader.xml
+- AxTable/AVARUMCashInvoiceTmpLines.xml
+
+**Classes**:
+- AxClass/AVARUMCashInvoiceContract.xml
+- AxClass/AVARUMCashInvoiceUIBuilder.xml
+- AxClass/AVARUMCashInvoiceDP.xml
+
+**Report**:
+- AxReport/AVARUMCashInvoice.xml
+- ../Reports/AVARUMCashInvoice.Report.rdl
+
+**Menu Item**:
+- AxMenuItemOutput/AVARUMCashInvoice.xml
+
+### 3. Build and Synchronize
+```powershell
+# Build the model
+Build-AXModel -ModelName "AVARubinMuehle"
+
+# Synchronize database
+Sync-AXDatabase -SyncMode "ForceSync"
+
+# Deploy reports
+Publish-AXReport -ReportName "AVARUMCashInvoice"
+```
+
+### 4. Security Configuration
+Add the menu item to appropriate security roles:
+- Navigate to: Security > Privileges
+- Create or update privilege with access to AVARUMCashInvoice
+- Assign privilege to relevant duties
+- Assign duties to roles
+
+### 5. Testing
+1. Navigate to the menu item location
+2. Click AVARUMCashInvoice
+3. In the dialog, use the lookup to select a cash voucher
+4. Click OK to generate the report
+5. Verify all sections display correctly:
+   - Company information
+   - Voucher details
+   - Line items with totals
+   - Footer amounts
+
+---
+
+## 🔧 Customization Guide
+
+### Adding Additional Header Fields
+
+1. **Extend AVARUMCashInvoiceTmpHeader table**:
+```xml
+<AxTableField xmlns="" i:type="AxTableFieldString">
+    <Name>NewField</Name>
+    <ExtendedDataType>YourEDT</ExtendedDataType>
+</AxTableField>
+```
+
+2. **Update AVARUMCashInvoiceDP.populateHeaderData()**:
+```csharp
+tmpHeader.NewField = cashSalesVoucher.NewField;
+```
+
+3. **Update Report Dataset** in AxReport/AVARUMCashInvoice.xml:
+```xml
+<AxReportDataSetField>
+    <Name>NewField</Name>
+    <Alias>AVARUMCashInvoiceTmpHeader.NewField</Alias>
+    <Caption>@YourLabel</Caption>
+</AxReportDataSetField>
+```
+
+4. **Update RDL** to display the new field
+
+### Adding Additional Line Fields
+
+Follow the same pattern for AVARUMCashInvoiceTmpLines and populateLinesData()
+
+### Changing Report Layout
+
+Edit `AVARUMCashInvoice.Report.rdl`:
+- Open in Visual Studio Report Designer
+- Modify textboxes, tables, formatting
+- Save and redeploy
+
+---
+
+## 📝 Label Requirements
+
+The following labels should be defined in your label file (@AVARUM):
+
+**Labels Used**:
+- `@AVARUM:CashInvoice` - "Cash Invoice"
+- `@AVARUM:CashInvoiceHelp` - Help text for menu item
+- `@AVARUM:CashInvoiceReportDesc` - Report description
+- `@AVARUM:CashVoucher` - "Cash Voucher"
+- `@AVARUM:CashVoucherHelp` - Help text for voucher parameter
+- `@AVARUM:CashInvoiceHeaderTemp` - "Cash Invoice Header (Temp)"
+- `@AVARUM:CashInvoiceLinesTemp` - "Cash Invoice Lines (Temp)"
+- `@AVARUM:GrossAmount` - "Gross Amount"
+- `@AVARUM:NetAmount` - "Net Amount"
+- `@AVARUM:VATAmount` - "VAT Amount"
+- `@AVARUM:AmountGiven` - "Amount Given"
+- `@AVARUM:AmountBack` - "Amount Back"
+- `@AVARUM:CashDeskId` - "Cash Desk ID"
+
+---
+
+## 🐛 Troubleshooting
+
+### Report Not Found
+- Verify all files are in correct locations
+- Rebuild the model
+- Synchronize database
+- Redeploy reports using Publish-AXReport
+
+### Lookup Not Working
+- Check AVARUMCashInvoiceUIBuilder is properly linked in contract
+- Verify SysOperationContractProcessingAttribute is set
+- Check that AVARUMCashSalesCashVoucher table exists
+
+### No Data Displayed
+- Verify cash voucher exists in AVARUMCashSalesCashVoucher
+- Check SalesLine records have AVARUMCashVoucher populated
+- Debug AVARUMCashInvoiceDP.processReport() method
+
+### Company Information Missing
+- Verify CompanyInfo has data for current company
+- Check LogisticsPostalAddress is linked to company
+- Verify LogisticsElectronicAddress exists with Phone type
+
+### Performance Issues
+- Add indexes to AVARUMCashVoucher field on SalesLine
+- Consider caching company information
+- Optimize queries in populateLinesData()
+
+---
+
+## ✅ Validation Checklist
+
+- [ ] All XML files are well-formed
+- [ ] EDT AVARUMCashVoucher exists
+- [ ] Table AVARUMCashSalesCashVoucher exists
+- [ ] SalesLine extended with AVARUMCashVoucher field
+- [ ] All labels are defined
+- [ ] Build completed successfully
+- [ ] Database synchronized
+- [ ] Report deployed to SSRS
+- [ ] Security configured
+- [ ] Report tested with sample data
+- [ ] All sections render correctly
+- [ ] Totals calculate correctly
+- [ ] Page footer displays correctly
+
+---
+
+## 📚 References
+
+### D365FO Documentation
+- [SSRS Reports Overview](https://docs.microsoft.com/dynamics365/fin-ops-core/dev-itpro/analytics/ssrs-report)
+- [Report Data Provider Classes](https://docs.microsoft.com/dynamics365/fin-ops-core/dev-itpro/analytics/report-data-provider)
+- [SysOperation Framework](https://docs.microsoft.com/dynamics365/fin-ops-core/dev-itpro/dev-tools/sysoperation-framework)
+
+### Best Practices
+- Use TempDB tables for report data
+- Implement data contracts for parameters
+- Provide UI builders for enhanced user experience
+- Follow D365FO naming conventions
+- Use EDTs for all field definitions
+- Document all customizations
+
+---
+
+## 📞 Support
+
+For issues or questions regarding this report:
+1. Check the troubleshooting section
+2. Review build and deployment logs
+3. Verify all prerequisites are met
+4. Check D365FO event logs
+5. Contact your D365FO administrator
+
+---
+
+**Document Version**: 1.0  
+**Last Updated**: 2024  
+**Author**: Generated for AVARubinMuehle Model  
+**Status**: Build Successful ✅

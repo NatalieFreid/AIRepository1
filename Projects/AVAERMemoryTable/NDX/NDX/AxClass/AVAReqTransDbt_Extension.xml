@@ -1,0 +1,338 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAReqTransDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     Extension class for ReqTrans
+/// </summary>
+[ExtensionOf(tableStr(ReqTrans))]
+final class AVAReqTransDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>displayAVAProdSchedStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVAProdSchedStatus</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>ProdSchedStatus</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display ProdSchedStatus displayAVAProdSchedStatus()
+    {
+        ProdSchedStatus    retVal;
+
+        retVal = ProdSchedStatus::None;
+
+        if(this.RefId)
+        {
+            if(     this.RefType == ReqRefType::ProdLine 
+                ||  this.RefType == ReqRefType::Production)
+            {
+                retVal = ProdTable::find(this.RefId).SchedStatus;
+            }
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVAReferenceName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVAReferenceName</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>DirPartyName</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display DirPartyName displayAVAReferenceName()
+    {
+        DirPartyName    retVal;
+
+        if(this.RefId)
+        {
+            switch(this.RefType)
+            {
+                case ReqRefType::Sales:
+                    retVal  = SalesTable::find(this.RefId).customerName();
+                    break;
+                
+                case ReqRefType::Purch:
+                    retVal  = PurchTable::find(this.RefId).vendorName();
+                    break;
+                
+                case ReqRefType::InventJournal  :
+                    retVal  = InventJournalTable::find(this.RefId).Description;
+                    break;
+            }
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVACustVendAccount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVACustVendAccount</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>CustVendAC</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display CustVendAC displayAVACustVendAccount()
+    {
+        DirPartyName    retVal;
+
+        if(this.RefId)
+        {
+            switch(this.RefType)
+            {
+                case ReqRefType::Sales:
+                    retVal  = SalesTable::find(this.RefId).CustAccount;
+                    break;
+                
+                case ReqRefType::Purch:
+                    retVal  = PurchTable::find(this.RefId).OrderAccount;
+                    break;
+                /*
+                case ReqRefType::InventJournal  :
+                    retVal  = '';
+                    break;
+                */
+                default :
+                    retVal  = '';
+                    break;
+            }
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVAPurchOrderFormNum</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVAPurchOrderFormNum</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>CustPurchaseOrder</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display CustPurchaseOrder displayAVAPurchOrderFormNum()
+    {
+        CustPurchaseOrder    retVal;
+
+        if(this.RefId)
+        {
+            switch(this.RefType)
+            {
+                case ReqRefType::Sales:
+                    retVal = SalesTable::find(this.RefId).PurchOrderFormNum;
+                    break;
+            }
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVAReservedQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayAVAReservedQty</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>Qty</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display Qty displayAVAReservedQty()
+    {
+        Qty                 retVal;
+
+        SalesLine           locSalesLine;
+        InventTransferLine  locInventTransferLine;
+        InventTransOrigin   locInventTransOrigin;
+        InventTrans         locInventTrans;
+
+        InventQty           locInventQty;
+        PdsCWInventQty      locPdsCWInventQty;
+
+        if(this.RefId)
+        {
+            switch(this.RefType)
+            {
+                case ReqRefType::Sales:
+                    select firstonly locInventTransOrigin
+                    where locInventTransOrigin.RecId == this.InventTransOrigin;
+                    if(locInventTransOrigin.RecId)
+                    {
+                        locSalesLine            = SalesLine::findInventTransId(locInventTransOrigin.InventTransId);
+                        if(locSalesLine.RecId)
+                        {
+                            retVal              = locSalesLine.reservedPhysicalInSalesUnit() + locSalesLine.reservedOnOrderInSalesUnit();
+                        }
+                    }
+                    break;
+                
+                case ReqRefType::TransferOrderShip:
+                    select firstonly locInventTransOrigin
+                    where locInventTransOrigin.RecId == this.InventTransOrigin;
+                    if(locInventTransOrigin.RecId)
+                    {
+                        locInventTransferLine   = InventTransferLine::findTransIdShip(locInventTransOrigin.InventTransId);
+                        if(locInventTransferLine.RecId)
+                        {
+                            retVal                              = locInventTransferLine.qtyReservedOnOrder();
+                            [locInventQty, locPdsCWInventQty]   = locInventTransferLine.qtyReservedPhysical();
+                            retVal                              += locInventQty;
+                        }
+                    }
+                    break;
+                
+                case ReqRefType::ProdLine:
+                    select sum(Qty) 
+                    from    locInventTrans
+                        join    locInventTransOrigin
+                        where   locInventTransOrigin.RecId      == this.InventTransOrigin
+                        &&  (       locInventTrans.StatusIssue  == StatusIssue::ReservPhysical
+                                ||  locInventTrans.StatusIssue  == StatusIssue::ReservOrdered   );
+                    retVal = -locInventTrans.Qty;
+                    break;
+            }
+        }
+        return retVal;
+
+        /*  2009
+        //  1.0 : KCS/WertN/LU_TASK1235002723/13.04.2011 - Reservierung im Bedarfsverlauf anzeigen / first
+
+        display Qty KCS_DisplayReservedQty()
+        {
+            SalesLine               salesLine;
+            InventTransferLine      inventTransferLine;
+            InventTrans             inventTrans;                                        // KCS/WERTN/LU_TASK1235002723/21.04.2011
+            ;
+            if (this.RefType == ReqRefType::Sales)
+            {
+                salesLine   = salesLine::findInventTransId(this.InventTransId);
+                return (salesLine.reservedPhysicalInSalesUnit() + salesLine.reservedOnOrderInSalesUnit());
+            }
+            else if (this.RefType == ReqRefType::TransferOrderShip)
+            {
+                inventTransferLine  = inventTransferLine::findTransIdShip(this.InventTransId);
+                return (inventTransferLine.qtyReservedOnOrder() + inventTransferLine.qtyReservedPhysical());
+            }
+            //--> KCS/WERTN/LU_TASK1235002723/21.04.2011
+            else if (this.RefType == ReqRefType::ProdLine)
+            {
+                select sum(Qty) from inventTrans where inventTrans.InventTransId  == this.InventTransId
+                                                    && (inventTrans.StatusIssue   == StatusIssue::ReservPhysical
+                                                     || inventTrans.StatusIssue   == StatusIssue::ReservOrdered);
+                return  -inventTrans.Qty;
+            }
+            //<-- KCS/WERTN/LU_TASK1235002723/21.04.2011
+            else
+            {
+                return 0;
+            }
+        }
+        */
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVADlvDateConfirmed</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display boolean displayAVADlvDateConfirmed()
+    {
+        boolean ret = false;
+        purchLine           locPurchLine;
+        InventTransOrigin   locInventTransOrigin;
+
+        if (this.RefId)
+        {
+            if(this.RefType == ReqRefType::Purch)
+            {
+                select firstonly locInventTransOrigin
+                    where locInventTransOrigin.RecId == this.InventTransOrigin;
+                if(locInventTransOrigin.RecId)
+                {
+                    locPurchLine            = PurchLine::findInventTransId(locInventTransOrigin.InventTransId);
+                    if(locPurchLine.ConfirmedDlv /*&& locPurchLine.ConfirmedDlv == this.ReqDate*/)
+                    {
+                        ret = true;
+                    }
+                }
+            }
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAVASettledItemId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/05/21    AVA_011933_ItemIdSettledInReqTransForm
+    /// </summary>
+    /// <returns>ItemId</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display ItemId displayAVASettledItemId()
+    {
+        ReqTrans        reqTrans;
+        ItemId          ret;
+
+
+        if (this.RefType == ReqRefType::ProdLine)                           // Produktionsauftragsposition
+        {
+            select firstonly reqTrans
+            where reqTrans.RefId    == this.RefId
+               && reqTrans.PlanVersion == this.PlanVersion
+               //&& reqTrans.ReqPlanId== this.ReqPlanId
+               && reqTrans.RefType  == ReqRefType::Production           // Produktion
+               && reqTrans.RecId    != this.RecId
+               && reqTrans.Direction!= this.Direction;
+
+            ret = reqTrans.ItemId;
+        }
+        else
+    //if (this.RefType == ReqRefType::BOMLine)                            // Stücklistenposition
+        if (this.RefType == ReqRefType::PmfFormulaLine)
+        {
+            select firstonly reqTrans
+            where reqTrans.RefId    == this.RefId
+               && reqTrans.PlanVersion == this.PlanVersion
+               //&& reqTrans.ReqPlanId== this.ReqPlanId
+               //&& reqTrans.RefType  == ReqRefType::BOMPlannedOrder      // Geplante Produktionsaufträge
+               && reqTrans.RefType == ReqRefType::PmfPlannedProdBatch
+               && reqTrans.RecId    != this.RecId
+               && reqTrans.Direction!= this.Direction;
+
+            ret = reqTrans.ItemId;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

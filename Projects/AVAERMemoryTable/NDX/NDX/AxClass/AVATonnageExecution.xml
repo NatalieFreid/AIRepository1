@@ -1,0 +1,584 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVATonnageExecution</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>AVATonnageExecution</c> class is the execution class for <c>Tonnage</c>
+/// </summary>
+class AVATonnageExecution
+{
+    AVATonnageContract  contract;
+    Args                frmArgs;
+    KCS_TonnageSetup    frmKCS_TonnageSetup;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>main</c> method.
+    /// </summary>
+    /// <param name="_args">
+    ///    <c>Args</c> as type
+    /// </param>
+    public static void main(Args _args)
+    {
+        AVATonnageController    locController;
+        AVATonnageContract      locContract;
+
+        Common                  locCommon;
+        KCS_TonnageCalcedData   locRecord;
+
+        locController   = AVATonnageController::newFromArgs(_args);
+        locController.parmLoadFromSysLastValue(NoYes::No);
+
+        locContract     = locController.getDataContractObject();
+        locContract.parmArgs(_args);
+
+        if(     _args
+            &&  _args.record()
+            &&  _args.record().RecId
+            &&  _args.record().TableId == tableNum(KCS_TonnageCalcedData) )
+        {
+            locCommon = _args.record();
+
+            if(_args.record().TableId == tableNum(KCS_TonnageCalcedData))
+            {
+                locRecord = locCommon;
+            }
+        }
+
+        locController.startOperation();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>init</c> method.
+    /// </summary>
+    public void init()
+    {
+        frmKCS_TonnageSetup    = KCS_TonnageSetup::find();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmArgs</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>parmArgs</c> method.
+    /// </summary>
+    /// <param name="_parmValue">
+    ///    <c>Args</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>Args</c> as return value
+    /// </returns>
+    public Args parmArgs(Args _parmValue = frmArgs)
+    {
+        frmArgs = _parmValue;
+
+        return frmArgs;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmDataContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>parmDataContract</c> method.
+    /// </summary>
+    /// <param name="_parmValue">
+    ///    <c>AVATonnageContract</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>AVATonnageContract</c> as return value
+    /// </returns>
+    public AVATonnageContract parmDataContract(AVATonnageContract _parmValue = contract)
+    {
+        contract = _parmValue;
+
+        return contract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>newFromArgs</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>newFromArgs</c> method.
+    /// </summary>
+    /// <param name="_args">
+    ///    <c>Args</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>AVATonnageExecution</c> as return value
+    /// </returns>
+    public static AVATonnageExecution newFromArgs(Args _args)
+    {
+        AVATonnageExecution locAVATonnageExecution;
+
+        locAVATonnageExecution = new AVATonnageExecution();
+        locAVATonnageExecution.parmArgs(_args);
+        locAVATonnageExecution.init();
+
+        return locAVATonnageExecution;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcTonnageFromParams</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>calcTonnageFromParams</c> method.
+    /// </summary>
+    public void calcTonnageFromParams()
+    {
+        KCS_TonnageLocationSetup    locKCS_TonnageLocationSetup;
+        Integer                     dayCounterMax;
+        date                        startDate;
+        date                        endDate;
+        InventSiteId                currentInventSiteId;
+        boolean                     locCheckFailed;
+
+        if(contract.parmAutomaticMode())
+        {
+            startDate           = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+            dayCounterMax       = frmKCS_TonnageSetup.Days;
+            endDate             = startDate + dayCounterMax;
+        }
+        else
+        {
+            startDate           = contract.parmStartDate();
+            endDate             = contract.parmEndDate();
+            if(     !startDate 
+                ||  !endDate 
+                || (startDate > endDate)    )
+            {
+                locCheckFailed  = checkFailed("@NDX:NXADatevaluesNotValid");
+                return;
+            }
+            dayCounterMax       = endDate - startDate + 1;
+            currentInventSiteId = contract.parmInventSiteId();
+        }
+        
+        if(currentInventSiteId)
+        {
+            locKCS_TonnageLocationSetup = KCS_TonnageLocationSetup::find(currentInventSiteId);
+            if(locKCS_TonnageLocationSetup.RecId)
+            {
+                this.calcSingleTonnageFromParams(startDate, dayCounterMax, locKCS_TonnageLocationSetup);
+            }
+            else
+            {
+                locCheckFailed  = checkFailed("@NDX:NXAInventSiteNotListedInParameters");
+            }
+            return;
+        }
+
+        while select locKCS_TonnageLocationSetup
+        {
+            this.calcSingleTonnageFromParams(startDate, dayCounterMax, locKCS_TonnageLocationSetup);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcSingleTonnageFromParams</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>calcSingleTonnageFromParams</c> method.
+    /// </summary>
+    /// <param name="_startDateToCalc">
+    ///    <c>StartDate</c> as type
+    /// </param>
+    /// <param name="_daysToCalc">
+    ///    <c>int</c> as type
+    /// </param>
+    /// <param name="_kcs_TonnageLocationSetup">
+    ///    <c>KCS_TonnageLocationSetup</c> as type
+    /// </param>
+    public void calcSingleTonnageFromParams(StartDate                   _startDateToCalc, 
+                                            int                         _daysToCalc, 
+                                            KCS_TonnageLocationSetup    _kcs_TonnageLocationSetup   )
+    {
+        int                     dayCounter;
+        date                    currentDate;
+        int                     salesOrders;
+        int                     deliveredLines;
+        int                     reservedPhysLines;
+        ItemNetWeight           deliveredWeight;
+        ItemNetWeight           reservedPhysWeight;
+        Percent                 linePercent;
+        Percent                 weightPercent;
+        Percent                 salesOrderPercent;
+        Percent                 workloadPercent;
+        KCS_TonnageCalcedData   locKCS_TonnageCalcedData;
+        
+        for(dayCounter = 0; dayCounter < _daysToCalc; dayCounter++)
+        {
+            currentDate         = _startDateToCalc + dayCounter;
+
+            salesOrders         = AVATonnageExecution::getSalesOrders(          currentDate, _kcs_TonnageLocationSetup.InventSiteId);
+            deliveredLines      = AVATonnageExecution::getDeliveredLines(       currentDate, _kcs_TonnageLocationSetup.InventSiteId);
+            reservedPhysLines   = AVATonnageExecution::getReservedPhysLines(    currentDate, _kcs_TonnageLocationSetup.InventSiteId);
+            deliveredWeight     = AVATonnageExecution::getDeliveredWeight(      currentDate, _kcs_TonnageLocationSetup.InventSiteId);
+            reservedPhysWeight  = AVATonnageExecution::getReservedPhysWeight(   currentDate, _kcs_TonnageLocationSetup.InventSiteId);
+
+            if(_kcs_TonnageLocationSetup.KCS_MaxPositions)
+            {
+                linePercent         = (deliveredLines + reservedPhysLines) / _kcs_TonnageLocationSetup.KCS_MaxPositions;
+            }
+            if(_kcs_TonnageLocationSetup.KCS_MaxTonnage)
+            {
+                weightPercent       = (deliveredWeight + reservedPhysWeight) / _kcs_TonnageLocationSetup.KCS_MaxTonnage;
+            }
+            if(_kcs_TonnageLocationSetup.KCS_MaxSalesOrders)
+            {
+                salesOrderPercent   = salesOrders / _kcs_TonnageLocationSetup.KCS_MaxSalesOrders;
+            }
+
+            workloadPercent     = AVATonnageExecution::getMaxValue( linePercent,
+                                                                    weightPercent,
+                                                                    salesOrderPercent);
+            workloadPercent     = workloadPercent * 100;
+
+            ttsbegin;
+            locKCS_TonnageCalcedData                    = KCS_TonnageCalcedData::find(  currentDate, 
+                                                                                        _kcs_TonnageLocationSetup.InventSiteId,
+                                                                                        true                                    );
+            locKCS_TonnageCalcedData.TransDate          = currentDate;
+            locKCS_TonnageCalcedData.InventSiteId       = _kcs_TonnageLocationSetup.InventSiteId;
+            locKCS_TonnageCalcedData.salesOrders        = salesOrders;
+            locKCS_TonnageCalcedData.DlvLinesDelivered  = deliveredLines;
+            locKCS_TonnageCalcedData.DlvLinesOpen       = reservedPhysLines;
+            locKCS_TonnageCalcedData.DlvLines           = deliveredLines + reservedPhysLines;
+            locKCS_TonnageCalcedData.DlvWeightDelivered = deliveredWeight;
+            locKCS_TonnageCalcedData.DlvWeightOpen      = reservedPhysWeight;
+            locKCS_TonnageCalcedData.DlvWeight          = deliveredWeight + reservedPhysWeight;
+            locKCS_TonnageCalcedData.Percent            = workloadPercent;
+                
+            if(locKCS_TonnageCalcedData.RecId)
+            {
+                locKCS_TonnageCalcedData.update();
+            }
+            else
+            {
+                locKCS_TonnageCalcedData.insert();
+            }
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSalesOrders</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>getSalesOrders</c> method.
+    /// </summary>
+    /// <param name="_transDate">
+    ///    <c>TransDate</c> as type
+    /// </param>
+    /// <param name="_inventSiteId">
+    ///    <c>InventSiteId</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>int</c> as return value
+    /// </returns>
+    static Integer getSalesOrders(  TransDate       _transDate,
+                                    InventSiteId    _inventSiteId   )
+    {
+        int                 reVal;
+        InventTransOrigin   locInventTransOrigin;
+        InventTrans         locInventTrans;
+        InventDim           locInventDim;
+        SalesId             locPreviousSalesId;
+
+        reVal = 0;
+
+        while select DatePhysical, DateExpected, StatusIssue, InventTransOrigin, inventDimId
+        from    locInventTrans
+        order by  locInventTransOrigin.ReferenceId
+        where   (locInventTrans.DatePhysical    == _transDate           ||  locInventTrans.DateExpected == _transDate)
+            &&  (locInventTrans.StatusIssue     != StatusIssue::None    &&  locInventTrans.StatusIssue  != StatusIssue::OnOrder)
+            join    locInventTransOrigin
+            where   locInventTransOrigin.RecId                  == locInventTrans.InventTransOrigin
+                &&  (   locInventTransOrigin.ReferenceCategory  == InventTransType::Sales
+                    //||  locInventTransOrigin.ReferenceCategory  == InventTransType::InventTransfer
+                    ||  locInventTransOrigin.ReferenceCategory  == InventTransType::TransferOrderShip)
+            exists join locInventDim
+            where   locInventDim.inventDimId    == locInventTrans.inventDimId
+                &&  locInventDim.inventSiteId   == _inventSiteId
+        {
+            if(locPreviousSalesId != locInventTransOrigin.ReferenceId)
+            {
+                reVal ++;
+            }
+            locPreviousSalesId = locInventTransOrigin.ReferenceId;
+        }
+        return reVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDeliveredLines</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>getDeliveredLines</c> method.
+    /// </summary>
+    /// <param name="_transDate">
+    ///    <c>TransDate</c> as type
+    /// </param>
+    /// <param name="_inventSiteId">
+    ///    <c>InventSiteId</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>int</c> as return value
+    /// </returns>
+    static int getDeliveredLines(   TransDate       _transDate, 
+                                    InventSiteId    _inventSiteId   )
+    {
+        int                 retVal;
+        InventTransOrigin   locInventTransOrigin;
+        InventTrans         locInventTrans;
+        InventDim           locInventDim;
+        InventTransId       locInventTransId;
+        
+        retVal = 0;
+
+        while select DatePhysical, StatusIssue, InventTransOrigin, inventDimId
+        from locInventTrans
+        order by  locInventTransOrigin.InventTransId
+        where   locInventTrans.DatePhysical == _transDate
+            &&  locInventTrans.StatusIssue  != StatusIssue::None
+            &&  locInventTrans.StatusIssue  != StatusIssue::ReservPhysical
+            join    locInventTransOrigin
+            where   locInventTransOrigin.RecId                  == locInventTrans.InventTransOrigin
+                &&  (   locInventTransOrigin.ReferenceCategory  == InventTransType::Sales
+                    //||  locInventTransOrigin.ReferenceCategory  == InventTransType::InventTransfer
+                    ||  locInventTransOrigin.ReferenceCategory  == InventTransType::TransferOrderShip)
+            exists join InventSiteId, inventDimId 
+            from    locInventDim
+            where   locInventDim.inventDimId    == locInventTrans.inventDimId
+                &&  locInventDim.inventSiteId   == _inventSiteId
+        {
+            if(locInventTransId != locInventTransOrigin.InventTransId)
+            {
+                retVal++;
+            }
+            locInventTransId = locInventTransOrigin.InventTransId;
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getReservedPhysLines</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>getReservedPhysLines</c> method.
+    /// </summary>
+    /// <param name="_transDate">
+    ///    <c>TransDate</c> as type
+    /// </param>
+    /// <param name="_inventSiteId">
+    ///    <c>InventSiteId</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>int</c> as return value
+    /// </returns>
+    static Integer getReservedPhysLines(TransDate       _transDate, 
+                                        InventSiteId    _inventSiteId   )
+    {
+        int                 retVal;
+        InventTransOrigin   locInventTransOrigin;
+        InventTrans         locInventTrans;
+        InventDim           locInventDim;
+        InventTransId       locInventTransId;
+        
+        retVal = 0;
+
+        while select DateExpected, StatusIssue, InventTransOrigin, inventDimId
+        from    locInventTrans
+        order by  locInventTransOrigin.InventTransId
+        where   locInventTrans.DateExpected == _transDate
+            &&  locInventTrans.StatusIssue  == StatusIssue::ReservPhysical
+            join    locInventTransOrigin
+            where   locInventTransOrigin.RecId                  == locInventTrans.InventTransOrigin
+                &&  (   locInventTransOrigin.ReferenceCategory  == InventTransType::Sales
+                    //||  locInventTransOrigin.ReferenceCategory  == InventTransType::InventTransfer
+                    ||  locInventTransOrigin.ReferenceCategory  == InventTransType::TransferOrderShip)
+            exists join InventSiteId, inventDimId
+            from    locInventDim
+            where   locInventDim.inventDimId    == locInventTrans.inventDimId
+                &&  locInventDim.inventSiteId   == _inventSiteId
+        {
+            if(locInventTransId != locInventTransOrigin.InventTransId)
+            {
+                retVal++;
+            }
+            locInventTransId = locInventTransOrigin.InventTransId;
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDeliveredWeight</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>getDeliveredWeight</c> method.
+    /// </summary>
+    /// <param name="_transDate">
+    ///    <c>TransDate</c> as type
+    /// </param>
+    /// <param name="_inventSiteId">
+    ///    <c>InventSiteId</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>ItemNetWeight</c> as return value
+    /// </returns>
+    static ItemNetWeight getDeliveredWeight(TransDate       _transDate, 
+                                            InventSiteId    _inventSiteId   )
+    {
+        InventTransOrigin   locInventTransOrigin;
+        InventTrans         locInventTrans;
+        InventDim           locInventDim;
+        InventTable         locInventTable;
+        ItemNetWeight       locItemNetWeight;
+
+        #define.UNIT_G2T(1000)
+        
+        while select ItemId, sum(Qty), DatePhysical, StatusIssue, InventTransOrigin, inventDimId
+        from locInventTrans
+        group by locInventTrans.ItemId
+        where   locInventTrans.DatePhysical == _transDate
+            &&  locInventTrans.StatusIssue != StatusIssue::None
+            &&  locInventTrans.StatusIssue != StatusIssue::ReservPhysical
+            join    locInventTransOrigin
+            where   locInventTransOrigin.RecId                  == locInventTrans.InventTransOrigin
+                &&  (   locInventTransOrigin.ReferenceCategory  == InventTransType::Sales
+                    //||  locInventTransOrigin.ReferenceCategory  == InventTransType::InventTransfer
+                    ||  locInventTransOrigin.ReferenceCategory  == InventTransType::TransferOrderShip)
+            exists join InventSiteId, inventDimId
+            from    locInventDim
+            where   locInventDim.inventDimId    == locInventTrans.inventDimId
+                &&  locInventDim.inventSiteId   == _inventSiteId
+        {
+            locInventTable      = InventTable::find(locInventTrans.ItemId);
+            locItemNetWeight    += (abs(locInventTrans.Qty) * locInventTable.NetWeight) / #UNIT_G2T;
+        }
+        return locItemNetWeight;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getReservedPhysWeight</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>getReservedPhysWeight</c> method.
+    /// </summary>
+    /// <param name="_transDate">
+    ///    <c>TransDate</c> as type
+    /// </param>
+    /// <param name="_inventSiteId">
+    ///    <c>InventSiteId</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>ItemNetWeight</c> as return value
+    /// </returns>
+    static ItemNetWeight getReservedPhysWeight( TransDate       _transDate,
+                                                InventSiteId    _inventSiteId   )
+    {
+        InventTransOrigin   locInventTransOrigin;
+        InventTrans         locInventTrans;
+        InventDim           locInventDim;
+        InventTable         locInventTable;
+        ItemNetWeight       locItemNetWeight;
+
+        #define.UNIT_G2T(1000)
+
+        while select ItemId, sum(Qty), DateExpected, StatusIssue, InventTransOrigin, inventDimId
+        from    locInventTrans
+        group by locInventTrans.ItemId
+        where   locInventTrans.DateExpected == _transDate
+            &&  locInventTrans.StatusIssue  == StatusIssue::ReservPhysical
+            join    locInventTransOrigin
+            where   locInventTransOrigin.RecId                  == locInventTrans.InventTransOrigin
+                &&  (   locInventTransOrigin.ReferenceCategory  == InventTransType::Sales
+                    //||  locInventTransOrigin.ReferenceCategory  == InventTransType::InventTransfer
+                    ||  locInventTransOrigin.ReferenceCategory  == InventTransType::TransferOrderShip)
+        exists join InventSiteId, inventDimId
+        from    locInventDim
+        where   locInventDim.inventDimId     == locInventTrans.inventDimId
+            &&  locInventDim.inventSiteId    == _inventSiteId
+        {
+            locInventTable      = InventTable::find(locInventTrans.ItemId);
+            locItemNetWeight    += (abs(locInventTrans.Qty) * locInventTable.NetWeight) / #UNIT_G2T;
+        }
+        return locItemNetWeight;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMaxValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>getMaxValue</c> method.
+    /// </summary>
+    /// <param name="_a">
+    ///    <c>Percent</c> as type
+    /// </param>
+    /// <param name="_b">
+    ///    <c>Percent</c> as type
+    /// </param>
+    /// <param name="_c">
+    ///    <c>Percent</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>ItemNetWeight</c> as return value
+    /// </returns>
+    static Percent getMaxValue( Percent _a,
+                                Percent _b,
+                                Percent _c)
+    {
+        Percent retVal;
+
+        if(_a > _b && _a > _c)
+        {
+            retVal = _a;
+        }
+        else if(_b > _a && _b > _c)
+        {
+            retVal = _b;
+        }
+        else if(_c > _a && _c > _b)
+        {
+            retVal = _c;
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

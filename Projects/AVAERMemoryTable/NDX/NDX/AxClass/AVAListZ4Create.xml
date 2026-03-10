@@ -1,0 +1,775 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAListZ4Create</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVAListZ4Create class
+/// </summary>
+class AVAListZ4Create extends RunBaseBatch
+{
+
+    FromDate                fromDate;
+    ToDate                  toDate;
+    AmountMST               limitAmount;
+    AVAListZ4DispatchId    dispatchId;
+    NumberSeq               num;
+    ListSeqNum              lineNum;
+    PostingProfile          postingProfileCust;
+    PostingProfile          postingProfilePrePaymentCust;
+    PostingProfile          postingProfileVend;
+    PostingProfile          postingProfilePrePaymentVend;
+    DialogField             dlgFromDate;
+    DialogField             dlgToDate;
+    DialogField             dlgLimitAmount;
+    AddressCountryRegionId  ownCountryRegionId;
+    
+    DateCode                dateCode;
+    DialogField             dlgDateCode;
+
+    const str EUR = 'EUR';
+
+    #define.CurrentVersion(1)
+    #define.Version1(1)
+    #localmacro.CurrentList
+        fromDate,
+        toDate,
+        dateCode,
+        limitAmount
+    #endmacro
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createSumLines</Name>
+				<Source><![CDATA[
+    private void createSumLines()
+    {
+        AVAListZ4Data listZ4Data;
+        AVAListZ4Data listZ4DataSum;
+
+        ttsBegin;
+
+        select sum(ReceivableAmount), sum(PayablesAmount) from listZ4Data
+        where listZ4Data.PosType    == AVAListZ4PosType::Position
+        &&    listZ4Data.DispatchId == dispatchId;
+        
+        listZ4DataSum.clear();
+        listZ4DataSum.initValue();
+        listZ4DataSum.DispatchId        = dispatchId;
+        listZ4DataSum.PosType           = AVAListZ4PosType::Sum;
+        listZ4DataSum.SeqNum            = AVAListZ4Data::maxSeqNumDispatchType(dispatchId) + 1;
+        listZ4DataSum.CountryRegionName = "@NDX:AVAListZ4CountryRegionNameSum";
+        listZ4DataSum.ReceivableAmount  = listZ4Data.ReceivableAmount;
+        listZ4DataSum.PayablesAmount    = listZ4Data.PayablesAmount;
+        listZ4DataSum.FromDate          = fromDate;
+        listZ4DataSum.ToDate            = ToDate;
+        listZ4DataSum.insert();
+        
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getNumberOfRecordsCreated</Name>
+				<Source><![CDATA[
+    protected NumberOfRecords getNumberOfRecordsCreated()
+    {
+        return (select count(RecId) from AVAListZ4Data
+            where AVAListZ4Data.DispatchId == dispatchId).RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteOldValues</Name>
+				<Source><![CDATA[
+    private void deleteOldValues()
+    {
+        AVAListZ4Data listZ4Data;
+
+        delete_from  listZ4Data
+        where  listZ4Data.Status == AVAListZ4Status::New;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteZeroLines</Name>
+				<Source><![CDATA[
+    private void deleteZeroLines()
+    {
+        AVAListZ4Data listZ4Data;
+
+        ttsBegin;
+
+        delete_from listZ4Data
+        where listZ4Data.DispatchId == dispatchId
+        &&    listZ4Data.PosType == AVAListZ4PosType::Position
+        &&   !listZ4Data.PayablesAmount
+        &&   !listZ4Data.ReceivableAmount;
+
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialog</Name>
+				<Source><![CDATA[
+    public Object dialog()
+    {
+        DialogRunbase dialog = super();
+
+        dialog.addGroup("@SYS4080");
+        dlgFromDate = dialog.addFieldValue(extendedTypeStr(FromDate), fromDate);
+        dlgToDate   = dialog.addFieldValue(extendedTypeStr(ToDate), toDate);
+        dlgDateCode = dialog.addFieldValue(extendedTypeStr(DateCode), dateCode);
+        dialog.addGroup("@SYS28621");
+        dlgLimitAmount = dialog.addFieldValue(extendedTypeStr(AmountMST),limitAmount,"@NDX:AVAListZ4LimitAmount");
+
+        dlgDateCode.registerOverrideMethod(methodStr(FormStringControl, modified), methodStr(AVAListZ4Create, dateCodeModified), this);
+        dlgDateCode.registerOverrideMethod(methodStr(FormStringControl, validate), methodStr(AVAListZ4Create, dateCodeValidate), this);
+        dlgFromDate.registerOverrideMethod(methodStr(FormDateControl, modified), methodStr(AVAListZ4Create, fromOrToDateModified), this);
+        dlgToDate.registerOverrideMethod(methodStr(FormDateControl, modified), methodStr(AVAListZ4Create, fromOrToDateModified), this);
+
+        return dialog;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fromOrToDateModified</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Append modified behavior to control
+    /// </summary>
+    /// <param name = "_control">FormControl</param>
+    /// <returns><c>true</c> when modified, otherwise <c>false</c></returns>
+	public boolean fromOrToDateModified(FormDateControl _control)
+    {
+        boolean ret = _control.modified();
+
+        if (ret)
+        {
+            dlgDateCode.value('');
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dateCodeModified</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Append modified behavior to control
+    /// </summary>
+    /// <param name = "_control">FormControl</param>
+    /// <returns><c>true</c> when modified, otherwise <c>false</c></returns>
+	public boolean dateCodeModified(FormStringControl _control)
+    {
+        boolean ret = _control.modified();
+
+        if (ret)
+        {
+            if (dlgDateCode.value() != '')
+            {
+                dlgFromDate.value('');
+                dlgToDate.value('');
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dateCodeValidate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Append validate behavior to control
+    /// </summary>
+    /// <param name = "_control">FormControl</param>
+    /// <returns><c>true</c> when valid, otherwise <c>false</c></returns>
+    public boolean dateCodeValidate(FormStringControl _control)
+    {
+        boolean ret = _control.validate();
+
+        if (ret && dlgDateCode.value())
+        {
+            if (!LedgerPeriodCode::checkExist(dlgDateCode.value()))
+            {
+                ret = false;
+                dlgDateCode.value('');
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFromDialog</Name>
+				<Source><![CDATA[
+    public boolean getFromDialog()
+    {
+        if (dlgFromDate)
+        {
+            fromDate = dlgFromDate.value();
+        }
+
+        if (dlgToDate)
+        {
+            toDate = dlgToDate.value();
+        }
+
+        if (dlgLimitAmount)
+        {
+            limitAmount = dlgLimitAmount.value();
+        }
+
+        dateCode = dlgDateCode.value();
+
+        return super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initDatesFromDateCode</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Intialize dates from date code, when provided
+    /// </summary>
+    protected void initDatesFromDateCode()
+    {
+        if (!dateCode)
+        {
+            return;
+        }
+
+        var ledgerPeriodCode = LedgerPeriodCode::find(dateCode);
+
+        if (!ledgerPeriodCode)
+        {
+            throw error(strFmt(LedgerPeriodCode::txtNotExist(), dateCode));
+        }
+
+        fromDate = ledgerPeriodCode.fromDate();
+        toDate   = ledgerPeriodCode.toDate();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initParmDefault</Name>
+				<Source><![CDATA[
+    public void initParmDefault()
+    {
+        limitAmount = 12500;
+        toDate  = endmth(prevMth(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())));
+        fromDate= endmth(prevMth(toDate)) + 1;
+
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isOwnCountry</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks whether country is own country
+    /// </summary>
+    /// <param name = "_country">country to check</param>
+    /// <returns><c>true</c> when country is own country, otherwise <c>false</c></returns>
+    protected boolean isOwnCountry(AddressCountryRegionId _country)
+    {
+        if (!ownCountryRegionId)
+        {
+            ownCountryRegionId = CompanyInfo::find().postalAddress().CountryRegionId;
+        }
+
+        return ownCountryRegionId == _country;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    public container pack()
+    {
+        return [#CurrentVersion,#CurrentList];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>writeCustTransOffsetAmounts</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Write entries for customer transactions
+    /// </summary>
+    /// <param name = "custTransOffset">Offset transaction</param>
+    /// <param name = "countryRegionId">Country</param>
+    /// <param name = "_custAccount">CustAccount</param>
+	protected void writeCustTransOffsetAmounts(CustVendTrans custTransOffset, LogisticsAddressCountryRegionId countryRegionId, CustAccount _custAccount = '')
+    {
+        GeneralJournalAccountEntry  generalJournalAccountEntryOffset;
+        GeneralJournalEntry         generalJournalEntryOffset;
+        MainAccount                 mainAccountOffset;
+
+        while select AccountingDate, SubledgerVoucher from generalJournalEntryOffset order by AccountingDate
+            where   generalJournalEntryOffset.SubledgerVoucher           == custTransOffset.Voucher
+                &&  generalJournalEntryOffset.SubledgerVoucherDataAreaId == custTransOffset.dataAreaId
+                &&  generalJournalEntryOffset.Ledger == Ledger::current()
+            join TransactionCurrencyAmount, TransactionCurrencyCode, Text from generalJournalAccountEntryOffset
+            where   generalJournalAccountEntryOffset.GeneralJournalEntry == generalJournalEntryOffset.RecId
+            join AVAListZ4RefNumId, MainAccountId, Name from mainAccountOffset
+            where   mainAccountOffset.RecId   == generalJournalAccountEntryOffset.MainAccount
+                &&  mainAccountOffset.AVAListZ4OffAcc
+        {
+            Amount amount = -generalJournalAccountEntryOffset.TransactionCurrencyAmount;
+            amount = ExchangeRateHelper::curPrice2CurPrice(amount,generalJournalAccountEntryOffset.TransactionCurrencyCode, EUR);
+            this.writeLine(
+                mainAccountOffset.Name,
+                mainAccountOffset.MainAccountId,
+                countryRegionId,
+                0,
+                amount,
+                mainAccountOffset.AVAListZ4RefNumId,
+                generalJournalEntryOffset.AccountingDate,
+                generalJournalAccountEntryOffset.Text,
+//                generalJournalEntryOffset.SubledgerVoucher
+            generalJournalEntryOffset.SubledgerVoucher,
+                AVACustVendLedger::Cust,
+                _custAccount
+                );
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>writeVendTransOffsetAmounts</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Write entries for vendor transactions
+    /// </summary>
+    /// <param name = "vendTransOffset">Offset transaction</param>
+    /// <param name = "countryRegionId">Country</param>
+    /// <param name = "_vendAccount"></param>
+    protected void writeVendTransOffsetAmounts(CustVendTrans vendTransOffset, LogisticsAddressCountryRegionId countryRegionId, VendAccount _vendAccount = '')
+    {
+        GeneralJournalAccountEntry  generalJournalAccountEntryOffset;
+        GeneralJournalEntry         generalJournalEntryOffset;
+        MainAccount                 mainAccountOffset;
+
+        while select AccountingDate, SubledgerVoucher from generalJournalEntryOffset order by AccountingDate
+            where   generalJournalEntryOffset.SubledgerVoucher           == vendTransOffset.Voucher
+                &&  generalJournalEntryOffset.SubledgerVoucherDataAreaId == vendTransOffset.dataAreaId
+                &&  generalJournalEntryOffset.Ledger == Ledger::current()
+            join TransactionCurrencyAmount, TransactionCurrencyCode, Text from generalJournalAccountEntryOffset
+            where   generalJournalAccountEntryOffset.GeneralJournalEntry == generalJournalEntryOffset.RecId
+            join AVAListZ4RefNumId, MainAccountId, Name from mainAccountOffset
+            where   mainAccountOffset.RecId   == generalJournalAccountEntryOffset.MainAccount
+                &&  mainAccountOffset.AVAListZ4OffAcc
+        {
+            Amount amount = generalJournalAccountEntryOffset.TransactionCurrencyAmount;     // Betrag in Buchungswährung
+            amount = ExchangeRateHelper::curPrice2CurPrice(amount,generalJournalAccountEntryOffset.TransactionCurrencyCode, EUR);
+            this.writeLine(
+                mainAccountOffset.Name,
+                mainAccountOffset.MainAccountId,
+                countryRegionId,
+                amount,
+                0,
+                mainAccountOffset.AVAListZ4RefNumId,
+                generalJournalEntryOffset.AccountingDate,
+                generalJournalAccountEntryOffset.Text,
+                //generalJournalEntryOffset.SubledgerVoucher
+                generalJournalEntryOffset.SubledgerVoucher,
+                AVACustVendLedger::Vend,
+                _vendAccount
+                );
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>writeLedgerTransOffsetAmounts</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Write entries for Ledger transactions
+    /// </summary>
+    /// <param name = "generalJournalEntry">Gneral journal entry for offset transaction</param>
+    /// <param name = "countryRegionId">Country</param>
+    protected void writeLedgerTransOffsetAmounts(GeneralJournalEntry generalJournalEntry, LogisticsAddressCountryRegionId countryRegionId)
+    {
+        GeneralJournalAccountEntry  generalJournalAccountEntryOffset;
+        GeneralJournalEntry         generalJournalEntryOffset;
+        MainAccount                 mainAccountOffset;
+
+        while select AccountingDate, SubledgerVoucher from generalJournalEntryOffset order by AccountingDate
+            where   generalJournalEntryOffset.SubledgerVoucher == generalJournalEntry.SubledgerVoucher
+                &&  generalJournalEntryOffset.Ledger == Ledger::current()
+            join TransactionCurrencyAmount, TransactionCurrencyCode, Text from generalJournalAccountEntryOffset
+            where   generalJournalAccountEntryOffset.GeneralJournalEntry == generalJournalEntryOffset.RecId
+                && (generalJournalAccountEntryOffset.ReportingCurrencyAmount >=  limitAmount  ||
+                    generalJournalAccountEntryOffset.ReportingCurrencyAmount <= -limitAmount)
+            join AVAListZ4RefNumId, MainAccountId, Name from mainAccountOffset
+            where   mainAccountOffset.RecId   == generalJournalAccountEntryOffset.MainAccount
+                &&  mainAccountOffset.AVAListZ4OffAcc
+        {
+            Amount amount = generalJournalAccountEntryOffset.TransactionCurrencyAmount;   // Betrag in Buchungswährung
+            amount = ExchangeRateHelper::curPrice2CurPrice(amount,generalJournalAccountEntryOffset.TransactionCurrencyCode, EUR);
+            this.writeLine(
+                    mainAccountOffset.Name,
+                    mainAccountOffset.MainAccountId,
+                    countryRegionId,
+                    0,
+                    amount,
+                    mainAccountOffset.AVAListZ4RefNumId,
+                    generalJournalEntryOffset.AccountingDate,
+                    generalJournalAccountEntryOffset.Text,
+                    //generalJournalEntryOffset.SubledgerVoucher
+                    generalJournalEntryOffset.SubledgerVoucher,
+                    AVACustVendLedger::Ledger,
+                    ''
+                    );
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processLedgerTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Proces LedgerTransRecords
+    /// </summary>
+	protected void processLedgerTrans()
+    {
+        MainAccount                 mainAccount;
+        GeneralJournalAccountEntry  generalJournalAccountEntry;
+        GeneralJournalEntry         generalJournalEntry;
+        CustTable                   custTable;
+        CustTrans                   custTrans;
+        CustTrans                   custTransOffset;
+        CustSettlement              custSettlement;
+        VendTable                   vendTable;
+        VendTrans                   vendTrans;
+        VendTrans                   vendTransOffset;
+        VendSettlement              vendSettlement;
+        AddressCountryRegionId      countryRegionId;
+        
+        // suche Zahlungsbuchungen auf Bankkonto im Zeitraum
+        while select SubledgerVoucher, AccountingDate from generalJournalEntry order by AccountingDate
+        where   generalJournalEntry.AccountingDate >= fromDate
+            &&  generalJournalEntry.AccountingDate <= toDate
+            &&  generalJournalEntry.Ledger == Ledger::current()
+        exists join generalJournalAccountEntry
+        where   generalJournalAccountEntry.GeneralJournalEntry == generalJournalEntry.RecId
+            && (generalJournalAccountEntry.AccountingCurrencyAmount >=  limitAmount  ||
+                generalJournalAccountEntry.AccountingCurrencyAmount <= -limitAmount)
+        join RecId from mainAccount
+        where   mainAccount.RecId   == generalJournalAccountEntry.MainAccount
+            &&  mainAccount.AVAListZ4
+        {
+            // ist Zahlung auf Debitor?
+            select firstOnly dataAreaId, RecId, AccountNum from custTrans
+            where   custTrans.Voucher   == generalJournalEntry.SubledgerVoucher
+                &&  custTrans.TransDate == generalJournalEntry.AccountingDate
+            join Party from custTable
+            where   custTable.AccountNum== custTrans.AccountNum;
+
+            if (custTrans)
+            {
+                countryRegionId = custTable.postalAddress().CountryRegionId;
+
+                if (this.isOwnCountry(countryRegionId))
+                {
+                    continue;
+                }
+
+                // suche Rechnungen auf Debitor finden zur Zahlungsbuchung am Debitor
+                while select TableId from custSettlement
+                where   custSettlement.TransCompany == custTrans.dataAreaId
+                    &&  custSettlement.TransRecId   == custTrans.RecId
+                    &&  custSettlement.AccountNum   == custTrans.AccountNum
+                join dataAreaId, Voucher from custTransOffset
+                where   custTransOffset.RecId == custSettlement.OffsetRecid
+                {
+                    // Rechnung gefunden am Debitor
+                    // suche Sachkontobuchungen jeweils zur Rechnung, wo im Sachkonto das 2. Z4-Feld markiert ist
+                    this.writeCustTransOffsetAmounts(custTransOffset, countryRegionId, custTrans.AccountNum);
+                }
+
+                continue;
+            }
+
+            // ist Zahlung auf Kreditor?
+            select firstOnly dataAreaId, RecId, AccountNum from vendTrans
+            where   vendTrans.Voucher   == generalJournalEntry.SubledgerVoucher
+                &&  vendTrans.TransDate == generalJournalEntry.AccountingDate
+            join Party from vendTable
+            where   vendTable.AccountNum== vendTrans.AccountNum;
+
+            if (vendTrans)
+            {
+                countryRegionId = vendTable.postalAddress().CountryRegionId;
+
+                if (this.isOwnCountry(countryRegionId))
+                {
+                    continue;
+                }
+
+                // suche Rechnungen auf Kreditor finden zur Zahlungsbuchung am Debitor
+                while select TableId from vendSettlement
+                where   vendSettlement.TransCompany == vendTrans.dataAreaId
+                    &&  vendSettlement.TransRecId   == vendTrans.RecId
+                    &&  vendSettlement.AccountNum   == vendTrans.AccountNum
+                join dataAreaId, Voucher from vendTransOffset
+                where   vendTransOffset.RecId == vendSettlement.OffsetRecid
+                {
+                    // Rechnung gefunden am Kreditor
+                    // suche Sachkontobuchungen jeweils zur Rechnung, wo im Sachkonto das 2. Z4-Feld markiert ist
+                    this.writeVendTransOffsetAmounts(vendTransOffset, countryRegionId, vendTrans.AccountNum);
+                }
+
+                continue;
+            }
+
+            // ohne Debitor, ohne Kreditor, ohne OP-Ausgleich
+            this.writeLedgerTransOffsetAmounts(generalJournalEntry, countryRegionId);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        #OCCRetryCount
+
+        this.initDatesFromDateCode();
+
+        if (!this.validate())
+        {
+            throw error('');
+        }
+
+        setPrefix(AVAListZ4Create::description());
+
+        try
+        {
+            ttsbegin;
+
+            num = NumberSeq::newGetNum(IntrastatParameters::AVAnumRefList4DispatchId(), true);
+            dispatchId = num.num();
+
+            this.deleteOldValues();
+
+            this.processLedgerTrans();
+
+            //        this.deleteZeroLines();
+            this.createSumLines();
+
+            ttscommit;
+
+            info(strFmt("@SYS97212", this.getNumberOfRecordsCreated()));
+        }
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    public boolean unpack(container packedClass)
+    {
+        Version version = RunBase::getVersion(packedClass);
+        ;
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version,#CurrentList] = packedClass;
+                break;
+            default:
+                return false;
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validate</Name>
+				<Source><![CDATA[
+    public boolean validate(Object calledFrom = null)
+    {
+        boolean ret = super(calledFrom);
+
+        if (ret)
+        {
+            if (toDate < fromDate)
+            {
+                ret = checkFailed("@SYS107101");
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>writeLine</Name>
+				<Source><![CDATA[
+    private void writeLine(
+    AccountName                     accountName,
+    AccountNum                      accountNum,
+    LogisticsAddressCountryRegionId countryRegionId,
+    AmountMST                       payablesAmount,
+    AmountMST                       receivableAmount,
+    AVAListZ4RefNumId              refNum,
+    TransDate                       transDate,
+    TransTxt                        transTxt,
+    //Voucher                         voucher
+    Voucher                         voucher,
+    AVACustVendLedger               type,
+    custVendAC                      custVendAccount = ''
+    )
+    {
+        AVAListZ4Data  listZ4Data;
+
+        lineNum++;
+        listZ4Data.clear();
+        listZ4Data.initValue();
+        listZ4Data.AccountName      = accountName;
+        listZ4Data.AccountNum       = accountNum;
+        listZ4Data.CountryRegionId  = countryRegionId;
+        listZ4Data.DispatchId       = dispatchId;
+        listZ4Data.FromDate         = fromDate;
+        listZ4Data.PayablesAmount   = decRound(payablesAmount,0);
+        listZ4Data.ReceivableAmount = decRound(receivableAmount,0);
+        listZ4Data.RefNumId         = RefNum;
+        listZ4Data.SeqNum           = lineNum;
+        listZ4Data.ToDate           = toDate;
+        listZ4Data.TransDate        = TransDate;
+        listZ4Data.TransTxt         = TransTxt;
+        listZ4Data.Voucher          = Voucher;
+        listZ4Data.CustVendLedger   = type;
+        if (type ==AVACustVendLedger ::Cust)
+        {
+            listZ4Data.CustAccount  = custVendAccount;
+            listZ4Data.CustVendName = CustTable::find(custVendAccount).name();
+        }
+        else if (type ==AVACustVendLedger ::Vend)
+        {
+            listZ4Data.VendAccount  = custVendAccount;
+            listZ4Data.CustVendName = VendTable::find(custVendAccount).name();
+        }
+        listZ4Data.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    protected boolean canRunInNewSession()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    server static AVAListZ4Create construct()
+    {
+        return new AVAListZ4Create();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>ClassDescription</returns>
+    static ClassDescription description()
+    {
+        return "@NDX:AVAListZ4Data";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    static void main(Args args)
+    {
+        AVAListZ4Create z4Create = AVAListZ4Create::construct();
+        FormDataSource   fds;
+
+        if (args)
+        {
+            if (args.dataset() == tableNum(AVAListZ4Data))
+            {
+                fds = FormDataUtil::getFormDataSource(args.record());
+            }
+        }
+
+        if (z4Create.prompt())
+        {
+            z4Create.runOperation();
+
+            if (fds)
+            {
+                fds.executeQuery();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

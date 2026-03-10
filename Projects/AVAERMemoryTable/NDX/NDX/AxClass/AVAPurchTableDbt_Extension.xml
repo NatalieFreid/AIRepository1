@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPurchTableDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of table <t>PurchTable</t>
+/// </summary>
+[ExtensionOf(tableStr(PurchTable))]
+final class AVAPurchTableDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    void  insert(boolean _interCompanySilent,
+                 AccountingDate _accountingDate)
+    {
+        next insert(_interCompanySilent, _accountingDate);
+
+        if(this.MatchingAgreement)
+        {
+            this.avaDeleteMarkup();
+            PurchTable::avaCopyMarkup(this.avaGetPurchAgreementHeader(), this);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDeliveryFormTextType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// gets form text type for delivery reminders
+    /// </summary>
+    /// <returns>
+    /// delivery reminder form text type
+    /// </returns>
+    public FormTextType avaDeliveryFormTextType()
+    {
+        switch (this.KCS_DLMMaxReminderCounter())
+        {
+            case 0:
+            case 1:
+                return FormTextType::AVAAVMPurchReminder;
+    
+            case 2:
+                return FormTextType::AVAAVMPurchReminder2;
+    
+            case 3:
+                return FormTextType::AVAAVMPurchReminder3;
+    
+            default :
+                return FormTextType::AVAAVMPurchReminder4;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaConfirmFormTextType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// gets form text type for confirm reminders
+    /// </summary>
+    /// <returns>
+    /// confirm reminder form text type
+    /// </returns>
+    public FormTextType avaConfirmFormTextType()
+    {
+        switch (this.KCS_DLMMaxReminderCounterConfirm())
+        {
+            case 0:
+            case 1:
+                return FormTextType::AVAAVMPurchReminder_Confirm;
+    
+            case 2:
+                return FormTextType::AVAPurchReminder_Confirm2;
+    
+            case 3:
+                return FormTextType::AVAPurchReminder_Confirm3;
+    
+            default :
+                return FormTextType::AVAPurchReminder_Confirm4;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetPurchAgreementHeader</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets related <c>PurchAgreementHeader</c> record
+    /// </summary>
+    /// <returns>PurchAgreementHeader</returns>
+    public PurchAgreementHeader avaGetPurchAgreementHeader()
+    {
+        return PurchAgreementHeader::find(this.MatchingAgreement);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDeleteMarkup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// deletes <c>MarkupTrans</c> records
+    /// </summary>
+    public void avaDeleteMarkup()
+    {
+        Markup::delete(this);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCopyMarkup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Copies <c>MarkupTrans</c> records from origin to destination records
+    /// </summary>
+    /// <param name = "_fromTable">Common</param>
+    /// <param name = "_toTable">Common</param>
+    public static void avaCopyMarkup(Common _fromTable, Common _toTable)
+    {
+        Markup::copy(NoYes::No, _fromTable, _toTable);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Triggers on modified field
+    /// </summary>
+    /// <param name = "_fieldId">FieldId</param>
+    public void modifiedField(FieldId _fieldId)
+    {
+        next modifiedField(_fieldId);
+
+        if(_fieldId == fieldNum(PurchTable, AVAEffectivePrice)
+            && this.AVAEffectivePrice == 1)
+        {
+            this.avaChangeGRUpdate(NoYes::No);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaChangeGRUpdate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// updates all purchLines related to this record with a different AVAGRUpdate value than specified in the parameter.
+    /// Sets new value to specified parameter
+    /// </summary>
+    /// <param name = "_updateGR">NoYes</param>
+    public void avaChangeGRUpdate(NoYes _updateGR)
+    {
+        PurchLine purchLineLoc;
+
+        ttsbegin;
+
+        while select forupdate purchLineLoc
+            where purchLineLoc.PurchId == this.PurchId
+            && purchLineLoc.AVAGRUpdate != _updateGR
+        {
+            purchLineLoc.AVAGRUpdate = _updateGR;
+            purchLineLoc.update();
+            purchLineLoc.avaDeleteMarkupTrans(MarkupCategory::AVAMTZ);
+        }
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromPurchAgreementHeader</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initiates a <c>PurchTable</c> record with values based on <c>PurchAgreementHeader</c> record.
+    /// </summary>
+    /// <param name="_purchAgreementHeader">
+    /// A record of the table <c>PurchAgreementHeader</c>.
+    /// </param>
+    /// <param name="_copyDeliveryLocation">
+    /// When set to true delivery location is copyed from <c>PurchAgreementHeader</c>.
+    /// Default is true.
+    /// </param>
+    /// <param name="_copyCurrencyCode">
+    /// When set to true Currency code is copyed from <c>PurchAgreementHeader</c>.
+    /// Default is false.
+    /// </param>
+    public void initFromPurchAgreementHeader(PurchAgreementHeader _purchAgreementHeader, boolean _copyDeliveryLocation, boolean _copyCurrencyCode)
+    {
+        next initFromPurchAgreementHeader(_purchAgreementHeader, _copyDeliveryLocation, _copyCurrencyCode);
+        
+        this.AVAEffectivePrice      = _purchAgreementHeader.AVAEffectivePrice;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateLineOrderConfirmation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// update purchLine with Table AVAOrderConfirmation value
+    /// </summary>
+    public void avaUpdateLineOrderConfirmation()
+    {
+        PurchLine       purchLine;
+
+        ttsbegin;
+
+        while select forupdate purchLine
+            where purchLine.PurchId == this.PurchId &&
+                 (purchLine.PurchStatus == PurchStatus::Backorder ||
+                  purchLine.PurchStatus == PurchStatus::None)
+        {
+            purchLine.AVAOrderConfirmation = this.AVAOrderConfirmation;
+
+            purchLine.doUpdate();
+        }
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaFindFirstPurchLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds the first PurchLine record for current PurchTable
+    /// </summary>
+    /// <param name = "_selectForUpdate">boolean</param>
+    /// <returns>PurchLine</returns>
+    public PurchLine avaFindFirstPurchLine(boolean _selectForUpdate = false)
+    {
+        PurchLine avaPurchLineLoc;
+
+        if(_selectForUpdate)
+        {
+            avaPurchLineLoc.selectForUpdate(_selectForUpdate);
+        }
+
+        select firstonly avaPurchLineLoc
+            order by avaPurchLineLoc.LineNumber asc
+            where avaPurchLineLoc.PurchId == this.PurchId;
+
+        return avaPurchLineLoc;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

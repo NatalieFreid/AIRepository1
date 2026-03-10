@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAInventJournalTrans_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA
+/// </summary>
+[ExtensionOf(tableStr(InventJournalTrans))]
+final class AVAInventJournalTrans_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaCalcProjSalesPrice</Name>
+				<Source><![CDATA[
+    private ProjSalesPriceCost avaCalcProjSalesPrice()
+    {
+        CostAmount          costAmount      = this.CostAmount;
+        UnitOfMeasureSymbol itemUnitId      = this.inventTable().inventUnitId();
+        ProjSalesPriceCost  ret;
+        //InventQtyJournal    qty             = this.Qty;
+        //KCS_ItemSalesPrice  itemSalesPrice  = KCS_ItemSalesPrice::findCategoryIdIdx(this.ProjCategoryId);
+        InventTableModule   inventTableModuleSales  = this.inventTable().inventTableModuleSales();
+        CurrencyCode        companyStandardCurrency = Ledger::accountingCurrency(CompanyInfo::current());
+
+        //ret = costAmount / this.Qty * (100 + itemSalesPrice.Percent) / 100;
+        ret = costAmount / this.Qty;
+
+        if (itemUnitId != this.ProjUnitID)
+        {
+            //ret = UnitConvert::price(ret, itemUnitId, this.ProjUnitID, this.ItemId);
+            ret = EcoResProductUnitConverter::convertForReleasedProduct(this.ItemId, this.InventDimId, ret, UnitOfMeasure::findBySymbol(itemUnitId).RecId, UnitOfMeasure::findBySymbol(this.ProjUnitID).RecId);
+        }
+
+        //if (Currency::codeCompanyCurrency() != this.ProjSalesCurrencyId)
+        //ret = Currency::curAmount2CurAmount(ret, Currency::codeCompanyCurrency(), this.ProjSalesCurrencyId);
+        if (companyStandardCurrency != this.ProjSalesCurrencyId)
+        {
+            ret = CurrencyExchangeHelper::curAmount2CurAmount(ret, companyStandardCurrency, this.ProjSalesCurrencyId);
+        }
+
+        ret = ret * inventTableModuleSales.priceUnit();
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetProjSalesPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_008398_CalcProjectSalesPrice
+    /// </summary>
+    public void avaSetProjSalesPrice()
+    {
+        if (this.ProjId && this.ProjCategoryId && !ProjTable::find(this.ProjId).ProjPriceGroup)
+        {
+            this.ProjSalesPrice = this.avaCalcProjSalesPrice();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setProjSalesPrice</Name>
+				<Source><![CDATA[
+    public void setProjSalesPrice(ProjTable   _projTable, InventDim   _inventDim)
+    {
+        next setProjSalesPrice(_projTable, _inventDim);
+        this.avaSetProjSalesPrice();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

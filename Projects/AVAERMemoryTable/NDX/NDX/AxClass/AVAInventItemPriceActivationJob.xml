@@ -1,0 +1,470 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAInventItemPriceActivationJob</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// N.Freidenberger 04.02.2025
+/// </summary>
+internal final class AVAInventItemPriceActivationJob extends   InventItemPriceActivationJob
+{
+
+    TransDate                   activationDate;
+    NoYes                       onlyCostPrice;
+
+    DialogField                 activationDateDlg;
+    DialogField                 onlyCostPriceDlg;
+  
+    #DEFINE.CurrentVersion(1)
+
+    #LOCALMACRO.CurrentList
+        purchasePrice,
+        salesPrice,
+        costPrice,
+        netWeight,
+        rateAndRatio,
+        controlDate,
+        skipActivationIfEqualPriceExists,
+        fromCostingVersion,
+        abortOnError,
+        recalculateProduction,
+        activationDate,
+        onlyCostPrice
+    #ENDMACRO
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>dialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 04.02.2025
+    /// </summary>
+    /// <returns>Object</returns>
+    public Object dialog()
+    {
+        DialogRunbase dialog = super();
+        activationDateDlg = dialog.addFieldValue(extendedTypeStr(TransDate),activationDate,"@SYS54971");
+        onlyCostPriceDlg  = dialog.addFieldValue(extendedTypeStr(NoYesId),onlyCostPrice,"@NDX:NXAOnlyCostPrice");
+        return dialog;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFromDialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 04.02.2025
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean getFromDialog()
+    {
+        boolean ret = super();
+        activationDate = activationDateDlg.value();
+        onlyCostPrice  = onlyCostPriceDlg.value();
+
+        CostingVersion          locCostingVersion = CostingVersion::find(fromCostingVersion);
+        if (locCostingVersion)
+        {
+            if (onlyCostPrice)
+            {
+                locCostingVersion.AVAActivationDate = activationDate;
+            }
+            else
+            {
+                locCostingVersion.AVAActivationDate = dateNull();
+            }
+            locCostingVersion.selectForUpdate(true);
+            ttsbegin;
+            locCostingVersion.doUpdate();
+            ttscommit;
+        }
+        
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 04.02.2025
+    /// </summary>
+    public void run()
+    {
+        super();
+        
+        CostingVersion          locCostingVersion = CostingVersion::find(fromCostingVersion);
+        if (locCostingVersion)
+        {
+            locCostingVersion.AVAActivationDate = dateNull();
+            locCostingVersion.selectForUpdate(true);
+            ttsbegin;
+            locCostingVersion.doUpdate();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 04.02.2025
+    /// </summary>
+    /// <param name = "args">args</param>
+    public static void main(Args args)
+    {
+        InventItemPriceActivationJob    inventItemPriceActivationJob;
+        InventItemPriceSim              inventItemPriceSim;
+        Common                          record;
+        RouteCostCategoryPrice          routeCostCategoryPrice;
+        CostSheetCalculationFactor      costSheetCalculationFactor;
+        CostSheet                       costSheet;
+        boolean                         activateItemYesToAll;
+        boolean                         activateItemNoToAll;
+        boolean                         activateItemCancel;
+        boolean                         noneDimensionDefaultingSourceYesToAll;
+        boolean                         noneDimensionDefaultingSourceNoToAll;
+        boolean                         noActivePrice;
+
+        boolean activateItem()
+        {
+            InventItemPrice currentInventItemPrice;
+            boolean         doActivate                = true;
+            DialogButton    userResponse;
+
+            if (! noActivePrice)
+            {
+                if (activateItemNoToAll)
+                {
+                    doActivate = false;
+                }
+                else
+                {
+                    currentInventItemPrice = InventItemPrice::findCurrent(inventItemPriceSim.ItemId,
+                                                                            inventItemPriceSim.PriceType,
+                                                                            inventItemPriceSim.InventDimId);
+                    userResponse = Box::yesAllNoAllCancel(strFmt("@SYS106972",currentInventItemPrice.ItemId,
+                                    currentInventItemPrice.VersionId,
+                                    currentInventItemPrice.ActivationDate,
+                                    date2StrUsr(inventItemPriceSim.FromDate, DateFlags::FormatAll)), DialogButton::No);
+
+                    if (userResponse == DialogButton::No || userResponse == DialogButton::NoToAll || userResponse == DialogButton::Cancel)
+                    {
+                        doActivate = false;
+                    }
+
+                    activateItemCancel = userResponse == DialogButton::Cancel;
+                    activateItemNoToAll = userResponse == DialogButton::NoToAll;
+                    activateItemYesToAll = userResponse == DialogButton::YesToAll;
+                }
+            }
+
+            if (InventCostDimensionDefaultingSourceFeature::instance().isEnabled() && doActivate)
+            {
+                CostParameters costParameters = CostParameters::find();
+                if (costParameters.DimensionDefaultingSource == DimensionDefaultingSource::None)
+                {
+                    if (noneDimensionDefaultingSourceNoToAll)
+                    {
+                        doActivate = false;
+                    }
+                    else
+                    {
+                        boolean isStandardCostItem = InventTable::find(inventItemPriceSim.ItemId).modelGroup().inventModelType().stdCostBased();
+
+                        if (!noActivePrice && isStandardCostItem)
+                        {
+                            userResponse = Box::yesAllNoAllCancel("@SCM:InventItemPriceActivationWithoutFinancialDimension", DialogButton::No);
+                            if (userResponse == DialogButton::No || userResponse == DialogButton::NoToAll || userResponse == DialogButton::Cancel)
+                            {
+                                doActivate = false;
+                            }
+
+                            activateItemCancel = userResponse == DialogButton::Cancel;
+                            noneDimensionDefaultingSourceNoToAll = userResponse == DialogButton::NoToAll;
+                            noneDimensionDefaultingSourceYesToAll = userResponse == DialogButton::YesToAll;
+                        }
+                    }
+                }
+                else
+                {
+                    noneDimensionDefaultingSourceYesToAll = true;
+                }
+            }
+            else
+            {
+                noneDimensionDefaultingSourceYesToAll = true;
+            }
+
+            return doActivate;
+        }
+
+        boolean activateCostCategory()
+        {
+            RouteCostCategoryPrice  currentRouteCostCategoryPrice;
+            boolean                 doActivate                = true;
+
+            if (! routeCostCategoryPrice.hasNoActivePrice(false))
+            {
+                currentRouteCostCategoryPrice = RouteCostCategoryPrice::findCurrent(routeCostCategoryPrice.CostCategoryId, routeCostCategoryPrice.InventSiteId);
+
+                if (Box::yesNo(strFmt("@SYS106973",currentRouteCostCategoryPrice.CostCategoryId,
+                                                   currentRouteCostCategoryPrice.VersionId,
+                                                   date2StrUsr(currentRouteCostCategoryPrice.FromDate, DateFlags::FormatAll),
+                                                   date2StrUsr(routeCostCategoryPrice.FromDate, DateFlags::FormatAll)), DialogButton::No) == DialogButton::No)
+                {
+                    doActivate = false;
+                }
+            }
+            return doActivate;
+        }
+
+        boolean activateCalculationFactor()
+        {
+            CostSheetCalculationFactor currentCostSheetCalculationFactor;
+            boolean                     doActivate                = true;
+            CostSheetNodeCode          calculationNodeCode         = costSheet.findNode(costSheetCalculationFactor.NodeId).getCode();
+
+            if (!costSheetCalculationFactor.hasNoActivePrice(calculationNodeCode, false))
+            {
+                currentCostSheetCalculationFactor = CostSheetCalculationFactor::findCurrent(costSheetCalculationFactor.NodeId,
+                                                                                              costSheetCalculationFactor.ItemCode,
+                                                                                              costSheetCalculationFactor.ItemRelation,
+                                                                                              costSheetCalculationFactor.InventSiteId,
+                                                                                              costSheetCalculationFactor);
+
+                if (Box::yesNo(strFmt("@SYS112787",
+                                      calculationNodeCode,
+                                      currentCostSheetCalculationFactor.VersionId,
+                                      date2StrUsr(currentCostSheetCalculationFactor.FromDate, DateFlags::FormatAll),
+                                      date2StrUsr(costSheetCalculationFactor.FromDate, DateFlags::FormatAll)), DialogButton::No) == DialogButton::No)
+                {
+                    doActivate = false;
+                }
+            }
+            return doActivate;
+        }
+
+        using (SysErrorMessageHelpScope scope = SysErrorMessageHelpScope::newErrorContext(args))
+        {
+            if (args && args.record())
+            {
+                switch (args.record().TableId)
+                {
+                    case tableNum(InventItemPriceSim) :
+                        FormDataSource inventItemPriceSimDS = FormDataUtil::getFormDataSource(args.record());
+                        for (record = inventItemPriceSimDS.getFirst(true)
+                                    ? inventItemPriceSimDS.getFirst(true)
+                                    : inventItemPriceSimDS.cursor();
+                        record && !activateItemCancel;
+                        record = inventItemPriceSimDS.getNext())
+                        {
+                            inventItemPriceSim = record as InventItemPriceSim;
+                            noActivePrice = inventItemPriceSim.checkNoActivePrice(false);
+                        
+                            if (inventItemPriceSim.allowActivation(false) && ((activateItemYesToAll && noneDimensionDefaultingSourceYesToAll) || activateItem()))
+                            {
+                                inventItemPriceActivationJob  = InventItemPriceActivationJob::construct();
+                                inventItemPriceActivationJob.activateOneInventItemPriceSim(inventItemPriceSim);
+                            }
+                        }
+                        break;
+
+                    case tableNum(RouteCostCategoryPrice) :
+                        routeCostCategoryPrice      = args.record();
+
+                        if (activateCostCategory())
+                        {
+                            inventItemPriceActivationJob  = InventItemPriceActivationJob::construct();
+                            inventItemPriceActivationJob.activateOneRouteCostCategoryPrice(routeCostCategoryPrice);
+                        }
+                        break;
+
+                    case tableNum(CostSheetCalculationFactor) :
+                        costSheetCalculationFactor = args.record();
+                        costSheet = args.parmObject();
+
+                        if (costSheet && activateCalculationFactor())
+                        {
+                            inventItemPriceActivationJob  = InventItemPriceActivationJob::construct();
+                            inventItemPriceActivationJob.activateOneCostSheetCalculationFactor(costSheetCalculationFactor,
+                                                                                                costSheet.findNode(costSheetCalculationFactor.NodeId).getCode());
+                        }
+                        break;
+
+                    case tableNum(CostingVersion) :
+                        CostingVersion costingVersion = args.record();
+                        AVAInventItemPriceActivationJob AVAinventItemPriceActivationJob = AVAInventItemPriceActivationJob::construct();
+                        AVAinventItemPriceActivationJob.getLast();
+                        AVAinventItemPriceActivationJob.parmFromCostingVersion(costingVersion.VersionId);
+                        AVAinventItemPriceActivationJob.parmActivationDate(costingVersion.DefaultDate);
+                        if (AVAinventItemPriceActivationJob.prompt())
+                        {
+                            AVAinventItemPriceActivationJob.runOperation();
+                        }
+                        break;
+
+                    default:
+                        throw error(Error::missingRecord(funcName()));
+                }
+            }
+            else
+            {
+                throw error(Error::missingRecord(funcName()));
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 04.02.2025
+    /// </summary>
+    /// <returns>AVAInventItemPriceActivationJob</returns>
+    public static AVAInventItemPriceActivationJob construct()
+    {
+        return new AVAInventItemPriceActivationJob();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmActivationDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 04.02.2025
+    /// </summary>
+    /// <param name = "_activationDate">_activationDate</param>
+    /// <returns>parmActivationDate</returns>
+    public TransDate  parmActivationDate(TransDate     _activationDate = activationDate)
+    {
+        activationDate = _activationDate;
+        return activationDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildInventItemPriceSimQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 04.02.2025
+    /// </summary>
+    protected void buildInventItemPriceSimQuery()
+    {
+        QueryBuildDataSource queryBuildDataSource = queryRun.query().dataSourceTable(tableNum(InventItemPriceSim));
+
+        QueryBuildRange queryBuildRange = SysQuery::findOrCreateRange(queryBuildDataSource, fieldNum(InventItemPriceSim,VersionId));
+        queryBuildRange.value(queryValue(fromCostingVersion));
+
+        if (!onlyCostPrice)
+        {
+            queryBuildRange = SysQuery::findOrCreateRange(queryBuildDataSource, fieldNum(InventItemPriceSim,FromDate));
+            queryBuildRange.value(SysQuery::range(dateNull(), DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())));
+        }
+        else
+        {
+            queryBuildDataSource.clearRange(fieldnum(InventItemPriceSim,FromDate));
+        }
+
+        queryBuildRange = SysQuery::findOrCreateRange(queryBuildDataSource, fieldNum(InventItemPriceSim,PriceType));
+        queryBuildRange.value(this.priceTypeRange());
+
+        queryBuildDataSource.addSortField(fieldNum(InventItemPriceSim, ItemId));
+        queryBuildDataSource.addSortField(fieldNum(InventItemPriceSim, PriceType));
+        queryBuildDataSource.addSortField(fieldNum(InventItemPriceSim, InventDimId));
+        queryBuildDataSource.addSortField(fieldNum(InventItemPriceSim, FromDate), SortOrder::Descending);
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    public container pack()
+    {
+        return [#CurrentVersion, #CurrentList, queryRun.pack()];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 04.02.2025
+    /// </summary>
+    /// <param name = "packedClass">packedClass</param>
+    /// <returns>unpack</returns>
+    public boolean unpack(container packedClass)
+    {
+        container   packedQuery;
+        Integer     version         = RunBase::getVersion(packedClass);
+
+        switch (version)
+        {
+            case #CurrentVersion :
+                [version, #CurrentList, packedQuery] = packedClass;
+
+                if (packedQuery)
+                {
+                    queryRun = new QueryRun(packedQuery);
+                }
+                break;
+
+            default :
+                return false;
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 04.02.2025
+    /// </summary>
+    /// <param name = "_inventItemPriceSim">_inventItemPriceSim</param>
+    /// <returns>activateOneInventItemPriceSim</returns>
+    /*public boolean activateOneInventItemPriceSim(InventItemPriceSim _inventItemPriceSim)
+    {
+        SysGlobalCache  globalCache = classFactory.globalCache();
+        if (onlyCostPrice)
+        {
+            globalCache.set(classStr(AVAInventItemPriceActivationJob),'PriceActDate', activationDate);
+        }
+        boolean activatePrice = super(_inventItemPriceSim);
+        globalCache.clear(classStr(AVAInventItemPriceActivationJob));
+
+        return activatePrice;
+    } */
+
+    /// <summary>
+    /// N.Freidenberger 04.02.2025
+    /// </summary>
+    /// <returns>ClassDescription</returns>
+    public static ClassDescription description()
+    {
+        return "@SYS104970";
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,597 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVARUMTransferAgreement2Forecast</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Transfers a agreemnt line to several forecast planning lines (19298)
+/// </summary>
+public class AVARUMTransferAgreement2Forecast extends RunBase
+{
+    EffectiveDate       effectiveDate;
+    ExpirationDate      expirationDate;
+    ForecastModelHeadId modelid, baselineid;
+    Counter             per, dummy;      
+    AVARUMTransferUnit  dateUnit;
+    Qty                 qty, origQty;
+    ModuleSalesPurch    moduleSalesPurch;
+    DialogField         dlgEffectiveDate, dlgExpirationDate, dlgModelid, dlgBaselineid, dlgPer, dlgQty,
+           dlgDateUnit;
+
+    AgreementLine       callerAgreementLine;
+    UnitOfMeasureSymbol kgSymbolCache;
+
+    #define.CurrentVersion(2)
+    #localmacro.CurrentList
+        modelid,
+        baselineid
+    #endmacro
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmAgreementLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Agreement line to work for
+    /// </summary>
+    /// <param name = "_AgreementLine">Agreement line to work for</param>
+    /// <returns>caller agreement line</returns>
+    public AgreementLine parmAgreementLine(AgreementLine _AgreementLine=callerAgreementLine)
+    {
+        callerAgreementLine=_AgreementLine;
+        return callerAgreementLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>evalKgSymbol</Name>
+				<Source><![CDATA[
+    static public UnitOfMeasureSymbol evalKgSymbol() 
+    {
+#define.DEF_KG('kg')
+        UnitOfMeasureSymbol rc;
+        UnitOfMeasureInternalCode locUnitOfMeasureInternalCode;
+        select firstonly locUnitOfMeasureInternalCode
+            where locUnitOfMeasureInternalCode.CodeSymbol==UnitOfMeasureCodeSymbol::Kilograms;
+        rc=UnitOfMeasure::find(locUnitOfMeasureInternalCode.UnitOfMeasure).Symbol;
+        if (!rc)
+        {
+            rc=#DEF_KG;
+        }
+        return rc;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unitIdKg</Name>
+				<Source><![CDATA[
+    private UnitOfMeasureSymbol unitIdKg()
+    {
+        if (!kgSymbolCache)
+        {
+            kgSymbolCache=AVARUMTransferAgreement2Forecast::evalKgSymbol();
+        }
+        return kgSymbolCache;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initfromCaller</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initialise dialog data from caller
+    /// </summary>
+    protected void initfromCaller()
+    {
+        effectiveDate=callerAgreementLine.EffectiveDate;
+        expirationDate=callerAgreementLine.ExpirationDate;
+        if (callerAgreementLine is AgreementLineQuantityCommitment)
+        {
+            AgreementLineQuantityCommitment AgreementLineQuantityCommitment=callerAgreementLine;
+            qty=AgreementLineQuantityCommitment.CommitedQuantity;            
+
+            if (AgreementLineQuantityCommitment.inventUnitId()!=this.UnitIdKg())
+            {
+                throw error("@AVARUM:AVARUMTransferAgreement2ForecastMsg1");
+            }
+            // convert Qty to KG
+            origQty=qty;
+            qty=InventTable::unitConvertValue(AgreementLineQuantityCommitment.ItemId,
+                AgreementLineQuantityCommitment.ProductUnitOfMeasure,
+                this.UnitIdKg(),
+                AgreementLineQuantityCommitment.inventUnitId(),
+                qty,
+                AgreementLineQuantityCommitment.InventDimId);
+        }
+        per=1;
+        dateUnit=AVARUMTransferUnit::Month;
+
+        moduleSalesPurch=ModuleSalesPurch::Purch;
+        if (AgreementHeader::find(callerAgreementLine.Agreement) is SalesAgreementHeader)
+        {
+            moduleSalesPurch=ModuleSalesPurch::Sales;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Build dialog
+    /// </summary>
+    /// <returns>Dialog object</returns>
+    public Object dialog()
+    {
+        DialogRunbase       dialog = super();
+        this.initfromCaller();
+
+        dlgEffectiveDate=dialog.addFieldValue(extendedTypeStr(EffectiveDate), effectiveDate);
+        dlgExpirationDate=dialog.addFieldValue(extendedTypeStr(ExpirationDate), expirationDate);
+        //dlgPer=dialog.addFieldValue(extendedTypeStr(Counter), per, "@AVARUM:AVARUMTransferAgreement2ForecastPer");
+        //dlgDateUnit=dialog.addFieldValue(enumStr(AVARUMTransferUnit), dateUnit);
+        dlgBaselineid=dialog.addFieldValue(extendedTypeStr(ForecastModelHeadId), baselineid, "@AVARUM:AVARUMTransferAgreement2ForecastBaseline");
+        dlgQty=dialog.addFieldValue(extendedTypeStr(Qty), qty, "@AVARUM:AVARUMTransferAgreement2ForecastQtyKg");
+        dialog.addFieldValue(extendedTypeStr(Qty), origQty, "@AVARUM:AVARUMTransferAgreement2ForecastQtyOriginal").allowEdit(false);
+        dlgModelid=dialog.addFieldValue(extendedTypeStr(ForecastModelHeadId), modelid);
+
+        return dialog;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFromDialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Fetches dialog field data
+    /// </summary>
+    /// <returns>true if ok</returns>
+    public boolean getFromDialog()
+    {
+        effectiveDate=dlgEffectiveDate.value();
+        expirationDate=dlgExpirationDate.value();
+        modelid=dlgModelid.value();
+        baselineid=dlgBaselineid.value();        
+        //per=dlgPer.value();
+        //dateUnit=dlgDateUnit.value();
+        qty=dlgQty.value();        
+
+        return super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Packs class data
+    /// </summary>
+    /// <returns>Container with packed data</returns>
+    public container pack()
+    {
+        return [#CurrentVersion,#CurrentList];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcDates</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Evaluates the dates for splitting demand depending on dialog data
+    /// </summary>
+    /// <returns>List of calculated dates</returns>
+    protected container calcDates()
+    {
+        container wkCon;
+        TransDate wkDate=effectiveDate, cDate, lastEndDate;
+        int weekday;
+        if (dateUnit==AVARUMTransferUnit::Month) 
+        {
+            //Month: immer den letzten Tag des Monats in dem Zeitraum hinzunehmen, wobei expirationDate das letzte Datum sein soll
+            cDate=endMth(wkDate);
+            wkCon+=cDate;
+            wkDate=cDate;
+            while (1)
+            {
+                cDate=nextMth(wkDate);
+                cDate=endMth(cDate);
+                if (cDate>=expirationDate)
+                {
+                    wkCon+=expirationDate; // add last
+                    lastEndDate=endMth(expirationDate+25)-1;
+                    break;
+                }
+                wkCon+=cDate;
+                wkDate=cDate;
+            }
+        }
+        else
+        {
+            // Week: immer den Freitag jeder Woche in dem Zeitraum hinzunehmen, wobei expirationDate das letzte Datum sein soll
+
+            while (1)
+            {
+                weekday=dayOfWk(wkDate);  //Mo=1, .. Fr=5, So=7)
+                if (weekday!=5)
+                {
+                    // move to next friday
+                    if (weekday<5)
+                    {
+                        wkDate+=(5-weekday);
+                    }
+                    else
+                    {
+                        wkDate+=(5+(weekday==6 ? 1: 0) );
+                    }
+                }
+                if (wkDate>=expirationDate)
+                {
+                    wkCon+=expirationDate;  // add last
+                    lastEndDate=expirationDate+6;
+                    break;
+                }
+                wkCon+=wkDate;
+                wkDate+=7;
+            }
+        }
+
+        return [wkCon, lastEndDate];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createForecastPurch</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Fills ForecastPurch
+    /// </summary>
+    /// <param name = "_model">Forecast Model</param>
+    /// <param name = "_PurchAgreementHeader">Agreement header for this data</param>
+    /// <param name = "_agreementLineQuantityCommitment">Agreement line for this data</param>
+    /// <param name = "_startDate">StartDate for forecast record</param>
+    /// <param name = "_endDate">EndDate for forecast record</param>
+    /// <param name = "_qty">Quantity for forecast</param>
+    protected void createForecastPurch(ForecastModelHeadId _model, PurchAgreementHeader _PurchAgreementHeader,
+        AgreementLineQuantityCommitment _agreementLineQuantityCommitment, TransDate _startDate, TransDate _endDate, Qty _qty)
+    {
+        ForecastPurch locForecastPurch;
+        locForecastPurch.clear();
+        locForecastPurch.initValue();
+        locForecastPurch.ItemId=callerAgreementLine.ItemId;
+        locForecastPurch.ModelId=_model;
+        locForecastPurch.VendAccountId=_PurchAgreementHeader.VendAccount;
+        locForecastPurch.initFromForecastModel();
+        locForecastPurch.initFromInventTable();
+        locForecastPurch.initFromVendTable();
+        locForecastPurch.FreqCode=PeriodUnit::Month;
+
+        InventDim InventDim, agreeInventDim=callerAgreementLine.inventDim();
+        InventDim.clear();
+        InventDim.configId=agreeInventDim.configId;
+        InventDim.InventSiteId=agreeInventDim.InventSiteId;
+        InventDim.InventLocationId=agreeInventDim.InventLocationId;
+        locForecastPurch.InventDimId=InventDim::findOrCreate(InventDim).inventDimId;
+        locForecastPurch.StartDate=_startDate;
+        //empty: locForecastPurch.EndDate=_endDate;
+        locForecastPurch.PurchQty=_qty;
+        locForecastPurch.PurchUnitId=this.unitIdKg();
+        InventUnitId unitid=InventTableModule::find(locForecastPurch.ItemId, ModuleInventPurchSales::Invent).UnitId;
+        locForecastPurch.InventQty=InventTable::unitConvertValue(locForecastPurch.ItemId,
+                this.unitIdKg(),
+                unitId,
+                unitId,
+                locForecastPurch.PurchQty,
+                locForecastPurch.InventDimId);
+
+        //NOT:SalesPurchLineInterface salesPurchLineInterface=locForecastPurch.salesPurchLineInterface();
+        //NOTSalesPurchLineInterface.setPriceAgreement(locForecastPurch.inventDim(),true);
+        locForecastPurch.PriceUnit=_agreementLineQuantityCommitment.PriceUnit;
+        //convert price: multipy PriceUnit with factor for Kg!
+        locForecastPurch.PriceUnit=InventTable::unitConvertValue(_agreementLineQuantityCommitment.ItemId,
+                _agreementLineQuantityCommitment.ProductUnitOfMeasure,
+                this.UnitIdKg(),
+                _agreementLineQuantityCommitment.inventUnitId(),
+                locForecastPurch.PriceUnit,
+                _agreementLineQuantityCommitment.InventDimId);
+        locForecastPurch.PurchPrice=_agreementLineQuantityCommitment.PricePerUnit;
+        locForecastPurch.Amount=locForecastPurch.calcLineAmount();
+        locForecastPurch.AVARUMAgreementId=_PurchAgreementHeader.PurchNumberSequence;   
+        locForecastPurch.AVARUMPlanAttrDimId=_agreementLineQuantityCommitment.AVARUMPlanAttrDimId;
+        locForecastPurch.insert();        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createForecastSales</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Fills ForecastSales
+    /// </summary>
+    /// <param name = "_model">Forecast Model</param>
+    /// <param name = "_SalesAgreementHeader">Agreement header for this data</param>
+    /// <param name = "_agreementLineQuantityCommitment">Agreement line for this data</param>
+    /// <param name = "_startDate">Date for forecast record</param>
+    /// <param name = "_endDate">EndDate for forecast record</param>
+    /// <param name = "_qty">Quantity for forecast</param>
+    protected void createForecastSales(ForecastModelHeadId _model, SalesAgreementHeader _SalesAgreementHeader,
+        AgreementLineQuantityCommitment _agreementLineQuantityCommitment, TransDate _startDate, TransDate _endDate, Qty _qty)
+    {
+        ForecastSales locForecastSales;
+        locForecastSales.clear();
+        locForecastSales.initValue();
+        locForecastSales.ItemId=callerAgreementLine.ItemId;
+        locForecastSales.ModelId=_model;
+        locForecastSales.CustAccountId=_SalesAgreementHeader.CustAccount;
+        locForecastSales.initFromForecastModel();
+        locForecastSales.initFromInventTable();
+        locForecastSales.initFromCustTable();
+
+        InventDim InventDim, agreeInventDim=callerAgreementLine.inventDim();
+        InventDim.clear();
+        InventDim.configId=agreeInventDim.configId;
+        InventDim.InventSiteId=agreeInventDim.InventSiteId;
+        InventDim.InventLocationId=agreeInventDim.InventLocationId;
+        locForecastSales.InventDimId=InventDim::findOrCreate(InventDim).inventDimId;
+        locForecastSales.StartDate=_startDate;
+        //empty: locForecastSales.EndDate=_endDate;
+        locForecastSales.SalesQty=_qty;
+        locForecastSales.SalesUnitId=this.unitIdKg();
+        InventUnitId unitid=InventTableModule::find(locForecastSales.ItemId, ModuleInventPurchSales::Invent).UnitId;
+        locForecastSales.FreqCode=PeriodUnit::Month;
+        locForecastSales.InventQty=InventTable::unitConvertValue(locForecastSales.ItemId,
+                this.unitIdKg(),
+                unitId,
+                unitId,
+                locForecastSales.SalesQty,
+                locForecastSales.InventDimId);
+
+        //NOT:SalesPurchLineInterface salesPurchLineInterface=locForecastPurch.salesPurchLineInterface();
+        //NOTSalesPurchLineInterface.setPriceAgreement(locForecastPurch.inventDim(),true);
+        locForecastSales.PriceUnit=_agreementLineQuantityCommitment.PriceUnit;
+        //convert price: multipy PriceUnit with factor for Kg!
+        locForecastSales.PriceUnit=InventTable::unitConvertValue(_agreementLineQuantityCommitment.ItemId,
+                _agreementLineQuantityCommitment.AVARUMPriceUnitId,
+                this.UnitIdKg(),
+                _agreementLineQuantityCommitment.inventUnitId(),
+                locForecastSales.PriceUnit,
+                _agreementLineQuantityCommitment.InventDimId);
+        locForecastSales.SalesPrice=_agreementLineQuantityCommitment.PricePerUnit;
+        locForecastSales.Amount=locForecastSales.calcLineAmount();
+        locForecastSales.Report=NoYes::Yes;
+        locForecastSales.Active=NoYes::Yes;
+        locForecastSales.AVARUMAgreementId=_SalesAgreementHeader.SalesNumberSequence;
+        locForecastSales.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>syncValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sync values of model from agreement to forecast
+    /// </summary>
+    /// <param name = "_model">Forecast model</param>
+    /// <param name = "_datesCon">Contailer of dates for each requirement</param>
+    protected void syncValues(ForecastModelHeadId _model, Container _datesCon)
+    {
+        ForecastPurch locForecastPurch;
+        ForecastSales locForecastSales;
+        Range agreementId;
+        AgreementHeader locAgreementHeader;
+        container datesCon;
+        TransDate lastEndDate;
+
+        [datesCon,lastEndDate]=_datesCon;
+
+        ttsbegin;
+        // init data / cleanup old ones
+        if (moduleSalesPurch==ModuleSalesPurch::Purch)
+        {
+            PurchAgreementHeader locPurchAgreementHeader=PurchAgreementHeader::find(callerAgreementLine.Agreement);
+            agreementId=locPurchAgreementHeader.PurchNumberSequence;
+            locAgreementHeader=locPurchAgreementHeader;
+
+            delete_from locForecastPurch
+            where locForecastPurch.AVARUMAgreementId==locPurchAgreementHeader.PurchNumberSequence
+                && locForecastPurch.ModelId==_model;
+        }
+        else
+        {
+            SalesAgreementHeader locSalesAgreementHeader=SalesAgreementHeader::find(callerAgreementLine.Agreement);
+            agreementId=locSalesAgreementHeader.SalesNumberSequence;
+            locAgreementHeader=locSalesAgreementHeader;
+
+            delete_from locForecastSales
+                where locForecastSales.AVARUMAgreementId==locSalesAgreementHeader.salesNumberSequence
+                &&locForecastSales.ModelId==_model;
+
+        }
+
+        // create data
+        AgreementLineQuantityCommitment agreementLineQuantityCommitment;
+        if (callerAgreementLine is AgreementLineQuantityCommitment)
+        {
+            agreementLineQuantityCommitment=callerAgreementLine;
+        }        
+        InventTableModule locInventTableModule=InventTableModule::find(callerAgreementLine.ItemId, 
+            (moduleSalesPurch==ModuleSalesPurch::Purch ? ModuleInventPurchSales::Purch :ModuleInventPurchSales::Sales));
+
+        Qty qtyCalc, lastQty, num=conLen(datesCon);
+        qtyCalc=(qty/num);
+        qtyCalc= roundUpDec(qtyCalc, UnitOfMeasure::findBySymbol(this.unitIdKg()).DecimalPrecision);
+        lastQty=qty-(qtyCalc*(num-1>0 ? num-1 : 0));
+        int ii;
+        for(ii=1;ii<=conLen(datesCon); ii++)
+        {
+            TransDate startDate=conpeek(datesCon, ii),
+                    endDate;
+            if (ii+1<=conLen(datesCon))
+            {
+                endDate=conpeek(datesCon, ii+1);
+                endDate-=1;
+            }
+            else
+            {
+                endDate=lastEndDate;
+            }                
+
+            Qty wkqty=(conLen(datesCon)==ii ? lastQty:  qtyCalc);
+            if (moduleSalesPurch==ModuleSalesPurch::Purch)
+            {
+                this.createForecastPurch(_model, locAgreementHeader, agreementLineQuantityCommitment, startDate, endDate, wkQty);
+            }
+            else
+            {
+                this.createForecastSales(_model, locAgreementHeader, agreementLineQuantityCommitment, startDate, endDate, wkQty);
+            }
+        }
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Runs the task
+    /// </summary>
+    public void run()
+    {
+        container datesCon=this.calcDates();
+
+        if (modelid)
+        {
+            this.syncValues(modelid, datesCon);
+        }        
+        if (baselineid)
+        {
+            this.syncValues(baselineid, datesCon);
+        }        
+
+        info('synced');
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Upack class/object data
+    /// </summary>
+    /// <param name = "packedClass">Container with data</param>
+    /// <returns>true if unpack was successfully</returns>
+    public boolean unpack(container packedClass)
+    {
+        Version version = RunBase::getVersion(packedClass);
+        ;
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version,#CurrentList] = packedClass;
+                break;
+            default:
+                return false;
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks dialog data
+    /// </summary>
+    /// <param name = "_calledFrom">The dialog</param>
+    /// <returns>true if data is valid</returns>
+    public boolean validate(Object _calledFrom = null)
+    {
+        if (!dlgeffectiveDate.value())
+        {
+            return checkFailed(strFmt("@SYS26332", fieldpname(AgreementLine, EffectiveDate)));
+        }
+        if (!dlgExpirationDate.value())
+        {
+            return checkFailed(strFmt("@SYS26332", fieldpname(AgreementLine, ExpirationDate)));
+        }
+        if (!dlgModelid.value())
+        {
+            return checkFailed(strFmt("@SYS26332", fieldpname(ForecastPurch, ModelId)));
+        }
+        //if (!dlgBaselineid.value())
+        //{
+        //    return checkFailed(strFmt("@SYS26332", "@AVARUM:AVARUMTransferAgreement2ForecastBaseline"));
+        //}
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Description of this class
+    /// </summary>
+    /// <returns>Description of this class</returns>
+    static ClassDescription description()
+    {
+        return "@AVARUM:AVARUMTransferAgreement2ForecastLbl";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Runs the Task
+    /// </summary>
+    /// <param name = "args">Arguments</param>
+    static void main(Args args)
+    {
+        AVARUMTransferAgreement2Forecast obj=new AVARUMTransferAgreement2Forecast();
+
+        obj.parmAgreementLine(args.record());
+        if (obj.prompt())
+        {
+            obj.runOperation();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Can not run in new session
+    /// </summary>
+    /// <returns>false</returns>
+    protected boolean canRunInNewSession()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,2977 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesTableDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed by AVANADE
+/// </summary>
+[ExtensionOf(tableStr(SalesTable))]
+final class AVASalesTableDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaUpdateDelegation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the status of AVADelegateToAgent for current record
+    /// </summary>
+    /// <param name = "_status">NoYes</param>
+    public void avaUpdateDelegation(NoYes _status)
+    {
+        this.selectForUpdate(true);
+
+        ttsbegin;
+        if (this.isInterCompanyOrder())
+        {
+            this.AVADelegatedToAgentIC = _status;
+        }
+        else
+        {
+            this.AVADelegatedToAgent = _status;
+        }
+        this.update();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaIsCommercialAgentOrigin</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/10/31         AVA_012663_HVICOrder
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean avaIsCommercialAgentOrigin()
+    {
+        boolean ret = false;
+        SalesOrigin salesOrigin = salesOrigin::find(this.SalesOriginId);
+
+        if (salesOrigin.AVACommercialAgentOrig)
+        {
+            if (this.custTable_CustAccount().interCompanyTradingRelationActive())
+            {
+                ret = true;
+                Error("@NDX:NXAIsCommAgentOrig");
+            }
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>modifiedField</c> method.
+    /// </summary>
+    /// <param name="_fieldId">
+    ///    <c>FieldId</c> as type
+    /// </param>
+    public void modifiedField(FieldId _fieldId)
+    {
+        SalesTable  salesTableOrig;
+        next modifiedField(_fieldId);
+
+        switch(_fieldId)
+        {
+            case fieldNum(SalesTable, AVAJournalApproval):
+                salesTableOrig = this.orig();
+                if (this.AVAJournalApproval && !this.InventSiteId)
+                {
+                    this.AVAJournalApproval = salesTableOrig.AVAJournalApproval;
+                    Error("@NDX:NXASOHeaderSite");
+                    break;
+                }
+                if(this.SalesType == SalesType::Journal
+                    && salesTableOrig.AVAJournalApproval == NoYes::No
+                    && this.AVAJournalApproval == NoYes::Yes)
+                {
+                    SalesTableType avaSalesTableType = this.type();
+                    if(!avaSalesTableType.AVAJournalApprovalChangeCheck())
+                    {
+                        this.AVAJournalApproval = NoYes::No;
+                    }
+                }
+                break;
+                
+            case Fieldnum(SalesTable, SalesType):
+                salesTableOrig = this.orig();
+                if (    salesTableOrig.SalesType    == SalesType::Journal 
+                    &&  this.SalesType              == SalesType::Sales)
+                {
+                    if (!this.InventSiteId)
+                    {
+                        this.SalesType = salesTableOrig.SalesType;
+                        Error("@NDX:NXASOHeaderSite");
+                        break;
+                    }
+
+                    SalesTableType salesTableType = this.type();
+                    if (salesTableType.AVAcanTypeBeChanged())
+                    {
+                        SalesTable::AVAreorgLineNum(this.SalesId);
+                        AVASalesTableOrigQuotationCheck AVASalesTableOrigQuotationCheck =  AVASalesTableOrigQuotationCheck::newFromSalesTable(this);
+                        AVASalesTableOrigQuotationCheck.run();
+                        if (!this.AVACheckPODublicate()) 
+                        {
+                            this.PurchOrderFormNum = '';
+                        }
+                    }
+                    else
+                    {
+                        this.SalesType = SalesType::Journal;
+                    }
+
+                    if (this.custTable_InvoiceAccount().AVACRLCreditBlocked)
+                    {
+                        this.SalesType = SalesType::Journal;
+                        error("@NDX:NXACreditLimitBlockedError");
+                    }
+                }
+                break;
+
+            case fieldNum(SalesTable, KCS_BOSSpecialPrice):
+                this.avaUpdateSpecialPrice();
+                break;
+
+            case fieldNum(SalesTable, CustAccount):
+                this.avaUpdateCashDiscPayment();
+                this.KCS_NoUseQuotPrice = CustTable::find(this.CustAccount).KCS_NoUseQuotPrice;
+                break;
+
+            case fieldNum(SalesTable, InvoiceAccount):
+                this.avaUpdateCashDiscPayment();
+                break;
+
+            case fieldNum(SalesTable, DEL_KCS_CustShipDateReq):
+                this.avaUpdateCustShipDateReq();
+                break;
+            
+            case fieldNum(SalesTable, DlvMode):
+                this.AVADlvModeModifiedDateTime             = DateTimeUtil::utcNow();
+                this.AVADlvModeModifiedById                 = curUserId();
+                this.avaUpdateFreightInformation();
+                break;
+
+            case fieldNum(SalesTable, DlvTerm):
+                this.AVADlvTermModifiedDateTime             = DateTimeUtil::utcNow();
+                this.AVADlvTermModifiedById                 = curUserId();
+                this.avaUpdateFreightInformation();
+                break;
+            
+            case fieldNum(SalesTable, KCS_FreightCosts):
+                this.AVAKCS_FreightCostsModifiedDateTime    = DateTimeUtil::utcNow();
+                this.AVAKCS_FreightCostsModifiedById        = curUserId();
+                break;
+            
+            case fieldNum(SalesTable, KCS_ChainId):
+                this.initFromSmmBusRelChainGroup();
+                break;
+            
+            case fieldNum(SalesTable, KCS_PickingReleaseIndicator):
+                this.avaUpdateKCS_SOCSalesOrderPickingReleasedBy();
+                break;
+            
+            case fieldNum(SalesTable, AVADispoDate):
+                this.AVADispoDateModifiedDateTime    = DateTimeUtil::utcNow();
+                this.AVADispoDateModifiedById        = curUserId();
+                //this.avaUpdateDispoDateDemanded();
+                break;
+            
+            default:
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateSpecialPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaUpdateSpecialPrice</c> method.
+    /// </summary>
+    public void avaUpdateSpecialPrice()
+    {
+        SalesLine salesLineLoc;
+
+        ttsbegin;
+        update_recordset salesLineLoc
+        setting AVACBSSpecialPrice = this.KCS_BOSSpecialPrice
+        where salesLineLoc.SalesId == this.SalesId;
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateCustShipDateReq</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaUpdateCustShipDateReq</c> method.
+    /// </summary>
+    public void avaUpdateCustShipDateReq()
+    {
+        SalesLine salesLineLoc;
+
+        ttsbegin;
+        update_recordset salesLineLoc
+        setting DEL_KCS_CustShipDateReq = this.DEL_KCS_CustShipDateReq
+        where salesLineLoc.SalesId == this.SalesId;
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateDispoDateDemanded</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaUpdateDispoDateDemanded</c> method.
+    /// </summary>
+    public void avaUpdateDispoDateDemanded()
+    {
+        SalesLine salesLineLoc;
+
+        ttsbegin;
+        update_recordset salesLineLoc
+        setting AVADispoDate                    = this.AVADispoDate,
+                AVADispoDateModifiedDateTime    = this.AVADispoDateModifiedDateTime,
+                AVADispoDateModifiedById        = this.AVADispoDateModifiedById 
+        where   salesLineLoc.SalesId        == this.SalesId
+            &&  salesLineLoc.SalesStatus    != SalesStatus::Delivered
+            &&  salesLineLoc.SalesStatus    != SalesStatus::Invoiced;
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplaySumPos</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaDisplaySumPos</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>Amount</c> as return value
+    /// </returns>
+    public display Amount avaDisplaySumPos()
+    {
+        return this.getTotalLineAmount();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayTotalWeight</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaDisplayTotalWeight</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>Weight</c> as return value
+    /// </returns>
+    public display Weight avaDisplayTotalWeight()
+    { 
+        Weight totalWeightLoc;
+        Volume totalVolumeLoc;
+
+        [totalWeightLoc, totalVolumeLoc] = this.totalWeightAndVolume();
+
+        totalWeightLoc = totalWeightLoc / 1000;
+
+        return totalWeightLoc;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    void insert(boolean _skipMarkup)
+    {
+        Notes   infoTxt1, infoTxt2, infoTxt3, infoTxt4;
+        KCS_SOCSalesTableInfoFields infoFields;
+        AVADlvResponsible           dlvResp;
+
+        if(this.InterCompanyAutoCreateOrders)
+        {
+            this.KCS_IC_Reduction = AVASalesParameters::find().KCS_IC_Reduction;
+
+        }
+
+        if (this.SalesType == SalesType::Sales)
+        {
+            this.KCS_SalesActivation = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        }
+
+        if (this.InterCompanyOrder)
+        {
+            if (this.InterCompanyCompanyId && this.InterCompanyCompanyId != curExt())
+            {
+                changecompany(this.InterCompanyCompanyId)
+                {
+                    dlvResp = SalesTable::find(this.InterCompanyOriginalSalesId).AVADlvResponsible;
+                }
+                this.AVADlvResponsible = dlvResp;
+            }
+        }
+
+        next insert(_skipMarkup); 
+     
+        if (this.InterCompanyOrder)
+        {
+            if (this.InterCompanyCompanyId && this.InterCompanyCompanyId != curExt())
+            {
+                changecompany(this.InterCompanyCompanyId)    
+                {
+                    infoFields = KCS_SOCSalesTableInfoFields::find(AVATableInfoFieldTypes::Sales, this.InterCompanyOriginalSalesId);
+                    infoTxt1 = infoFields.InfoField1;
+                    infoTxt2 = infoFields.InfoField2;
+                    infoTxt3 = infoFields.InfoField3;
+                    infoTxt4 = infoFields.InfoField4;
+                }
+                ttsbegin;
+                infoFields = KCS_SOCSalesTableInfoFields::find(AVATableInfoFieldTypes::Sales, this.SalesId, true);
+                infoFields.InfoField1 = infoTxt1;
+                infoFields.InfoField2 = infoTxt2;
+                infoFields.InfoField3 = infoTxt3;
+                infoFields.InfoField4 = infoTxt4;
+                if (infoFields.RecId)
+                {
+                    infoFields.update();
+                }
+                else
+                {
+                    infoFields.SalesId = this.SalesId;
+                    infoFields.insert();
+                }
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromContactInfo</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of initFromContactInfo
+    /// </summary>
+    void initFromContactInfo()
+    {
+        next initFromContactInfo();
+
+        if(this.custTable_CustAccount().AVAConfirmCentralEmail != '')
+        {
+            this.Email = this.custTable_CustAccount().AVAConfirmCentralEmail;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromCustTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>initFromCustTable</c> method.
+    /// </summary>
+    public void initFromCustTable()
+    {
+        next initFromCustTable();
+
+        CustTable custTableLoc;
+        smmBusRelChainGroup chainGroupLoc;
+                                   
+        custTableLoc    = this.custTable_CustAccount();
+        chainGroupLoc   = smmBusRelChainGroup::avaFindChainId(custTableLoc.CompanyChainId);
+
+        this.KCS_ChainId            = custTableLoc.CompanyChainId;
+        this.KCS_CustCity           = custTableLoc.postalAddress().City;
+        this.KCS_BOSSpecialPrice    = custTableLoc.KCS_BOSSpecialPrice;
+        this.KCS_CentralWarehouse   = custTableLoc.KCS_CentralWarehouse;
+        this.KCS_NoUseQuotPrice     = custTableLoc.KCS_NoUseQuotPrice;
+        this.AVARicoCustomer        = custTableLoc.AVARicoCustomer;
+
+        this.PriceGroupId           = custTableLoc.PriceGroup           ? custTableLoc.PriceGroup : chainGroupLoc.AVAPriceGroupId;
+        this.AVANetPG1              = custTableLoc.AVANetPG1            ? custTableLoc.AVANetPG1 : chainGroupLoc.AVANetPG1;
+        this.AVANetPG2              = custTableLoc.AVANetPG2            ? custTableLoc.AVANetPG2 : chainGroupLoc.AVANetPG2;
+        this.AVAPrintReceiptDate    = custTableLoc.AVAPrintReceiptDate  ? custTableLoc.AVAPrintReceiptDate : chainGroupLoc.AVAPrintReceiptDate;
+        this.DlvTerm                = custTableLoc.DlvTerm              ? custTableLoc.DlvTerm : chainGroupLoc.AVADlvTerm;
+        this.DlvMode                = custTableLoc.DlvMode              ? custTableLoc.DlvMode : chainGroupLoc.AVADlvMode;
+        this.Payment                = custTableLoc.PaymTermId           ? custTableLoc.PaymTermId : chainGroupLoc.AVAPayment;
+        this.CashDisc               = custTableLoc.CashDisc             ? custTableLoc.CashDisc : chainGroupLoc.AVACashDisc;
+        this.KCS_CollComp           = custTableLoc.KCS_CollComp         ? custTableLoc.KCS_CollComp : chainGroupLoc.AVACollComp;
+        this.InventSiteId           = custTableLoc.InventSiteId         ? custTableLoc.InventSiteId : AVAWorkerInventSite::find(HcmWorker::findByPerson(DirPersonUser::current().PersonParty).PersonnelNumber).InventSiteId;
+
+        this.AVARackDiscount        = custTableLoc.AVARackDiscount      ? custTableLoc.AVARackDiscount : chainGroupLoc.AVARackDiscount;
+
+        this.KCS_ChainLineDiscCode  = chainGroupLoc.AVALineDisc;
+
+        if(custTableLoc.KCS_MaxBonusAmount > 0
+        || chainGroupLoc.AVAMaxBonusAmount > 0)
+        {
+            this.KCS_DecreaseProf = NoYes::Yes;
+        }
+
+        if(custTableLoc.AVAConfirmCentralEmail)
+        {
+            this.Email              = custTableLoc.AVAConfirmCentralEmail;
+        }
+
+        this.avaInitCollectionCommision();
+
+        this.avaUpdateFreightInformation();
+
+        this.avaInitInfoFieldsFromCust();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateCashDiscPayment</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates payment and cashDisc fields according to invoiceAccount or its smmBusRelChainGroup
+    /// </summary>
+    public void avaUpdateCashDiscPayment()
+    {
+        CustTable custTableLoc;
+        smmBusRelChainGroup chainGroupLoc;
+                                   
+        custTableLoc    = this.custTable_InvoiceAccount();
+        chainGroupLoc   = smmBusRelChainGroup::avaFindChainId(custTableLoc.CompanyChainId);
+
+        this.Payment                = custTableLoc.PaymTermId           ? custTableLoc.PaymTermId : chainGroupLoc.AVAPayment;
+        this.CashDisc               = custTableLoc.CashDisc             ? custTableLoc.CashDisc : chainGroupLoc.AVACashDisc;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitCollectionCommision</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaInitCollectionCommision</c> method.
+    /// </summary>
+    public void avaInitCollectionCommision()
+    {
+        CustTable           locCustTable;
+        smmBusRelChainGroup locSmmBusRelChainGroup;
+                                   
+        locCustTable            = this.custTable_CustAccount();
+        locSmmBusRelChainGroup  = smmBusRelChainGroup::avaFindChainId(locCustTable.CompanyChainId);
+
+        if(locCustTable.KCS_CollectionCommisionPerc > 0)
+        {
+            this.KCS_CollComp   = locCustTable.KCS_CollComp;
+        }
+        else if(locSmmBusRelChainGroup.AVACollectionCommissionPerc > 0)
+        {
+            this.KCS_CollComp   = locSmmBusRelChainGroup.AVACollComp;
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitInfoFieldsFromCust</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    public void avaInitInfoFieldsFromCust()
+    {
+        KCS_SOCSalesTableInfoFields salesTableInfoFields = KCS_SOCSalesTableInfoFields::find(AVATableInfoFieldTypes::Sales, this.SalesId, true);
+
+        salesTableInfoFields.initInfoFields(this);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateFreightInformation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaUpdateFreightInformation</c> method.
+    /// </summary>
+    public void avaUpdateFreightInformation()
+    {
+        DlvMode locDlvMode;
+        DlvTerm locDlvTerm;
+        
+        if(this.DlvMode || this.DlvTerm)
+        {
+            locDlvMode  = DlvMode::find(this.DlvMode);
+            locDlvTerm  = DlvTerm::find(this.DlvTerm);
+
+            if(     (locDlvMode.RecId && locDlvMode.KCS_FreightChargeFree)
+                ||  (locDlvTerm.RecId && locDlvTerm.KCS_FreightChargeFree)  )
+            {
+                this.KCS_FreightChargeFree = NoYes::Yes;
+            }
+            else
+            {
+                this.KCS_FreightChargeFree = NoYes::No;
+            }
+        }
+
+        if(locDlvTerm.RecId)
+        {
+            this.KCS_POC_CarriageFree = locDlvTerm.KCS_POC_CarriageFree;
+        }
+        else
+        {
+            this.KCS_POC_CarriageFree = 0.0;
+        }
+
+        this.KCS_FreightCalculation = KCS_FreightCalculation::FirstDelivery;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromSmmBusRelChainGroup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    void initFromSmmBusRelChainGroup()
+    {
+        smmBusRelChainGroup     chainGroup;
+        select firstonly chainGroup where chainGroup.ChainId == this.KCS_ChainId;
+        this.AVARackDiscount = chainGroup.AVARackDiscount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateRackDiscount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    public void avaUpdateRackDiscount()
+    {
+        SalesLine               salesLine;
+        AVASpecialDiscSalesLine specialDiscSL;
+
+        while select salesLine where salesLine.SalesId == this.SalesId
+        {
+            if (this.avaRackDiscFactorFound(salesLine))
+            {
+                ttsbegin;
+                specialDiscSL = AVASpecialDiscSalesLine::find(salesLine.InventTransId, true);
+                specialDiscSL.SpecialDiscountPct7 = this.AVARackDiscount;
+                specialDiscSL.update();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckRackDiscount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    public void avaCheckRackDiscount()
+    {
+        SalesLine               salesLine, salesLineOrig;
+        AVASpecialDiscSalesLine specialDiscSL;
+        boolean                 mustHaveRackDisc, hasRackDisc, isDelegatedOrder = false;
+        SalesId                 salesId = this.SalesId;
+        SalesTable              delegatedOrder, origOrder;
+        int                     foundItems, ItemsHavingRackDisc;
+        RefRecId                salesLineOrigRecId;
+
+        if (this.AVARepPckSlipNum)
+        {
+            //select count(RecId) from delegatedOrder where delegatedOrder.AVADelegatedToAgent
+            select count(RecId) from delegatedOrder where (delegatedOrder.AVADelegatedToAgent  || delegatedOrder.AVADelegatedToAgentIC)
+                                                       && delegatedOrder.InventSiteId == this.InventSiteId
+                                                       && delegatedOrder.CustAccount == this.CustAccount
+                                                       && delegatedOrder.PurchOrderFormNum  == this.PurchOrderFormNum;
+            if (!delegatedOrder.RecId)
+            {
+                throw error("@NDX:NXADelegatedOrderNotFound");
+            }
+            else if (delegatedOrder.RecId > 1)
+            {
+                throw error(strFmt("@NDX:NXAMoreThanOneDelegated", this.PurchOrderFormNum));
+            }
+            else
+            {
+                select firstonly delegatedOrder where delegatedOrder.AVADelegatedToAgent
+                                                       && delegatedOrder.InventSiteId == this.InventSiteId
+                                                       && delegatedOrder.CustAccount == this.CustAccount
+                                                       && delegatedOrder.PurchOrderFormNum  == this.PurchOrderFormNum;
+                salesId = delegatedOrder.SalesId;
+                isDelegatedOrder = true;
+                origOrder = SalesTable::find(this.SalesId);
+                info(strFmt("@NDX:NXARackDiscDelegatedOrder", salesId));
+            }
+        }
+
+        while select salesLine where salesLine.SalesId == salesId
+        {
+            hasRackDisc      = false;
+
+            mustHaveRackDisc = this.avaRackDiscFactorFound(salesLine);
+ 
+            if (!isDelegatedOrder)
+            {
+                specialDiscSL = AVASpecialDiscSalesLine::find(salesLine.InventTransId);
+                if (specialDiscSL.SpecialDiscountPct7)
+                {
+                    hasRackDisc = true;
+                }
+            }
+            else
+            {
+                foundItems = 0;
+                ItemsHavingRackDisc = 0;
+                salesLineOrigRecId = 0;
+                if (mustHaveRackDisc)
+                {
+                    while select salesLineOrig where saleslineorig.SalesId == origOrder.SalesId
+                                                  && salesLineOrig.ItemId == salesLine.ItemId
+                    {
+                        foundItems++;
+                        specialDiscSL = AVASpecialDiscSalesLine::find(salesLineOrig.InventTransId);
+                        if (specialDiscSL.SpecialDiscountPct7)
+                        {
+                            ItemsHavingRackDisc++;
+                        }
+                        else
+                        {
+                            salesLineOrigRecId = salesLineOrig.RecId;                            
+                        }
+                    }
+                    if (foundItems != ItemsHavingRackDisc)
+                    {
+                        warning(strFmt("@NDX:NXADelegatedRackDiscAllowed", salesLine.LineNum, salesLine.SalesId, salesLine.ItemId, salesLine.SalesQty));
+                        salesLineOrig = SalesLine::findRecId(salesLineOrigRecId);
+                        if (this.avaRackDiscFactorFound(salesLineOrig))
+                        {
+                            warning(strFmt("@NDX:NXARackDiscAllowed", salesLineOrig.LineNum, salesLineOrig.SalesId, salesLineOrig.ItemId, salesLineOrig.SalesQty));
+                        }
+ //                       else
+ //                       {
+ //                           warning(strFmt("@NDX:NXADelegatedRackDiscNotAllowed", salesLineOrig.ItemId, salesLineOrig.SalesId));
+ //                       }
+                    }
+                }
+            }
+            
+            if (!isDelegatedOrder)
+            {
+                if (mustHaveRackDisc && !hasRackDisc)
+                {
+                    warning(strFmt("@NDX:NXARackDiscAllowed", salesLine.LineNum, salesLine.ItemId, salesLine.SalesQty, salesLine.SalesId));
+                }
+                if (hasRackDisc && !mustHaveRackDisc)
+                {
+                    warning(strFmt("@NDX:NXARackDiscNotAllowed", salesLine.LineNum, salesLine.ItemId, salesLine.SalesQty));
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaRackDiscFactorFound</Name>
+				<Source><![CDATA[
+    private boolean avaRackDiscFactorFound(SalesLine _salesLine)
+    {
+        qty                     rackQty;
+        boolean                 ret = false;
+        AVARackDiscRules        rackDiscRules;
+
+        rackQty = this.avaGetConversionFactor(_salesLine.SalesUnit, _salesLine.ItemId);
+        if (rackQty && (any2Int(_salesLine.SalesQty) mod any2Int(rackQty) == 0))
+        {
+            ret = true;
+        }
+
+        if (!ret)
+        {
+            select firstonly rackDiscRules where rackDiscRules.ItemId == _salesLine.ItemId;
+            rackQty = this.avaGetRackDiscRuleFactor(rackDiscRules.UnitOfMeasureSymbol, _salesLine.SalesUnit, _salesLine.ItemId);
+            if (rackQty && (any2Int(_salesLine.SalesQty) mod any2Int(rackQty) == 0))
+            {
+                ret = true;
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetConversionFactor</Name>
+				<Source><![CDATA[
+    private Qty avaGetConversionFactor(UnitOfMeasureSymbol _unitOfMeasureSymbol, ItemId _itemId)
+    {
+        EcoResProductRecId      ecoResProduct;
+        qty                     rackQty;
+        UnitOfMeasure           unitOfMeasure;
+        UnitOfMeasureConversion conversion;
+        RefRecId                UnitRecId;
+
+        ecoResProduct = InventTable::find(_itemId).Product;
+        UnitRecId     = UnitOfMeasure::findBySymbol(_unitOfMeasureSymbol).RecId;
+        select firstonly conversion where conversion.Product == ecoResProduct
+                                           && conversion.ToUnitOfMeasure == UnitRecId
+                    join unitOfMeasure where unitOfMeasure.RecId == conversion.FromUnitOfMeasure
+                                          && unitOfMeasure.AVARackDiscAble;
+        rackQty = conversion.Factor;
+
+        return rackQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetRackDiscRuleFactor</Name>
+				<Source><![CDATA[
+    private Qty avaGetRackDiscRuleFactor(UnitOfMeasureSymbol _fromUnitOfMeasureSymbol, UnitOfMeasureSymbol _toUnitOfMeasureSymbol, ItemId _itemId)
+    {
+        EcoResProductRecId      ecoResProduct;
+        qty                     rackQty;
+        UnitOfMeasureConversion conversion;
+        RefRecId                UnitRecIdFrom, UnitRecIdTo;
+
+        ecoResProduct = InventTable::find(_itemId).Product;
+        UnitRecIdFrom     = UnitOfMeasure::findBySymbol(_fromUnitOfMeasureSymbol).RecId;
+        UnitRecIdTo       = UnitOfMeasure::findBySymbol(_toUnitOfMeasureSymbol).RecId;
+        select firstonly conversion where conversion.Product == ecoResProduct
+                                           && conversion.FromUnitOfMeasure == UnitRecIdFrom
+                                           && conversion.ToUnitOfMeasure == UnitRecIdTo;
+ 
+        rackQty = conversion.Factor;
+
+        return rackQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateFreightInformationAfterPSPost</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaUpdateFreightInformationAfterPSPost</c> method.
+    /// </summary>
+    /// <param name="_update">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaUpdateFreightInformationAfterPSPost(boolean _update = false)
+    {
+        boolean valuesChanged;
+
+        KCS_FreightCostStatus   origKCS_FreightCostStatus;
+
+        origKCS_FreightCostStatus = this.KCS_FreightCostStatus;
+
+        if(this.KCS_FreightCostStatus == KCS_FreightCostStatus::Empty)
+        {
+            if(this.KCS_FreightChargeFree == NoYes::No) // freight costs
+            {
+                if (this.KCS_POC_CarriageFree == 0) //no limit
+                {
+                    this.KCS_FreightCostStatus  = KCS_FreightCostStatus::Required;
+                }
+                else //limit exists
+                {
+                    if(this.getTotalLineAmount() <= this.KCS_POC_CarriageFree) //below limit
+                    {
+                        this.KCS_FreightCostStatus = KCS_FreightCostStatus::Required;
+                    }
+                    else //over limit
+                    {
+                        this.KCS_FreightCostStatus = KCS_FreightCostStatus::None;
+                    }
+                }
+            }
+            else //no freight cost
+            {
+                this.KCS_FreightCostStatus = KCS_FreightCostStatus::None;
+            }
+            valuesChanged = true;
+        }
+        else if(    this.KCS_FreightCalculation == KCS_FreightCalculation::FirstDelivery
+                &&  this.KCS_FreightCosts       != 0)
+        {
+            if(this.lastPackingSlip() != '')    // if there is an existing packing slip for the sales order, no calculation of freight cost
+            {
+                if(     this.KCS_FreightChargeFree == NoYes::No
+                    &&  this.KCS_POC_CarriageFree == 0)
+                {
+                    if(origKCS_FreightCostStatus != KCS_FreightCostStatus::Required)
+                    {
+                        this.KCS_FreightCostStatus  = KCS_FreightCostStatus::Required;
+                        valuesChanged = true;
+                    }
+                }
+
+                if(this.KCS_FreightChargeFree == NoYes::Yes)
+                {
+                    if(origKCS_FreightCostStatus != KCS_FreightCostStatus::None)
+                    {
+                        this.KCS_FreightCostStatus  = KCS_FreightCostStatus::None;
+                        valuesChanged = true;
+                    }
+                }
+                //else if(this.amountOrderedNotInvoiced() <= this.KCS_POC_CarriageFree)
+                else if(this.getTotalLineAmount() <= this.KCS_POC_CarriageFree)
+                {
+                    if(origKCS_FreightCostStatus != KCS_FreightCostStatus::Required)
+                    {
+                        this.KCS_FreightCostStatus  = KCS_FreightCostStatus::Required;
+                        valuesChanged = true;
+                    }
+                }
+                else
+                {
+                    if(origKCS_FreightCostStatus != KCS_FreightCostStatus::None)
+                    {
+                        this.KCS_FreightCostStatus  = KCS_FreightCostStatus::None;
+                        valuesChanged = true;
+                    }
+                }
+            }
+        }
+
+        if(valuesChanged && _update)
+        {
+            this.selectForUpdate();
+            ttsbegin;
+            this.update();
+            ttscommit;
+        }
+
+        return valuesChanged;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckFreightInformationBeforeIPost</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaCheckFreightInformationBeforeIPost</c> method.
+    /// </summary>
+    /// <param name="_throwWarning">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaCheckFreightInformationBeforeIPost(boolean _throwWarning = true)
+    {
+        boolean retVal;
+        
+        retVal = true;
+
+        if(     this.KCS_FreightCostStatus  == KCS_FreightCostStatus::Required
+            &&  this.KCS_FreightCosts       == 0                                )
+        {
+            if(_throwWarning)
+            {
+                warning(strFmt("@NDX:NXASalesOrderP1FreightCostMissung", this.SalesId));
+            }
+            retVal = false;
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createMarkupTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates markups for the sales order.
+    /// </summary>
+    /// <param name="_deleteExistingMarkupTrans">
+    /// Determines whether to delete existing markups before creating the new.
+    /// </param>
+    /// <param name="_createTieredMarkups">
+    /// Determines whether to create tiered markups. If this parameter is true then _deleteExistingMarkupTrans will be reset to false.
+    /// In this case only existing tiered markups will be deleted before creating the new.
+    /// </param>
+    public void createMarkupTrans(  boolean _deleteExistingMarkupTrans,
+                                    boolean _createTieredMarkups)
+    {
+        next createMarkupTrans( _deleteExistingMarkupTrans,
+                                _createTieredMarkups        );
+
+        if (this.SkipCreateMarkup == NoYes::No)
+        {
+
+            if (this.markupAllowed())
+            {
+                if(this.avaNeedMarkupForFreightCharge())
+                {
+                    ttsbegin;
+                    this.avaAddMarkupCollectionCommision();
+                    ttscommit;
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaNeedMarkupForFreightCharge</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaNeedMarkupForFreightCharge</c> method.
+    /// </summary>
+    /// <param name="_DlvModeId">
+    ///    <c>DlvModeId</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaNeedMarkupForFreightCharge(DlvModeId _DlvModeId = this.DlvMode)
+    {
+        boolean retVal;
+        
+        DlvMode locDlvMode;
+        
+        retVal      = false;
+        
+        locDlvMode  = DlvMode::find(this.DlvMode);
+        if(locDlvMode.KCS_ColComActive)
+        {
+            retVal  = true;
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckMarkupFreightInformationBeforeIPost</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaCheckMarkupFreightInformationBeforeIPost</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaCheckMarkupFreightInformationBeforeIPost()
+    {
+        boolean retVal;
+
+        AVASalesParameters  locAVASalesParameters;
+        MarkupModuleType    locMarkupModuleType;
+        MarkupCode          locMarkupCode;
+        MarkupTable         locMarkupTable;
+        MarkupTrans         locMarkupTransNew;
+        MarkupTrans         locMarkupTransSalesTable;
+
+        retVal = false;
+
+        if(     this.KCS_FreightCostStatus  == KCS_FreightCostStatus::Required
+            &&  this.KCS_FreightCosts       != 0                                )
+        {
+            locAVASalesParameters = AVASalesParameters::find();
+
+            if(locAVASalesParameters.RecId)
+            {
+                locMarkupCode       = locAVASalesParameters.MarkupCodeFreight;
+                locMarkupModuleType = MarkupModuleType::Cust;
+                locMarkupTable      = MarkupTable::find(locMarkupModuleType, locMarkupCode);
+                if(locMarkupTable.RecId)
+                {
+                    locMarkupTransNew.clear();
+                    locMarkupTransNew.initFromMarkupTable(locMarkupTable);
+                    locMarkupTransNew.initFromSalesTable(this);
+                    locMarkupTransNew.Value            = this.KCS_FreightCosts;
+                    locMarkupTransNew.MarkupCategory   = MarkupCategory::Fixed;
+                    locMarkupTransNew.Keep             = NoYes::No;
+
+                    select firstonly locMarkupTransSalesTable
+                    where   locMarkupTransSalesTable.TransTableId   == this.TableId
+                        &&  locMarkupTransSalesTable.TransRecId     == this.RecId
+                        &&  locMarkupTransSalesTable.MarkupCode     == locMarkupTransNew.MarkupCode
+                        &&  locMarkupTransSalesTable.TaxItemGroup   == locMarkupTransNew.TaxItemGroup;
+                    if(!locMarkupTransSalesTable.RecId)
+                    {
+                        locMarkupTransNew.insert();
+                    }
+                    retVal = true;
+                }
+            }
+        }
+        else
+        {
+            retVal = true;
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaAddMarkupCollectionCommision</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaAddMarkupCollectionCommision</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaAddMarkupCollectionCommision()
+    {
+        boolean retVal;
+
+        CustTable           locCustTable;
+        smmBusRelChainGroup locSmmBusRelChainGroup;
+                                   
+        AVASalesParameters  locAVASalesParameters;
+        MarkupModuleType    locMarkupModuleType;
+        MarkupCode          locMarkupCode;
+        MarkupTable         locMarkupTable;
+        MarkupTrans         locMarkupTransNew;
+        MarkupTrans         locMarkupTransSalesTable;
+        boolean             locCreateMarkup;
+        DlvModeId           locDlvModeToCheck;
+
+        retVal          = true;
+        locCreateMarkup = true;
+
+        locCustTable            = this.custTable_CustAccount();
+        locSmmBusRelChainGroup  = smmBusRelChainGroup::avaFindChainId(locCustTable.CompanyChainId);
+        locAVASalesParameters   = AVASalesParameters::find();
+
+        if(locAVASalesParameters.RecId)
+        {
+            locMarkupCode       = locAVASalesParameters.MarkupCodePickUpFee;
+            locMarkupModuleType = MarkupModuleType::Cust;
+            locMarkupTable      = MarkupTable::find(locMarkupModuleType, locMarkupCode);
+            if(locMarkupTable.RecId)
+            {
+                locMarkupTransNew.clear();
+                locMarkupTransNew.initFromMarkupTable(locMarkupTable);
+                locMarkupTransNew.initFromSalesTable(this);
+                if(locCustTable.KCS_CollectionCommisionPerc > 0)
+                {
+                    locMarkupTransNew.Value            = -locCustTable.KCS_CollectionCommisionPerc;
+                }
+                else if(locSmmBusRelChainGroup.AVACollectionCommissionPerc > 0)
+                {
+                    locMarkupTransNew.Value            = -locSmmBusRelChainGroup.AVACollectionCommissionPerc;
+                }
+                else if(    locCustTable.KCS_CollectionCommisionPerc            == 0
+                        &&  locSmmBusRelChainGroup.AVACollectionCommissionPerc  == 0    )
+                {
+                    locDlvModeToCheck = DlvMode::avaSalesPickupDlvModeId();
+                    if(     locDlvModeToCheck
+                        &&  this.DlvMode == locDlvModeToCheck   )
+                    {
+                        locCreateMarkup = false;
+                    }
+                }
+                locMarkupTransNew.MarkupCategory   = MarkupCategory::Percent;
+                locMarkupTransNew.Keep             = NoYes::Yes;
+
+                if(locCreateMarkup)
+                {
+                    select firstonly locMarkupTransSalesTable
+                    where   locMarkupTransSalesTable.TransTableId   == this.TableId
+                        &&  locMarkupTransSalesTable.TransRecId     == this.RecId
+                        &&  locMarkupTransSalesTable.MarkupCode     == locMarkupTransNew.MarkupCode
+                        &&  locMarkupTransSalesTable.TaxItemGroup   == locMarkupTransNew.TaxItemGroup;
+                    if(!locMarkupTransSalesTable.RecId)
+                    {
+                        locMarkupTransNew.insert();
+                    }
+                }
+            }
+            else
+            {
+                retVal = false;
+            }
+        }
+        else
+        {
+            retVal = false;
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaRemoveMarkupCollectionCommision</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaRemoveMarkupCollectionCommision</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaRemoveMarkupCollectionCommision()
+    {
+        boolean retVal;
+
+        CustTable           locCustTable;
+        smmBusRelChainGroup locSmmBusRelChainGroup;
+                                   
+        AVASalesParameters  locAVASalesParameters;
+        MarkupModuleType    locMarkupModuleType;
+        MarkupCode          locMarkupCode;
+        MarkupTable         locMarkupTable;
+        MarkupTrans         locMarkupTransSearch;
+        MarkupTrans         locMarkupTransSalesTable;
+
+        retVal = true;
+
+        locCustTable            = this.custTable_CustAccount();
+        locSmmBusRelChainGroup  = smmBusRelChainGroup::avaFindChainId(locCustTable.CompanyChainId);
+        locAVASalesParameters   = AVASalesParameters::find();
+
+        if(locAVASalesParameters.RecId)
+        {
+            locMarkupCode       = locAVASalesParameters.MarkupCodePickUpFee;
+            locMarkupModuleType = MarkupModuleType::Cust;
+            locMarkupTable      = MarkupTable::find(locMarkupModuleType, locMarkupCode);
+            if(locMarkupTable.RecId)
+            {
+                locMarkupTransSearch.clear();
+                locMarkupTransSearch.initFromMarkupTable(locMarkupTable);
+                locMarkupTransSearch.initFromSalesTable(this);
+                locMarkupTransSearch.MarkupCategory   = MarkupCategory::Percent;
+                locMarkupTransSearch.Keep             = NoYes::Yes;
+
+                
+                while select  locMarkupTransSalesTable
+                where   locMarkupTransSalesTable.TransTableId   == this.TableId
+                    &&  locMarkupTransSalesTable.TransRecId     == this.RecId
+                    &&  locMarkupTransSalesTable.MarkupCode     == locMarkupTransSearch.MarkupCode
+                    &&  locMarkupTransSalesTable.MarkupCategory == locMarkupTransSearch.MarkupCategory
+                    &&  locMarkupTransSalesTable.Keep           == locMarkupTransSearch.Keep
+                {
+                    ttsbegin;
+                    locMarkupTransSalesTable.selectForUpdate(true);
+                    locMarkupTransSalesTable.delete();
+                    ttscommit;
+                }
+            }
+            else
+            {
+                retVal = false;
+            }
+        }
+        else
+        {
+            retVal = false;
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateFreightInformationAfterIPost</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaUpdateFreightInformationAfterIPost</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaUpdateFreightInformationAfterIPost()
+    {
+        boolean             retVal;
+        
+        boolean             valuesChanged;
+        KCS_FreightCosts    origKCS_FreightCosts;
+
+        MarkupTrans         locMarkupTransSalesTable;
+        
+        retVal = true;
+
+        origKCS_FreightCosts = this.KCS_FreightCosts;
+
+        if(     this.KCS_FreightCalculation == KCS_FreightCalculation::FirstDelivery
+            &&  this.KCS_FreightCostStatus  != KCS_FreightCostStatus::Calculated)   
+        //    && !this.InterCompanyOrder)
+        {
+            this.KCS_FreightCostStatus = KCS_FreightCostStatus::Calculated;
+
+            valuesChanged = true;
+        }
+        else if(    this.KCS_FreightCalculation == KCS_FreightCalculation::EachDelivery 
+                &&  this.KCS_FreightCosts       != 0)                                   
+              // &&  !this.InterCompanyOrder)
+        {
+            this.KCS_FreightCosts = 0;
+
+            if(origKCS_FreightCosts != this.KCS_FreightCosts)
+            {
+                valuesChanged = true;
+            }
+        }
+
+        if(valuesChanged)
+        {
+            ttsbegin;
+            this.selectForUpdate();
+            this.update();
+            ttscommit;
+            retVal = true;
+        }
+
+        if(DlvMode::find(this.DlvMode).KCS_ColComActive)
+        {
+            select firstonly locMarkupTransSalesTable
+            where   locMarkupTransSalesTable.TransTableId   == this.TableId
+                &&  locMarkupTransSalesTable.TransRecId     == this.RecId
+                &&  locMarkupTransSalesTable.MarkupCode     == AVASalesParameters::find().MarkupCodePickUpFee;
+            
+            if(!locMarkupTransSalesTable.recid)
+            {
+                this.avaAddMarkupCollectionCommision();
+            }
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAFirstPackingSlipIdNotInvoiced</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>AVAFirstPackingSlipIdNotInvoiced</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>PackingSlipId</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display PackingSlipId AVAFirstPackingSlipIdNotInvoiced()
+    {
+        PackingSlipId       retVal;
+
+        retVal = this.AVAFirstPackingSlipNotInvoiced().PackingSlipId;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAFirstPackingSlipDeliveryDateNotInvoiced</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>AVAFirstPackingSlipDeliveryDateNotInvoiced</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>SalesShippingDate</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display SalesShippingDate AVAFirstPackingSlipDeliveryDateNotInvoiced()
+    {
+        SalesShippingDate   retVal;
+
+        retVal = this.AVAFirstPackingSlipNotInvoiced().DeliveryDate;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAFirstPackingSlipWeightNotInvoiced</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>AVAFirstPackingSlipWeightNotInvoiced</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>Weight</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display Weight AVAFirstPackingSlipWeightNotInvoiced()
+    {
+        Weight   retVal;
+
+        retVal = this.AVAFirstPackingSlipNotInvoiced().Weight / 1000;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAFirstPackingSlipDlvModeNotInvoiced</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>AVAFirstPackingSlipDlvModeNotInvoiced</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>CustDlvModeId</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display CustDlvModeId AVAFirstPackingSlipDlvModeNotInvoiced()
+    {
+        CustDlvModeId   retVal;
+
+        retVal = this.AVAFirstPackingSlipNotInvoiced().DlvMode;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAFirstPackingSlipDlvTermNotInvoiced</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>AVAFirstPackingSlipDlvTermNotInvoiced</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>CustDlvTermId</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display CustDlvTermId AVAFirstPackingSlipDlvTermNotInvoiced()
+    {
+        CustDlvTermId   retVal;
+
+        retVal = this.AVAFirstPackingSlipNotInvoiced().DlvTerm;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAFirstPackingSlipNotInvoiced</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>AVAFirstPackingSlipNotInvoiced</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>CustPackingSlipJour</c> as return value
+    /// </returns>
+    public CustPackingSlipJour AVAFirstPackingSlipNotInvoiced()
+    {
+        SalesLine           locSalesLine;
+        InventTransOrigin   locInventTransOrigin;
+        InventTrans         locInventTrans;
+        CustPackingSlipJour locCustPackingSlipJour;
+        
+        select firstonly locSalesLine
+        where   locSalesLine.SalesId == this.SalesId
+            join    locInventTransOrigin
+            where   locInventTransOrigin.InventTransId      == locSalesLine.InventTransId
+                &&  locInventTransOrigin.ReferenceCategory  == InventTransType::Sales
+                &&  locInventTransOrigin.ReferenceId        == this.SalesId
+                join    locInventTrans
+                where   locInventTrans.InventTransOrigin    ==  locInventTransOrigin.RecId
+                    &&  locInventTrans.PackingSlipId        != ''
+                    &&  locInventTrans.InvoiceId            == '';
+
+        select firstonly locCustPackingSlipJour
+        where   locCustPackingSlipJour.PackingSlipId == locInventTrans.PackingSlipId;
+
+        return locCustPackingSlipJour;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaLastPackinglipRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns the latest CustPackingSlipJour record for the salesTable
+    /// </summary>
+    /// <returns>CustPackingSlipJour</returns>
+    public CustPackingSlipJour avaLastPackinglipRecord()
+    {
+        CustPackingSlipJour locCustPackingSlipJour;
+        CustPackingSlipSalesLink locPackingSlipSalesLink;
+
+        select firstonly PackingSlipId, deliveryDate from locPackingSlipSalesLink
+            index hint origSalesIdx
+            order by DeliveryDate desc, CreatedDateTime desc, PackingSlipId desc // CreatedDateTime is not set on all records
+            where locPackingSlipSalesLink.OrigSalesId  == this.SalesId;
+
+        select firstonly locCustPackingSlipJour
+            where locCustPackingSlipJour.PackingSlipId == locPackingSlipSalesLink.packingSlipId
+                && locCustPackingSlipJour.DeliveryDate == locPackingSlipSalesLink.deliveryDate;
+
+        return locCustPackingSlipJour;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetGrossWeightRemaining</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaGetGrossWeightRemaining</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>ItemGrossWeight</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display ItemGrossWeight avaGetGrossWeightRemaining()
+    {
+        ItemGrossWeight retVal;
+
+        SalesLine locSalesLine;
+
+        while select locSalesLine
+        where   locSalesLine.SalesId == this.SalesId
+        {
+            retVal += locSalesLine.remainInventPhysical * locSalesLine.avaGetItemGrossWeightFromInventUnit();
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetNetWeightRemaining</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaGetNetWeightRemaining</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>ItemNetWeight</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display ItemNetWeight avaGetNetWeightRemaining()
+    {
+        ItemNetWeight retVal;
+
+        SalesLine locSalesLine;
+
+        while select locSalesLine
+        where   locSalesLine.SalesId == this.SalesId
+        {
+            retVal += locSalesLine.remainInventPhysical * locSalesLine.avaGetItemNetWeightFromInventUnit();
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAreorgLineNum</Name>
+				<Source><![CDATA[
+    /*  protected boolean mustSalesLineBeUpdated(SalesLine _salesLine)
+    {
+        boolean ret = next  mustSalesLineBeUpdated(_salesLine);
+        ret = !AVASalesParameters::find().PriceSearch;
+        return ret;
+    }  */
+
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_salesId">SalesId</param>
+    public static void AVAreorgLineNum(SalesId _salesId)
+    {
+        int             LineCounter;
+        real            SortLineCounter;
+        SalesLine       salesLine;
+        List            list;
+        ListEnumerator  listEnumerator;
+
+        list            = new List(Types::Int64);
+        LineCounter     = 0;
+        SortLineCounter = 0.0;
+
+        ttsbegin;
+
+        while select salesLine 
+        order by LineNum 
+        where   salesLine.SalesId == _salesId
+            &&  !salesLine.AVAItemSetComponent
+        {
+            list.addEnd(salesLine.RecId);
+        }
+
+        listEnumerator  = list.getEnumerator();
+        while (listEnumerator.moveNext())
+        {
+            salesLine           = SalesLine::findRecId(listEnumerator.current(), true);
+            LineCounter         = LineCounter + 1;
+            salesLine.LineNum   = LineCounter;
+            salesLine.doUpdate();
+            SalesTable::avaReorgLineNumItemSet(salesLine);
+        }
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaReorgLineNumItemSet</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaReorgLineNumItemSet</c> method.
+    /// </summary>
+    /// <param name="_salesLine">
+    ///    <c>SalesLine</c> as type
+    /// </param>
+    public static void avaReorgLineNumItemSet(SalesLine _salesLine)
+    {
+        SalesLine   locSalesLine;
+
+        real        locSortSubLineNum;
+
+        locSortSubLineNum = 0.0;
+
+        if(     _salesLine.AVAItemSet 
+            &&  _salesLine.avaIsItemSetExpanded()   )
+        {
+            locSortSubLineNum = 0.0;
+
+            ttsbegin;
+            while select forupdate locSalesLine
+            order by LineNum
+            where locSalesLine.AVAItemSetParent == _salesLine.InventTransId
+            {
+                locSortSubLineNum       = locSortSubLineNum + 0.001;
+                locSalesLine.LineNum    = _salesLine.LineNum + locSortSubLineNum;
+                locSalesLine.doUpdate();
+            }
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcKCS_PickingReleaseIndicator</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaCalcKCS_PickingReleaseIndicator</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>KCS_PickingReleaseIndicator</c> as return value
+    /// </returns>
+    public KCS_PickingReleaseIndicator avaCalcKCS_PickingReleaseIndicator()
+    {
+        KCS_PickingReleaseIndicator retVal;
+
+        KCS_PickingReleaseIndicator locKCS_PickingReleaseIndicator;
+
+        SalesTable                  locSalesTable;
+        SalesLine                   locSalesLine;
+
+        int                         noOfSalesLinesReleaseForShipment;
+        int                         noOfSalesLinesNoReleaseForShipmentWithRemainQty;
+
+        locSalesTable                   = this;
+
+        retVal                          = locSalesTable.KCS_PickingReleaseIndicator;
+        locKCS_PickingReleaseIndicator  = locSalesTable.KCS_PickingReleaseIndicator;
+
+        select firstonly locSalesLine
+        where   locSalesLine.SalesId                        == this.SalesId
+            &&  locSalesLine.KCS_SOCPickingReleaseIndicator == NoYes::Yes;
+        if(!locSalesLine.RecId)
+        {
+            retVal = KCS_PickingReleaseIndicator::NotReleased;
+        }
+        else
+        {
+            while select locSalesLine
+            where   locSalesLine.SalesId == this.SalesId
+            {
+                if(locSalesLine.KCS_SOCPickingReleaseIndicator == NoYes::Yes)
+                {
+                    noOfSalesLinesReleaseForShipment++;
+                }
+                else
+                {
+                    if(locSalesLine.RemainInventPhysical > 0)
+                    {
+                        noOfSalesLinesNoReleaseForShipmentWithRemainQty++;
+                    }
+                }
+            }
+
+            if(noOfSalesLinesReleaseForShipment > 0)
+            {
+                if(noOfSalesLinesNoReleaseForShipmentWithRemainQty == 0)
+                {
+                    retVal = KCS_PickingReleaseIndicator::CompleteReleased;
+                }
+                else
+                {
+                    retVal = KCS_PickingReleaseIndicator::PartReleased;
+                }
+            }
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVACheckPODublicate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_isEDI">_isEDI</param>
+    /// <returns>ret</returns>
+    public boolean AVACheckPODublicate(boolean  _isEDI = false)
+    {
+        boolean         ret = true;
+        SalesTable      dublicatedSalesTable2;
+        SalesTable      dublicatedSalesTable;
+        SalesTable      origin = this.orig();
+
+
+        if (this.PurchOrderFormNum != '' && this.AVARepPckSlipNum == '')
+        {
+
+            this.AVAPOSearchIndex = strRem(this.PurchOrderFormNum,' ') + '#';
+            this.AVAPOSearchIndex += this.CustAccount;
+            
+            this.AVAPOSearchIndex2 = strRem(this.PurchOrderFormNum,' ') + '#';
+            this.AVAPOSearchIndex2 += this.InvoiceAccount;
+
+            select count(RecId) from dublicatedSalesTable2
+            where dublicatedSalesTable2.AVAPOSearchIndex2 == this.AVAPOSearchIndex2
+                && dublicatedSalesTable2.AVARepPckSlipNum == ''
+                && dublicatedSalesTable2.CreatedDateTime <= DateTimeUtil::addYears(DateTimeUtil::getSystemDateTime(),1)
+                && dublicatedSalesTable2.RecId            != this.RecId;
+
+            if (dublicatedSalesTable2.RecId > 0)
+            {
+                select count(RecId) from  dublicatedSalesTable
+                where dublicatedSalesTable.AVAPOSearchIndex == this.AVAPOSearchIndex
+                && dublicatedSalesTable.CreatedDateTime <= DateTimeUtil::addYears(DateTimeUtil::getSystemDateTime(),1)
+                && dublicatedSalesTable.AVARepPckSlipNum == ''
+                //&& dublicatedSalesTable.AVADelegatedToAgent == NoYes::No
+                && dublicatedSalesTable.RecId            != this.RecId;
+                
+                if (dublicatedSalesTable.RecId > 0)
+                {
+                    info(strFmt("@NDX:NXAPODoublicate",this.PurchOrderFormNum,int642Str(dublicatedSalesTable.RecId)));
+                }
+                else
+                {
+                    info(strFmt("@NDX:NXAPODoublicate2",this.PurchOrderFormNum, int642Str(dublicatedSalesTable2.RecId)));
+                }
+                this.AVAPurchOrderDublicate = NoYes::Yes;
+
+                ttsbegin;
+                dublicatedSalesTable.skipDataMethods(true);
+                update_recordset  dublicatedSalesTable
+                    setting AVAPurchOrderDublicate = NoYes::Yes    
+                    where dublicatedSalesTable.AVAPOSearchIndex == this.AVAPOSearchIndex
+                        && dublicatedSalesTable.CreatedDateTime       <= DateTimeUtil::addYears(DateTimeUtil::getSystemDateTime(),1)
+                        && dublicatedSalesTable.RecId           != this.RecId;
+
+                dublicatedSalesTable2.skipDataMethods(true);
+                update_recordset  dublicatedSalesTable2
+                    setting AVAPurchOrderDublicate = NoYes::Yes
+                    where dublicatedSalesTable2.AVAPOSearchIndex2 == this.AVAPOSearchIndex2
+                        && dublicatedSalesTable2.CreatedDateTime       <= DateTimeUtil::addYears(DateTimeUtil::getSystemDateTime(),1)
+                        && dublicatedSalesTable2.RecId           != this.RecId;
+                ttscommit;
+            }
+            else
+            {
+                this.AVAPurchOrderDublicate = NoYes::No;
+            }
+        }
+        if (origin.PurchOrderFormNum != '' || this.AVARepPckSlipNum != '')
+        {
+            AVAPOSearchIndex        originPOSearchIndex2 = origin.AVAPOSearchIndex2;
+                
+
+            select count(RecId) from dublicatedSalesTable2
+            where dublicatedSalesTable2.AVAPOSearchIndex2 == originPOSearchIndex2
+                && dublicatedSalesTable2.CreatedDateTime        <= DateTimeUtil::addYears(DateTimeUtil::getSystemDateTime(),1)
+                && dublicatedSalesTable2.AVARepPckSlipNum  == ''
+                && dublicatedSalesTable2.RecId             != this.RecId;
+
+            if (dublicatedSalesTable2.RecId == 1)
+            {
+                SalesTable  dublicatedSalesTableUpd;
+
+                ttsbegin;
+                dublicatedSalesTableUpd.skipDataMethods(true);
+                update_recordset  dublicatedSalesTableUpd
+                    setting AVAPurchOrderDublicate = NoYes::No
+                    where dublicatedSalesTableUpd.AVAPOSearchIndex2 == originPOSearchIndex2
+                        && dublicatedSalesTableUpd.CreatedDateTime       <= DateTimeUtil::addYears(DateTimeUtil::getSystemDateTime(),1)
+                        && dublicatedSalesTableUpd.RecId           != this.RecId;
+                ttscommit;
+            }
+        }
+        if (this.PurchOrderFormNum == '' || this.AVARepPckSlipNum != '')
+        {
+            this.AVAPurchOrderDublicate = NoYes::No;
+            this.AVAPOSearchIndex = '';
+            this.AVAPOSearchIndex2 = '';
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayDeliveryAddressZIP</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaDisplayDeliveryAddressZIP</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>LogisticsAddressZipCodeId</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public display LogisticsAddressZipCodeId avaDisplayDeliveryAddressZIP()
+    {
+        return this.deliveryAddress().ZIPCode;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayDeliveryAddressCity</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaDisplayDeliveryAddressCity</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>LogisticsAddressCityName</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public display LogisticsAddressCityName avaDisplayDeliveryAddressCity()
+    {
+        return this.deliveryAddress().City;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateKCS_SOCSalesOrderPickingReleasedBy</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaUpdateKCS_SOCSalesOrderPickingReleasedBy</c> method.
+    /// </summary>
+    public void avaUpdateKCS_SOCSalesOrderPickingReleasedBy()
+    {
+        if(     this.KCS_PickingReleaseIndicator == KCS_PickingReleaseIndicator::CompleteReleased
+            ||  this.KCS_PickingReleaseIndicator == KCS_PickingReleaseIndicator::PartReleased       )
+        {
+            this.KCS_SOCSalesOrderPickingReleasedBy = HcmWorkerLookup::currentWorker();
+        }
+        else
+        {
+            this.KCS_SOCSalesOrderPickingReleasedBy = 0;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAhasLines</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN 2024/04/10
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean AVAhasLines()
+    {
+        SalesLine   salesLine;
+        select firstonly RecId from salesLine where salesLine.SalesId == this.SalesId;
+        return salesLine.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVACheckInfoField2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean      AVACheckInfoField2()
+    {
+        KCS_SOCSalesTableInfoFields     socSalesTableInfoFields;
+        boolean                         ret = false;
+
+        socSalesTableInfoFields = KCS_SOCSalesTableInfoFields::find(AVATableInfoFieldTypes::Sales, this.SalesId);
+
+        if(socSalesTableInfoFields.RecId && (socSalesTableInfoFields.InfoField2 == '' || (socSalesTableInfoFields.InfoField2 != '' &&  socSalesTableInfoFields.InfoField2Finished == NoYes::Yes)))
+        {
+            ret = true;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAValidateTaxGroup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean AVAValidateTaxGroup()
+    {
+        boolean     ret = true;
+
+        TaxGroupHeading     taxGroupHeading = TaxGroupHeading::find(this.TaxGroup);
+        if (!taxGroupHeading.KCS_UseTaxGroupInSales)
+        {
+            ret = checkFailed(strFmt("@NDX:NXATaxGroupIsNotForSO",this.TaxGroup));
+        }
+
+        SalesLine   locSalesLine;
+
+        select firstonly ItemId, RecId from locSalesLine
+            where locSalesLine.SalesId == this.SalesId
+               && locSalesLine.TaxGroup == '';
+
+        if (locSalesLine.RecId)
+        {
+            ret = checkFailed(strFmt("@NDX:NXANoTaxGrpInSL", locSalesLine.ItemId));
+        }
+        select firstonly RecId, ItemId from locSalesLine
+            where locSalesLine.SalesId == this.SalesId
+               && locSalesLine.TaxGroup != ''
+               && locSalesLine.TaxGroup != this.TaxGroup;
+
+        if (locSalesLine.RecId)
+        {
+            ret = checkFailed(strFmt("@NDX:NXATaxGrpInLineMatchNotSO",locSalesLine.ItemId));
+        }
+
+        select firstonly RecId, ItemId from locSalesLine
+            where locSalesLine.SalesId == this.SalesId
+               && locSalesLine.TaxItemGroup == '';
+
+        if (locSalesLine.RecId)
+        {
+            ret = checkFailed(strFmt("@NDX:NXANoItemTxGroup",locSalesLine.ItemId));
+        }
+
+        if (!this.deliveryAddress().CountryRegionId)
+        {
+            ret  = checkFailed("@NDX:NXACountryMandForDlv");
+        }
+        else
+        {
+            LogisticsAddressCountryRegionId         deliveryCountryRegionId = this.deliveryAddress().CountryRegionId;
+            if (taxGroupHeading.KCS_KFBCountryRegionType == CountryRegionType::Domestic && IntrastatCountryRegionParameters::find(deliveryCountryRegionId).CountryRegionType != CountryRegionType::Domestic )
+            {
+                warning("@NDX:NXAWarningAddAbr");
+                warning("@NDX:NXACalcTaxAnyway");
+            }
+            else
+            {
+                //Mehrwertsteuergruppe %1 und Land der Lieferadresse %2 passen nicht zusammen
+                if (taxGroupHeading.KCS_KFBCountryRegionType != IntrastatCountryRegionParameters::find(deliveryCountryRegionId).CountryRegionType)
+                {
+                    ret   = checkFailed(strFmt("@NDX:NXACountryAndTxGrpError",taxGroupHeading.TaxGroup, deliveryCountryRegionId));
+                }
+
+                if (this.VATNum)
+                {
+                    //Die UStId passt nicht zum Land der Lieferadresse
+                    if (!TaxVATNumTable::find(this.VATNum, deliveryCountryRegionId).RecId)
+                    {
+                        info("@NDX:NXAUstCountryError");
+                    }
+                }
+
+                //Umsatzsteuernummer muss für EU-Lieferungen angegeben werden
+                else if (IntrastatCountryRegionParameters::isInEU(deliveryCountryRegionId))
+                {
+                    ret  = checkFailed("@NDX:NXAFailedVATNumError");
+                }
+                if (!this.OneTimeCustomer && TaxVATNumTable::isVATNumMandatory(CustParameters::find().MandatoryVATNum, this))
+                {
+                    ret   = checkFailed("@NDX:NXAVATMandatoryError");
+                }
+            }
+        }
+
+        return ret;
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcheckCentralWarehaus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean  AVAcheckCentralWarehaus()
+    {
+        boolean     ret = true;
+
+        if (this.KCS_CentralWarehouse)
+        {
+            if (this.deliveryAddress().ZipCode != this.custTable_CustAccount().postalAddress().ZipCode)
+            {
+                ret =false;
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkPreferenceAuth</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed rom AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean checkPreferenceAuth()
+    {
+        boolean ok = true;
+        
+        if(AVASalesParameters::find().PreferenceAuthorityCheck)
+        {
+            LogisticsAddressCountryRegionId         deliveryCountryRegionId = this.deliveryAddress().CountryRegionId;
+            if (IntrastatCountryRegionParameters::find(deliveryCountryRegionId).AVAPreferenceCheck == NoYes::Yes)
+            {
+                SalesLine       locSalesLine;
+                List            listNotAuthItems = new List(Types::String);
+                str             itemsListStr;
+
+                while select ItemId from locSalesLine  
+                    where locSalesLine.SalesId == this.SalesId
+                       && locSalesLine.NDX_PreferenceAuthorized == NDXNoYesBE::No
+                {
+                
+                    listNotAuthItems.addEnd(locSalesLine.ItemId);
+                }
+
+                if (!listNotAuthItems.empty())
+                {
+                    
+                    ListIterator  listNotAuthItemsIterator = new ListIterator(listNotAuthItems);
+                    while (listNotAuthItemsIterator.more())
+                    {
+                        if (itemsListStr != '')
+                        {
+                            itemsListStr += ', ';
+                        }
+                        itemsListStr += listNotAuthItemsIterator.value();
+
+                        listNotAuthItemsIterator.next();
+                    }
+
+                    warning(strFmt("@NDX:NXAItemsIsNotForPreferDefined",itemsListStr));
+                }
+
+                this.avaSetTablePrefAuth();
+            }
+           
+        }
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetTablePrefAuth</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// sets field AVAPreferenceOutput according to input
+    /// </summary>
+    /// <param name = "_prefOutput">NoYes</param>
+    public void avaSetTablePrefAuth(NoYes _prefOutput = NoYes::Yes)
+    {
+        ttsbegin;
+        
+        this.selectForUpdate(true);
+        this.AVAPreferenceOutput = _prefOutput;
+        this.update();
+        
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckLinePAInfo</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// validates PA info for all lines of a SalesTable
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean avaCheckLinePAInfo()
+    {
+        boolean     ok = true;
+        SalesLine   locSalesLine;
+
+        while select  locSalesLine
+            where locSalesLine.SalesId == this.SalesId
+        {
+            locSalesLine.avaValidatePAInfo(true);
+        }
+
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkMissedPriceAgreement</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// desinged from ABA
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean  checkMissedPriceAgreement()
+    {
+        boolean ok = true;
+        SalesLine       locSalesLine;
+
+        while select  locSalesLine
+            where locSalesLine.SalesId == this.SalesId
+               && locSalesLine.SalesPrice == 0
+               && !locSalesLine.AVAItemSetComponent 
+        {
+            locSalesLine.AVApriceCalculation(true,false,true,true,false);
+            if (locSalesLine.SalesPrice == 0)
+            {
+                warning(strFmt("@NDX:NXAMissedPriceError", locSalesLine.ItemId));
+                ok = false;
+            }
+        }
+
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkNullQuantity</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean  checkNullQuantity()
+    {
+        boolean ok = true;
+        SalesLine       locSalesLine;
+
+
+        select firstonly locSalesLine
+            where locSalesLine.SalesId  == this.SalesId
+               && locSalesLine.SalesQty == 0;
+
+        if (locSalesLine.RecId != 0)
+        {
+            warning(strFmt("@NDX:NXASalesLinePosNull", locSalesLine.ItemId));
+            ok = false;
+        }
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateDelete</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>validateDelete</c> method.
+    /// </summary>
+    /// <param name="_mcrCancel">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    boolean  validateDelete(boolean _mcrCancel)
+    {
+        boolean     ok;
+
+        ok = next validateDelete(_mcrCancel);
+
+        if (ok)
+        {
+            if(SalesLine::exist(this.SalesId))
+            {
+                ok = false;
+                warning("@NDX:NXAExistingPosPreventDeletion");
+            }
+        }
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDistributeRedemptionAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaDistributeRedemptionAmount</c> method.
+    /// </summary>
+    /// <param name="_amountToDistribute">
+    ///    <c>Amount</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaDistributeRedemptionAmount(Amount _amountToDistribute)
+    {
+        boolean         retVal;
+
+        real            locFactor;
+        Amount          locBaseAmount;
+
+        SalesLine       locSalesLine;
+        Map             locMap;
+        MapEnumerator   locMapEnumerator;
+
+        real            locHK2;
+        
+        locMap  = new Map(Types::Record, Types::Real);
+        //MapEnumerator   mapEnumerator;
+        
+        if(     this.SalesType == SalesType::ReturnItem
+            &&  _amountToDistribute                     )
+        {
+            while select locSalesLine
+            where   locSalesLine.SalesId    == this.SalesId
+                &&  locSalesLine.LineAmount != 0
+            {
+                locHK2          = locSalesLine.inventTable().AVAGetHK2perQty(locSalesLine.ExpectedRetQty, locSalesLine.InventDimId);
+                locBaseAmount   += abs(locSalesLine.ExpectedRetQty * locHK2);
+                locMap.insert(locSalesLine, locHK2);
+            }
+
+            if(locBaseAmount)
+            {
+                ttsbegin;
+
+                locFactor                       = _amountToDistribute / locBaseAmount;
+                locMapEnumerator                = locMap.getEnumerator();
+                while (locMapEnumerator.moveNext())
+                {
+                    locSalesLine                = locMapEnumerator.currentKey();
+                    locHK2                      = locMapEnumerator.currentValue();
+                
+                    locSalesLine.selectForUpdate(true);
+                    locSalesLine.SalesPrice     = locHK2 * locFactor;
+                    locSalesLine.LinePercent    = 0;
+                    locSalesLine.LineDisc       = 0;
+
+                    if (locSalesLine.PriceUnit)
+                    {
+                        locSalesLine.SalesPrice = locSalesLine.SalesPrice * locSalesLine.PriceUnit;
+                    }
+
+                    if(locSalesLine.SalesType == SalesType::ReturnItem)
+                    {
+                        locSalesLine.LineAmount = locSalesLine.returnLineAmount(locSalesLine.ExpectedRetQty);
+                    }
+                    else
+                    {
+                        locSalesLine.LineAmount = locSalesLine.calcLineAmount(locSalesLine.ExpectedRetQty);
+                    }
+                    locSalesLine.update();
+                }
+
+                ttscommit;
+        
+                retVal  = true;
+            }
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of method update
+    /// </summary>
+    public void update()
+    {
+        if( this.orig().AVAJournalApproval == NoYes::No
+            && this.AVAJournalApproval == NoYes::Yes
+            && this.WorkerSalesTaker != HcmWorker::userId2Worker(curUserId()))
+        {
+            this.WorkerSalesTaker = HcmWorker::userId2Worker(curUserId());
+        }
+
+        next update();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateSalesLinesOnUpdateSalesTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesTable_Orig">_salesTable_Orig</param>
+    protected void updateSalesLinesOnUpdateSalesTable(SalesTable _salesTable_Orig)
+    {
+        next updateSalesLinesOnUpdateSalesTable(_salesTable_Orig);
+        if (this.ShippingDateRequested != _salesTable_Orig.ShippingDateRequested
+         || this.AVADispoDate          != _salesTable_Orig.AVADispoDate)
+        {
+            SalesLine       locSalesLine;
+
+            while select locSalesLine
+                where locSalesLine.SalesId == this.SalesId
+                   && locSalesLine.SalesStatus == SalesStatus::Backorder
+            {
+                if (this.ShippingDateRequested != _salesTable_Orig.ShippingDateRequested)
+                {
+                    locSalesLine.AVAShippingDateRequested = this.ShippingDateRequested;
+                }
+                if (this.AVADispoDate          != _salesTable_Orig.AVADispoDate)
+                {
+                    locSalesLine.AVADispoDate = this.AVADispoDate;
+                    locSalesLine.AVADispoDateModifiedDateTime    =  DateTimeUtil::utcNow();
+                    locSalesLine.AVADispoDateModifiedById        =  curUserId();
+                }
+                locSalesLine.setCalculatedShippingDate();
+                ttsbegin;
+                locSalesLine.selectForUpdate(true);
+                locSalesLine.doUpdate();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateEstimateBasedOnCreditMaxCheck</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA don't update estimate if Journal
+    /// </summary>
+    /// <param name = "_salesTotals">SalesTotals</param>
+    protected void updateEstimateBasedOnCreditMaxCheck(SalesTotals _salesTotals)
+    {
+        SalesEstimateGross  estimate = this.Estimate;
+        SalesEstimateGross  netEstimate = this.AVAFPLNetEstimate;
+
+        next updateEstimateBasedOnCreditMaxCheck(_salesTotals);
+
+        if (this.SalesType == SalesType::Journal)
+        {
+            this.Estimate = estimate; 
+            this.AVAFPLNetEstimate  = netEstimate;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>interCompanyUpdateNow</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// desigend from AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    boolean  interCompanyUpdateNow()
+    {
+        boolean ok = next interCompanyUpdateNow();
+        if (!ok
+        && this.orig().KCS_FreightCosts != this.KCS_FreightCosts)
+        {
+            ok = true;
+        }
+
+        if (!ok && this.orig().AVADlvResponsible != this.AVADlvResponsible)
+        {
+            ok = true;
+        }
+
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVACheckRepPckSlipNum</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// ava method
+    /// </summary>
+    /// <param name = "lThrowError">boolean</param>
+    /// <returns>boolean</returns>
+    public  boolean AVACheckRepPckSlipNum(boolean       lThrowError = true)
+    {
+        SalesTable             salesTable;
+        AVASalesParameters     salesParameters = AVASalesParameters::find(false);
+
+        Query                   q;
+        QueryRun                qr;
+        QueryBuildDataSource    qbds;
+        QueryBuildFieldList     qf;
+        utcdatetime             l_utcDateTime = DateTimeUtil::utcNow();
+        ;
+        if (!this.AVARepPckSlipNum)
+        {
+            return true;
+        }
+
+        q       = new Query();
+        qbds    = q.addDataSource(tablenum(SalesTable));
+        qbds.addRange(fieldnum(SalesTable, InventSiteId)).value(SysQuery::value(this.InventSiteId));
+        qbds.addRange(fieldnum(SalesTable, AVARepPckSlipNum)).value(this.AVARepPckSlipNum);
+        qbds.addRange(fieldnum(SalesTable, RecId)).value(SysQuery::valueNot(this.RecId));
+        qbds.addSortField(fieldnum(salesTable, createdDateTime), SortOrder::Descending);
+        qf = qbds.fields();
+        qf.addField(fieldnum(SalesTable, SalesId));
+        qf.addField(fieldnum(SalesTable, createdDateTime));
+        qbds.firstOnly(true);
+
+        // Zeitraumprüfung
+        if (salesParameters.RepPckSlipDaysCheck)
+        {
+            l_utcDateTime = DateTimeUtil::addDays(l_utcDateTime, -salesParameters.RepPckSlipDaysCheck);
+            qbds.addRange(fieldnum(SalesTable, createdDateTime)).value(SysQuery::range(l_utcDateTime, DateTimeUtil::utcNow()));
+        }
+        qr = new QueryRun(q);
+        if (qr.next())
+        {
+            salesTable = qr.get(tablenum(SalesTable));
+            if (lThrowError)
+            {
+                // Der Handelsvertreter-Lieferschein [%1] wurde bereits am [%2] im Auftrag [%3] verwendet. Der Prüfzeitraum für die Eindeutigkeit von Lieferscheinnummern beträgt [%4 Tage]. Der Lieferschein kann nicht erfasst werden.
+                Error(strfmt("@NDX:NXAReqNumDaysChackError", this.AVARepPckSlipNum, salesTable.createdDateTime, salesTable.SalesId, salesParameters.RepPckSlipDaysCheck));
+            }
+            return false;
+        }
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateAlterJournalSalesStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaUpdateJournalSalesStatus</c> method.
+    ///     AVA - Schneider 19.02.2024
+    /// </summary>
+    public void avaUpdateAlterJournalSalesStatus()
+    {
+        if(this.SalesType == SalesType::Journal)                // Journal
+        {
+            if(this.SalesStatus == SalesStatus::BacKOrder)      // Offener Auftrag
+            {
+                ttsbegin;
+                this.selectForUpdate(true);
+                this.SalesStatus = SalesStatus::Canceled;       // Storniert
+                this.update();
+                ttscommit;
+            }
+            else if(this.SalesStatus == SalesStatus::Canceled)  // Storniert
+            {
+                ttsbegin;
+                this.selectForUpdate(true);
+                this.SalesStatus = SalesStatus::BacKOrder;      // Offener Auftrag
+                this.update();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayShippingDateConfirmedCommon</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaDisplayShippingDateConfirmedCommon</c> method.
+    ///     AVA - Schneider 08.03.2024
+    /// </summary>
+    /// <returns>
+    ///    <c>AVASalesShippingDateConfirmedCommon</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AVASalesShippingDateConfirmedCommon avaDisplayShippingDateConfirmedCommon()
+    {
+        AVASalesShippingDateConfirmedCommon  retVal;
+
+        SalesLine                           locSalesLine;
+        AVASalesShippingDateConfirmedCommon locDateNull;
+        boolean                             locFirstTimeChecked;
+
+        locDateNull = dateNull();
+        retVal      = locDateNull;
+
+        while select SalesId, ShippingDateConfirmed
+        from    locSalesLine
+        where   locSalesLine.SalesId                == this.SalesId
+            &&  locSalesLine.SalesStatus            == SalesStatus::Backorder
+            //&&  locSalesLine.ShippingDateConfirmed  != locDateNull
+        {
+            if(!locFirstTimeChecked) // one time
+            {
+                retVal = locSalesLine.ShippingDateConfirmed;
+                locFirstTimeChecked = true;
+            }
+
+            if(retVal != locSalesLine.ShippingDateConfirmed) // different dates so no further search
+            {
+                retVal = locDateNull;
+                break;
+            }
+        }
+    
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateShippingDateConfirmedCommon</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaUpdateShippingDateConfirmedCommon</c> method.
+    ///     AVA - Schneider 08.03.2024
+    /// </summary>
+    /// <param name="_selectForUpdate">
+    ///     <c>boolean</c> as type
+    /// </param>
+    public void avaUpdateShippingDateConfirmedCommon(boolean _selectForUpdate = false)
+    {
+        AVASalesShippingDateConfirmedCommon locAVASalesShippingDateConfirmedCommon;
+        
+        locAVASalesShippingDateConfirmedCommon = this.avaDisplayShippingDateConfirmedCommon();
+
+        if(     _selectForUpdate
+            &&  this.AVAShippingDateConfirmedCommon != locAVASalesShippingDateConfirmedCommon)
+        {
+            ttsbegin;
+            this.selectForUpdate(_selectForUpdate);
+            this.AVAShippingDateConfirmedCommon = locAVASalesShippingDateConfirmedCommon;
+            this.update();
+            ttscommit;
+        }
+        else
+        {
+            this.AVAShippingDateConfirmedCommon = locAVASalesShippingDateConfirmedCommon;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitFromAVASalesParameters_ReturnItem</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaInitFromAVASalesParameters_ReturnItem</c> method.
+    ///     AVA - Schneider 12.03.2024
+    /// </summary>
+    public void avaInitFromAVASalesParameters_ReturnItem()
+    {
+        AVASalesParameters  locAVASalesParameters;
+
+        locAVASalesParameters   = AVASalesParameters::find();
+
+        if(     locAVASalesParameters.AutomaticICOrders
+            &&  locAVASalesParameters.KCS_IC_Reduction  )
+        {
+            this.KCS_IC_Reduction = locAVASalesParameters.KCS_IC_Reduction;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitCustAccountChanged_ReturnItem</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaInitCustAccountChanged_ReturnItem</c> method.
+    ///     AVA - Schneider 12.03.2024
+    /// </summary>
+    public void avaInitCustAccountChanged_ReturnItem()
+    {
+        CustTable       locCustTable;
+
+        if(this.CustAccount)
+        {
+            locCustTable = CustTable::find(this.CustAccount);
+            this.InterCompanyDirectDelivery    = locCustTable.InterCompanyDirectDelivery;
+            this.InterCompanyAutoCreateOrders  = locCustTable.InterCompanyAutoCreateOrders;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitFreightSettings_ReturnItem</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaInitFreightSettings_ReturnItem</c> method.
+    ///     AVA - Schneider 13.03.2024
+    /// </summary>
+    public void avaInitFreightSettings_ReturnItem()
+    {
+        if(this.SalesStatus == SalesStatus::Backorder)
+        {
+            this.KCS_FreightChargeFree  = NoYes::Yes;
+            this.KCS_FreightCostStatus  = KCS_FreightCostStatus::None;
+            this.KCS_FreightCosts       = 0.0;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckEDIGLN</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN 2024/04/04   AVA_010619_EDIGLNCheck
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean avaCheckEDIGLN()
+    {
+        LogisticsPostalAddress  invoiceLogisticsPostalAddress;
+        LogisticsLocation       logisticsLocation;
+
+        boolean ret = true;
+
+        if (this.SalesOriginId like '*EDI*')
+        {
+            invoiceLogisticsPostalAddress = this.custTable_InvoiceAccount().invoiceAddress();
+            if (!invoiceLogisticsPostalAddress.RecId)
+            {
+                ret = checkFailed("@NDX:NXAEDINoInvAddress");
+            }
+            select firstonly logisticsLocation
+                    where logisticsLocation.RecId == invoiceLogisticsPostalAddress.Location;
+            if (logisticsLocation.AVAEDIGLN == '')
+            {
+                ret = checkFailed("@NDX:NXANoGLNInInvAddr");
+            }
+        }
+        return ret;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaMarkupTransForPickUpFeeExist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaMarkupTransForPickUpFeeExist</c> method.
+    ///     AVA - Schneider 06.06.2024
+    /// </summary>
+    /// <returns>
+    ///    <c>MarkupCode</c> as return value
+    /// </returns>
+    public MarkupCode avaMarkupTransForPickUpFeeExist()
+    {
+        MarkupCode  locMarkupCodePickup;
+        MarkupTrans locMarkupTrans;
+
+        locMarkupCodePickup = AVASalesParameters::find().MarkupCodePickUpFee;
+
+        if(locMarkupCodePickup)
+        {
+            select firstonly1 locMarkupTrans
+            where   locMarkupTrans.TransTableId == this.TableId
+                &&  locMarkupTrans.TransRecId   == this.RecId
+                &&  locMarkupTrans.MarkupCode   == locMarkupCodePickup;
+            if(locMarkupTrans.RecId == 0)
+            {
+                locMarkupCodePickup = '';
+            }
+        }
+        return locMarkupCodePickup;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckPickUpFeeChange</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaCheckPickUpFeeChange</c> method.
+    ///     AVA - Schneider 03.06.2024
+    /// </summary>
+    /// <param name="_withDialog">
+    ///     <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public DialogButton avaCheckPickUpFeeChange(boolean _withDialog = false)
+    {
+        DialogButton    retVal;
+
+        SalesTable      locSalesTableOrig;
+        MarkupCode      locMarkupCodePickup;
+        MarkupTrans     locMarkupTrans;
+
+        DlvModeId       locDlvModeToCheck;
+        DialogButton    locDialogButtonAnswer;
+        boolean         locRemoveMarkupTransForPickup;
+        str             locBoxText;
+        str             locBoxTextTmp;
+        str             locBoxTextTmp2;
+        LanguageId      locLanguageId;
+
+        
+        retVal = DialogButton::No;
+
+        locMarkupCodePickup = this.avaMarkupTransForPickUpFeeExist();
+        if(locMarkupCodePickup != '')
+        {
+            locDlvModeToCheck = DlvMode::avaSalesPickupDlvModeId();
+
+            locSalesTableOrig = this.orig();
+
+            if(     locSalesTableOrig.DlvMode == locDlvModeToCheck
+                &&  this.DlvMode != locSalesTableOrig.DlvMode
+                &&  this.DlvMode != '')
+            {
+                if(_withDialog)
+                {
+                    locLanguageId   = CompanyInfo::find().LanguageId;
+                    if(this.DlvTerm)
+                    {
+                        locBoxText      = SysLabel::labelId2String(literalStr("@NDX:NXAP1DoNotAllowAnyPickupFee2"), locLanguageId);
+                    }
+                    else
+                    {
+                        locBoxText      = SysLabel::labelId2String(literalStr("@NDX:NXAP1DoNotAllowAnyPickupFee"), locLanguageId);
+                    }
+                    
+                    /* activate if decription is needed
+                    locBoxTextTmp   = DlvMode::txt(locDlvModeToCheck, locLanguageId);
+                    if(locBoxTextTmp)
+                    {
+                        locBoxTextTmp = ' - ' + locBoxTextTmp;
+                    }
+                    */
+                    locBoxTextTmp   = SysLabel::labelId2String(literalStr("@SYS210"), locLanguageId) + ' '
+                                    + this.DlvMode 
+                                    + locBoxTextTmp;
+                    if(this.DlvTerm)
+                    {
+                        /* activate if decription is needed
+                        locBoxTextTmp2   = DlvTerm::txt(this.DlvTerm, locLanguageId);
+                        if(locBoxTextTmp2)
+                        {
+                            locBoxTextTmp2 = ' - ' + locBoxTextTmp2;
+                        }
+                        */
+                        locBoxTextTmp2  = SysLabel::labelId2String(literalStr("@SYS6576"), locLanguageId) + ' '
+                                        + this.DlvTerm
+                                        + locBoxTextTmp2;
+                        locBoxTextTmp   = locBoxTextTmp + ', ' + locBoxTextTmp2;
+                    }
+
+                    locBoxText      = strfmt(locBoxText, locBoxTextTmp);
+
+                    locDialogButtonAnswer = Box::yesNoCancel(   locBoxText,
+                                                                DialogButton::Cancel,
+                                                                "@SYS28002"             );
+                    if (locDialogButtonAnswer == DialogButton::Yes)
+                    {
+                        locRemoveMarkupTransForPickup = true;
+                    }
+                    else if (locDialogButtonAnswer == DialogButton::No)
+                    {
+                        // ..
+                    }
+                    else
+                    {
+                        this.DlvMode    = locSalesTableOrig.DlvMode;
+                    }
+                    retVal          = locDialogButtonAnswer;
+                }
+                else
+                {
+                    locRemoveMarkupTransForPickup = true;
+                }
+            }
+
+            if(locRemoveMarkupTransForPickup)
+            {
+                // remove pickups
+                ttsbegin;
+                while select locMarkupTrans
+                where   locMarkupTrans.TransTableId == this.TableId
+                    &&  locMarkupTrans.TransRecId   == this.RecId
+                    &&  locMarkupTrans.MarkupCode   == locMarkupCodePickup
+                {
+                    if(locMarkupTrans.recid)
+                    {
+                        locMarkupTrans.selectForUpdate(true);
+                        locMarkupTrans.delete();
+                    }
+                }
+                ttscommit;
+            }
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetOrDoUpdateQuotationIdAfterImport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaSetOrDoUpdateQuotationIdAfterImport</c> method.
+    ///     AVA - Schneider 22.07.2024
+    /// </summary>
+    /// <returns>
+    ///     <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaSetOrDoUpdateQuotationIdAfterImport()
+    {
+        boolean             retVal;
+        
+        AVASalesParameters  locAVASalesParameters;
+        boolean             locValuesCanBeChanged;
+
+        SalesLine           locSalesLine;
+        boolean             locSalesLineStatus;
+
+        retVal = true;
+
+        locAVASalesParameters = AVASalesParameters::find();
+        //if(locAVASalesParameters.EnableBlockedCustomer)
+        if (SysUserInfo::find(curUserId()).AVADataImportUser)
+        {
+            locValuesCanBeChanged = true;
+        }
+        if(locValuesCanBeChanged)
+        {
+            while select locSalesLine
+            where locSalesLine.SalesId == this.SalesId
+            {
+                locSalesLineStatus = locSalesLine.avaSetOrDoUpdateQuotationIdAfterImport(true);
+                if(!locSalesLineStatus)
+                {
+                    retVal = locSalesLineStatus;
+                }
+            }
+        }
+        else
+        {
+            retVal = false;
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcheckQuotationStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 21.01.2025
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean AVAcheckQuotationStatus()
+    {
+        boolean ret = true;
+        SalesLine   salesLine;
+
+        select firstonly RecId from salesLine
+            where salesLine.SalesId == this.SalesId
+               && salesLine.AVAEDIQuotationStatus == AVAEDIQuotationStatus::Error;
+
+        if (salesLine.RecId)
+        {
+            ret = false;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAupdateDlvDatesForICUpdate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/05/12     AVA_013179_ICDlvDate
+    /// </summary>
+    public void AVAupdateDlvDatesForICUpdate()
+    { 
+        SalesLine salesLine;
+                                         
+        while select forupdate salesline where salesLine.SalesId == this.salesId
+        {
+            ttsbegin;
+            if (salesLine.ShippingDateConfirmed)
+            {
+                salesLine.ShippingDateConfirmed = max(salesLine.ShippingDateConfirmed, DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+                salesLine.ReceiptDateConfirmed = max(salesLine.ShippingDateConfirmed, salesLine.ReceiptDateConfirmed);
+                //salesLine.update();
+            }
+            //else
+            //{
+            salesLine.ShippingDateRequested = max(salesLine.ShippingDateRequested, DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+            if (salesLine.ReceiptDateRequested < salesLine.ShippingDateRequested)
+            {
+                salesLine.ReceiptDateRequested = salesLine.ShippingDateRequested;
+            }
+            salesLine.update();
+            //}
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAckeclCustCredManBlock</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 27.01.2025
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean AVAckeclCustCredManBlock()
+    {
+        boolean ret = true;
+        if (this.custTable_CustAccount().Blocked != CustVendorBlocked::No)
+        {
+            ret = checkFailed("@NDX:NXACustIsBlocked");
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAinterCompanyAutoCreateOrders</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/05/12     AVA_013179_ICDlvDate
+    /// </summary>
+    public void AVAinterCompanyAutoCreateOrders()
+    {
+        boolean     interCompanyVendorFound;
+
+        if (this.AVAcanInterCompanyAutoCreateOrders())
+        {
+            SalesLine   salesLineLocal;
+
+            while select forceplaceholders salesLineLocal
+                    where salesLineLocal.SalesId     == this.SalesId
+                    &&    salesLineLocal.InventRefId == ''
+                    &&    salesLineLocal.ItemId      != ''
+            {
+                if (salesLineLocal.defaultIntercompanyVendor().interCompanyTradingRelationActive())
+                {
+                    interCompanyVendorFound = true;
+                    break;
+                }
+            }
+
+            // Don't execute intercompany logic for exchange orders - intercompany processing
+            // will happen when the exchange is completed via the
+            // returns process or payments are approved or when the last hold
+            // is released against it.
+            if (interCompanyVendorFound
+                && (!this.mcrIsCallCenter() || !this.mcrReturnSalesTable().IsExchange))
+            {
+                TradeInterCompany::autoCreateOrder(this);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcanInterCompanyAutoCreateOrders</Name>
+				<Source><![CDATA[
+    internal boolean AVAcanInterCompanyAutoCreateOrders()
+    {
+        return this.InterCompanyAutoCreateOrders
+                &&  this.ReturnStatus != ReturnStatusHeader::Canceled
+                &&  this.ReturnStatus != ReturnStatusHeader::Closed
+                && (this.CreatedBy  == curUserId() ||
+                    this.ModifiedBy == curUserId() ||
+                   !SalesTable::find(this.SalesId).InterCompanyAutoCreateOrders)
+                &&  SalesTableType::construct(this).canCreatePurchOrder()
+                && !this.existInterCompanySales();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkLineColor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NDX Check if the colo of an item ist set correctly
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean checkLineColor()
+    {
+        boolean     ok = true;
+        SalesLine   locSalesLine;
+
+        while select  locSalesLine
+            where locSalesLine.SalesId == this.SalesId
+        {
+            locSalesLine.ndxValidateColor(true);
+        }
+
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

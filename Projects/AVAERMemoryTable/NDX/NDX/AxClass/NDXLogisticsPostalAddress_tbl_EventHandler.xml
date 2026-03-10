@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXLogisticsPostalAddress_tbl_EventHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 24.11.21
+/// </summary>
+public static class NDXLogisticsPostalAddress_tbl_EventHandler
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>LogisticsPostalAddress_inserted</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 25.11.21 Change SearchName on DirPartyTable if primary Address is changed
+    /// </summary>
+    /// <param name="original">LogisticsPostalAddress</param>
+    /// <param name="changed">LogisticsPostalAddress</param>
+    [SubscribesTo(tableStr(LogisticsPostalAddress), delegateStr(LogisticsPostalAddress, inserted))]
+    public static void LogisticsPostalAddress_inserted(LogisticsPostalAddress original, LogisticsPostalAddress changed)
+    {
+        LogisticsPostalAddress logisticsPostalAddress = changed;
+        if (logisticsPostalAddress.Location)
+        {
+            LogisticsLocation logisticsLocation;
+            select firstonly logisticsLocation where logisticsLocation.RecId == logisticsPostalAddress.Location;
+            if (!logisticsLocation)
+            {
+                return;
+            }
+            DirPartyLocation dirPartyLocation;
+            select firstonly dirPartyLocation where dirPartyLocation.Location == logisticsLocation.RecId;
+            if (!dirPartyLocation || !dirPartyLocation.Party)
+            {
+                return;
+            }
+            DirPartyTable dirPartyTable = DirPartyTable::findRec(dirPartyLocation.Party, true);
+            if (dirPartyTable.PrimaryAddressLocation == logisticsPostalAddress.Location)    // change only on primary address
+            {
+                NDXDirPartyInfo dirPartyInfo = NDXDirPartyTableBaseType::findDirPartyInfo(dirPartyTable.PartyNumber);
+                dirPartyInfo.parmLogisticsPostalAddressRecId(changed.RecId);
+                NDXDirPartyTableBaseType::findDirPartyInfo(dirPartyTable.PartyNumber, dirPartyInfo);
+                dirPartyTable.update();
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

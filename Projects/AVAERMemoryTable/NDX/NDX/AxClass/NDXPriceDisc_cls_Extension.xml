@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXPriceDisc_cls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PriceDisx class extension
+/// WolfA 08.10.21
+/// </summary>
+[ExtensionOf(classStr(PriceDisc))]
+final class NDXPriceDisc_cls_Extension
+{
+    private KCS_PRMMarkup  kcs_PRMMarkupMaterial;
+    private KCS_PRMMarkup  kcs_PRMMarkupEnergy;
+
+    private HeadingLine markupModuleCategory;
+    private MarkupModule markupModuleType;
+    private MarkupGroupId markupGroupId;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmKCS_PRMMarkupMaterial</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Setter Getter for KCS_PRMMarkupMaterial
+    /// </summary>
+    /// <param name = "_kcs_PRMMarkupMaterial">Price</param>
+    /// <returns>Price</returns>
+    KCS_PRMMarkupMaterial parmKCS_PRMMarkupMaterial(KCS_PRMMarkup _kcs_PRMMarkupMaterial = kcs_PRMMarkupMaterial)
+    {
+        kcs_PRMMarkupMaterial = _kcs_PRMMarkupMaterial;
+        return kcs_PRMMarkupMaterial;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmKCS_PRMMarkupEnergy</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Setter and Getter for KCS_PRMMarkupEnergy
+    /// </summary>
+    /// <param name = "_kcs_PRMMarkupEnergy">Price</param>
+    /// <returns>Price</returns>
+    KCS_PRMMarkupEnergy parmKCS_PRMMarkupEnergy(KCS_PRMMarkup _kcs_PRMMarkupEnergy = kcs_PRMMarkupEnergy)
+    {
+        kcs_PRMMarkupEnergy = _kcs_PRMMarkupEnergy;
+        return kcs_PRMMarkupEnergy;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDX_HK2PriceDiscPurch</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets calculate HK2 price
+    /// </summary>
+    /// <param name = "_hK2FactorGroup">Faktor group Id</param>
+    /// <param name = "_hk2Factor">Faktor default = 1000</param>
+    /// <returns>Price</returns>
+    KCS_PRMPriceSales NDX_HK2PriceDiscPurch(KCS_HK2FactorGroup  _hK2FactorGroup, PriceUnit _hk2Factor = 1000)
+    {
+        KCS_PRMPriceSales   priceHK2 = 0;
+        PriceUnit hk2Factor = _hk2Factor;
+        ;
+        if (actualPriceTable)
+        {
+            if(_hK2FactorGroup)
+            {
+                hk2Factor = _hK2FactorGroup.HK2Factor * hk2Factor;
+            }
+
+            // 20231117 - FINTHI - 8226: Removed KCS_PRMMarkupMaterial and KCS_PRMMarkupEnergy
+            //priceHK2 = actualPriceTable.KCS_PRMPriceSales();
+            priceHK2 = actualPriceTable.Amount;
+            
+            if (priceHK2 && this.lineDiscPct())
+            {
+                priceHK2 -= (this.lineDiscPct() * priceHK2) / 100;
+            }
+
+            if (actualPriceTable.PriceUnit != hk2Factor)
+            {
+                priceHK2 = priceHK2 * (hk2Factor / max(1, actualPriceTable.PriceUnit));
+            }
+        }
+        return priceHK2;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXfindLineDisc</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Find if LineDisc exists
+    /// </summary>
+    /// <param name = "_itemLineDisc">LineDiscCode Id</param>
+    /// <param name = "_accountLineDisc">Account Id</param>
+    /// <param name = "_kcs_ChainLineDiscCode">Chain Code Id</param>
+    /// <returns>true or false</returns>
+    public NoYes NDXfindLineDisc(LineDiscCode _itemLineDisc, LineDiscCode _accountLineDisc, KCS_ChainLineDiscCode _kcs_ChainLineDiscCode = '')
+    {
+        discAgreementExist = this.findLineDisc(_itemLineDisc, _accountLineDisc);
+        return discAgreementExist;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDX_MarkupPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets Markup price
+    /// </summary>
+    /// <param name = "_moduleCategory">mordule category</param>
+    /// <param name = "_markupModuleType">markup module type</param>
+    /// <param name = "_itemGroup">markup group id</param>
+    /// <param name = "invertSign">true or false</param>
+    /// <returns>Markup price</returns>
+    PriceMarkup NDX_MarkupPrice(HeadingLine _moduleCategory,
+                                  MarkupModuleType _markupModuleType,
+                                  MarkupGroupId _itemGroup  = '',
+                                  boolean invertSign  = false)
+    {
+        MarkupAutoTable         markupAutoTable;
+        MarkupAutoLine          markupAutoLine;
+        MarkupTrans             markupTrans;
+
+        TableGroupAll       accountCode = TableGroupAll::Table;
+        TableGroupAll       itemCode;
+
+        CustVendRel         accountRelation;
+        ItemRelation        itemRelation;
+
+        CustVendRel         KCS_allianceAccountRel;
+
+        MarkupGroupId       accountGroup;
+        PriceMarkup         priceMarkUp = 0;
+
+        InventTable         inventTable = InventTable::find(priceDiscParameters.parmItemId());
+        LineNum             currentLine;
+
+        real value;
+        ;
+        markupModuleType = _markupModuleType;
+        markupGroupId    = inventTable.purchMarkupGroup();
+
+        markupTrans.setTmp();
+
+        if(_itemGroup != '')
+        {
+            markupGroupId = _itemGroup;
+        }
+
+        while (accountCode <= TableGroupAll::All)
+        {
+            if (_moduleCategory == HeadingLine::Heading)
+            {
+                itemCode = TableGroupAll::All;
+            }
+            else
+            {
+                itemCode = TableGroupAll::Table;
+            }
+
+            while (itemCode <= TableGroupAll::All)
+            {
+                accountRelation     = Markup::accountRelation   (accountCode, priceDiscParameters.parmAccountNum(), accountGroup);
+                itemRelation        = Markup::itemRelation      (itemCode,    inventTable.ItemId,    markupGroupId   );
+                KCS_allianceAccountRel = Markup::KCS_accountRelation(accountCode, priceDiscParameters.parmAccountNum());
+
+                if ((Markup::validateRelation(accountCode, accountRelation) || Markup::validateRelation(accountCode,KCS_allianceAccountRel))  &&
+                Markup::validateRelation(itemCode,    itemRelation   ))
+                {
+                    MarkupAutoTable searchParameter;
+                    //markupAutoTable = MarkupAutoTable::find(_moduleCategory, markupModuleType, accountCode, accountRelation, itemCode, itemRelation);
+
+                    searchParameter.ModuleCategory    = _moduleCategory;
+                    searchParameter.ModuleType        = markupModuleType;
+                    searchParameter.AccountCode       = accountCode;
+                    searchParameter.AccountRelation   = accountRelation;
+                    searchParameter.ItemCode          = itemCode;
+                    searchParameter.ItemRelation      = itemRelation;
+                    searchParameter.MarkupReturn      = ReturnCodeType::None;
+                    searchParameter.ReturnRelation    = '';
+                    searchParameter.DlvModeCode       = TableGroupAll::All;
+                    searchParameter.DlvModeRelation   = '';
+                    
+                    
+                    markupAutoTable = MarkupAutoTable::findByNaturalKey(searchParameter);
+
+                    if (!markupAutoTable && accountCode == TableGroupAll::GroupId && KCS_allianceAccountRel)
+                    {
+                        markupAutoTable = MarkupAutoTable::KCS_findAllianceMarkup(KCS_allianceAccountRel,itemCode,itemRelation,ReturnCodeType::None,'',false, _moduleCategory);
+                    }
+
+                    if (markupAutoTable)
+                    {
+                        while select markupAutoLine
+                              index hint TableIdx
+                              where markupAutoLine.TableTableId    == markupAutoTable.TableId   &&
+                                    markupAutoLine.TableRecId      == markupAutoTable.RecId     &&
+                                    markupAutoLine.CurrencyCode    == priceDiscParameters.parmCurrencyCode()
+                        {
+                            currentLine++;
+
+                            markupTrans.clear();
+                            markupTrans.initFromMarkupTable(markupAutoLine.markupTable());
+                            markupTrans.initFromMarkupAutoLine(markupAutoLine);
+                            markupTrans.ModuleType = markupModuleType;
+                            markupTrans.CurrencyCode   = markupAutoLine.MarkupCurrencyCode;
+
+                            markupTrans.TransTableId   = inventTable.TableId;
+                            markupTrans.TransRecId     = inventTable.RecId;
+                            markupTrans.LineNum = currentLine;
+
+                            if (invertSign  &&  markupTrans.MarkupCategory == MarkupCategory::Fixed)
+                            {
+                                markupTrans.Value = -markupTrans.Value;
+                            }
+                            
+                            markupTrans.insert();
+                        }
+                    }
+                }
+
+                itemCode += 1;
+            }
+
+            accountCode += 1;
+        }
+
+        while select markupTrans
+        {
+            value += markupTrans.Value;
+        }
+
+        if (value)
+        {
+            priceMarkUp += (price * value)/100;
+        }
+
+        markup = priceMarkUp;
+        
+        //return only MarkupPrice;
+        return priceMarkUp;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

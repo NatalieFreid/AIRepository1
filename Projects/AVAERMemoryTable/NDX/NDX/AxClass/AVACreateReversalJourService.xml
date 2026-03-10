@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACreateReversalJourService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN/2025/01/24  AVA_013036_ReverseJournal
+/// </summary>
+internal final class AVACreateReversalJourService extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/01/24  AVA_013036_ReverseJournal
+    /// </summary>
+    /// <param name = "_contract">AVACreateReversalJourContract</param>
+    public void process(AVACreateReversalJourContract _contract)
+    {
+        Set recordSet;
+        SetEnumerator se;
+        LedgerJournalTable ledgerJournalTable;
+        LedgerJournalName  ledgerjournalName;
+        boolean     useExistingDates = _contract.parmUseExistingDates();
+        date        reversalDate = _contract.parmReversalDate();
+        Description reversalReason = _contract.parmreversalReason();
+
+        ledgerjournalName = LedgerJournalName::find(LedgerParameters::find().AVAReversalJournalNameId);
+        if (!ledgerjournalName)
+        {
+            throw Error("@NDX:NXAMissingReversalParameter");
+        }
+
+        if (conLen(_contract.parmRecordCon()) > 0)
+        {
+            recordSet = Set::create(_contract.parmRecordCon());
+            se = recordSet.getEnumerator();
+            while (se.moveNext())
+            {
+                ledgerJournalTable = se.current();
+                this.createReverseJournal(ledgerJournalTable, ledgerjournalName, useExistingDates, reversalDate, reversalReason);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createReverseJournal</Name>
+				<Source><![CDATA[
+    private void createReverseJournal(LedgerJournalTable _ledgerJournalTableSource, LedgerJournalName   _ledgerJournalName, boolean _useExistingDates, date _reversalDate = dateNull(), Description _reversalReason = '')
+    {
+        LedgerJournalTable  ledgerJournalTable, ledgerJourAllocation;
+
+        NumberSeq numSeq = NumberSeq::newGetVoucherFromId(_ledgerJournalName.NumberSequenceTable);
+
+        Voucher lastVoucher, curVoucher;
+        LedgerJournalTrans          newLedgerJournalTrans, fromLedgerJournalTrans;
+        RecordInsertList            rilLedgerJournalTrans = new RecordInsertList(tableNum(LedgerJournalTrans));
+
+        LedgerJournalCheckPost  ledgerJournalCheckPost;
+
+
+        select firstonly ledgerJourAllocation where ledgerJourAllocation.RecId == _ledgerJournalTableSource.AVAAllocationRefRecId;
+
+        if (ledgerJourAllocation.AVAReversalJournalId)
+        {
+            throw error(strFmt("@NDX:NXAErrorRerversalExists", _ledgerJournalTableSource.JournalNum, ledgerJourAllocation.AVAReversalJournalId));
+        }
+
+        ttsbegin;
+        ledgerJournalTable.initFromLedgerJournalTable(_ledgerJournalTableSource);
+        ledgerJournalTable.initFromLedgerJournalName(_ledgerJournalName.JournalName);
+        ledgerJournalTable.insert();
+        ledgerJournalTable.DocumentNum = _reversalReason;
+        ledgerJournalTable.Name = "@NDX:NXARerversal" + ' ' + _ledgerJournalTableSource.JournalNum + ' ' + _ledgerJournalTableSource.Name;
+        ledgerJournalTable.update();
+
+        while select * from fromLedgerJournalTrans
+                where fromLedgerJournalTrans.JournalNum == _ledgerJournalTableSource.JournalNum
+        {
+            newLedgerJournalTrans.clear();
+            newLedgerJournalTrans.data(fromLedgerJournalTrans);
+            newLedgerJournalTrans.JournalNum = LedgerJournalTable.JournalNum;
+            if (lastVoucher != fromLedgerJournalTrans.Voucher)
+            {
+                curVoucher = numSeq.voucher();
+            }
+            newLedgerJournalTrans.Voucher = curVoucher;
+            if (!_useExistingDates)
+            {
+                newLedgerJournalTrans.TransDate = _reversalDate;
+            }
+            newLedgerJournalTrans.DocumentNum = fromLedgerJournalTrans.Voucher;
+
+            if (newLedgerJournalTrans.AmountCurCredit)
+            {
+                newLedgerJournalTrans.AmountCurCredit = -newLedgerJournalTrans.AmountCurCredit;
+            }
+            if (newLedgerJournalTrans.AmountCurDebit)
+            {
+                newLedgerJournalTrans.AmountCurDebit = -newLedgerJournalTrans.AmountCurDebit;
+            }
+            rilLedgerJournalTrans.add(newLedgerJournalTrans);
+            lastVoucher = fromLedgerJournalTrans.Voucher;
+        }
+        rilLedgerJournalTrans.insertDatabase();
+
+        ledgerJournalCheckPost = ledgerJournalCheckPost::newLedgerJournalTable(ledgerJournalTable, NoYes::Yes);
+        ledgerJournalCheckPost.runOperation();
+
+        update_recordset ledgerJourAllocation setting AVAReversalJournalId = ledgerJournalTable.JournalNum
+            where ledgerJourAllocation.RecId == _ledgerJournalTableSource.AVAAllocationRefRecId;
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

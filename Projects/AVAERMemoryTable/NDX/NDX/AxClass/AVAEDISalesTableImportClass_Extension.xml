@@ -1,0 +1,296 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAEDISalesTableImportClass_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(classStr(AVAEDISalesTableImportClass))]
+internal final class AVAEDISalesTableImportClass_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createNewAddress</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_ediAddress">_ediAddress</param>
+    /// <param name = "_custTable">_custTable</param>
+    /// <param name = "_LogisticsLocationRoleType">_LogisticsLocationRoleType</param>
+    /// <returns>DirPartyPostalAddressView</returns>
+    public DirPartyPostalAddressView createNewAddress(AVAEDIAddress   _ediAddress,CustTable _custTable, LogisticsLocationRoleType _LogisticsLocationRoleType)
+    {
+        LogisticsPostalAddress      address;
+        DirPartyPostalAddressView   addressView,addressview1;
+        DirParty                    dirParty;
+        container  roles;
+
+        addressView = next createNewAddress(_ediAddress,_custTable,_LogisticsLocationRoleType);
+
+        address.Street = _ediAddress.StreetExt;
+        address.ZipCode = _ediAddress.ZIPCodeExt;
+        address.City = _ediAddress.cityExt;
+        address.State = _ediAddress.StateExt;
+        address.CountryRegionId = _ediAddress.CountryRegionExt ;
+        addressView.AVAEDIGLN   = _ediAddress.GLN;
+        addressView.LocationName = _ediAddress.NameExt;
+
+        addressView.NDXLogisticsLocationName1 = _ediAddress.NDXLogisticsLocationName1;
+        addressView.NDXLogisticsLocationName2 = _ediAddress.NDXLogisticsLocationName2;
+        addressView.NDXLogisticsLocationName3 = _ediAddress.NDXLogisticsLocationName3;
+
+        addressView.Party = _custTable.Party;
+        addressview.initFromPostalAddress(address);
+        dirParty = DirParty::constructFromPartyRecId(_custTable.Party);
+        roles = [LogisticsLocationRole::findBytype(_LogisticsLocationRoleType).RecId];
+
+
+        addressview1= dirParty.createOrUpdatePostalAddress(addressView,roles);
+
+        return addressview1;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initSalesTableFromOrig</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    protected void initSalesTableFromOrig()
+    {
+        next initSalesTableFromOrig();
+       
+        salesTable.AVAEDIPurchOrderDate = salesTableOrigUpd.EDIPurchOrderDate;
+        salesTable.AVARepPckSlipNum     = salesTableOrigUpd.AVARepPckSlipNum;
+        salesTable.AVARepPckSlipDate    = salesTableOrigUpd.AVARepPckSlipDate;
+        if (salesTableOrigUpd.NDXEDISalesTaker == 0)
+        {
+            ediHeaderStatus = AVAEDIHeaderStatus::SalesTakerNotFound;
+            this.setHeaderEDIError(ediHeaderStatus);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findItem</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public container findItem()
+    {
+        itemId       itemId;
+        InventDimId  inventDimId;
+        [itemId, inventDimId] = next finditem();
+        if(InventTable::find(itemId).KCS_KAOItemState == AVAEDIParameters::find().AVASCMItemState)
+        {
+            ediLineStatus = AVAEDILineStatus::AVAEvacuationItem;
+            this.setEDIError(ediLineStatus);
+        }
+        return [itemId, inventDimId];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initSalesLineFromOrig</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesLineOrigUpd">_salesLineOrigUpd</param>
+    protected void initSalesLineFromOrig(AVAEDISalesLineOrig	_salesLineOrigUpd)
+    {
+        next initSalesLineFromOrig(_salesLineOrigUpd);
+        InventTable  inventTable					= InventTable::find(SalesLine.ItemId);
+        salesLine.Name = inventTable.itemName() + '\n'+ externalItemTxt;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateSalesAddressConsignee</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN 2024/04/02     AVA_011641_EDIGLN
+    /// </summary>
+    /// <param name = "_ediAddress">AVAEDIAddress</param>
+    /// <param name = "_lineaddress">boolean</param>
+    public void updateSalesAddressConsignee(AVAEDIAddress _ediAddress, boolean _lineaddress)
+    {
+        CustTable                   custTable;
+        DirPartyPostalAddressView   dirPartyPostalAddressView;
+        DirPartyLocationRole        dirPartyLocationRole;
+        LogisticsLocationRole       logisticsLocationRole;
+        LogisticsLocation           logisticsLocation;
+        boolean                     glnAddressChanged;
+
+        AVAEDIAddress               ediAddress = _ediAddress;
+
+        AVAEDIHeaderStatus ediHeaderStatus;
+        RecId deliveryPostalAddress = this.salesTable.DeliveryPostalAddress;
+        
+        if (!_lineaddress)
+        {
+            if(ediAddress.EDIAddressType == AVAEDIAddressType::Consignee)
+            {
+                salesTable.AVAEDIGLNDelivery = ediAddress.GLN;
+            }
+        }
+
+        next updateSalesAddressConsignee(ediAddress, _lineaddress);
+
+        if(this.salesTableOrigUpd.EDICustAccount)
+        {
+            select count(recId) from logisticsLocation where logisticsLocation.AVAEDIGLN == this.salesTableOrigUpd.EDICustAccount;
+            ediHeaderStatus = logisticsLocation.RecId > 1 ? AVAEDIHeaderStatus::DoubleGLN : AVAEDIHeaderStatus::OK;
+        }
+
+        //if there are more than one GLN and if the delivery address is not equal to the delivery address when salestable was created
+        // then find another customer only with business address 
+        if(ediHeaderStatus == AVAEDIHeaderStatus::DoubleGLN && deliveryPostalAddress != this.salesTable.DeliveryPostalAddress)
+        {
+            select firstonly RecId
+                from dirPartyPostalAddressView
+                    where dirPartyPostalAddressView.AVAEDIGLN == this.salesTableOrigUpd.EDICustAccount
+                join dirPartyLocationRole
+                    where dirPartyLocationRole.PartyLocation == dirPartyPostalAddressView.PartyLocation
+                join logisticsLocationRole
+                    where logisticsLocationRole.RecId == dirPartyLocationRole.LocationRole
+                        && logisticsLocationRole.Type  == LogisticsLocationRoleType::Business
+                        && logisticsLocationRole.Type  != LogisticsLocationRoleType::Delivery
+                join custTable
+                    where custTable.Party==dirPartyPostalAddressView.Party;
+            
+            ttsbegin;
+            salesTable.CustAccount = custTable.AccountNum;
+            salesTable.SalesName = custTable.name();
+            salesTable.update();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>orderAccount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// find order account
+    /// </summary>
+    /// <param name = "_salesTableOrigUpd">_salesTableOrigUpd</param>
+    /// <returns>CustAccount</returns>
+    protected CustAccount orderAccount(AVAEDISalesTableOrig _salesTableOrigUpd)
+    {
+        CustAccount                 orderAccount;
+        LogisticsLocation           LogisticsLocation;
+        CustTable                   CustTable;
+        DirPartyPostalAddressView   dirPartyPostalAddressView;
+        DirPartyLocationRole        dirPartyLocationRole;
+        LogisticsLocationRole       logisticsLocationRole;
+        str                         locheaderEDIError;
+
+        AVAEDICustAccount           locEDICustAccount = _salesTableOrigUpd.EDICustAccount;
+        locheaderEDIError = headerEDIError;
+        _salesTableOrigUpd.EDICustAccount = '';
+
+        next orderAccount(_salesTableOrigUpd);
+
+        _salesTableOrigUpd.EDICustAccount = locEDICustAccount;
+        headerEDIError =  locheaderEDIError;
+
+        if(_salesTableOrigUpd.EDICustAccount)
+        {
+            select count(recId) from LogisticsLocation where LogisticsLocation.AVAEDIGLN == _salesTableOrigUpd.EDICustAccount;
+        }
+
+        //Look for delivery and central warehouse first
+        select firstonly RecId
+            from dirPartyPostalAddressView
+            where dirPartyPostalAddressView.AVAEDIGLN == _salesTableOrigUpd.EDICustAccount
+            join dirPartyLocationRole
+            where dirPartyLocationRole.PartyLocation == dirPartyPostalAddressView.PartyLocation
+                join logisticsLocationRole
+                where logisticsLocationRole.RecId == dirPartyLocationRole.LocationRole
+                    && (logisticsLocationRole.Type  == LogisticsLocationRoleType::Delivery
+                    ||  logisticsLocationRole.Type  == LogisticsLocationRoleType::Business)
+            join AccountNum
+            from CustTable
+                where CustTable.Party==dirPartyPostalAddressView.Party
+                && CustTable.KCS_CentralWarehouse == NoYes::Yes;
+
+        //then look for some record if custtable
+        if(!CustTable.AccountNum)
+        {
+            //? we take the first record
+            select firstonly RecId
+            from dirPartyPostalAddressView
+            where dirPartyPostalAddressView.AVAEDIGLN == _salesTableOrigUpd.EDICustAccount
+            join dirPartyLocationRole
+            where dirPartyLocationRole.PartyLocation == dirPartyPostalAddressView.PartyLocation
+                join logisticsLocationRole
+                where logisticsLocationRole.RecId == dirPartyLocationRole.LocationRole
+                   && (logisticsLocationRole.Type  == LogisticsLocationRoleType::Delivery
+                   ||  logisticsLocationRole.Type  == LogisticsLocationRoleType::Business)
+            join AccountNum
+            from CustTable
+            where CustTable.Party==dirPartyPostalAddressView.Party;
+        }
+
+        if (LogisticsLocation.recId)
+        {
+            if (LogisticsLocation.recId > 1)
+            {
+                ediHeaderStatus = AVAEDIHeaderStatus::DoubleGLN;
+                this.setHeaderEDIError(ediHeaderStatus);
+            }
+            
+            orderAccount = CustTable.AccountNum;
+        }
+        else if (CustTable::find(_salesTableOrigUpd.EDICustAccount).AccountNum)
+        {
+            orderAccount =  CustTable::find(_salesTableOrigUpd.EDICustAccount).AccountNum;
+        }
+        else if (!CustTable::find(_salesTableOrigUpd.EDICustAccount).AccountNum)
+        {
+            orderAccount = AVAEDIImportDefaultValue::find(AVAEDIImportValueType::CustAccount,transDefId).DefaultValue;
+            ediHeaderStatus = AVAEDIHeaderStatus::NotFound;
+            this.setHeaderEDIError(ediHeaderStatus);
+        }
+
+        if (orderAccount)
+        {
+            custTable = CustTable::find(orderAccount);
+            if (custTable.Blocked == CustVendorBlocked::All)
+            {
+                ediHeaderStatus = AVAEDIHeaderStatus::CustomerBlocked;
+                this.setHeaderEDIError(ediHeaderStatus);
+                
+            }
+        }
+
+        return orderAccount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateAddress</Name>
+				<Source><![CDATA[
+    protected void updateAddress(boolean _lineaddress)
+    {
+        next updateAddress(_lineaddress);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

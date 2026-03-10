@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPriceIncreaseService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// The <c>AVAPriceIncreaseService</c> class is the service class for <c>AVAPriceIncrease</c>
+/// </summary>
+class AVAPriceIncreaseService extends SysOperationServiceBase
+{
+    AVAPriceIncreaseContract    dataContract;
+    boolean                     lJobMode;
+
+    int                         runtime;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>runService</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>runService</c> method.
+    /// </summary>
+    /// <param name="_dataContract">
+    ///    <c>AVAPriceIncreaseContract</c> as type
+    /// </param>
+    void runService(AVAPriceIncreaseContract _dataContract)
+    {
+        timeofDay                   time;
+        AVAPriceIncreaseSet         locAVAPriceIncreaseSet;
+        PriceGroupId                locPriceGroupId;
+        PriceDiscModule             locPriceDiscModule;
+        PriceGroupType              locPriceGroupType;
+
+        
+        AVAPriceIncreaseExecution   locAVAPriceIncreaseExecution;
+
+
+        #OCCRetryCount
+
+
+        dataContract            = _dataContract;
+
+        locAVAPriceIncreaseSet  = dataContract.parmAVAPriceIncreaseSet();
+        locPriceGroupId         = dataContract.parmPriceGroupId();
+        locPriceDiscModule      = dataContract.parmPriceDiscModule();
+        locPriceGroupType       = dataContract.parmPriceGroupType();
+
+        time        = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+        lJobMode    = false;
+
+        if(this.isExecutingInBatch())
+        {
+            lJobMode    = true;
+        }
+        dataContract.parmlJobMode(lJobMode);
+
+        locAVAPriceIncreaseExecution = AVAPriceIncreaseExecution::newFromArgs(dataContract.parmArgs());
+        locAVAPriceIncreaseExecution.parmDataContract(dataContract);
+        locAVAPriceIncreaseExecution.parmlJobMode(lJobMode);
+        locAVAPriceIncreaseExecution.init();
+
+        try
+        {
+            if(     !dataContract.parmAVAPriceIncreaseSet()
+                &&  !dataContract.parmPriceGroupId()
+                &&  !dataContract.parmRecIdList()           )
+            {
+                throw error("@SYS27759");
+            }
+
+            locAVAPriceIncreaseExecution.createJournals();
+
+            runtime = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()) - time;
+
+            info(strfmt("@NDX:NXAOperationFinishedP1Min", runtime / 60));
+        }
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

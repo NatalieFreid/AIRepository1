@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXUtilitasDataTransfer</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Class for utiltas data transfer
+/// </summary>
+public final class NDXUtilitasDataTransfer
+{
+    static str message = '';
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>transferRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// API service
+    /// </summary>
+    /// <param name = "_record">data</param>
+    /// <returns>response record</returns>
+    public NDXServiceResponse transferRecord(str _record)
+    {
+        System.Exception ex;
+        NDXServiceResponse response = new NDXServiceResponse();
+        response .parmSuccess(false);
+        ItemIdBase itemId;
+
+        InventTable invetnTable;
+        DataAreaId uk;
+
+        if(_record != null)
+        {
+            NDXUtilitasData lNDXUtilitasData;
+
+            try
+            {
+                Niedax.Utilitas.UtilitasDataContract record = Niedax.Utilitas.UtilitasDataContract::deserialize(_record);
+                
+                if(record)
+                {
+                    itemId = record.ItemId;
+                    uk = record.Company;
+                    
+                    select firstonly crosscompany:[uk] invetnTable
+                        where invetnTable.ItemId == itemId;
+                    
+                    record.InventTableRecId = invetnTable.RecId;
+
+                    lNDXUtilitasData = NDXUtilitasData::findOrCreateByObject(record);
+                }
+
+                if(lNDXUtilitasData.RecId == 0)
+                {
+                    throw error('UtilitasData record does not exist');
+                }
+                else
+                {
+                    message = strFmt('Record %1 created on %2', lNDXUtilitasData.ItemId, NDXHelperCommon::getD365EnvironmentURL());
+                }
+                    
+                response.parmSuccess(true);
+                response.parmRecId(lNDXUtilitasData.RecId);
+                response.parmMessage(message);
+                    
+            }
+            catch (ex)
+            {
+                response.parmSuccess(false);
+                response.parmMessage('UtilitasData transfer process error: ' + ex.Message);
+            }
+        }
+
+        return response;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>transferMessage</Name>
+				<Source><![CDATA[
+    public NDXServiceResponse transferMessage(str _record)
+    {
+        System.Exception ex;
+        NDXUtilitasData lNDXUtilitasData;
+        utcdatetime updateStart;
+        Niedax.Utilitas.ProcessCommand processStatus;
+
+        NDXServiceResponse response = new NDXServiceResponse();
+        response.parmSuccess(false);
+
+        if(_record != null)
+        {
+            try
+            {
+                Niedax.Utilitas.UtilitasD365Message record = Niedax.Utilitas.UtilitasD365Message::deserialize(_record);
+                
+                if(record)
+                {
+                    processStatus = record.Type;
+                    updateStart = record.TransferTime;
+
+                    switch(processStatus)
+                    {
+                        case Niedax.Utilitas.ProcessCommand::Start:
+                            update_recordset lNDXUtilitasData
+                                setting Deactivated = NoYes::No;
+                            break;
+                        
+                        case Niedax.Utilitas.ProcessCommand::Stop:
+                            update_recordset lNDXUtilitasData
+                                setting Deactivated = NoYes::Yes
+                                where lNDXUtilitasData.TransferBegin < updateStart;
+
+                            break;
+
+                        case Niedax.Utilitas.ProcessCommand::Error:
+                             update_recordset lNDXUtilitasData
+                                setting Deactivated = NoYes::Yes;
+                            break;
+                    }
+                    
+                }
+
+                message = strFmt('Message processed successfuly on %1', NDXHelperCommon::getD365EnvironmentURL());
+                    
+                response.parmSuccess(true);
+                response.parmMessage(message);
+                    
+            }
+            catch (ex)
+            {
+                response.parmSuccess(false);
+                response.parmMessage('UtilitasData transfer Message error: ' + ex.Message);
+            }
+        }
+
+        return response;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

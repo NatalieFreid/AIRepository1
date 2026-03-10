@@ -1,0 +1,357 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXAllianceTreeCustomer</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// DebuC 22.09.23
+/// </summary>
+public class NDXAllianceTreeCustomer extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>buildFromNDXAllianceTree</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    static void buildFromNDXAllianceTree()
+    {
+        NDXAllianceTree             nDXAllianceTree;
+        NDXAllianceTree             nDXAllianceTreeGrp;
+        NDXAllianceTreeCustomer     nDXAllianceTreeCustomer;
+        CustTable                   custTable;
+        RecordInsertList            rilNDXAllianceTreeCustomer;
+        Query                       q;
+        QueryRun                    qr;
+        QueryBuildDataSource        qbds;
+        str                         qValueString;
+        NDXChilds                   childs;
+        CompanyId                   company;
+        ;
+        // bestehende Einträge löschen
+        delete_from nDXAllianceTreeCustomer;
+
+        //--> 1.1: NDX/PAFFH/NDX_TASK1235003633/18.12.2014
+        while select Company from nDXAllianceTreeGrp group by Company
+        {
+            company = NDXHelperCommon::NDXCompanys2CompanyId(nDXAllianceTreeGrp.Company);
+            changecompany(company)
+            {
+                nDXAllianceTree = null;
+                //<-- NDX/PAFFH/NDX_TASK1235003633/18.12.2014
+                rilNDXAllianceTreeCustomer = new RecordInsertList(tableNum(NDXAllianceTreeCustomer));
+                // für jeden Unterverband die Debitoren ermitteln
+                while select forUpdate nDXAllianceTree where nDXAllianceTree.Company == nDXAllianceTreeGrp.Company
+                {
+                    // Unterverbände des Unterverbands ermitteln
+                    qValueString = NDXAllianceTree::conSubAlliance2QueryValue(nDXAllianceTreeGrp.Company, nDXAllianceTree.Parent, nDXAllianceTree.Child);
+
+                    q       = new Query();
+                    qbds    = q.addDataSource(tablenum(CustTable));
+                    qbds.addRange(fieldnum(CustTable, KCS_TOSId)).value(qValueString);
+                    qr      = new QueryRun(q);
+                    childs  = 0;
+                    while (qr.next())
+                    {
+                        custTable = qr.get(tablenum(CustTable));
+                        // Kunde darf keinen (Sub-)Verband darstellen
+                        if (nDXAllianceTree::findChild(nDXAllianceTreeGrp.Company, custTable.AccountNum))
+                        {
+                            continue;
+                        }
+                        nDXAllianceTreeCustomer = null;
+                        nDXAllianceTreeCustomer.initFromNDXAllianceTree(nDXAllianceTree);
+                        nDXAllianceTreeCustomer.AllianceSub    = custTable.KCS_TOSId;
+                        nDXAllianceTreeCustomer.Level          = NDXAllianceTree::getLevel(nDXAllianceTreeCustomer.AllianceSub);
+                        nDXAllianceTreeCustomer.AccountNum     = custTable.AccountNum;
+                        nDXAllianceTreeCustomer.Party          = custTable.Party;
+                        rilNDXAllianceTreeCustomer.add(nDXAllianceTreeCustomer);
+                        ++childs;
+                    }
+                    ttsbegin;
+                    nDXAllianceTree.Childs = childs;
+                    nDXAllianceTree.update();
+                    ttscommit;
+                }
+                rilNDXAllianceTreeCustomer.insertDatabase();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromNDXAllianceTree</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "nDXAllianceTree">NDXAllianceTree</param>
+    void initFromNDXAllianceTree(NDXAllianceTree nDXAllianceTree)
+    {
+        ;
+        this.Alliance       = NDXAllianceTree.Alliance;
+        this.Parent         = NDXAllianceTree.Parent;
+        this.Child          = NDXAllianceTree.Child;
+        this.VersionDate    = nDXAllianceTree.modifiedDateTime;
+        this.Company        = nDXAllianceTree.Company;                               // 1.1: NDX/PAFFH/NDX_TASK1235003633/18.12.2014
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NDXAllianceTreeCustomerDev</DeveloperDocumentation>
+	<FormRef>NDXAllianceTreeCustomer</FormRef>
+	<Label>@NDX:NDXAllianceTreeCustomer</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>Alliance</TitleField1>
+	<ClusteredIndex>CustAccountIdx</ClusteredIndex>
+	<PrimaryIndex>CustAccountIdx</PrimaryIndex>
+	<ReplacementKey>CustAccountIdx</ReplacementKey>
+	<SaveDataPerCompany>No</SaveDataPerCompany>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>Level</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Alliance</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Parent</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Child</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VersionDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AccountNum</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AllianceSub</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Company</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Party</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>Company</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Alliance</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Parent</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Child</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AccountNum</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>Level</Name>
+			<ExtendedDataType>NDXLevel</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Alliance</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>KCS_BOSAllianceID</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Parent</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>KCS_BOSAllianceID</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Child</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>KCS_BOSAllianceID</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>VersionDate</Name>
+			<ExtendedDataType>CreatedDateTime</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>AccountNum</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>CustAccount</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>AllianceSub</Name>
+			<ExtendedDataType>KCS_BOSAllianceID</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Company</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>NDXCompanys</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+			<EnumType>NDXCompanyBE</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>Party</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>CustAccountIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>Company</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Alliance</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Parent</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Child</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>AccountNum</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>ChildAccountNumIdx</Name>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>Company</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Child</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>AccountNum</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>CustTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<RelatedTable>CustTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>AccountNum</Name>
+					<SourceEDT>CustAccount</SourceEDT>
+					<Field>AccountNum</Field>
+					<RelatedField>AccountNum</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>NDXTmpKumUmsCustRelation</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>NDXTmpKumUmsCust</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Company</Name>
+					<Field>Company</Field>
+					<RelatedField>Company</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Child</Name>
+					<Field>Child</Field>
+					<RelatedField>Alliance</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>AccountNum</Name>
+					<Field>AccountNum</Field>
+					<RelatedField>Child</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>NDXAllianceTreeRelation</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>NDXAllianceTree</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Child</Name>
+					<Field>Child</Field>
+					<RelatedField>Child</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Parent</Name>
+					<Field>Parent</Field>
+					<RelatedField>Parent</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Alliance</Name>
+					<Field>Alliance</Field>
+					<RelatedField>Alliance</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

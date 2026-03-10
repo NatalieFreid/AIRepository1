@@ -1,0 +1,765 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAInventTransferJourDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     Data provider class for <c>AVASalesRouteCardReport</c> SSRS report
+/// </summary>
+/// <remarks>
+///     This is the Data provider class for the <c>AVASalesRouteCardReport</c> SSRS Report.
+/// </remarks>
+[
+    //SRSReportQueryAttribute(queryStr(InventTransfer)),
+    SRSReportParameterAttribute(classStr(AVAInventTransferJourContract))
+]
+class AVAInventTransferJourDP extends SrsReportDataProviderPreProcess //SRSReportDataProviderBase
+{
+    AVAInventTransferShipHeaderTmp  clsHeaderTmp;
+    AVAInventTransferShipHeaderTmp  clsHeaderTmpBase;
+    AVAInventTransferShipDetailTmp  clsDetailTmp;
+    AVAInventTransferShipDetailTmp  clsDetailTmpBase;
+
+    CompanyInfo                     clsCompanyInfo;
+    CompanyImage                    clsCompanyLogo;
+    Bitmap                          clsCompanyLogoBitmap;
+    container                       clsAllBPCompanies;
+    SysDocuBrandDetails             clsSysDocuBrandDetails;
+    Bitmap                          clsCompanyFooterBitmap;
+
+    
+    InventTransferJour              clsInventTransferJour;
+    InventTransferJourLine          clsInventTransferJourLine;
+    InventDim                       clsInventDim;
+
+    AVAInventTransferJourContract   clsAVAInventTransferJourContract;
+    RefRecId                        clsInventTransferJourRecId;
+    RefRecId                        clsInventTransferJourRecIdPrevious;
+    InventTransferId                clsInventTransferId;
+    InventTransferVoucherId         clsInventTransferVoucherId;
+    InventTransferUpdateType        clsInventTransferUpdateType;
+    boolean                         clsSingleMode;
+    boolean                         clsHeaderCreated;
+
+    UnitOfMeasure                   clsUnitOfMeasurePieces;
+    UnitOfMeasure                   clsUnitOfMeasureKilograms;
+    UnitOfMeasureConverter_Product  clsUnitOfMeasureConverter_Product;
+    
+    int                             clsAdditionalInfoLevel;
+
+    Map                             clsITJLMap;
+    MapEnumerator                   clsITJLMapEnumerator;
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initialize</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>initialize</c> method.
+    /// </summary>
+    /// <remarks>
+    ///     This method can be overridden by application developers to add any initialization logic needed.
+    ///     This method is invoked by framework before <c>processReport</c> report is invoked.
+    /// </remarks>
+    public void initialize()
+    {
+        this.setContractAndParamValues();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>processReport</c> method.
+    /// </summary>
+    public void processReport()
+    {
+        Query                   locQuery;
+        QueryBuildDataSource    locQueryBuildDataSource;
+        QueryRun                locQueryRun;
+        QueryBuildRange         locQueryBuildRange;
+
+        //locQuery = this.parmQuery();
+        locQuery                = new Query(QueryStr(InventTransfer));
+        locQueryBuildDataSource = locQuery.addDataSource(tableNum(InventTransferJour));
+
+        if (    clsInventTransferId 
+            &&  clsInventTransferVoucherId  )
+        {
+            locQueryBuildRange = locQuery.dataSourceTable(tableNum(InventTransferJour)).addRange(fieldNum(InventTransferJour, TransferId));
+            locQueryBuildRange.value(SysQuery::value(clsInventTransferId));
+            locQueryBuildRange = locQuery.dataSourceTable(tableNum(InventTransferJour)).addRange(fieldNum(InventTransferJour, VoucherId));
+            locQueryBuildRange.value(SysQuery::value(clsInventTransferVoucherId));
+        }
+
+        locQueryRun    = new queryRun(locQuery);
+
+        clsITJLMap     = new Map(Types::String, Types::Int64);
+
+        ttsbegin;
+        while (locQueryRun.next())
+        {
+            clsInventTransferJour       = locQueryRun.get(tableNum(InventTransferJour));
+            clsInventTransferJourRecId  = clsInventTransferJour.RecId;
+            // insert data
+            if(clsInventTransferJourRecId)
+            {
+                clsInventTransferJour       = InventTransferJour::findRecId(clsInventTransferJourRecId); // get full header record not reduced fieldset of query
+                clsInventTransferJourLine   = locQueryRun.get(tableNum(InventTransferJourLine));
+                clsInventTransferJourLine   = InventTransferJourLine::findRecId(clsInventTransferJourLine.RecId); // get full header record not reduced fieldset of query
+                clsInventDim                = locQueryRun.get(tableNum(InventDim));
+                clsInventDim                = InventDim::find(clsInventTransferJourLine.InventDimId); // get full header record not reduced fieldset of query
+                // insert ItemSet record one time before components
+                if(     clsInventTransferJourLine.AVAItemSetComponent   == NoYes::Yes
+                    &&  clsInventTransferJourLine.AVAItemSetParent      != ''           )
+                {
+                    if (!clsITJLMap.exists(clsInventTransferJourLine.AVAItemSetParent))
+                    {
+                        clsITJLMap.insert(clsInventTransferJourLine.AVAItemSetParent, clsInventTransferJourLine.RecId);
+                        this.insertTmpTableDataDetailItemSet();
+                    }
+                }
+                this.insertTmpTableData();
+            }
+        }
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHeaderTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Gets the full data from the <c>AVAInventTransferShipHeaderTmp</c> temporary table.
+    /// </summary>
+    /// <returns>
+    ///     The <c>AVASalesRouteCardReportHeaderTmp</c> temporary table.
+    /// </returns>
+    [SRSReportDataSetAttribute(tableStr(AVAInventTransferShipHeaderTmp))]
+    public AVAInventTransferShipHeaderTmp getHeaderTmp()
+    {
+        AVAInventTransferShipHeaderTmp locTmpTable;
+
+        this.setTransactionConnection(locTmpTable);
+
+        select locTmpTable;
+
+        return locTmpTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDetailTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Gets the full data from the <c>AVAInventTransferShipDetailTmp</c> temporary table.
+    /// </summary>
+    /// <returns>
+    ///     The <c>AVAInventTransferShipDetailTmp</c> temporary table.
+    /// </returns>
+    [SRSReportDataSetAttribute(tableStr(AVAInventTransferShipDetailTmp))]
+    public AVAInventTransferShipDetailTmp getDetailTmp()
+    {
+        AVAInventTransferShipDetailTmp locTmpTable;
+
+        this.setTransactionConnection(locTmpTable);
+
+        select locTmpTable;
+
+        return locTmpTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setTransactionConnection</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Set the database transaction connection for a record from the connection associated with the report.
+    /// </summary>
+    /// <param name = "_reportRecord">
+    ///     A record to set database transaction for.
+    /// </param>
+    final protected void setTransactionConnection(Common _reportRecord)
+    {
+        var connection = this.parmUserConnection();
+
+        if (connection)
+        {
+            _reportRecord.setConnection(connection);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setContractAndParamValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>setContractAndParamValues</c> method.
+    /// </summary>
+    public void setContractAndParamValues()
+    {
+        clsCompanyInfo          = CompanyInfo::find();
+        clsCompanyLogo          = CompanyImage::findByRecord(ClsCompanyInfo);
+        clsCompanyLogoBitmap    = clsCompanyLogo.Image;
+        clsAllBPCompanies       = AVAKBVBuildingProjectHelper::getAllBPCompanies();
+        clsSysDocuBrandDetails  = SysDocuBrandDetails::getBrandDocument(this.parmDocuBrandContract());
+        
+        clsAVAInventTransferJourContract = this.parmDataContract() as AVAInventTransferJourContract;
+
+        clsInventTransferJourRecId      = clsAVAInventTransferJourContract.parmInventTransferJourRefRecId();
+        clsInventTransferId             = clsAVAInventTransferJourContract.parmTransferId();
+        clsInventTransferVoucherId      = clsAVAInventTransferJourContract.parmVoucherId();
+        clsInventTransferUpdateType     = clsAVAInventTransferJourContract.parmUpdateType(); // InventTransferUpdateType::PickingList, Receive, Shipment
+
+        if(clsInventTransferJourRecId)
+        {
+            clsInventTransferJour       = InventTransferJour::findRecId(clsInventTransferJourRecId);
+            clsInventTransferId         = clsInventTransferJour.TransferId;
+            clsInventTransferVoucherId  = clsInventTransferJour.VoucherId;
+            clsInventTransferUpdateType = clsInventTransferJour.UpdateType; // InventTransferUpdateType::PickingList, Receive, Shipment
+            clsSingleMode               = true;
+        }
+        /* No UoM conversion planned 
+        clsUnitOfMeasurePieces = UnitOfMeasure::findByInternalCode(UnitOfMeasureCodeSymbol::Pieces);
+        if (!clsUnitOfMeasurePieces)
+        {
+            checkFailed(strFmt("@GLS222805", UnitOfMeasureCodeSymbol::Pieces));
+        }
+        clsUnitOfMeasureKilograms = UnitOfMeasure::findByInternalCode(UnitOfMeasureCodeSymbol::Kilograms);
+        if (!clsUnitOfMeasureKilograms)
+        {
+            checkFailed(strFmt("@GLS222805", UnitOfMeasureCodeSymbol::Kilograms));
+        }
+        clsUnitOfMeasureConverter_Product   = UnitOfMeasureConverter_Product::construct();
+        */
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>convertToPieces</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>convertToPieces</c> method.
+    /// </summary>
+    /// <param name="_inventTransferJourLine">
+    ///    <c>InventTransferJourLine</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>SalesQty</c> as return value
+    /// </returns>
+    public SalesQty convertToPieces(InventTransferJourLine _inventTransferJourLine)
+    {
+        SalesQty retVal;
+
+        if(     clsUnitOfMeasurePieces.RecId
+            &&  UnitOfMeasure::unitOfMeasureIdBySymbol(_inventTransferJourLine.UnitId) != clsUnitOfMeasurePieces.RecId  )
+        {
+            clsUnitOfMeasureConverter_Product.parmProduct(InventTable::find(_inventTransferJourLine.ItemId).Product);
+            clsUnitOfMeasureConverter_Product.parmFromUnitOfMeasure(UnitOfMeasure::unitOfMeasureIdBySymbol(_inventTransferJourLine.UnitId));
+            clsUnitOfMeasureConverter_Product.parmToUnitOfMeasure(clsUnitOfMeasurePieces.RecId);
+            clsUnitOfMeasureConverter_Product.parmRoundAbsoluteValue(NoYes::No);
+            clsUnitOfMeasureConverter_Product.parmApplyRounding(NoYes::No);
+
+            retVal = clsUnitOfMeasureConverter_Product.convertValue(_inventTransferJourLine.QtyShipped);
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>convertToKilograms</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>convertToKilograms</c> method.
+    /// </summary>
+    /// <param name="_inventTransferJourLine">
+    ///    <c>InventTransferJourLine</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>SalesQty</c> as return value
+    /// </returns>
+    public SalesQty convertToKilograms(InventTransferJourLine _inventTransferJourLine)
+    {
+        SalesQty retVal;
+
+        if(     clsUnitOfMeasureKilograms.RecId
+            &&  UnitOfMeasure::unitOfMeasureIdBySymbol(_inventTransferJourLine.UnitId) != clsUnitOfMeasureKilograms.RecId  )
+        {
+            clsUnitOfMeasureConverter_Product.parmProduct(InventTable::find(_inventTransferJourLine.ItemId).Product);
+            clsUnitOfMeasureConverter_Product.parmFromUnitOfMeasure(UnitOfMeasure::unitOfMeasureIdBySymbol(_inventTransferJourLine.UnitId));
+            clsUnitOfMeasureConverter_Product.parmToUnitOfMeasure(clsUnitOfMeasureKilograms.RecId);
+            clsUnitOfMeasureConverter_Product.parmRoundAbsoluteValue(NoYes::No);
+            clsUnitOfMeasureConverter_Product.parmApplyRounding(NoYes::No);
+
+            retVal = clsUnitOfMeasureConverter_Product.convertValue(_inventTransferJourLine.QtyShipped);
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertTmpTableData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>insertTmpTableData</c> method.
+    /// </summary>
+    public void insertTmpTableData()
+    {
+        ttsbegin;
+        if(clsInventTransferJourRecId)
+        {
+            if(!clsHeaderCreated)
+            {
+                // Header infos
+                this.insertTmpTableDataHeader();
+                clsHeaderCreated        = true;
+                clsAdditionalInfoLevel  = 200;
+            }
+            // Detail infos
+            this.insertTmpTableDataDetail();
+
+            clsInventTransferJourRecIdPrevious = clsInventTransferJourRecId;
+        }
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initHeaderTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>initHeaderTmp</c> method.
+    /// </summary>
+    /// <param name="_avaReportLineType">
+    ///    <c>AVAReportLineType</c> as type
+    /// </param>
+    /// <param name="_additionalInfoNo">
+    ///    <c>int</c> as type
+    /// </param>
+    public void initHeaderTmp(  AVAReportLineType   _avaReportLineType  = AVAReportLineType::HeaderLine, 
+                                int                 _additionalInfoNo   = 0                             )
+    {
+        clsAdditionalInfoLevel          = _additionalInfoNo;
+
+        this.setTransactionConnection(clsHeaderTmp);
+        
+        clsHeaderTmp.clear();
+        clsHeaderTmp.AVAReportLineType  = _avaReportLineType;
+        clsHeaderTmp.AdditionalInfoNo   = clsAdditionalInfoLevel;
+
+        clsHeaderTmp.TransferId         = clsInventTransferJour.TransferId;
+        clsHeaderTmp.VoucherId          = clsInventTransferJour.VoucherId;
+        clsHeaderTmp.HeaderRecId        = clsInventTransferJour.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initDetailTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>initDetailTmp</c> method.
+    /// </summary>
+    /// <param name="_avaReportLineType">
+    ///    <c>AVAReportLineType</c> as type
+    /// </param>
+    /// <param name="_additionalInfoNo">
+    ///    <c>int</c> as type
+    /// </param>
+    public void initDetailTmp(  AVAReportLineType   _avaReportLineType  = AVAReportLineType::DetailLine, 
+                                int                 _additionalInfoNo   = 200                           )
+    {
+        clsAdditionalInfoLevel                  = _additionalInfoNo;
+        
+        this.setTransactionConnection(clsDetailTmp);
+
+        clsDetailTmp.clear();
+        clsDetailTmp.AVAReportLineType          = _avaReportLineType;
+        clsDetailTmp.AdditionalInfoNo           = _additionalInfoNo;
+
+        clsDetailTmp.TransferId                 = clsInventTransferJourLine.TransferId;
+        clsDetailTmp.VoucherId                  = clsInventTransferJourLine.VoucherId;
+        clsDetailTmp.DetailRecId                = clsInventTransferJourLine.RecId;
+        clsDetailTmp.LineNum                    = clsInventTransferJourLine.LineNum;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertTmpTableDataHeader</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>insertTmpTableDataHeader</c> method.
+    /// </summary>
+    public void insertTmpTableDataHeader()
+    {
+        //FreeTxt                     locFreeTxt;
+        HCMWorker                   locHCMWorker;
+        LogisticsPostalAddress      locLogisticsPostalAddress;
+        InventTransferTable         locInventTransferTable;
+        SysDocuBrandDetails         locSysDocuBrandDetails;
+        HcmWorker                   locHCMWorkerSalesTaker;
+        DirPerson                   locHCMWorkerSalesTakerDirPerson;
+        //locFreeTxt = '';
+
+        if(clsInventTransferJour.RecId)
+        {
+            locInventTransferTable                      = clsInventTransferJour.inventTransferTable();
+            
+            this.initHeaderTmp(AVAReportLineType::HeaderLine, 0);
+
+            clsHeaderTmp.Memo                           = '';
+            clsHeaderTmp.CompanyLogo                    = clsCompanyLogoBitmap;
+            clsHeaderTmp.CompanyGroupLogo               = conNull(); //clsSysDocuBrandDetails.Image1;
+            clsHeaderTmp.CompanyFooterImage             = clsSysDocuBrandDetails.Image3;
+            clsHeaderTmp.CompanyAddressLine             = clsSysDocuBrandDetails.AVASender;
+
+            clsHeaderTmp.AutoReceiveQty                 = clsInventTransferJour.AutoReceiveQty;
+            clsHeaderTmp.CanceledShipment               = clsInventTransferJour.CanceledShipment;
+            clsHeaderTmp.CanceledShipmentJournalRecId   = clsInventTransferJour.CanceledShipmentJournalRecId;
+            clsHeaderTmp.DlvModeId                      = clsInventTransferJour.DlvModeId; //@SYS210
+            clsHeaderTmp.DlvTermId                      = clsInventTransferJour.DlvTermId; //@SYS210
+            clsHeaderTmp.FreightSlipType                = clsInventTransferJour.FreightSlipType;
+            clsHeaderTmp.FreightZoneId                  = clsInventTransferJour.FreightZoneId;
+            clsHeaderTmp.FromAddressName                = clsInventTransferJour.FromAddressName;
+            clsHeaderTmp.FromContactPerson              = clsInventTransferJour.FromContactPerson;
+            clsHeaderTmp.FromPostalAddress              = clsInventTransferJour.FromPostalAddress;
+            if(!clsHeaderTmp.FromPostalAddress)
+            {
+                clsHeaderTmp.FromPostalAddress          = locInventTransferTable.FromPostalAddress;
+            }
+            clsHeaderTmp.InventLocationIdFrom           = clsInventTransferJour.InventLocationIdFrom;
+            clsHeaderTmp.InventLocationIdTo             = clsInventTransferJour.InventLocationIdTo;
+            clsHeaderTmp.InventLocationIdTransit        = clsInventTransferJour.InventLocationIdTransit;
+            clsHeaderTmp.KCS_Requisition                = locInventTransferTable.KCS_Requisition;
+            clsHeaderTmp.PackedExtensions               = clsInventTransferJour.PackedExtensions;
+            clsHeaderTmp.ToAddressName                  = clsInventTransferJour.ToAddressName;
+            clsHeaderTmp.ToContactPerson                = clsInventTransferJour.ToContactPerson;
+            clsHeaderTmp.ToPostalAddress                = clsInventTransferJour.ToPostalAddress;
+            if(!clsHeaderTmp.ToPostalAddress)
+            {
+                clsHeaderTmp.ToPostalAddress            = locInventTransferTable.ToPostalAddress;
+            }
+            clsHeaderTmp.TrackingId                     = clsInventTransferJour.TrackingId;
+            clsHeaderTmp.TransDate                      = clsInventTransferJour.TransDate;
+            clsHeaderTmp.TransferId                     = clsInventTransferJour.TransferId;
+            clsHeaderTmp.UpdatedByWorker                = clsInventTransferJour.UpdatedByWorker;
+            clsHeaderTmp.UpdateType                     = clsInventTransferJour.UpdateType;
+            clsHeaderTmp.WorkerSalesTaker               = HcmWorker::userId2Worker(clsInventTransferJour.CreatedBy);
+
+            clsHeaderTmp.CompanyPostalAddressing        = clsCompanyInfo.invoiceAddress().Address;
+            clsHeaderTmp.CompanyPostalAddressingSingleLine = clsInventTransferJour.displayAVACompanyAddressSingleLine();
+
+            if(clsHeaderTmp.DlvModeId)
+            {
+                clsHeaderTmp.DlvModeTxt                 = clsInventTransferJour.displayAVADlvMode(); // DlvMode::avaTxtOrId(clsHeaderTmp.DlvModeId); //DlvMode::txt(clsHeaderTmp.DlvModeId);
+            }
+            if(clsHeaderTmp.DlvTermId)
+            {
+                clsHeaderTmp.DlvTermTxt                 = clsInventTransferJour.displayAVADlvTerm(); // DlvTerm::avaTxtOrId(clsHeaderTmp.DlvTermId); //DlvTerm::txt(clsHeaderTmp.DlvTermId);
+            }
+            if(clsHeaderTmp.FromContactPerson)
+            {
+                //locHCMWorker                            = clsInventTransferJour.avaFromContactPerson();
+                clsHeaderTmp.FromContactPersonEmail     = clsInventTransferJour.displayAVAFromContactPersonEmail();
+                clsHeaderTmp.FromContactPersonMobile    = clsInventTransferJour.displayAVAFromContactPersonMobile();
+                clsHeaderTmp.FromContactPersonName      = clsInventTransferJour.displayAVAFromContactPersonName();
+                clsHeaderTmp.FromContactPersonPhone     = clsInventTransferJour.displayAVAFromContactPersonPhone();
+                clsHeaderTmp.FromContactPersonTeleFax   = clsInventTransferJour.displayAVAFromContactPersonFax();
+            }
+            if(clsHeaderTmp.ToContactPerson)
+            {
+                //locHCMWorker                            = clsInventTransferJour.avaToContactPerson();
+                clsHeaderTmp.ToContactPersonEmail       = clsInventTransferJour.displayAVAToContactPersonEmail();
+                clsHeaderTmp.ToContactPersonMobile      = clsInventTransferJour.displayAVAToContactPersonMobile();
+                clsHeaderTmp.ToContactPersonName        = clsInventTransferJour.displayAVAToContactPersonName();
+                clsHeaderTmp.ToContactPersonPhone       = clsInventTransferJour.displayAVAToContactPersonPhone();
+                clsHeaderTmp.ToContactPersonTeleFax     = clsInventTransferJour.displayAVAToContactPersonFax();
+            }
+            if(clsHeaderTmp.FromPostalAddress)
+            {
+                locLogisticsPostalAddress               = LogisticsPostalAddress::findRecId(clsHeaderTmp.FromPostalAddress);
+                clsHeaderTmp.FromPostalAddressing       = locLogisticsPostalAddress.Address;
+                clsHeaderTmp.FromPostalAddressingSingleLine = AVAHelperClass::adress2singleLineFormat(  clsInventTransferJour.FromAddressName, 
+                                                                                                        clsHeaderTmp.FromPostalAddressing       );
+                if(locLogisticsPostalAddress.RecId)
+                {
+                    clsHeaderTmp.FromPostalAddressingNames      = locLogisticsPostalAddress.NDXLogisticsLocationName1;
+                    if(clsHeaderTmp.FromPostalAddressingNames && locLogisticsPostalAddress.NDXLogisticsLocationName2)
+                    {
+                        clsHeaderTmp.FromPostalAddressingNames  += '\n';
+                    }
+                    clsHeaderTmp.FromPostalAddressingNames      += locLogisticsPostalAddress.NDXLogisticsLocationName2;
+                    if(clsHeaderTmp.FromPostalAddressingNames && locLogisticsPostalAddress.NDXLogisticsLocationName3)
+                    {
+                        clsHeaderTmp.FromPostalAddressingNames  += '\n';
+                    }
+                    clsHeaderTmp.FromPostalAddressingNames      += locLogisticsPostalAddress.NDXLogisticsLocationName3;
+                }
+            }
+            if(clsHeaderTmp.ToPostalAddress)
+            {
+                locLogisticsPostalAddress               = LogisticsPostalAddress::findRecId(clsHeaderTmp.ToPostalAddress);
+                clsHeaderTmp.ToPostalAddressing         = locLogisticsPostalAddress.Address;
+                clsHeaderTmp.ToPostalAddressingSingleLine = AVAHelperClass::adress2singleLineFormat(clsInventTransferJour.ToAddressName, 
+                                                                                                    clsHeaderTmp.ToPostalAddressing     );
+                if(locLogisticsPostalAddress.RecId)
+                {
+                    clsHeaderTmp.ToPostalAddressingNames        = locLogisticsPostalAddress.NDXLogisticsLocationName1;
+                    if(clsHeaderTmp.ToPostalAddressingNames && locLogisticsPostalAddress.NDXLogisticsLocationName2)
+                    {
+                        clsHeaderTmp.ToPostalAddressingNames    += '\n';
+                    }
+                    clsHeaderTmp.ToPostalAddressingNames        += locLogisticsPostalAddress.NDXLogisticsLocationName2;
+                    if(clsHeaderTmp.ToPostalAddressingNames && locLogisticsPostalAddress.NDXLogisticsLocationName3)
+                    {
+                        clsHeaderTmp.ToPostalAddressingNames    += '\n';
+                    }
+                    clsHeaderTmp.ToPostalAddressingNames        += locLogisticsPostalAddress.NDXLogisticsLocationName3;
+                }
+            }
+            if(clsHeaderTmp.UpdatedByWorker)
+            {
+                locHCMWorker                            = HcmWorker::find(clsHeaderTmp.UpdatedByWorker);
+                clsHeaderTmp.UpdatedByWorkerName        = locHCMWorker.name();
+            }
+            if(clsHeaderTmp.WorkerSalesTaker)
+            {
+                locHCMWorkerSalesTaker                  = HcmWorker::find(clsHeaderTmp.WorkerSalesTaker);
+                locHCMWorkerSalesTakerDirPerson         = locHCMWorkerSalesTaker.DirPerson();
+
+                clsHeaderTmp.WorkerSalesTakerEmail      = locHCMWorkerSalesTakerDirPerson.availablEmail();
+                if(!clsHeaderTmp.WorkerSalesTakerEmail)
+                {
+                    clsHeaderTmp.WorkerSalesTakerEmail = locHCMWorkerSalesTaker.email();
+                }
+                clsHeaderTmp.WorkerSalesTakerMobile     = locHCMWorkerSalesTakerDirPerson.availableMobile();
+                clsHeaderTmp.WorkerSalesTakerName       = locHCMWorkerSalesTaker.name();
+                clsHeaderTmp.WorkerSalesTakerPhone      = locHCMWorkerSalesTakerDirPerson.availablePhone();
+                if(!clsHeaderTmp.WorkerSalesTakerPhone)
+                {
+                    clsHeaderTmp.WorkerSalesTakerPhone  = locHCMWorkerSalesTaker.phone();
+                }
+                clsHeaderTmp.WorkerSalesTakerTeleFax    = locHCMWorkerSalesTakerDirPerson.AVAgetAvailableLogisticsElectronicAddressLocator(LogisticsElectronicAddressMethodType::Fax);
+            }
+
+            clsHeaderTmp.insert();
+
+            clsHeaderTmpBase.clear();
+            Buf2Buf(clsHeaderTmp, clsHeaderTmpBase);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertTmpTableDataDetail</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>insertTmpTableDataDetail</c> method.
+    /// </summary>
+    public void insertTmpTableDataDetail()
+    {
+        int                     locAdditionalInfoLevelTmp;
+        InventTransferLine      locInventTransferLine;
+        NDXModelNumberHandler   locNDXModelNumberHandler;
+        InventTable             locInventTable;
+        
+        locNDXModelNumberHandler    = NDXModelNumberHandler::construct();
+        locInventTable              = InventTable::find(clsInventTransferJourLine.ItemId);
+
+        this.initDetailTmp(AVAReportLineType::DetailLine, clsAdditionalInfoLevel);
+
+        locInventTransferLine                       = clsInventTransferJourLine.inventTransferLine();
+
+        clsDetailTmp.AmountValue                    = clsInventTransferJourLine.AmountValue;
+        clsDetailTmp.IntrastatCommodity             = clsInventTransferJourLine.IntrastatCommodity;
+        clsDetailTmp.IntrastatDispatch              = clsInventTransferJourLine.IntrastatDispatch;
+        clsDetailTmp.InventDimId                    = clsInventTransferJourLine.InventDimId;
+        clsDetailTmp.InventTransId                  = clsInventTransferJourLine.InventTransId;
+        clsDetailTmp.InventTransIdTransit           = clsInventTransferJourLine.InventTransIdTransit;
+        clsDetailTmp.ItemId                         = clsInventTransferJourLine.ItemId;
+        clsDetailTmp.ItemName                       = locInventTable.itemName(InventDim::find(clsDetailTmp.InventDimId));
+        clsDetailTmp.LineNum                        = clsInventTransferJourLine.LineNum;
+        clsDetailTmp.OrigCountryRegionId            = clsInventTransferJourLine.OrigCountryRegionId;
+        clsDetailTmp.OrigCountyId                   = clsInventTransferJourLine.OrigCountyId;
+        clsDetailTmp.OrigStateId                    = clsInventTransferJourLine.OrigStateId;
+        clsDetailTmp.PackedExtensions               = clsInventTransferJourLine.PackedExtensions;
+        clsDetailTmp.ParmId                         = clsInventTransferJourLine.ParmId;
+        clsDetailTmp.PdsCWQtyReceived               = clsInventTransferJourLine.PdsCWQtyReceived;
+        clsDetailTmp.PdsCWQtyScrapped               = clsInventTransferJourLine.PdsCWQtyScrapped;
+        clsDetailTmp.PdsCWQtyShipped                = clsInventTransferJourLine.PdsCWQtyShipped; 
+        // 2009: report method KCS_ItemWeight()
+        // return element.KCS_ItemNetWeight(inventTable, InventTransferJourLine.QtyShipped, inventTable.inventTableModuleInvent().UnitId);
+        // ItemNetWeight KCS_ItemNetWeight(InventTable     _inventTable, Qty             _qty, SalesUnit       _unit)
+        // ret = UnitConvert::valueConvert((_inventTable.NetWeight * _qty), unitParameters.unitIdWeight, unitParameters.unitIDKg, _inventTable.ItemId);
+        clsDetailTmp.Port                           = clsInventTransferJourLine.Port;
+        clsDetailTmp.QtyReceived                    = clsInventTransferJourLine.QtyReceived;
+        clsDetailTmp.QtyScrapped                    = clsInventTransferJourLine.QtyScrapped;
+        clsDetailTmp.QtyShipped                     = clsInventTransferJourLine.QtyShipped;
+        clsDetailTmp.StatisticalValue               = clsInventTransferJourLine.StatisticalValue;
+        clsDetailTmp.StatProcId                     = clsInventTransferJourLine.StatProcId;
+        clsDetailTmp.TransactionCode                = clsInventTransferJourLine.TransactionCode;
+        clsDetailTmp.TransDate                      = clsInventTransferJourLine.TransDate;
+        clsDetailTmp.TransferId                     = clsInventTransferJourLine.TransferId;
+        clsDetailTmp.Transport                      = clsInventTransferJourLine.Transport;
+        clsDetailTmp.UnitId                         = clsInventTransferJourLine.UnitId;
+        clsDetailTmp.UnitPrice                      = clsInventTransferJourLine.UnitPrice;
+        //InventDim
+        clsDetailTmp.ConfigId                       = clsInventDim.ConfigId;
+        clsDetailTmp.inventBatchId                  = clsInventDim.inventBatchId;
+        clsDetailTmp.InventColorId                  = clsInventDim.InventColorId;
+        clsDetailTmp.InventLocationId               = clsInventDim.InventLocationId;
+        clsDetailTmp.InventSerialId                 = clsInventDim.InventSerialId;
+        clsDetailTmp.InventSiteId                   = clsInventDim.InventSiteId;
+        clsDetailTmp.InventSizeId                   = clsInventDim.InventSizeId;
+        clsDetailTmp.InventStatusId                 = clsInventDim.InventStatusId;
+        clsDetailTmp.InventStyleId                  = clsInventDim.InventStyleId;
+        clsDetailTmp.InventVersionId                = clsInventDim.InventVersionId;
+        clsDetailTmp.LicensePlateId                 = clsInventDim.LicensePlateId;
+        clsDetailTmp.wMSLocationId                  = clsInventDim.wMSLocationId;
+        clsDetailTmp.wMSPalletId                    = clsInventDim.wMSPalletId;
+        //AVA fields    
+        clsDetailTmp.AVAItemSet                     = clsInventTransferJourLine.AVAItemSet;
+        clsDetailTmp.AVAItemSetCompQtyPerSerie      = clsInventTransferJourLine.AVAItemSetCompQtyPerSerie;
+        clsDetailTmp.AVAItemSetComponent            = clsInventTransferJourLine.AVAItemSetComponent;
+        clsDetailTmp.AVAItemSetExpanded             = clsInventTransferJourLine.AVAItemSetExpanded;
+        clsDetailTmp.AVAItemSetParent               = clsInventTransferJourLine.AVAItemSetParent;
+        clsDetailTmp.AVAItemSetSerie                = clsInventTransferJourLine.AVAItemSetSerie;
+        clsDetailTmp.AVAProdSchedDate               = clsInventTransferJourLine.AVAProdSchedDate;
+        clsDetailTmp.KCS_SOCPickingReleaseIndicator = clsInventTransferJourLine.KCS_SOCPickingReleaseIndicator;
+        //FurtherPostingType fields
+        clsDetailTmp.QtyRemainReceive               = locInventTransferLine.QtyRemainReceive;
+        clsDetailTmp.QtyRemainShip                  = locInventTransferLine.QtyRemainShip; // 2009: InventTransferJourLine.KCS_QtyRemainShip missing field
+        clsDetailTmp.KCS_ModelNumber                = locNDXModelNumberHandler.nDXModelNumberFromItemId(clsDetailTmp.ItemId); // ToDo: KCS_ModelNumber?     //@NDXBase:NDXModelNumber
+        /* No UoM conversion planned
+        if(     clsUnitOfMeasureKilograms.RecId
+            &&  UnitOfMeasure::unitOfMeasureIdBySymbol(locInventTransferLine.UnitId) == clsUnitOfMeasureKilograms.RecId )
+        {
+            // already kilograms
+            clsDetailTmp.PdsCWQtyShipped            = clsInventTransferJourLine.QtyShipped;
+        }
+        else if(    clsUnitOfMeasureKilograms.RecId
+                &&  UnitOfMeasure::unitOfMeasureIdBySymbol(locInventTransferLine.UnitId) != clsUnitOfMeasureKilograms.RecId )
+        {
+            clsDetailTmp.PdsCWQtyShipped            = this.convertToKilograms(clsInventTransferJourLine);
+        }
+        */
+        clsDetailTmp.PdsCWQtyShipped                = clsInventTransferJourLine.QtyShipped * locInventTable.NetWeight;
+
+
+        clsDetailTmp.insert();
+        clsAdditionalInfoLevel++;
+        /*
+        // insert partitioner
+        this.initDetailTmp(AVAReportLineType::Partitioner, clsAdditionalInfoLevel);
+        clsDetailTmp.insert();
+        clsAdditionalInfoLevel++;
+        */
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertTmpTableDataDetailItemSet</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>insertTmpTableDataDetailItemSet</c> method.
+    /// </summary>
+    public void insertTmpTableDataDetailItemSet()
+    {
+        InventTransferLine      locInventTransferLineItemSet;
+        NDXModelNumberHandler   locNDXModelNumberHandler;
+        InventTable             locInventTable;
+        InventDim               locInventDim;
+        
+        locInventTransferLineItemSet = InventTransferLine::findTransIdShip(clsInventTransferJourLine.inventTransferLine().AVAItemSetParent);
+
+
+        locNDXModelNumberHandler    = NDXModelNumberHandler::construct();
+        locInventTable              = InventTable::find(locInventTransferLineItemSet.ItemId);
+        locInventDim                = InventDim::find(locInventTransferLineItemSet.InventDimId);
+
+        this.initDetailTmp(AVAReportLineType::DetailLine, clsAdditionalInfoLevel);
+
+        clsDetailTmp.AmountValue                    = locInventTransferLineItemSet.AmountValue;
+        clsDetailTmp.IntrastatCommodity             = locInventTransferLineItemSet.IntrastatCommodity;
+        //clsDetailTmp.IntrastatDispatch              = locInventTransferLineItemSet.IntrastatDispatch;
+        clsDetailTmp.InventDimId                    = locInventTransferLineItemSet.InventDimId;
+        clsDetailTmp.InventTransId                  = locInventTransferLineItemSet.InventTransId;
+        //clsDetailTmp.InventTransIdTransit           = locInventTransferLineItemSet.InventTransIdTransit;
+        clsDetailTmp.ItemId                         = locInventTransferLineItemSet.ItemId;
+        clsDetailTmp.ItemName                       = locInventTable.itemName(InventDim::find(clsDetailTmp.InventDimId));
+        clsDetailTmp.LineNum                        = locInventTransferLineItemSet.LineNum;
+        clsDetailTmp.OrigCountryRegionId            = locInventTransferLineItemSet.OrigCountryRegionId;
+        clsDetailTmp.OrigCountyId                   = locInventTransferLineItemSet.OrigCountyId;
+        clsDetailTmp.OrigStateId                    = locInventTransferLineItemSet.OrigStateId;
+        clsDetailTmp.PackedExtensions               = locInventTransferLineItemSet.PackedExtensions;
+        //clsDetailTmp.ParmId                         = locInventTransferLineItemSet.ParmId;
+        clsDetailTmp.PdsCWQtyReceived               = locInventTransferLineItemSet.PdsCWQtyReceived;
+        clsDetailTmp.PdsCWQtyScrapped               = locInventTransferLineItemSet.PdsCWQtyScrapped;
+        clsDetailTmp.PdsCWQtyShipped                = locInventTransferLineItemSet.PdsCWQtyShipped;
+        clsDetailTmp.Port                           = locInventTransferLineItemSet.Port;
+        clsDetailTmp.QtyReceived                    = locInventTransferLineItemSet.QtyReceived;
+        clsDetailTmp.QtyScrapped                    = locInventTransferLineItemSet.QtyScrapped;
+        clsDetailTmp.QtyShipped                     = locInventTransferLineItemSet.QtyShipped;
+        clsDetailTmp.StatisticalValue               = locInventTransferLineItemSet.StatisticalValue;
+        clsDetailTmp.StatProcId                     = locInventTransferLineItemSet.StatProcId;
+        clsDetailTmp.TransactionCode                = locInventTransferLineItemSet.TransactionCode;
+        //clsDetailTmp.TransDate                      = locInventTransferLineItemSet.TransDate;
+        clsDetailTmp.TransferId                     = locInventTransferLineItemSet.TransferId;
+        clsDetailTmp.Transport                      = locInventTransferLineItemSet.Transport;
+        clsDetailTmp.UnitId                         = locInventTransferLineItemSet.UnitId;
+        clsDetailTmp.UnitPrice                      = locInventTransferLineItemSet.UnitPrice;
+        //InventDim
+        clsDetailTmp.ConfigId                       = locInventDim.ConfigId;
+        clsDetailTmp.inventBatchId                  = locInventDim.inventBatchId;
+        clsDetailTmp.InventColorId                  = locInventDim.InventColorId;
+        clsDetailTmp.InventLocationId               = locInventDim.InventLocationId;
+        clsDetailTmp.InventSerialId                 = locInventDim.InventSerialId;
+        clsDetailTmp.InventSiteId                   = locInventDim.InventSiteId;
+        clsDetailTmp.InventSizeId                   = locInventDim.InventSizeId;
+        clsDetailTmp.InventStatusId                 = locInventDim.InventStatusId;
+        clsDetailTmp.InventStyleId                  = locInventDim.InventStyleId;
+        clsDetailTmp.InventVersionId                = locInventDim.InventVersionId;
+        clsDetailTmp.LicensePlateId                 = locInventDim.LicensePlateId;
+        clsDetailTmp.wMSLocationId                  = locInventDim.wMSLocationId;
+        clsDetailTmp.wMSPalletId                    = locInventDim.wMSPalletId;
+        //AVA fields
+        clsDetailTmp.AVAItemSet                     = locInventTransferLineItemSet.AVAItemSet;
+        clsDetailTmp.AVAItemSetCompQtyPerSerie      = locInventTransferLineItemSet.AVAItemSetCompQtyPerSerie;
+        clsDetailTmp.AVAItemSetComponent            = locInventTransferLineItemSet.AVAItemSetComponent;
+        clsDetailTmp.AVAItemSetExpanded             = locInventTransferLineItemSet.AVAItemSetExpanded;
+        clsDetailTmp.AVAItemSetParent               = locInventTransferLineItemSet.AVAItemSetParent;
+        clsDetailTmp.AVAItemSetSerie                = locInventTransferLineItemSet.AVAItemSetSerie;
+        clsDetailTmp.AVAProdSchedDate               = locInventTransferLineItemSet.AVAProdSchedDate;
+        clsDetailTmp.KCS_SOCPickingReleaseIndicator = locInventTransferLineItemSet.KCS_SOCPickingReleaseIndicator;
+        //FurtherPostingType fields
+        clsDetailTmp.QtyRemainReceive               = locInventTransferLineItemSet.QtyRemainReceive;
+        clsDetailTmp.QtyRemainShip                  = locInventTransferLineItemSet.QtyRemainShip; // 2009: InventTransferJourLine.KCS_QtyRemainShip missing field
+        clsDetailTmp.KCS_ModelNumber                = locNDXModelNumberHandler.nDXModelNumberFromItemId(clsDetailTmp.ItemId); // ToDo: KCS_ModelNumber?     //@NDXBase:NDXModelNumber
+
+        clsDetailTmp.PdsCWQtyShipped                = locInventTransferLineItemSet.QtyShipped * locInventTable.NetWeight;
+
+        clsDetailTmp.insert();
+        clsAdditionalInfoLevel++;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

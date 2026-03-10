@@ -1,0 +1,1104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXInventTable_tbl_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 29.04.21
+/// </summary>
+[ExtensionOf(tableStr(InventTable))]
+public final class NDXInventTable_tbl_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initFromEcoResProduct</Name>
+				<Source><![CDATA[
+	/// <summary>
+    /// PaffH 29.04.21
+    /// fill NDXModelNumber
+    /// </summary>
+    /// <param name = "_ecoResProduct">EcoResProduct</param>
+    public void initFromEcoResProduct(EcoResProduct _ecoResProduct)
+    {
+        next initFromEcoResProduct(_ecoResProduct);
+        this.NDXModelNumber = NDXModelNumberHandler::construct().nDXModelNumberFromProductNumber(_ecoResProduct.productNumber());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>title</Name>
+				<Source><![CDATA[
+	/// <summary>
+    /// PaffH 01.06.21
+    /// </summary>
+    /// <returns>concatination title1 + title2</returns>
+    [SysClientCacheDataMethodAttribute]
+	public display NDXEcoResProductTitle title()
+    {
+        NDXEcoResProductTitle title1 = next Title();
+        NDXEcoResProductTitle title2 = EcoResProductTranslation::getNameOrDefaultNameConcat(this.Product);
+		
+        return title2 ? strFmt('%1 : %2', this.ItemId, title2) : title1;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isDummy</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if product is a dummy product
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <returns>true or false</returns>
+	static public boolean isDummy(ItemId _itemId)
+    {
+        InventTable inventtable = InventTable::find(_itemId);
+        EcoResCategoryHierarchy ecoResCategoryHierarchy = EcoResCategoryHierarchy::findByName('Dummy');
+        EcoResProductCategory ecoResProductCategory;
+
+        if(inventtable && ecoResCategoryHierarchy)
+        {
+            ecoResProductCategory = EcoResProductCategory::findByProductAndCategoryHierarchy(inventtable.Product, ecoResCategoryHierarchy.RecId);
+        }
+        return ecoResProductCategory ? true:false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_currentVersionId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Get VersionId of current CostingVersion
+    /// </summary>
+    /// <param name = "_transDate">date</param>
+    /// <returns>VersionId</returns>
+    CostingVersionId KCS_currentVersionId(TransDate _transDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), boolean _lookInSimPrice = false)
+    {
+        return CostingVersion::NDX_findByItemId(this.ItemId,_transDate,_lookInSimPrice).VersionId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_defaultCostingPriceType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Return default costing price
+    /// </summary>
+    /// <returns>CostingVersionPriceType::Cost</returns>
+    CostingVersionPriceType KCS_defaultCostingPriceType()
+    {
+        return CostingVersionPriceType::Cost;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDX_BruttoVKP</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// gets a gross selling price
+    /// </summary>
+    /// <returns>Price</returns>
+    public Price NDX_BruttoVKP()
+    {
+        PriceDiscTable priceDiscTable;
+        InventTableModule inventTableModule;
+        AvaSalesParameters AVASalesParameters = AvaSalesParameters::find();
+
+        select firstonly priceDiscTable
+            where priceDiscTable.ItemRelation == this.ItemId
+                && priceDiscTable.AccountCode == PriceDiscPartyCodeType::GroupId
+                && priceDiscTable.relation == PriceType::PriceSales
+                && priceDiscTable.AccountRelation  == AVASalesParameters.CustPriceGroup
+                && priceDiscTable.ToDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+
+        if(!priceDiscTable)
+        {
+            select firstonly priceDiscTable
+                where priceDiscTable.ItemRelation == this.ItemId
+                && priceDiscTable.AccountCode == PriceDiscPartyCodeType::GroupId
+                && priceDiscTable.relation == PriceType::PriceSales
+                    && priceDiscTable.AccountRelation == AVASalesParameters.CustPriceGroup
+                    && !priceDiscTable.ToDate;
+        }
+
+        select firstonly inventTableModule
+            where inventTableModule.ItemId == this.ItemId
+                && inventTableModule.ModuleType == ModuleInventPurchSales::Sales;
+
+
+        if(priceDiscTable.PriceUnit)
+        {
+            return priceDiscTable.Amount / priceDiscTable.PriceUnit * inventTableModule.PriceUnit;
+        }
+        else
+        {
+            return 0;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dispNDX_BruttoVKP</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Displays a gross selling price
+    /// </summary>
+    /// <returns>Price</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display Price dispNDX_BruttoVKP()
+    {
+        return this.NDX_BruttoVKP();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDX_Faktor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Displays a factor (Gross Selling Price / HK2 Price)
+    /// </summary>
+    /// <returns>Factor</returns>
+    public Price NDX_Faktor()
+    {
+        Price       nDX_HK2, nDX_BruttoVKP;
+        Price       retPrice = 0;
+
+        nDX_HK2         = this.NDX_HK2();
+        nDX_BruttoVKP   = this.NDX_BruttoVKP();
+
+        if(nDX_HK2)
+        {
+            retPrice = nDX_BruttoVKP/nDX_HK2;
+        }
+
+        return retPrice;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dispNDX_Faktor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Displays a factor (Gross Selling Price / HK2 Price)
+    /// </summary>
+    /// <returns>Factor</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display Price dispNDX_Faktor()
+    {
+        if (!xUserInfo::hasSecuritykeyAccess(privilegeStr(NDXHK2View)))
+        {
+            return 0;
+        }
+
+        return this.NDX_Faktor();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ndxGetHK2Factor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns HK2 factor from group for certain date
+    /// </summary>
+    /// <param name = "_transDate">TransDate, default system date</param>
+    /// <returns>KCS_HK2Factor</returns>
+    KCS_HK2Factor ndxGetHK2Factor(TransDate _transDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        //Index only on groupid there are no records that have the same groupid(Maybe later)
+        KCS_HK2FactorGroup  hk2FactorGroup  = KCS_HK2FactorGroup::findByRecId(this.NDXHK2GroupRefRecId);
+        KCS_HK2Factor       hk2Factor       = hk2FactorGroup ? hk2FactorGroup.HK2Factor : 1;
+
+        return hk2Factor;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ndxGetMGKFactor</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// returns MGK factor from Group
+    /// </summary>
+    /// <returns>AVAMGKFactor</returns>
+    AVAMGKFactor ndxGetMGKFactor()
+    {
+        AVAMGKFactors avaMGKFactors = AVAMGKFactors::findByRecId(this.inventTableModuleInvent().NDXMGKGroupRefRecId);
+        AVAMGKFactor avaMGKFactor = avaMGKFactors ? avaMGKFactors.MGKFactor : 1;
+
+        return avaMGKFactor;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDX_HK2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Displays HK2 price
+    /// </summary>
+    /// <returns>Price</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public Price NDX_HK2()
+    {
+        InventTableModule   inventTableModule;
+        Price               retPrice;
+        PriceUnit           salePriceUnit;
+
+        select firstonly inventTableModule
+            where inventTableModule.ItemId == this.ItemId
+                && inventTableModule.ModuleType == ModuleInventPurchSales::Sales;
+
+        salePriceUnit = inventTableModule.PriceUnit;
+
+        if (!AVASalesParameters::find().HKFromSupportTable)
+        {
+            if(InventItemSetupSupplyType::getDefaultOrderType(this.ItemId, this.DataAreaId) ==  ReqPOType::Purch || this.itemGroupId() == 'ZHW')
+            {
+                select firstonly inventTableModule
+                where inventTableModule.ItemId == this.ItemId
+                && inventTableModule.ModuleType    == ModuleInventPurchSales::Purch;
+
+                retPrice = inventTableModule.NDX_showHK2PriceDisc() / 1000 * salePriceUnit;
+            }
+            else
+            {
+                retPrice = this.KCS_GetHK2() * salePriceUnit;
+            }
+        }
+        else
+        {
+            retPrice = AVAHK2NDG::getHK2p1000(this.ItemId) / 1000;
+        }
+        
+        return retPrice;
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dispNDX_HK2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// display HK2 price
+    /// </summary>
+    /// <returns>HK2 price</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display Price dispNDX_HK2()
+    {
+        if (!xUserInfo::hasSecuritykeyAccess(privilegeStr(NDXHK2View)))
+        {
+            return 0;
+        }
+
+        return this.NDX_HK2();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_GetHK1</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets HK1 Price
+    /// </summary>
+    /// <param name = "inventDimId">invetnDimId</param>
+    /// <param name = "transDate">date</param>
+    /// <param name = "checkPrice">true or false</param>
+    /// <param name = "checkRights">true or false</param>
+    /// <param name = "costingVersionId">VersionId</param>
+    /// <returns>Price</returns>
+    Price KCS_GetHK1(InventDimId inventDimId = inventDim::inventDimIdBlank(), TransDate transDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), boolean checkPrice = false, boolean checkRights = true, CostingVersionId  costingVersionId = '')
+    {
+        InventItemPrice     inventItemPrice;
+        Price price = 0;
+
+        //security check in NDX_GetHK1InventItemPrice
+        inventItemPrice = this.NDX_GetHK1InventItemPrice(inventDimId, transDate, checkPrice, checkRights, costingVersionId);
+
+        if(inventItemPrice != null)
+        {
+            price = inventItemPrice.pcsPrice();
+        }
+
+        return price;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDX_GetHK1InventItemPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets HK1 Price
+    /// </summary>
+    /// <param name = "_inventDimId">invetnDimId</param>
+    /// <param name = "_transDate">date</param>
+    /// <param name = "_checkPrice">true or false</param>
+    /// <param name = "_checkRights">true or false</param>
+    /// <param name = "_costingVersionId">VersionId</param>
+    /// <returns>Price</returns>
+    InventItemPrice NDX_GetHK1InventItemPrice(InventDimId _inventDimId = inventDim::inventDimIdBlank(), TransDate _transDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), boolean _checkPrice = false,
+        boolean _checkRights = true, CostingVersionId _costingVersionId = '')
+    {
+        InventItemPrice     inventItemPrice;
+        InventParameters    inventParameters    = InventParameters::find();
+        InventSiteId        inventSiteId        = inventParameters.FallbackInventLocationId;
+        CostingVersionId costingVersionId = _costingVersionId
+        ;
+        
+        if(_checkRights && !xUserInfo::hasSecuritykeyAccess(privilegeStr(NDXHK1View)))
+        {
+            return null;
+        }
+
+        if (!costingVersionId)
+        {
+            costingVersionId = this.KCS_currentVersionId(_transDate);
+        }
+        
+        if (!costingVersionId)
+        {
+            CostingVersion      costingVersion;
+            select firstonly costingVersion
+                order by KCS_ToDate desc, LastUpdate desc
+                where costingVersion.Blocked == 0
+                 && (!costingVersion.DefaultDate || costingVersion.DefaultDate <= _transDate)
+                 && (!costingVersion.KCS_ToDate || costingVersion.KCS_ToDate >= _transDate);;
+
+            costingVersionId = costingVersion.VersionId;
+                   
+        }
+        
+        inventItemPrice = InventItemPrice::KCS_findCostingVersion(this.ItemId, costingVersionId, _transDate, this.KCS_defaultCostingPriceType(), _inventDimId);
+
+        if (!inventItemPrice)
+        {
+            inventItemPrice = InventItemPrice::KCS_findCostingVersion(this.ItemId, costingVersionId, _transDate, this.KCS_defaultCostingPriceType(), _inventDimId, inventSiteId);
+        }
+
+        if (!inventItemPrice)
+        {
+            inventItemPrice = InventItemPrice::KCS_findCostingVersion(this.ItemId, costingVersionId, _transDate, CostingVersionPriceType::KCS_CALCalculatedPrice, _inventDimId);
+            if (!inventItemPrice)
+            {
+                inventItemPrice = InventItemPrice::KCS_findCostingVersion(this.ItemId, costingVersionId, _transDate, CostingVersionPriceType::KCS_CALCalculatedPrice, _inventDimId, inventSiteId);
+            }
+        }
+
+        if (!inventItemPrice.price() && _checkPrice)
+        {
+            warning("@NDX:NDXHK1NotFound");
+        }
+
+        return inventItemPrice;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDX_GetHK2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets HK2 price
+    /// </summary>
+    /// <param name = "inventDimId">invetnDimId</param>
+    /// <param name = "transDate">date</param>
+    /// <param name = "checkPrice">true or false</param>
+    /// <param name = "costingVersionId">VersionId</param>
+    /// <returns>Price</returns>
+    Price NDX_GetHK2(InventDimId inventDimId = inventDim::inventDimIdBlank(), TransDate transDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), boolean checkPrice = false, CostingVersionId costingVersionId = '')
+    {
+        Price               price;
+        KCS_HK2FactorGroup  hK2FactorGroup;
+        
+        KCS_HK2Factor       hK2Factor       = 1000;
+        Price               retPrice;
+
+        price = this.KCS_GetHK1(inventDimId, transDate, checkPrice, false, costingVersionId);
+        
+        hK2FactorGroup = KCS_HK2FactorGroup::findByRecId(this.NDXHK2GroupRefRecId);
+        if(hK2FactorGroup)
+        {
+            hk2Factor = hK2FactorGroup.HK2Factor * hK2Factor;
+        }
+        
+        retPrice = Price * hK2Factor;
+        
+        return retPrice;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_GetHK2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets HK2 Price
+    /// </summary>
+    /// <param name = "inventDimId">InventDim id</param>
+    /// <param name = "transDate">date</param>
+    /// <param name = "checkPrice">true or false</param>
+    /// <returns>Price</returns>
+    Price KCS_GetHK2(InventDimId inventDimId = inventDim::inventDimIdBlank(), TransDate transDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), boolean checkPrice = false)
+    {
+        Price               price;           
+        //KCS_HK2FactorGroup  hK2FactorGroup  = KCS_HK2FactorGroup::findDate(this.KCS_HK2GroupId, transDate);
+        KCS_HK2FactorGroup  hK2FactorGroup;  
+
+        KCS_HK2Factor       hK2Factor;
+        
+        hK2FactorGroup = KCS_HK2FactorGroup::findByRecId(this.NDXHK2GroupRefRecId);
+        hK2Factor = hk2FactorGroup ? hK2FactorGroup.HK2Factor : 1;
+        
+        price = this.KCS_GetHK1(inventDimId, transDate, checkPrice, false);
+        
+        return price * hK2Factor;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>stopExplodeBOMPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// get StopExplodePrice flag
+    /// </summary>
+    /// <returns>true or false</returns>
+    boolean stopExplodeBOMPrice()
+    {
+        return this.bomCalcGroup().StopExplodePrice;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>lookupItem</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets HK1 Price per quantity
+    /// </summary>
+    /// <param name = "qty">quantity</param>
+    /// <param name = "inventDimId">InventDim id</param>
+    /// <param name = "transDate">date</param>
+    /// <param name = "checkPrice">true or false</param>
+    /// <param name = "fallback">true or false</param>
+    /// <returns>Price</returns>
+  /*  Price KCS_GetHK1perQty(Qty qty = 1, InventDimId inventDimId = inventDim::inventDimIdBlank(), TransDate transDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()),
+        boolean checkPrice = false, boolean fallback = true)
+    {
+        InventItemPrice     inventItemPrice;
+        InventParameters    inventParameters    = InventParameters::find();
+        InventSiteId        inventSiteId        = inventParameters.FallbackInventLocationId;
+        KCS_HK2Vendor       hk2Vendor           = this.KCS_HK2Vendor ? this.KCS_HK2Vendor : this.PrimaryVendorId;
+        CostingVersionId    costingVersionId;
+        Price               HV1;
+        ;
+
+        if (hk2Vendor != '' && (InventItemSetupSupplyType::getDefaultOrderType(this.ItemId, this.DataAreaId) != ReqPOType::Purch || hk2Vendor != '' || this.stopExplodeBOMPrice()))
+        {
+            HV1 = this.KCS_GetHV1perQty(qty,inventdimid,transdate);
+            
+            if (HV1)
+            {
+                return HV1;
+            }
+
+            if (!fallback)
+            {
+                return 0;
+            }
+        }
+        // Stückliste oder kein HV-Preis gefunden
+        costingVersionId    = this.KCS_currentVersionId(transDate);
+        inventItemPrice = InventItemPrice::KCS_findCostingVersion(  this.ItemId,
+                                                                costingVersionId,
+                                                                transDate,
+                                                                this.KCS_defaultCostingPriceType(),
+                                                                inventDimId);
+
+        if (!inventItemPrice)
+        {
+            inventItemPrice = InventItemPrice::KCS_findCostingVersion(  this.ItemId,
+                                                                    costingVersionId,
+                                                                    transDate,
+                                                                    this.KCS_defaultCostingPriceType(),
+                                                                    inventDimId,
+                                                                    inventSiteId);
+        }
+
+        if (!inventItemPrice)
+        {
+            inventItemPrice = InventItemPrice::KCS_findCostingVersion(  this.ItemId,
+                                                                    costingVersionId,
+                                                                    transDate,
+                                                                    CostingVersionPriceType::KCS_CALCalculatedPrice,
+                                                                    inventDimId);
+            if (!inventItemPrice)
+            {
+                inventItemPrice = InventItemPrice::KCS_findCostingVersion(  this.ItemId,
+                                                                        costingVersionId,
+                                                                        transDate,
+                                                                        CostingVersionPriceType::KCS_CALCalculatedPrice,
+                                                                        inventDimId,
+                                                                        inventSiteId);
+                if (!inventItemPrice && fallback)
+                {
+                    select firstonly inventItemPrice order by ActivationDate desc
+                        where (inventItemPrice.ItemId == this.ItemId && inventItemPrice.PriceType ==CostingVersionPriceType::KCS_CALCalculatedPrice);
+                }
+            }
+
+        }
+
+        if (!inventItemPrice.price() && checkPrice)
+        {
+            warning("@NDX:NDXHK2NotFound");
+        }
+
+        return inventItemPrice.KCS_PricePerQty(qty);
+    }
+
+    /// <summary>
+    /// Gets HV1 price per quantity
+    /// </summary>
+    /// <param name = "_qty">quantity</param>
+    /// <param name = "_inventDimId">InventDim id</param>
+    /// <param name = "_transDate">date</param>
+    /// <returns>Price</returns>
+    Price KCS_GetHV1perQty(Qty _qty = 1, InventDimId _inventDimId = inventDim::inventDimIdBlank(),
+        TransDate _transDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        //container           priceAggreement;
+        //container           discAgreement;  
+
+        Inventdim           Inventdim;
+        //CompanyInfo         companyInfo     = CompanyInfo::find();
+        Qty                 qty2;
+        KCS_HK2Vendor       hk2Vendor           = this.KCS_HK2Vendor ? this.KCS_HK2Vendor : this.PrimaryVendorId;
+
+        Price               HV1 = 0;      
+        CurrencyCode        currencyCodeVendor;
+        //Currency            currency;
+        ExchRate            exchRate;
+
+        //const real price = 1;
+
+        PriceDiscParameters priceDiscParameters;
+        
+        PriceDisc priceAgreement;
+        PriceDisc discAgreement;
+
+        priceDiscParameters = PriceDiscParameters::construct();
+        
+        priceDiscParameters.parmModuleType(ModuleInventPurchSales::Purch);
+        priceDiscParameters.parmItemId(this.ItemId);
+        priceDiscParameters.parmInventDim(inventDim::find(_inventDimId));
+        PriceDiscParameters.parmUnitID(this.purchUnitId());
+        PriceDiscParameters.parmPriceDiscDate(_transDate);
+        PriceDiscParameters.parmQty(_qty);
+        PriceDiscParameters.parmAccountNum(hk2Vendor);
+        priceDiscParameters.parmCurrencyCode();
+
+        priceAgreement = PriceDisc::newFromPriceDiscParameters(priceDiscParameters);
+        
+        //WolfA price was a container object 
+        /*[priceDisc.price() + priceDisc.KCS_PRMMarkupMaterial() + priceDisc.KCS_PRMMarkupEnergy(),
+            priceDisc.markup(),
+            priceDisc.priceUnit(),
+            priceDisc.deliveryDays(),
+            priceDisc.calendarDays()]*/
+
+        //findPrice schould also receive the correct values for KCS_PRMMarkupMaterial and KCS_PRMMarkupEnergy
+        priceAgreement.findPrice('', true);
+     
+        // The Price was extended by priceDisc.KCS_PRMMarkupMaterial() + priceDisc.KCS_PRMMarkupEnergy()
+        priceAgreement.parmPrice(priceAgreement.price() + priceAgreement.parmKCS_PRMMarkupMaterial() + priceAgreement.parmKCS_PRMMarkupEnergy());
+        
+        currencyCodeVendor  = VendTable::find(hk2Vendor).Currency;
+        
+        if (currencyCodeVendor)
+        {
+            exchRate = ExchangeRateHelper::exchRate(currencyCodeVendor);
+        }
+
+        if (!priceAgreement.price() && currencyCodeVendor != priceDiscParameters.parmCurrencyCode())
+        {
+            //Set new CurrencyCode
+            priceDiscParameters.parmCurrencyCode(currencyCodeVendor);
+            priceAgreement.parmPriceDiscParameters(priceDiscParameters);
+            priceAgreement.findPrice('', true);
+            priceAgreement.parmPrice(priceAgreement.price() + priceAgreement.parmKCS_PRMMarkupMaterial() + priceAgreement.parmKCS_PRMMarkupEnergy());
+
+            if (priceAgreement.price() && exchRate)
+            {
+                priceAgreement.parmPrice((priceAgreement.price() * exchRate) / 100);
+            }
+        }
+        
+        if (!priceAgreement.price() && _inventDimId != inventDim::inventDimIdBlank())
+        {
+            inventdim.InventSiteId = InventParameters::find().FallbackInventLocationId;
+
+            //Set new UnitID and new CurrencyCode
+            priceDiscParameters.parmInventDim(inventdim);
+            priceDiscParameters.parmUnitID(this.inventUnitId());
+            priceDiscParameters.parmCurrencyCode(Ledger::accountingCurrency(CompanyInfo::current()));
+            
+            priceAgreement.parmPriceDiscParameters(priceDiscParameters);
+            priceAgreement.findPrice('', true);
+            priceAgreement.parmPrice(priceAgreement.price() + priceAgreement.parmKCS_PRMMarkupMaterial() + priceAgreement.parmKCS_PRMMarkupEnergy());
+
+            if (!priceAgreement.price() && currencyCodeVendor != priceDiscParameters.parmCurrencyCode())
+            {
+                priceDiscParameters.parmCurrencyCode(currencyCodeVendor);
+                priceAgreement.parmPriceDiscParameters(priceDiscParameters);
+                priceAgreement.findPrice('', true);
+                priceAgreement.parmPrice(priceAgreement.price() + priceAgreement.parmKCS_PRMMarkupMaterial() + priceAgreement.parmKCS_PRMMarkupEnergy());
+
+                if (priceAgreement.price() && exchRate)
+                {
+                    priceAgreement.parmPrice((priceAgreement.price() * exchRate) / 100);
+                }
+            }
+        }
+        
+        
+        //reset priceDiscParameters 
+        // everything stays the same only UnitId and CurrencyCode since those properties were changed before
+        priceDiscParameters.parmInventDim(InventDim::find(_inventDimId));
+        priceDiscParameters.parmUnitID(this.purchUnitId());
+        priceDiscParameters.parmCurrencyCode(Ledger::accountingCurrency(CompanyInfo::current()));
+
+        discAgreement = PriceDisc::newFromPriceDiscParameters(priceDiscParameters);
+        discAgreement.findLineDisc('','');
+
+        //ToDo: somthing seems not right here why "priceAggreement" and not discAgreement ????
+        
+      /*  if (!priceDisc.price() && currencyCodeVendor !=  Ledger::accountingCurrency(CompanyInfo::current()))
+        {
+            discAgreement.parmCurrency(currencyCodeVendor);
+            discAgreement.findLineDisc('','');
+            
+            if (conpeek(priceAggreement, price) && exchRate)
+            {
+                priceAggreement = conpoke(priceAggreement, price, ((conpeek(priceAggreement, #Price) * exchRate) / 100));
+            }
+
+        }
+
+        if (conpeek(priceAggreement, 1))
+        {
+            if (this.purchUnitId() == this.inventUnitId())
+            {
+                if (conpeek(priceAggreement, 3))
+                {
+                    hv1 = conpeek(priceAggreement, 1)*qty/conpeek(priceAggreement, 3);
+                }
+                else
+                {
+                    hv1 =conpeek(priceAggreement, 1)*qty;
+                }
+            }
+            else
+            {
+                Qty2 = UnitConvert::valueConvert(qty,this.purchUnitId(),this.inventUnitId(),this.ItemId,false);
+                if (!Qty2)
+                {
+                    warning("@KNX1368");
+                    Qty2 = 1;
+                }
+                if (conpeek(priceAggreement, 3))
+                {
+                    hv1 = conpeek(priceAggreement, 1)* qty /conpeek(priceAggreement, 3)*(qty/qty2);
+                }
+                else
+                {
+                    hv1 = conpeek(priceAggreement, 1) * qty * (qty/qty2);
+                }
+            }
+            if (hv1 && conpeek(discAgreement, 2))
+            {
+                hv1 = hv1 *(100 - conpeek(discAgreement, 2))/100;
+            }
+        }*/
+
+        // to d365
+        if (!priceAgreement.price() && currencyCodeVendor !=  Ledger::accountingCurrency(CompanyInfo::current()))
+        {
+            priceDiscParameters.parmCurrencyCode(currencyCodeVendor);
+            discAgreement.parmPriceDiscParameters(priceDiscParameters);
+            discAgreement.findLineDisc('','');
+            
+            if (priceAgreement.price() && exchRate)
+            {
+                priceAgreement.parmPrice((priceAgreement.price() * exchRate) / 100);
+            }
+        }
+
+        if (priceAgreement.price())
+        {
+            if (this.purchUnitId() == this.inventUnitId())
+            {
+                if (priceAgreement.priceUnit())
+                {
+                    hv1 = priceAgreement.price()*_qty/priceAgreement.priceUnit();
+                }
+                else
+                {
+                    hv1 = priceAgreement.price()*_qty;
+                }
+            }
+            else
+            {
+                qty2 = EcoResProductUnitConverter::convertForReleasedProduct(this.ItemId, _inventDimId , _qty, UnitOfMeasure::findBySymbol(this.purchUnitId()).RecId, UnitOfMeasure::findBySymbol(this.inventUnitId()).RecId, false);
+
+                if (!qty2)
+                {
+                    warning("@NDX:NDXUnitConvertNotDefined");
+                    qty2 = 1;
+                }
+                if (priceAgreement.priceUnit())
+                {
+                    hv1 = priceAgreement.price()*_qty / priceAgreement.priceUnit()*(_qty/qty2);
+                }
+                else
+                {
+                    hv1 = priceAgreement.price() * _qty * (_qty/qty2);
+                }
+            }
+            if (hv1 && discAgreement.markup())
+            {
+                hv1 = hv1 * (100 - discAgreement.markup())/100;
+            }
+        }
+        return hv1;
+    }                 */
+
+    /// <summary>
+    /// Replacment for lookupItem
+    /// </summary>
+    /// <param name="_ctrl">
+    /// The form string control object with which to perform the lookup.
+    /// </param>
+    /// <param name="_showOnlyWHSEnabled">
+    /// A Boolean value that indicates whether to show only WHS enabled items; optional.
+    /// </param>
+    public static void lookupItem(FormStringControl _ctrl, boolean _showOnlyWHSEnabled)
+    {
+        InventItemIdLookup::NDXlookupItem(_ctrl, _showOnlyWHSEnabled);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXWithActiveRouteVersion</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 14.03.23
+    /// exists an active RouteVersion
+    /// </summary>
+    /// <returns>NDXRouteVersionActive</returns>
+    [SysClientCacheDataMethodAttribute]
+    public display NDXRouteVersionActive NDXWithActiveRouteVersion()
+    {
+        return RouteVersion::findActive(this.ItemId, datenull(), 0, InventDim::findOrCreateBlank()) ? NoYes::Yes : NoYes::No;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXProductName1</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 11.11.21
+    /// display NDXProductName1
+    /// </summary>
+    /// <returns>NDXProductName1</returns>
+    [SysClientCacheDataMethodAttribute]
+    public display NDXProductName1 NDXProductName1()
+    {
+        return EcoResProduct::find(this.Product).NDXProductName1();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXProductName2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 11.11.21
+    /// display NDXProductName2
+    /// </summary>
+    /// <returns>NDXProductName2</returns>
+    [SysClientCacheDataMethodAttribute]
+    public display NDXProductName2 NDXProductName2()
+    {
+        return EcoResProduct::find(this.Product).NDXProductName2();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXReqGroupCovRuleIsReq</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.12.22
+    /// AX2009: tables.InventTable.NDX_ReqGroupCovRuleIsReq()
+    /// </summary>
+    /// <param name = "_reqCovType">ReqCovType (default: ReqCovType::Req)</param>
+    /// <returns>ReqCovType was found in ReqGroup</returns>
+    public boolean NDXReqGroupCovRuleIsReq(ReqCovType _reqCovType = ReqCovType::Req)
+    {
+        return (ReqGroup::find(this.ReqGroupId).CovRule == _reqCovType);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 02.02.23
+    /// </summary>
+    public void update()
+    {
+        InventTable orig = this.orig();
+        next update();
+
+        if(orig.NDXHK2GroupRefRecId!= this.NDXHK2GroupRefRecId)
+        {
+            NDXHK2GroupHistory::createByInventTable(this, orig);
+        }
+
+        if(orig.NetWeight != this.NetWeight)
+        {
+            NDXItemNetWeightHistory::createByInventTable(this, orig);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>hasItemStateWithInfo</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if item has showinfoitemstate set for items state
+    /// </summary>
+    /// <returns>true or false</returns>
+    boolean hasItemStateWithInfo()
+    {
+        NDXItemStateTable lNDXItemStateTable;
+        
+        if (this.KCS_KAOItemState)
+        {
+            lNDXItemStateTable = NDXItemStateTable::find(this.ItemId);
+            return (lNDXItemStateTable && lNDXItemStateTable.ShowInfoItemState && lNDXItemStateTable.InfoItemState);
+        }
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXItemBarcode</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.04.23
+    /// retrieve itembarcode
+    /// </summary>
+    /// <param name = "_barcodeSetupId">default EAN13</param>
+    /// <returns>ItemBarCode</returns>
+    ItemBarCode NDXItemBarcode(BarcodeSetupId _barcodeSetupId = WHSParameters::find().BarcodeSetupId)
+    {
+        return this.NDXInventItemBarcode(_barcodeSetupId).itemBarCode;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXIsOZItem</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 23.10.23
+    /// AX2009: NDX_IsOZItem()
+    /// </summary>
+    /// <returns>NoYes</returns>
+    display NoYes NDXIsOZItem()
+    {
+        const str oZ = 'OZ';
+        return strscan(this.ItemId, oz, 1, strlen(this.ItemId)) > 0 ? NoYes::Yes : NoYes::No;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDX_DeliveryUnitTxt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Delivery unit as text
+    /// </summary>
+    /// <param name = "l_NDX_DeliveryUnitPrefMultipleQty">qantity</param>
+    /// <param name = "l_NDX_InventItemSetupMultipleQty">multipla qantity</param>
+    /// <param name = "l_UnitID">unit id</param>
+    /// <returns>delivery unit as string</returns>
+    static NDXDeliveryUnitTxt NDX_DeliveryUnitTxt(real l_NDX_DeliveryUnitPrefMultipleQty, real l_NDX_InventItemSetupMultipleQty, UnitIDBase l_UnitID)
+    {
+        #define.IntBarrier(0.1)
+        NDXDeliveryUnitTxt      deliveryUnitTxt;
+        str                     txtDeliveryUnitPref, txtInventItemSetup;
+        real                    diffValue;
+
+        // Prüfung, ob MultipleQty mit Nachkommastelle dargestellt werden muss
+        diffValue = abs(l_NDX_DeliveryUnitPrefMultipleQty - real2int(l_NDX_DeliveryUnitPrefMultipleQty));
+        if ( diffValue > #IntBarrier)
+        {
+            txtDeliveryUnitPref = num2str(decround(l_NDX_DeliveryUnitPrefMultipleQty,1), -1,1,-1,-1);
+        }
+        else
+        {
+            txtDeliveryUnitPref = num2str0(l_NDX_DeliveryUnitPrefMultipleQty, -1);
+        }
+        
+        diffValue = abs(l_NDX_InventItemSetupMultipleQty - real2int(l_NDX_InventItemSetupMultipleQty));
+        
+        if ( diffValue > #IntBarrier)
+        {
+            txtInventItemSetup = num2str(decround(l_NDX_InventItemSetupMultipleQty,1), -1,1,-1,-1);
+        }
+        else
+        {
+            txtInventItemSetup = num2str0(l_NDX_InventItemSetupMultipleQty, -1);
+        }
+
+        if (l_NDX_DeliveryUnitPrefMultipleQty  == 1 && l_NDX_InventItemSetupMultipleQty   == 1)
+        {
+            deliveryUnitTxt  = strfmt('%1 %2', txtInventItemSetup, l_UnitID);       // %1 %2
+        }
+        else if (l_NDX_DeliveryUnitPrefMultipleQty == 1)
+        {
+            deliveryUnitTxt  = strfmt('%1 %2', txtInventItemSetup, l_UnitID);       // %1 %2
+        }
+        else if (l_NDX_InventItemSetupMultipleQty == 1)
+        {
+            deliveryUnitTxt  = strfmt('%1 %2', txtDeliveryUnitPref, l_UnitID);       // %1 %2
+        }
+        else
+        {
+            deliveryUnitTxt  = strfmt('%1 x %2 %3', txtDeliveryUnitPref,
+                                              txtInventItemSetup,
+                                              l_UnitID);       // %1 x %2 %3
+        }
+        return deliveryUnitTxt;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isItemSet</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// return if item set (since AVAItemSet is in different model we need this method)
+    /// </summary>
+    /// <returns>AVAItemSet</returns>
+    public boolean isItemSet()
+    {
+        return this.AVAItemSet;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dispHK2current</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// get HK2 Price (H1 * HK2 factor)
+    /// </summary>
+    /// <returns>HK2 Price</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display Price dispHK2current()
+    {
+        if(!xUserInfo::hasSecuritykeyAccess(privilegeStr(NDXHK1View)))
+        {
+            return 0;
+        }
+        return this.NDX_GetHK2();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXIsXItem</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 25.04.24
+    /// </summary>
+    /// <returns>Item is 'X'-Item</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display NoYes NDXIsXItem()
+    {
+        const str ItemUsageIdX = 'UA';
+        return (this.KCS_ItemUsageId == ItemUsageIdX) ? NoYes::Yes : NoYes::No;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXIsOVItem</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 25.04.24
+    /// </summary>
+    /// <returns>Item is 'OV'</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display NoYes NDXIsOVItem()
+    {
+        const str OVItemMarker = 'OV';
+        return strScan(this.ItemId, OVItemMarker, 1, strLen(this.ItemId)) > 0 ? NoYes::Yes : NoYes::No;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXMappedItemidOVItem</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 25.04.24
+    /// </summary>
+    /// <returns>mapped OV-Item</returns>
+    ItemId NDXMappedItemidOVItem()
+    {
+        const str OVItemMarker = 'OV';
+        str mappedItemid = '';
+        int x;
+        if (substr(this.ItemId, strlen(this.ItemId), -2) == OVItemMarker)
+        {
+            mappedItemid = substr(this.ItemId, 1, strlen(this.ItemId) - 2);
+            if (!InventTable::find(mappedItemid))
+            {
+                mappedItemid = '';
+            }
+            else
+            {
+                x = 1;
+            }
+        }
+        return mappedItemid;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

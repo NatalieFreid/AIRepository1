@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVALedgerAllocationRuleCreateDestService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extends class SysOperationServiceBase
+/// </summary>
+class AVALedgerAllocationRuleCreateDestService extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// process method
+    /// </summary>
+    /// <param name = "_contract">AVACRLUpdateRiscDebtorContract</param>
+    public void process(AVALedgerAllocationRuleCreateDestcontract _contract)
+    {
+        LedgerAllocationRule            ledgerAllocationRule = _contract.parmAllocationRule();
+
+        if (ledgerAllocationRule)
+        {
+            this.createDestinations(ledgerAllocationRule);
+            this.deleteDestinations(ledgerallocationrule);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createDestinations</Name>
+				<Source><![CDATA[
+    internal void createDestinations(LedgerAllocationRule _ledgerAllocationRule)
+    {
+        AVALedgerAllocRuleDestinationDimensions     destDim;
+        LedgerAllocationRuleDestination             ruleDest, ruleDestDelete;
+        AVALedgerAllocCreateBasisRuleFromDestination createBasisRuleFromDesination;
+        LineNum curLineNum, maxLineNum, i = 1;
+        boolean create, update, updateAll = false;
+        DialogButton    db;
+
+        if (_ledgerAllocationRule.AllocationMethod == LedgerAllocationMethod::Basis)
+        {
+            //delete_from ruleDestDelete where ruleDestDelete.RuleID == _ledgerAllocationRule.RuleId
+            //     && (ruleDestDelete.ToLedgerDimension != _ledgerAllocationRule.AVADestinationToLedgerDim || ruleDestDelete.AVARuleSourceAccountNum != _ledgerAllocationRule.AVADestinationAccountNum);
+            
+            select maxof(LineNum) from ruleDest where ruleDest.RuleID == _ledgerAllocationRule.RuleId;
+            maxLineNum = ruleDest.LineNum;
+
+            while select destDim where destDim.RuleId == _ledgerAllocationRule.RuleId
+            {
+                create = false;
+                if (updateAll)
+                {
+                    update = true;
+                }
+                else
+                {
+                    update = false;
+                }
+                select forupdate ruleDest where ruleDest.RuleID == _ledgerAllocationRule.RuleId
+                                         //&& ruleDest.ToLedgerDimension == _ledgerAllocationRule.AVADestinationToLedgerDim
+                                         //&& ruleDest.AVARuleSourceAccountNum == _ledgerAllocationRule.AVADestinationAccountNum
+                                         && ruleDest.ToDefaultDimension == destDim.DimensionAttributeValueSet;
+                if (!ruleDest.RecId)
+                {
+                    create = true;
+                    curLineNum = maxLineNum + i;
+                }
+                else if (ruleDest.ToLedgerDimension != _ledgerAllocationRule.AVADestinationToLedgerDim || ruleDest.AVARuleSourceAccountNum != _ledgerAllocationRule.AVADestinationAccountNum)
+                {
+                    if (!updateAll)
+                    {
+                        //db = Box::yesYesAllNoCancel(strFmt("@NDX:NXADestinationExists", LedgerDimensionFacade::getMainAccountFromLedgerDimension(_ledgerAllocationRule.AVADestinationToLedgerDim).MainAccountId, _ledgerAllocationRule.AVADestinationDimAttributeName, destDim.AVADestinationDimensionValue), DialogButton::Yes);
+                        db = Box::yesYesAllNoCancel(strFmt("@NDX:NXADestinationExists", _ledgerAllocationRule.AVADestinationDimAttributeName, destDim.AVADestinationDimensionValue), DialogButton::YesToAll);
+                        if (db == DialogButton::Yes)
+                        {
+                            update = true;
+                            curLineNum = ruleDest.LineNum;
+                        }
+                        else if (db == DialogButton::YesToAll)
+                        {
+                            update = true;
+                            updateAll = true;
+                            curLineNum = ruleDest.LineNum;
+                        }
+                        else if (db == DialogButton::Cancel)
+                        {
+                            update = false;
+                            create = false;
+                        }
+                        else
+                        {
+                            update = false;
+                            create = false;
+                        }
+                    }
+                    else
+                    {
+                        curLineNum = ruleDest.LineNum;
+                    }
+                }
+
+                if (create)
+                {
+                    ruleDest.RuleID                     = _ledgerAllocationRule.RuleId;
+                    ruleDest.ToLedgerDimension          = _ledgerAllocationRule.AVADestinationToLedgerDim;
+                    ruleDest.ToDefaultDimension         = destDim.DimensionAttributeValueSet;
+                    ruleDest.ToCompany                  = curExt();
+                    ruleDest.AVARuleSourceAccountNum    = _ledgerAllocationRule.AVADestinationAccountNum;
+                    ruleDest.LineNum                    = curLineNum;
+                    createBasisRuleFromDesination = AVALedgerAllocCreateBasisRuleFromDestination::construct(ruleDest.RuleID);
+                    createBasisRuleFromDesination.parmMainAccount(ruleDest.AVARuleSourceAccountNum);
+                    createBasisRuleFromDesination.parmDimSet(ruleDest.ToDefaultDimension);
+                    ruleDest.BasisId = createBasisRuleFromDesination.createBasisRule();
+                    ruleDest.insert();
+
+                    if (curLineNum != i)
+                    {
+                        delete_from ruleDestDelete where ruleDestDelete.RuleID == _ledgerAllocationRule.RuleId
+                                                      && ruleDestDelete.ToLedgerDimension == _ledgerAllocationRule.AVADestinationToLedgerDim
+                                                      && ruleDestDelete.ToDefaultDimension == destDim.DimensionAttributeValueSet
+                                                      && ruleDestDelete.RecId != ruleDest.RecId;
+                    }
+                    i++;
+                }
+
+                if (update)
+                {
+                    ttsbegin;
+                    ruleDest.AVARuleSourceAccountNum = _ledgerAllocationRule.AVADestinationAccountNum;
+                    ruleDest.ToLedgerDimension  = _ledgerAllocationRule.AVADestinationToLedgerDim;
+                    ruleDest.update();
+                    createBasisRuleFromDesination = AVALedgerAllocCreateBasisRuleFromDestination::construct(ruleDest.RuleID);
+                    createBasisRuleFromDesination.parmMainAccount(ruleDest.AVARuleSourceAccountNum);
+                    createBasisRuleFromDesination.parmDimSet(ruleDest.ToDefaultDimension);
+                    createBasisRuleFromDesination.parmBasisNum(ruleDest.BasisId);
+                    createBasisRuleFromDesination.UpdateBasisRule();
+                    ttscommit;
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteDestinations</Name>
+				<Source><![CDATA[
+    internal void deleteDestinations(LedgerAllocationRule _ledgerAllocationRule)
+    {
+        AVALedgerAllocRuleDestinationDimensions     destDim;
+        LedgerAllocationRuleDestination             ruleDest;
+        LedgerAllocationBasisRule                   basisRule;
+        LedgerAllocationBasisID                     basisId;
+        LedgerAllocationBasisRuleSource             basisRuleSource;
+        Set                                         basisIdsToDelete = new Set(Types::String);
+        SetEnumerator                               setEnum;
+
+        while select ruleDest where ruleDest.RuleID == _ledgerAllocationRule.RuleId
+                                && (ruleDest.AVARuleSourceAccountNum != _ledgerAllocationRule.AVADestinationAccountNum
+                                    || ruleDest.ToLedgerDimension != _ledgerAllocationRule.AVADestinationToLedgerDim)
+        {
+            delete_from basisRule where basisRule.BasisId == ruleDest.BasisId;
+            delete_from basisRuleSource where basisRuleSource.BasisId == ruleDest.BasisId;
+        }
+
+        delete_from ruleDest where ruleDest.RuleID == _ledgerAllocationRule.RuleId && ruleDest.AVARuleSourceAccountNum    != _ledgerAllocationRule.AVADestinationAccountNum;
+        delete_from ruleDest where ruleDest.RuleID == _ledgerAllocationRule.RuleId && ruleDest.ToLedgerDimension          != _ledgerAllocationRule.AVADestinationToLedgerDim;
+
+        while select ruleDest where ruleDest.RuleID == _ledgerAllocationRule.RuleId
+            join basisRule where basisRule.BasisId == ruleDest.BasisId
+        {
+            select firstonly destDim where destDim.RuleId == _ledgerAllocationRule.RuleId
+                && destDim.DimensionAttributeValueSet == ruleDest.ToDefaultDimension;
+            if (!destDim)
+            {
+                basisIdsToDelete.add(ruleDest.BasisId);    
+            }
+        }                
+        if (!basisIdsToDelete.empty())
+        {
+            setEnum = basisIdsToDelete.getEnumerator();
+            setEnum.reset();
+            while (setEnum.moveNext())
+            {
+                basisId = setEnum.current();
+                delete_from basisRule where basisRule.BasisId == basisId;
+                delete_from basisRuleSource where basisRuleSource.BasisId == basisId;
+                delete_from ruleDest where ruleDest.RuleID == _ledgerAllocationRule.RuleId
+                    && ruledest.BasisId == basisId;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

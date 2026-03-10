@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVALedgerAllocationRuleDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA_010939_LedgerAllocationRuleExtension
+/// </summary>
+[ExtensionOf(tableStr(LedgerAllocationRule))]
+final class AVALedgerAllocationRuleDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>toAccountName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_010939_LedgerAllocationRuleExtension
+    /// </summary>
+    /// <returns>DimensionDisplayValue</returns>
+    public display DimensionDisplayValue toAccountName()
+    {
+        return LedgerDimensionFacade::getMainAccountFromLedgerDimension(this.AVADestinationToLedgerDim).localizedName();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sumAccountName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_010939_LedgerAllocationRuleExtension
+    /// </summary>
+    /// <returns>DimensionDisplayValue</returns>
+    public display DimensionDisplayValue sumAccountName()
+    {
+        return MainAccount::findByMainAccountId(this.AVADestinationAccountNum).localizedName();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    public void initValue()
+    {
+        LedgerParameters    parameters;
+
+        next initValue();
+
+        parameters = LedgerParameters::find();
+        this.AVACostAllocationJournal   = parameters.AVACostAllocationJournal;
+        this.JournalName                = parameters.AVALedgerJournalNameId;
+        this.DateInterval               = parameters.AVADateInterval;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateBasisRuleDates</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN 2024/04/16     AVA_011741_SynchDates
+    /// </summary>
+    /// <param name = "_startDate"> YES = synchStartDate NO = synchEndDate </param>
+    public void avaUpdateBasisRuleDates(boolean _startDate)
+    {
+        LedgerAllocationBasisRule   basisRule;
+        LedgerAllocationRuleDestination ruleDestination;
+
+        if (this.AllocationMethod == LedgerAllocationMethod::Basis)
+        {
+            if (_startDate)
+            {
+                update_recordset basisRule
+                    setting EffectiveStartDate = this.EffectiveStartDate
+                    join ruleDestination where ruleDestination.BasisId == basisRule.BasisId
+                    && ruleDestination.RuleID == this.RuleId;
+            }
+            else
+            {
+                update_recordset basisRule
+                    setting EffectiveEndDate = this.EffectiveEndDate
+                    join ruleDestination where ruleDestination.BasisId == basisRule.BasisId
+                    && ruleDestination.RuleID == this.RuleId;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  AVA/WEN 2024/04/16     AVA_011741_SynchDates
+    /// </summary>
+    /// <param name = "_fieldId">FieldId</param>
+    public void modifiedField(FieldId _fieldId)
+    {
+        LedgerAllocationRule    orig = this.orig();
+
+        next modifiedField(_fieldId);
+ 
+        switch (_fieldId)
+        {
+            case fieldNum(ledgerallocationrule, EffectiveStartDate):
+                if (orig.EffectiveStartDate != this.EffectiveStartDate)
+                {
+                    this.avaUpdateBasisRuleDates(true);
+                }
+                break;
+            case fieldNum(ledgerallocationrule, EffectiveEndDate):
+                if (orig.EffectiveEndDate != this.EffectiveEndDate)
+                {
+                    this.avaUpdateBasisRuleDates(false);
+                }
+                break;
+            case fieldNum(LedgerAllocationRule, AVADestinationMainAccount):
+                {
+                    this.AVAFPLDestinationMainAccount = this.AVADestinationMainAccount;
+                }
+                break;
+            case fieldNum(LedgerAllocationRule, AVACostAllocationJournal):
+                {
+                    this.AVAFPLCostAllocationJournal = this.AVACostAllocationJournal;
+                }
+                break;
+            case fieldNum(LedgerAllocationRule, AVASequence):
+                {
+                    this.AVAFPLSequence = this.AVASequence;
+                }
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

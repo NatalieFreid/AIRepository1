@@ -1,0 +1,365 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACleanUpQuotationVersion</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// runBaseBatch class for deleting old internal quotation journals
+/// </summary>
+public class AVACleanUpQuotationVersion extends RunbaseBatch
+{
+    int             lastVersion = 3;        // PBI states that anything older than last three versions gets deleted
+    QueryRun        queryrun;
+
+    #define.CurrentVersion(1)
+    #define.Version1(1)
+    #localmacro.CurrentList
+        lastVersion
+    #endmacro
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// main method
+    /// </summary>
+    /// <param name = "_args">Args</param>
+    public static void main(Args _args)
+    {
+        AVACleanUpQuotationVersion cleanUpQuotationVersion = AVACleanUpQuotationVersion::construct();
+
+        if (cleanUpQuotationVersion.prompt())
+        {
+            cleanUpQuotationVersion.run();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// run method
+    /// </summary>
+    public void run()
+    {
+        #OCCRetryCount
+        if (! this.validate())
+        {
+            throw error("@SYS79625");
+        }
+
+        try
+        {
+            ttsbegin;
+
+            this.clearQuotationVersion();
+
+            ttscommit;
+
+            info("@NDX:NXACleanUpQuotationVersionSuccessful");
+        }
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>clearQuotationVersion</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// deletes unwanted internal quotation versions
+    /// </summary>
+    void clearQuotationVersion()
+    {
+        CustQuotationJour       custQuotationJour;
+
+        QuotationId             curQuotationId;
+        int                     tableIdQuotJour = tableNum(custQuotationJour);
+        int                     curVersion;
+        utcdatetime             cleanUpDateTime;
+        ;
+
+        //cleanUpDateTime = DateTimeUtil::getSystemDateTime();
+
+        while(queryrun.next())
+        {
+            if (queryrun.changed(tableIdQuotJour))
+            {
+                custQuotationJour = queryrun.get(tableIdQuotJour);
+
+                if (!curQuotationId 
+                    || curQuotationId != custQuotationJour.KCS_QuotationId)
+                {
+                    curQuotationId = custQuotationJour.KCS_QuotationId;
+                    curVersion = 0;
+                }
+
+                curVersion++;
+
+                //if (curVersion > lastVersion && custQuotationJour.createdDateTime <= cleanUpDateTime)
+                if (curVersion > lastVersion)
+                {
+                    ttsbegin;
+                    custQuotationJour.selectForUpdate(true);
+                    custQuotationJour.delete();
+                    ttscommit;
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initParmDefault</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// initParmDefault method
+    /// </summary>
+    public void initParmDefault()
+    {
+        this.initQuery();
+
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// initializes QueryRun variable
+    /// </summary>
+    void initQuery()
+    {
+        Query   query = new Query(QueryStr(AVACleanUpQuotationVersion));
+        ;
+        queryrun = new SysQueryRun(query);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showQueryValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// determines if query values should be shown
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean showQueryValues()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from  AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    protected boolean canRunInNewSession()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runOperationNow</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    protected void runOperationNow()
+    {
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canGoBatch</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from  AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean canGoBatch()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canGoBatchJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    protected boolean canGoBatchJournal()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runsImpersonated</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean runsImpersonated()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Dialog object of class
+    /// </summary>
+    /// <returns>Object</returns>
+    public Object dialog()
+    {
+        DialogRunbase   dialog;
+
+        dialog = super();
+        dialog.caption("@NDX:NXACleanUpQuotationVersion");
+
+        return dialog;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// class description string
+    /// </summary>
+    /// <returns>ClassDescription</returns>
+    static ClassDescription description()
+    {
+        return "@NDX:NXACleanUpQuotationVersionDesc";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// pack method
+    /// </summary>
+    /// <returns>container</returns>
+    public container pack()
+    {
+        return [#CurrentVersion,#CurrentList,queryrun.pack()];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// unpack method
+    /// </summary>
+    /// <returns>container</returns>
+    public boolean unpack(container packedClass)
+    {
+        Version     version = RunBase::getVersion(packedClass);
+        container   queryCon;
+
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version,#CurrentList,queryCon] = packedClass;
+                if (SysQuery::isPackedOk(queryCon))
+                queryrun = new QueryRun(queryCon);
+                else
+                this.initQuery();
+                break;
+            default:
+                return false;
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// construct method
+    /// </summary>
+    /// <returns>AVACleanUpQuotationVersion</returns>
+    public static AVACleanUpQuotationVersion construct()
+    {
+        return new AVACleanUpQuotationVersion();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// validate method
+    /// </summary>
+    /// <param name = "calledFrom">Object</param>
+    /// <returns>boolean</returns>
+    public boolean validate(Object calledFrom = null)
+    {
+        if (lastVersion < 0)
+        {
+            return checkFailed(strFmt("@NDX:NXACleanUpQuotationValidateError", lastVersion));
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAInventOnHandItemFrm_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(formStr(InventOnhandItem))]
+internal final class AVAInventOnHandItemFrm_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        String255   componentStr;
+        ItemId      baseItemId;
+        InventDim   baseInventDim;
+        Qty         baseQty;
+        SalesLine   salesLine;
+        SalesQuotationLine  salesQuotationLine;
+        InventTable         inventTable;
+        
+        next init();
+        if (this.args().dataset() == tableNum(SalesLine))
+        {
+            salesLine = this.args().record();
+            baseItemId = salesLine.ItemId;
+            baseQty    = salesLine.SalesQty;
+            baseInventDim = salesLine.inventDim();
+        }
+
+        if (this.args().dataset() == tableNum(SalesQuotationLine))
+        {
+            salesQuotationLine = this.args().record();
+            baseItemId = salesQuotationLine.ItemId;
+            baseQty    = salesQuotationLine.SalesQty;
+            baseInventDim = salesQuotationLine.inventDim();
+            inventTable = salesQuotationLine.inventTable();
+        }
+
+        if (this.args().dataset() == tableNum(InventTable))
+        {
+            inventTable = this.args().record();
+            baseItemId = inventTable.ItemId;
+            baseQty    = 0;
+            baseInventDim.InventLocationId = inventTable.salesInventLocationId();
+            baseInventDim.InventSiteId     = inventTable.salesInventSiteId();
+            baseInventDim = InventDim::findOrCreate(baseInventDim);
+        }
+
+
+        if (salesLine.AVAItemSet == NoYes::Yes || inventTable.AVAItemSet)
+        {
+            QueryBuildDataSource   inventSumDS = InventSum_ds.query().dataSourceTable(tableNum(InventSum));
+            inventSumDS.clearDynalinks();
+
+            if (baseQty == 0)
+            {
+                baseQty = 1;
+            }
+            BOMVersion         baseBomVersion = BomVersion::findActive(baseItemId,
+                                                DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()),
+                                                baseQty,
+                                                baseInventDim
+                                                );
+
+            BOM locBOM;
+            int bomlineCount;
+        
+            while select locBOM
+            where   locBOM.BOMId    == baseBomVersion.BOMId
+                &&  locBOM.BOMType  == BOMType::Item
+                &&  locBOM.BOMQty   > 0
+            {
+                if (componentStr != '')
+                {
+                    componentStr += ', ';
+                }
+                componentStr += locBOM.ItemId;
+            }
+
+            inventSumDS.addRange(fieldNum(InventSum,ItemId)).value(componentStr);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refreshDisplay</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 26.01.2025
+    /// </summary>
+    public void refreshDisplay()
+    {
+        next refreshDisplay();
+
+        InventDimCtrl_Frm_OnhandItem  inventDimCtrl = this.inventDimSetupObject();
+        InventDimParm   inventdimPArm = inventDimCtrl.parmDimParmVisible();
+        boolean         shipAvailCtrVisible = false;
+
+        if(inventdimPArm.InventSiteIdFlag && inventdimPArm.InventLocationIdFlag && !inventdimPArm.WMSLocationIdFlag && !inventdimPArm.LicensePlateFlag && !inventdimPArm.InventBatchIdFlag && !inventdimPArm.InventSizeIdFlag)
+        {
+            shipAvailCtrVisible = true;
+        }
+
+        FormControl         shipAvailCtrl = this.design().controlName(formControlStr(InventOnhandItem,AVAavailForShipmentLocation));
+        if(shipAvailCtrl)
+        {
+            shipAvailCtrl.visible(shipAvailCtrVisible);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

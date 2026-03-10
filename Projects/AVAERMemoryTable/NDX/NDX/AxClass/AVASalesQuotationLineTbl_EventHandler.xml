@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesQuotationLineTbl_EventHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///   designed from AVA
+/// </summary>
+class AVASalesQuotationLineTbl_EventHandler
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>SalesQuotationLine_Pre_modifySalesQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   designed from AVA
+    /// </summary>
+    /// <param name="args">args</param>
+    [PreHandlerFor(tableStr(SalesQuotationLine), tableStaticMethodStr(SalesQuotationLine, modifySalesQty))]
+    public static void SalesQuotationLine_Pre_modifySalesQty(XppPrePostArgs args)
+    {
+        SalesQuotationLine                              salesQuotationLine = args.getArgNum(0);
+        InventMovementQuantityErrorCorrectionMethods    inventMovementQuantityErrorCorrectionMethods;
+        inventMovementQuantityErrorCorrectionMethods = InventMovementQuantityErrorCorrectionMethods::newParameters(false,false,false);
+        inventMovementQuantityErrorCorrectionMethods.parmMultiplicityErrorCorrectionMethod(false);
+
+        salesQuotationLine.QuantityErrorCorrectionMethods = inventMovementQuantityErrorCorrectionMethods.pack();
+        args.setArgNum(0,salesQuotationLine);       
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesQuotationLine_Pre_insert</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///   designed from AVA
+    /// </summary>
+    /// <param name="args">args</param>
+    [PreHandlerFor(tableStr(SalesQuotationLine), tableMethodStr(SalesQuotationLine, insert))]
+    public static void SalesQuotationLine_Pre_insert(XppPrePostArgs args)
+    {
+        SalesQuotationLine      salesQuotationLine = args.getThis();
+        salesQuotationLine.SkipDefaultingSalesPrice = NoYes::Yes;
+       
+        salesQuotationLine.KCS_LimitUnitFactor      = salesQuotationLine.AVAcalcLimitUnitFactor();
+        if (!salesQuotationLine.LineNum)
+        {
+            salesQuotationLine.LineNum                  = salesQuotationLine.buildLineNumFromLVPos();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesQuotationLine_Pre_itemIdChanged</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// pre item id changed event handler
+    /// </summary>
+    /// <param name = "args">XppPrePostArgs</param>
+    [PreHandlerFor(tableStr(SalesQuotationLine), tableMethodStr(SalesQuotationLine, itemIdChanged))]
+    public static void SalesQuotationLine_Pre_itemIdChanged(XppPrePostArgs args)
+    {
+        SalesQuotationLine          salesQuotationLine = args.getThis();
+        
+        if(SalesQuotationLine::avaCountSimilarItems(salesQuotationLine.QuotationId, salesQuotationLine.ItemId) == 2)
+        {
+            SalesQuotationLine::avaRemoveDuplicateMark(salesQuotationLine.QuotationId, salesQuotationLine.ItemId);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesQuotationLine_Post_itemIdChanged</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  designed from AVA
+    /// </summary>
+    /// <param name="args">args</param>
+    [PostHandlerFor(tableStr(SalesQuotationLine), tableMethodStr(SalesQuotationLine, itemIdChanged))]
+    public static void SalesQuotationLine_Post_itemIdChanged(XppPrePostArgs args)
+    {
+        SalesQuotationLine          salesQuotationLine = args.getThis();
+
+        if(SalesQuotationLine::existMultipleItem(salesQuotationLine))
+        {
+            salesQuotationLine.avaAddDuplicateMark();
+        }
+
+        salesQuotationLine.AVApriceCalculation();
+        salesQuotationLine.LineAmount = salesQuotationLine.calcLineAmountForced();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesQuotationLine_Post_modifiedField_Sales</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name="args">args</param>
+    [PostHandlerFor(tableStr(SalesQuotationLine), tableMethodStr(SalesQuotationLine, modifiedField_Sales))]
+    public static void SalesQuotationLine_Post_modifiedField_Sales(XppPrePostArgs args)
+    {
+        SalesQuotationLine      salesQuotationLine = args.getThis();
+        FieldId                 fieldId = args.getArgNum(1);
+        switch (fieldId)
+        {
+            case fieldNum(SalesQuotationLine,KCS_PriceDate) :
+                salesQuotationLine.AVApriceCalculation();
+                salesQuotationLine.LineAmount = salesQuotationLine.calcLineAmountForced();
+                break;
+
+            case fieldNum(SalesQuotationLine,SalesPrice) :
+                if (salesQuotationLine.KCS_CalcMark == 'M')
+                {
+                    salesQuotationLine.KCS_CalcMark = '';
+                }
+                //salesQuotationLine.AVAHKQuotCurrency = salesQuotationLine.AVAcalcHKQuotCurrency();
+                salesquotationLine.KCS_LimitPricePuffer     = salesquotationLine.AVAcalcLimitPricePuffer();
+                //if (!AVASalesParameters::find().SalesQuotImportModus)
+                if (!SysUserInfo::find(curUserId()).AVADataImportUser)
+                {
+                    salesQuotationLine.AVAupdateCalcFieldsQuotationLine(salesQuotationLine);
+                }
+                salesquotationLine.AVASetLVPrices(salesquotationLine);
+                break;
+            case fieldnum(SalesQuotationLine,LineDisc) :
+                salesQuotationLine.AVApriceCalculation(false,true,false,false);
+                salesQuotationLine.LineAmount = salesQuotationLine.calcLineAmountForced();
+                break;
+            case fieldNum(SalesQuotationLine,KCS_CRMIsAlternativeLine) :
+                salesQuotationLine.setLineAmount();
+                break;
+            default: 
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesQuotationLine_Post_modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name="args">args</param>
+    [PostHandlerFor(tableStr(SalesQuotationLine), tableMethodStr(SalesQuotationLine, modifiedField))]
+    public static void SalesQuotationLine_Post_modifiedField(XppPrePostArgs args)
+    {
+        FieldId fieldId = args.getArg(identifierStr(_fieldId));
+        SalesQuotationLine salesquotationLine = args.getThis();
+        switch (fieldId)
+        {                
+            case fieldNum(SalesQuotationLine, SalesQty) :
+                salesquotationLine.AVAsetQty();
+                salesquotationLine.AVASetLVPrices(salesquotationLine);
+                break;
+            case fieldNum(SalesQuotationLine, KCS_GAEBOZ) :
+                if (!salesquotationLine.SalesQty)
+                {
+                    salesquotationLine.SalesQty = KCS_GAEBPos::find(salesquotationLine.salesQuotationTable().KCS_GAEBImportID, salesquotationLine.KCS_GAEBOZ).ArtQty;
+                    salesquotationLine.salesQtyModified();
+                    salesquotationLine.AVAsetQty();
+                    salesquotationLine.AVASetLVPrices(salesquotationLine);
+                }
+                salesquotationLine.AVAUpdateGAEBOZ();
+                break;      //frn
+            case fieldNum(SalesQuotationLine, ItemId) :
+                if (salesquotationLine.KCS_GAEBOZ && !salesquotationLine.SalesQty && (!salesquotationLine.KCS_QLInternalPosition || salesquotationLine.KCS_QLInternalPosition == 1))
+                {
+                    salesquotationLine.SalesQty = KCS_GAEBPos::find(salesquotationLine.salesQuotationTable().KCS_GAEBImportID, salesquotationLine.KCS_GAEBOZ).ArtQty;
+                    salesquotationLine.salesQtyModified();
+                    salesquotationLine.AVAsetQty();
+                    salesquotationLine.AVASetLVPrices(salesquotationLine);
+                }
+                
+                break; //frn
+            case fieldNum(SalesQuotationLine, KCS_Span) :
+                //if (!AVASalesParameters::find().SalesQuotImportModus)
+                if (!SysUserInfo::find(curUserId()).AVADataImportUser)
+                {
+                    salesquotationLine.AVAsetQty(true);
+                    salesquotationLine.AVASetLVPrices(salesquotationLine);
+                }
+                else
+                {
+                    salesquotationLine.AVAsetQty();
+                    salesquotationLine.AVASetLVPrices(salesquotationLine);
+                }
+                break;        //frn
+            case fieldNum(SalesQuotationLine, KCS_SonderHK) :
+                salesquotationLine.AVAHKQuotCurrency        = salesquotationLine.AVAcalcHKQuotCurrency();
+                salesQuotationLine.KCS_LimitPrice           = salesQuotationLine.AVAcalcLimitPrice();
+                salesquotationLine.KCS_LimitPricePuffer     = salesquotationLine.AVAcalcLimitPricePuffer();
+                break;
+            case fieldNum(SalesQuotationLine, KCS_CRMIsAlternativeLine):
+                salesquotationLine.AVAsetAlternativeLine();
+                break;
+            case fieldNum(SalesQuotationLine, KCS_QLLVPosition) :
+            case fieldNum(SalesQuotationLine, KCS_QLInternalPosition) :
+                salesquotationLine.LineNum = salesquotationLine.buildLineNumFromLVPos();
+                break;
+            default : 
+                break;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesQuotationLine_onInserted</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANAde
+    /// </summary>
+    /// <param name="sender">SalesQuotationLine</param>
+    /// <param name="e">DataEventArgs</param>
+    [SuppressBPWarning('BPParameterNotUsed', 'Parameter e required in signature'),
+        DataEventHandler(tableStr(SalesQuotationLine), DataEventType::Inserted)]
+    public static void SalesQuotationLine_onInserted(Common sender, DataEventArgs e)
+    {
+        SalesQuotationLine  salesQuotationLine = sender as salesQuotationLine;
+
+        SalesQuotationTable::AVASetQuotNotPosted(salesQuotationLine.QuotationId);
+
+        if (FormDataUtil::isFormDataSource(salesQuotationLine))
+        {
+            FormDataUtil::getFormDataSource(salesQuotationLine).research(true);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesQuotationLine_onUpdated</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANAde
+    /// </summary>
+    /// <param name="sender">SalesQuotationLine</param>
+    /// <param name="e">DataEventArgs</param>
+    [SuppressBPWarning('BPParameterNotUsed', 'Parameter e required in signature'),
+        DataEventHandler(tableStr(SalesQuotationLine), DataEventType::Updated)]
+    public static void SalesQuotationLine_onUpdated(Common sender, DataEventArgs e)
+    {
+        SalesQuotationLine  salesQuotationLine = sender as salesQuotationLine;
+
+        if (FormDataUtil::isFormDataSource(salesQuotationLine))
+        {
+            FormDataUtil::getFormDataSource(salesQuotationLine).research(true);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SalesQuotationLine_onDeleted</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///designed by AVANAde
+    /// </summary>
+    /// <param name="sender">SalesQuotationLine</param>
+    /// <param name="e">DataEventArgs</param>
+    [SuppressBPWarning('BPParameterNotUsed', 'Parameter e required in signature'),
+        DataEventHandler(tableStr(SalesQuotationLine), DataEventType::Deleted)]
+    public static void SalesQuotationLine_onDeleted(Common sender, DataEventArgs e)
+    {
+        SalesQuotationLine  salesQuotationLine = sender as salesQuotationLine;
+
+        SalesQuotationTable::AVASetQuotNotPosted(salesQuotationLine.QuotationId);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

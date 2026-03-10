@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVARUMProdTableTbl_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension class for the ProdTable table.
+/// </summary>
+[ExtensionOf(tableStr(ProdTable))]
+final class AVARUMProdTableTbl_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>sendMail_AVA</Name>
+				<Source><![CDATA[
+        /// <summary>
+    /// Sends an email notification for the production order.
+    /// </summary>
+    /// <param name = "_interactive">Indicates whether the email should be sent interactively.</param>
+    void sendMail_AVA(boolean _interactive = false)
+    {
+        #define.htmltab('<span style="white-space:pre">&#9;</span>')
+
+        Email email;
+        SalesTable salesTable;
+        
+        //TODO: RUMSalesParameters check for walk-in customer if implemented
+        //if (this.CustAccount == RUMSalesParameters::find().CustAccount)
+        //{
+        //    // Walk-in customer
+        //    return;
+        //}
+
+        salesTable = this.salesTable_AVA();
+                
+        if (!salesTable)
+        {
+            return;
+        }
+
+        if (salesTable.CustAccount == AVARUMCashSalesParameters::find().Customer)
+        {
+            // Walk-in customer
+            return;
+        }
+                                         
+        email = AVARUMCustomerPackagingTable::findEmailByDisplayProductNumber(salesTable.CustAccount, this.productNumber());
+
+        if (email)
+        {
+            var prodParameters = ProdParameters::find();
+
+            if (!prodParameters.AVARUMSenderEmail)
+            {
+                throw Global::error("@AVARUM:SenderEmailNotSetup");
+            }
+
+            var custTable = CustTable::find(salesTable.CustAccount);
+
+            str subject = strfmt("@AVARUM:Production_EMail_Subject_Start", salesTable.SalesId, salesTable.CustAccount, custTable.name());
+            str messageTxt = "@AVARUM:Production_EMail_Message";
+            messageTxt += strfmt("@AVARUM:Production_EMail_Message_Order" + #htmltab + "%1<br>", salesTable.SalesId);
+            messageTxt += strfmt("@AVARUM:Production_EMail_Message_Customer" + #htmltab + "%1 %2<br>", salesTable.CustAccount, custTable.name());
+            messageTxt += strfmt("@AVARUM:Production_EMail_Message_Prod" + #htmltab + "%1<br>", this.ProdId);
+            messageTxt += strfmt("@AVARUM:Production_EMail_Message_Item" + #htmltab + "%1 %2<br>", this.ItemId, this.itemName());
+            messageTxt += strfmt("@AVARUM:Production_EMail_Message_Qty" + #htmltab+#htmltab + "%1 %2<br>", this.QtyStUp, this.inventTable().inventUnitId());
+            messageTxt += strfmt("@AVARUM:Production_EMail_Message_Date" + #htmltab + "%1", this.SchedStart);
+
+            if (messageTxt)
+            {
+                try
+                {
+                    var messageBuilder = new SysMailerMessageBuilder();
+                    messageBuilder.setFrom(prodParameters.AVARUMSenderEmail);
+                    messageBuilder.setSubject(subject);
+                    messageBuilder.setBody(messageTxt, false);
+                    messageBuilder.addTo(email);
+                        
+                    if (_interactive)
+                    {
+                        SysMailerFactory::sendInteractive(messageBuilder.getMessage());
+                    }
+                    else
+                    {
+                        SysMailerFactory::sendNonInteractive(messageBuilder.getMessage());
+                    }
+                }
+                catch (Exception::Error)
+                {
+                    throw Global::error("@ApplicationFoundation:EmailProviderNotFound");
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>salesTable_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the sales table associated with the current production order.
+    /// </summary>
+    /// <returns></returns>
+    public SalesTable salesTable_AVA()
+    {
+        SalesTable salesTable;
+
+        if (this.AVARUMSalesRefId)
+        {
+            salesTable = SalesTable::find(this.AVARUMSalesRefId);
+        }
+        
+        return salesTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCustomerName_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the customer name associated with the current production order.
+    /// </summary>
+    /// <returns>Returns the customer name.</returns>     
+    public display CustName getCustomerName_AVA()
+    {
+        CustName custName;
+        SalesTable salesTable;
+        salesTable = this.salesTable_AVA();
+
+        if (salesTable)
+        {
+            custName = CustTable::find(salesTable.CustAccount).name();
+        }
+
+        return custName;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSalesShippingDate_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the confirmed shipping date from the associated sales order.
+    /// </summary>
+    /// <returns>Returns the confirmed shipping date.</returns>
+    public display SalesShippingDateConfirmed getSalesShippingDate_AVA()
+    {
+        SalesShippingDate salesShippingDate;
+        SalesTable salesTable;
+        salesTable = this.salesTable_AVA();
+
+        if (salesTable)
+        {
+            salesShippingDate = salesTable.ShippingDateConfirmed ?  salesTable.ShippingDateConfirmed : salesTable.ShippingDateRequested;
+        }
+
+        return salesShippingDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkSalesReference</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks and updates the sales reference fields.
+    /// </summary>
+    void checkSalesReference()
+    {
+        if (this.InventRefType == InventRefType::Sales)
+        {
+            if (this.InventRefId)
+            {
+                if (this.InventRefId != this.AVARUMSalesRefId)
+                {
+                    this.AVARUMSalesRefId = this.InventRefId;
+                }
+            }
+
+            if (this.InventRefTransId)
+            {
+                if (this.InventRefTransId != this.AVARUMSalesRefTransId)
+                {
+                    this.AVARUMSalesRefTransId = this.InventRefTransId;
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromSplitProdTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initializes the current instance from a split production table.
+    /// </summary>
+    /// <param name = "_prodTable">The production table to copy from.</param>
+    public void initFromSplitProdTable(ProdTable _prodTable)
+    {
+        next initFromSplitProdTable(_prodTable);
+
+        this.AVARUMSalesRefId = _prodTable.AVARUMSalesRefId;
+        this.AVARUMSalesRefTransId = _prodTable.AVARUMSalesRefTransId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findSalesRefTransId_AVA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the sales reference transaction based on the provided sales transaction ID.
+    /// </summary>
+    /// <param name = "_salesTransId">The sales transaction ID to look up.</param>
+    /// <param name = "_forUpdate">Indicates whether to lock the record for update.</param>
+    /// <returns>The corresponding ProdTable record.</returns>
+    public static ProdTable findSalesRefTransId_AVA(InventTransId  _salesTransId, boolean _forUpdate = false)
+    {
+        ProdTable prodTable;
+
+        prodTable.selectForUpdate(_forUpdate);
+
+        if (_salesTransId)
+        {
+            select firstonly prodTable
+            where prodTable.AVARUMSalesRefTransId == _salesTransId;
+        }
+
+        return prodTable;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

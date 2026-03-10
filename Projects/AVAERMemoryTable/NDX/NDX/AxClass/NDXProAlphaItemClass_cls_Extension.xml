@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXProAlphaItemClass_cls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 04.06.24
+/// </summary>
+[ExtensionOf(classStr(NDXProAlphaItemClass))]
+final class NDXProAlphaItemClass_cls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>fillFieldsInventTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.06.24
+    /// </summary>
+    /// <param name = "_inventTable">InventTable</param>
+    /// <param name = "_nDXProAlphaItem">NDXProAlphaItem</param>
+    /// <param name = "_ecoResProductTranslation">EcoResProductTranslation</param>
+    protected void fillFieldsInventTable(InventTable _inventTable,
+        NDXProAlphaItem _nDXProAlphaItem,
+        EcoResProductTranslation _ecoResProductTranslation)
+    {
+        next fillFieldsInventTable(_inventTable, _nDXProAlphaItem, _ecoResProductTranslation);
+
+        _ecoResProductTranslation.NDXProductName1 = _nDXProAlphaItem.Bezeichnung_1;
+        _ecoResProductTranslation.NDXProductName2 = _nDXProAlphaItem.Bezeichnung_2;
+        _inventTable.KCS_IsCatalogItem = _nDXProAlphaItem.Y_Katalogartikel;
+        _inventTable.NDX_ShowItemInCatalog = _inventTable.KCS_IsCatalogItem;
+        _inventTable.KCS_GoodsId = this.syncKCS_GoodsGroup(_nDXProAlphaItem);
+        _inventTable.KCS_IsSalesItem = _inventTable.KCS_IsCatalogItem;
+        _inventTable.KCS_ItemUsageId = this.getItemUsageId(_nDXProAlphaItem);
+        _inventTable.NDX_REACH_Info = NoYes::Yes;
+        _inventTable.NDX_REACH_Listdate = str2DateDMY('19/12/2012');
+        _inventTable.NDX_RoHS_Info = NoYes::Yes;
+        _inventTable.KCS_KAOItemState = 'OK';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getItemUsageId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 02.07.24
+    /// </summary>
+    /// <param name = "_nDXProAlphaItem">NDXProAlphaItem</param>
+    /// <returns>KCS_ItemUsageId</returns>
+    private KCS_ItemUsageId getItemUsageId(NDXProAlphaItem _nDXProAlphaItem)
+    {
+        KCS_ItemUsageId kCS_ItemUsageId;
+        switch (_nDXProAlphaItem.ArtikelArt)
+        {
+            case 1:
+            case 10:
+            case 15:
+            case 45:
+                kCS_ItemUsageId = 'HL';
+                break;
+            case 13:
+                kCS_ItemUsageId = 'SA';
+                break;
+            case 17:
+            case 18:
+                kCS_ItemUsageId = 'MAL';
+                break;
+            default:
+                kCS_ItemUsageId = '';
+        }
+        return kCS_ItemUsageId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>syncKCS_GoodsGroup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 07.06.24
+    /// </summary>
+    /// <param name = "_nDXProAlphaItem">NDXProAlphaItem</param>
+    /// <returns>KCS_GoodsId</returns>
+    private KCS_GoodsId syncKCS_GoodsGroup(NDXProAlphaItem _nDXProAlphaItem)
+    {
+        if (_nDXProAlphaItem.Teilegruppe)
+        {
+            KCS_GoodsGroup goodsGroup = KCS_GoodsGroup::find(_nDXProAlphaItem.Teilegruppe, true);
+            if (!goodsGroup)
+            {
+                goodsGroup.KCS_GoodsId = _nDXProAlphaItem.Teilegruppe;
+            }
+            if (goodsGroup.KCS_GoodsDescription != _nDXProAlphaItem.TeileGruppe_Bez)
+            {
+                goodsGroup.KCS_GoodsDescription = _nDXProAlphaItem.TeileGruppe_Bez;
+            }
+            if (goodsGroup.validateWrite())
+            {
+                ttsbegin;
+                goodsGroup.write();
+                ttscommit;
+            }
+            if (_nDXProAlphaItem.KCS_GoodsGroup != goodsGroup.RecId)
+            {
+                _nDXProAlphaItem.selectForUpdate(true);
+                _nDXProAlphaItem.KCS_GoodsGroup = goodsGroup.RecId;
+                ttsbegin;
+                _nDXProAlphaItem.update();
+                ttscommit;
+            }
+        }
+        return _nDXProAlphaItem.Teilegruppe;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXProAlphaItemClass_nDXpAItemNotValid</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 10.07.24
+    /// </summary>
+    /// <param name="_inventTable">InventTable</param>
+    /// <param name="_result">EventHandlerResult</param>
+    [SubscribesTo(classStr(NDXProAlphaItemClass), staticDelegateStr(NDXProAlphaItemClass, nDXpAItemNotValid))]
+    public static void NDXProAlphaItemClass_nDXpAItemNotValid(InventTable _inventTable, EventHandlerResult _result)
+    {
+        const AVASCMItemState itemStateNew = 'ARCHIV';
+        if (_inventTable.KCS_KAOItemState != itemStateNew)
+        {
+            Info(strFmt("@NDXBase:NDXItemStateOldNew", _inventTable.ItemId, _inventTable.KCS_KAOItemState, itemStateNew));
+            _inventTable.selectForUpdate(true);
+            _inventTable.KCS_KAOItemState = itemStateNew;
+            ttsbegin;
+            _inventTable.write();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXRicoReqDocuTransferResultsService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Batch job service class
+/// </summary>
+public final class NDXRicoReqDocuTransferResultsService extends SysOperationServiceBase
+{
+    Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferRequest request;
+    System.Net.Http.HttpResponseMessage response;
+
+    identifierName className;
+    identifierName methodName;
+
+    str importKey = 'ImportKey';
+    NDXRicoReqDocuTransferResultsController controller;
+
+    utcdatetime lastCheck;
+    KCS_KBVParameters lKCS_KBVParameters;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmController</Name>
+				<Source><![CDATA[
+    public NDXRicoReqDocuTransferResultsController parmController(NDXRicoReqDocuTransferResultsController _controller = controller)
+    {
+        controller = _controller;
+        return controller;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    private void new()
+    {
+        SysOperationExecutionMode executionMode = SysOperationExecutionMode::Asynchronous;
+                
+        className = classId2Name(classIdGet(this));
+        methodName = 'importRicoDocumentTransferResults';
+        importKey = strFmt('%1%2%3',className, methodName, importKey);
+        lastCheck = DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(), DateTimeUtil::getUserPreferredTimeZone());
+
+        controller = NDXRicoReqDocuTransferResultsController::construct(className, methodName, executionMode);
+
+        lKCS_KBVParameters = KCS_KBVParameters::find();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>importRicoDocumentTransferResults</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// import Rico results
+    /// </summary>
+    /// <param name = "_NDXRicoReqDocuTransferResultsContract">NDXRicoReqDocuTransferResultsContract record</param>
+    public void importRicoDocumentTransferResults(NDXRicoReqDocuTransferResultsContract _NDXRicoReqDocuTransferResultsContract)
+    {
+        NDXRicoReqDocProt lNDXRicoReqDocProt;
+        boolean all;
+
+        all = _NDXRicoReqDocuTransferResultsContract.parmAllMissingTransferedRicoDocuments();
+        lNDXRicoReqDocProt = _NDXRicoReqDocuTransferResultsContract.parmNdxRicoReqDocProt();
+       
+        if(all)
+        {
+            while select lNDXRicoReqDocProt
+                where (lNDXRicoReqDocProt.TransferedToRico
+                    && lNDXRicoReqDocProt.Transfer2RK == DateTimeUtil::minValue())
+                    || (lNDXRicoReqDocProt.Transfer2RK > DateTimeUtil::minValue() && lNDXRicoReqDocProt.RICOStatus == NDXRICODMSStatus::Processing)
+            {
+                NDXRicoReqDocuTransfer::logFromRico(lNDXRicoReqDocProt);
+            }
+        }
+        else
+        {
+            NDXRicoReqDocuTransfer::logFromRico(lNDXRicoReqDocProt);
+        }
+        
+        //At the end we resend all failed files 
+        NDXRicoReqDocuTransfer::resendFailedDocumentsToRico();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>importRicoDocumentTransferResult</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// import Rico result
+    /// </summary>
+    /// <param name = "_ndxRicoReqDocProt">NDXRicoReqDocProt record</param>
+    public void importRicoDocumentTransferResult(NDXRicoReqDocProt _ndxRicoReqDocProt)
+    {
+        System.Exception ex;
+        str message = '';
+
+        str secretValue = KeyVaultCertificateHelper::getManualSecretValue(KeyVaultCertificateTable::findByName(KCS_KBVParameters::find().NDXKeyVaultSecretNameConnectionStringAzureRelayD365FO).RecId);
+        Niedax.AzureRelayHelper.AzureRelayParameter azureRelayPrameter = Niedax.AzureRelayHelper.AzureRelayParameter::deserialize(secretValue);
+        Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferResponseContent responseContent;
+
+        if(_ndxRicoReqDocProt)
+        {
+            request = new Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferRequest();
+
+            Niedax.RICOSchnittstelle_Nx.RICOtblAx2Rk_DMS tblAx2Rk_DMS = new Niedax.RICOSchnittstelle_Nx.RICOtblAx2Rk_DMS(lKCS_KBVParameters.NDXTestEnvironment);
+            
+            tblAx2Rk_DMS.ID = _ndxRicoReqDocProt.RicoLogID;
+            request.rICOtblAx2Rk_DMS = tblAx2Rk_DMS;
+
+            response = Niedax.AzureRelayHelper.AzureRelayHelperNew::sendRequestToListener(azureRelayPrameter, request);
+
+            if(response.StatusCode == System.Net.HttpStatusCode::OK)
+            {
+                try
+                {
+                    responseContent = NDXRicoRelayCommunication::analyzeResponse(response);
+                    this.prozessRicoLog(responseContent, _ndxRicoReqDocProt);
+                    message = responseContent.Message;
+                }
+                catch(ex)
+                {
+                    message = ex.Message;
+                }
+            }
+            else
+            {
+                message = strFmt('%1', response.ReasonPhrase);
+            }
+        }
+        else
+        {
+            message = "@NDX:NDXRicoReqDocuTransferResultsImportInfo";
+        }
+        if(message != '')
+        {
+            info(message);
+        }
+
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>prozessRicoLog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Process the the recieved request content
+    /// </summary>
+    /// <param name = "_responseContent">response content</param>
+    /// <param name = "_ndxRicoReqDocProt">NDXRicoReqDocProt record</param>
+    private void prozessRicoLog(Niedax.AzureServiceBus.Models.RicoKalkDocumentTransfer.Relay.DocumentTransferResponseContent _responseContent, NDXRicoReqDocProt _ndxRicoReqDocProt)
+    {
+        NDXRicoReqDocProt lNDXRicoReqDocProt = NDXRicoReqDocProt::find(_ndxRicoReqDocProt.RecId, true);
+        Niedax.RICOSchnittstelle_Nx.RICOtblAx2Rk_DMS record = _responseContent.record;
+
+        if(!lNDXRicoReqDocProt)
+        {
+            return;
+        }
+
+        if(_responseContent.Error && record.ID < 0)
+        {
+            ttsbegin;
+            lNDXRicoReqDocProt.delete();
+            ttscommit;
+        }
+        else
+        {
+            ttsbegin;
+            lNDXRicoReqDocProt.RicoSatusStr = record.Status;
+            lNDXRicoReqDocProt.RICOComment = record.Bemerkung;
+            lNDXRicoReqDocProt.Transfer2RK = record.Transfer2RK;
+            lNDXRicoReqDocProt.update();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>replaceCharacters</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// relaces german charcters in a word
+    /// </summary>
+    /// <param name = "_word">word</param>
+    /// <returns>modified word</returns>
+    private str replaceCharacters(str _word)
+    {
+        str word = strlwr(_word);
+        word = StrLRTrim(word);
+
+        word = StrReplace(word, 'ä', 'ae');
+        word = StrReplace(word, 'ö', 'oe');
+        word = StrReplace(word, 'ü', 'ue');
+        word = strReplace(word, 'ß', 'ss');
+
+        return word;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>startImportBatch</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Stats the batch job
+    /// </summary>
+    /// <param name = "_args">aguments</param>
+    static public void startImportBatch(Args _args)
+    {
+        NDXRicoReqDocProt ndxRicoReqDocProt;
+        NDXRicoReqDocuTransferResultsController controller;
+        NDXRicoReqDocuTransferResultsService importService;
+
+        SysOperationStartResult result;
+
+        importService = NDXRicoReqDocuTransferResultsService::construct();
+        ndxRicoReqDocProt = _args.record();
+
+        controller = importService.parmController();
+
+        NDXRicoReqDocuTransferResultsContract contractImportRicoDocuTransfer =  controller.getDataContractObject();
+        contractImportRicoDocuTransfer.parmNdxRicoReqDocProt(ndxRicoReqDocProt);
+        contractImportRicoDocuTransfer.initialize();
+        contractImportRicoDocuTransfer.buildDialogParameters(controller);
+        
+        result = controller.startOperation();
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Constructor
+    /// </summary>
+    /// <returns>NDXRicoReqDocuTransferResultsService instance</returns>
+    static public NDXRicoReqDocuTransferResultsService construct()
+    {
+        return new NDXRicoReqDocuTransferResultsService();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        if(_args != null && _args.dataset() == tableNum(NDXRicoReqDocProt) && _args.record())
+        {
+            
+            NDXRicoReqDocuTransferResultsService::startImportBatch(_args);
+
+            if(FormDataUtil::isFormDataSource(_args.record()))
+            {
+                FormDataUtil::getFormDataSource(_args.record()).research();
+            }
+            
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

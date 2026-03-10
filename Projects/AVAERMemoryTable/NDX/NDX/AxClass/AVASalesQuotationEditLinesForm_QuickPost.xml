@@ -1,0 +1,427 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesQuotationEditLinesForm_QuickPost</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// N.Freidenberger 23.07.
+/// </summary>
+internal final class AVASalesQuotationEditLinesForm_QuickPost   extends SalesQuotationEditLinesForm_Sales_Send
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 23.07.2024
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean createJournal()
+    {
+        journalList = this.newJournalList();
+        this.insertJournal();
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 23.07.2024
+    /// </summary>
+    protected void  insertJournal()
+    {
+        ttsbegin;
+
+        numberSeq           = this.allocateNumAndVoucher();
+        [number, voucher]    = this.getNumAndVoucher();
+
+        if (this.updateNow())
+        {
+            this.postUpdate();
+
+            TransactionLog::create(this.transactionLogType(),this.transactionLogTxt());
+            ttscommit;
+
+        }
+        else
+        {
+            throw error("@SYS21533");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateNow</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 23.07.2024
+    /// </summary>
+    /// <returns>updateNow</returns>
+    boolean updateNow()
+    {
+        this.initJournal();
+     //   this.initMarkup();
+
+        this.displayProgress();
+
+        salesQuotationLine.clear();
+        salesQuotationParmLine.clear();
+
+        //recordListSalesQuotationParmLine.first(salesQuotationParmLine);
+        QueryRun   saleeQuotParmLine = new QueryRun(salesQuotationParmTable.querySalesQuotationParmLine());               
+        while (saleeQuotParmLine.next())
+        { 
+            salesQuotationParmLine = saleeQuotParmLine.get(tableNum(SalesQuotationParmLine)) ;
+            if (!this.checkDiscardLine())
+            {
+                salesQuotationLine = this.getSalesQuotationLine(salesQuotationParmLine);
+
+                setPrefix(#PreFixField(salesQuotationLine, QuotationId));
+
+                this.displayProgress();
+
+                #LinePrefix(salesQuotationLine, salesQuotationLine.inventdim().preFixProductDim(EcoResProductDimGroupSetup::newItemId(salesQuotationLine.ItemId)))
+
+                this.calcLine(salesQuotationLine, salesQuotationParmLine);
+                this.writeJournalLine();
+            }
+        }
+
+        if (!this.checkIfSomethingIsPosted())
+        {
+            return false;
+        }
+
+        progress.setText("@SYS25781");
+        this.writeJournal();
+        this.avaDocuRefQuickCopy();
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>writeJournalLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 23.07.2024
+    /// </summary>
+    protected void writeJournalLine()
+    {
+        Label   label = new Label(custQuotationJour.LanguageId);
+        SalesQuotationTable lineSalesQuotationTable = salesQuotationLine.salesQuotationTable();
+
+        lineDeliveryPostalAddress = salesQuotationParmTable.DeliveryPostalAddress ? salesQuotationParmTable.DeliveryPostalAddress : salesQuotationLine.DeliveryPostalAddress;
+        lineDeliveryName     = salesQuotationParmTable.DeliveryName ? salesQuotationParmTable.DeliveryName
+                                                                    : salesQuotationLine.deliveryName();
+        lineDlvMode          = salesQuotationParmTable.DlvMode ? salesQuotationParmTable.DlvMode
+                                                               : (salesQuotationLine.DlvMode ? salesQuotationLine.DlvMode : salesQuotationLine.salesQuotationTable().DlvMode);
+
+        //super();
+
+        custQuotationTrans.initFromSalesQuotationLine(salesQuotationLine);
+        custQuotationTrans.setLinenum(sumByLineNum);
+        sumByLineNum++;
+
+        custQuotationTrans.SalesId          = custQuotationJour.SalesId;
+        custQuotationTrans.QuotationId      = custQuotationJour.QuotationId;
+        custQuotationTrans.QuotationDate    = custQuotationJour.QuotationDate;
+        custQuotationTrans.Qty              = updateNow;
+        custQuotationTrans.InventQty        = updateNowInvent;
+        custQuotationTrans.PdsCWQty         = updateCWNow;
+        custQuotationTrans.ProjTransType    = QuotationProjTransType::Item;
+        custQuotationTrans.LineAmount       = salesQuotationLine.LineAmount;
+        //custQuotationTrans.LineAmountTax    = lineValueInclTax - lineValue;
+
+        //custQuotationTrans.TaxWriteCode     = this.tax().taxWriteCode();
+
+        custQuotationTrans.LineHeader = label.extractString(literalstr("@SYS84505"))    + ' ' + salesQuotationLine.QuotationId                   + ' '
+                                      + label.extractString(literalstr("@SYS24704")) + ' ' + lineSalesQuotationTable.CustAccount  + ' '
+                                      + label.extractString(literalstr("@SYS7924")) + ' ' + salesQuotationLine.deliveryAddress().Address                + ' '
+                                      + (lineSalesQuotationTable.CustPurchaseOrder ? (label.extractString(literalstr("@SYS9452")) + ' ' + lineSalesQuotationTable.CustPurchaseOrder + ' ') : '')
+                                      + custQuotationTrans.LineHeader;
+
+        custQuotationTrans.LineAmountMST     = custQuotationJour.amountMST(custQuotationTrans.LineAmount);
+        custQuotationTrans.LineAmountTaxMST  = custQuotationJour.amountMST(custQuotationTrans.LineAmountTax);
+
+        //nventReportDimHistory::addFromCustQuotationTrans(custQuotationTrans);
+        custQuotationTrans.insert();
+
+        //Docu::copy(salesQuotationLine, custQuotationTrans);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>writeJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 23.07.2024
+    /// </summary>
+    protected void  writeJournal()
+    {
+        AVASpecialDiscQuotationJour         specialDiscQuotationJour;
+        CustQuotationTrans                  loccustQuotationTrans;
+        AmountMST                           quotLineAmount;
+        custQuotationJour                   locJour;
+        //salesQuotationTable                 salesQuotationTable;
+        DocuRef                             docuRef;
+        DocuTypeId                          GAEBDocuTypeId;
+
+        if (lineDeliveryName || lineDeliveryPostalAddress)
+        {
+            custQuotationJour.DeliveryPostalAddress     = lineDeliveryPostalAddress;
+            custQuotationJour.DeliveryName              = lineDeliveryName;
+        }
+
+     /*   custQuotationJour.SalesBalance      = salesQuotationTotals.totalBalance();
+        custQuotationJour.CostValue         = salesQuotationTotals.totalCostValue();
+        custQuotationJour.EndDisc           = salesQuotationTotals.totalEndDisc();
+        custQuotationJour.SumLineDisc       = salesQuotationTotals.totalLineDisc();
+        custQuotationJour.SumMarkup         = salesQuotationTotals.totalMarkup();
+        custQuotationJour.SumTax            = salesQuotationTotals.totalTaxAmount();
+        custQuotationJour.RoundOff          = salesQuotationTotals.totalRoundOff();
+
+        custQuotationJour.RespiteDate       = salesQuotationParmUpdate.RespiteDate ? salesQuotationParmUpdate.RespiteDate
+                                                                                   : salesQuotationTable.QuotationExpiryDate;
+        custQuotationJour.QuotationAmount   = salesQuotationTotals.totalAmount();      */
+
+        custQuotationJour.RespiteDate       = salesQuotationParmUpdate.RespiteDate ? salesQuotationParmUpdate.RespiteDate
+                                                                                   : salesQuotationTable.QuotationExpiryDate;
+
+        // <GTE>
+        if (TaxSolutionScopeIntegrationUtil::isCompanyEnabled())
+        {
+            custQuotationJour.QuotationAmount   = salesQuotationTotals.totalAmountGTE();
+        }
+        // </GTE>
+
+        custQuotationJour.insert();
+
+       // Docu::copy(salesQuotationTable, custQuotationJour);
+
+        journalList.ins(custQuotationJour);
+
+     //   this.writeTmpTaxWorkTrans(custQuotationJour.RecId);
+      /*  journalTmpTaxWorkTrans.copyFromTax(
+            this.tax(),
+            custQuotationJour.RecId,
+            custQuotationJour.TableId);    */
+
+        this.writeJournalSalesLink();
+
+        GAEBDocuTypeId  = smmParametersTable::find().KCS_DocuTypeIdForGAEB;
+
+        /*  delete_from docuRef where docuRef.RefTableId == tableNum(CustQuotationJour)
+                                          && docuRef.RefRecId == custQuotationJour.RecId
+                                          && docuRef.TypeId == GAEBDocuTypeId;  */
+
+        specialDiscQuotationJour.initFromQuotationJour(this.custQuotationJour, this.salesQuotationTable().QuotationId);
+        specialDiscQuotationJour.insert();
+
+        select sum(LineAmount)  from loccustQuotationTrans
+            where loccustQuotationTrans.QuotationId   == custQuotationJour.QuotationId
+               && loccustQuotationTrans.QuotationDate == custQuotationJour.QuotationDate
+            && loccustQuotationTrans.SalesId       == custQuotationJour.SalesId;
+        quotLineAmount = loccustQuotationTrans.LineAmount;
+                
+        locJour = custQuotationJour;
+        this.parmCustQuotationJourRecId(custQuotationJour.RecId);
+        locJour.selectForUpdate();
+       
+        locJour.KCS_SendMode        = this.parmSendMode();
+        locJour.KCS_printWeights    = this.parmPrintWeights();
+        if (locjour.kcs_printWeights)
+        {
+            locJour.KCS_TotalWeight = locJour.AVAsetWeightTotal(this.salesQuotationTable());
+        }
+
+        locJour.AVAQuotationMatValue = this.avaCalcQuotationMatValue(custQuotationJour.QuotationId, custQuotationJour.QuotationDate);
+        
+        quotLineAmount = locJour.AVAQuotationMatValue  - specialDiscQuotationJour.SpecialDiscountAmount1 - specialDiscQuotationJour.SpecialDiscountAmount2 - specialDiscQuotationJour.SpecialDiscountAmount3;
+        locJour.KCS_QuotationAmount = quotLineAmount;
+        locJour.doUpdate();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 23.07.2024
+    /// </summary>
+    /// <param name = "_salesQuotationLine">_salesQuotationLine</param>
+    /// <param name = "_salesQuotationParmLine">_salesQuotationParmLine</param>
+    protected void  calcLine(SalesQuotationLine         _salesQuotationLine,
+                             SalesQuotationParmLine     _salesQuotationParmLine)
+    {
+        //_salesQuotationLine = this.getSalesQuotationLine(_salesQuotationParmLine);
+        updateNow           = _salesQuotationParmLine.DeliverNow;
+        updateNowInvent     = _salesQuotationParmLine.InventNow;
+        updateCWNow         = _salesQuotationParmLine.PdsCWDeliverNow;
+     //   lineValue           = _salesQuotationLine.calcLineAmountExclTax(updateNow, _salesQuotationParmLine.salesQuotationParmTable().Transdate, tax);
+     //   lineValueInclTax    = _salesQuotationLine.calcLineAmount(updateNow);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDocuRefQuickCopy</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 31.07.2024
+    /// </summary>
+    public void avaDocuRefQuickCopy()
+    {
+        DocuRef                 docuRef;
+        DocuRef                 copyDocuRef;
+        RecordInsertList        docuRefInsertList = new RecordInsertList(tableNum(DocuRef));
+        CustQuotationTrans      locCustQuotationTrans;
+        SalesQuotationLine      locSalesQuotationLine;
+
+        while select docuRef order by KCS_TCVLineNum
+            where docuRef.RefTableId == tableNum(SalesQuotationTable)
+               && docuRef.RefRecId   == salesQuotationTable.RecId
+        {
+            copyDocuRef.clear();
+            copyDocuRef.data(docuRef);
+            copyDocuRef.RefTableId = tableNum(CustQuotationJour);
+            copyDocuRef.RefRecId   = custQuotationJour.RecId;
+            docuRefInsertList.add(copyDocuRef);                                
+        }
+
+        while select docuRef order by KCS_TCVLineNum
+            join  locSalesQuotationLine
+                where locSalesQuotationLine.TableId == docuRef.RefTableId
+                   && locSalesQuotationLine.RecId   == docuRef.RefRecId
+                   && locSalesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+                     join locCustQuotationTrans
+                        where locCustQuotationTrans.InventTransId == locSalesQuotationLine.InventTransId
+                           && locCustQuotationTrans.QuotationId   == custQuotationJour.QuotationId
+                           && locCustQuotationTrans.QuotationDate == custQuotationJour.QuotationDate
+        {
+            copyDocuRef.clear();
+            copyDocuRef.data(docuRef);
+            copyDocuRef.RefTableId = tableNum(CustQuotationTrans);
+            copyDocuRef.RefRecId   = locCustQuotationTrans.RecId;
+            docuRefInsertList.add(copyDocuRef);
+        }
+
+        docuRefInsertList.insertDatabase();
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>prePromptInit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 20.09.2024
+    /// </summary>
+    void prePromptInit()
+    {
+        if (!this.AVAcheckQuotationLinesItemStatus())
+        {
+            throw error("@NDX:NXASalwsQuotCancelItemStatusError");
+        }
+        if (!this.AVAitemValidation())
+        {
+            throw error("@NDX:NXASalwsQuotCancelItemStatusError");
+        }
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcheckQuotationLinesItemStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 20.09.2024
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean AVAcheckQuotationLinesItemStatus()
+    {
+        KCS_KAOItemStateTable           itemStateTable;
+        SalesQuotationLine              locSalesQUotationLine;
+        InventTable                     locInventTable;
+        boolean                         ret = true;
+        str                             itemsStr;
+
+        while select ItemId, KCS_QLLVPosition from locSalesQUotationLine
+            where locSalesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+            join   ItemId from  locInventTable
+            where locInventTable.ItemId == locSalesQUotationLine.ItemId
+            join itemStateTable
+             where itemStateTable.ItemState == locInventTable.KCS_KAOItemState
+                && itemStateTable.SalesLock == NoYes::Yes
+        {
+            ret = false;
+
+            if (itemsStr != '')
+            {
+                itemsStr += ' \n';
+            }
+            itemsStr += strFmt("@NDX:NXASalesQuotLineItemStateError",locSalesQUotationLine.KCS_QLLVPosition,locInventTable.ItemId);
+        }
+
+        if (itemsStr != '')
+        {
+            warning(itemsStr);
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAitemValidation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger TASK  008494 19.11.2024
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean AVAitemValidation()
+    {
+        SalesQuotationLine          locSalesQuotationLine;
+        boolean                     ret = true;
+        container                   result;   
+        str                         errorStr;
+
+        while select ItemId, QuotationId from locSalesQuotationLine
+            where locSalesQuotationLine.QuotationId == salesQuotationTable.QuotationId
+        {
+            result = NDX_ItemValidity::checkValidityQuotation(locSalesQuotationLine.ItemId,salesQuotationTable.QuotationId,salesQuotationTable.KCS_KBVBuildingProjectID,salesQuotationTable.CustAccount);
+            if (conPeek(result,1) == false)
+            {
+                ret = false;  
+                if (errorStr != '')
+                {
+                    errorStr += ' \n';
+                }
+                errorStr += strFmt('Artikel: %1. %2',locSalesQuotationLine.ItemId,conPeek(result,2));
+            }
+        }
+        if(errorStr != '')
+        {
+            warning(errorStr);
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

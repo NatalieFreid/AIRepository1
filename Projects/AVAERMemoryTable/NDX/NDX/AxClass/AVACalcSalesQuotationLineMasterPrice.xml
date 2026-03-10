@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACalcSalesQuotationLineMasterPrice</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+class AVACalcSalesQuotationLineMasterPrice    extends AVACalcSalesQuotationLine
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>processOperation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_dataContract">_contract</param>
+    public void processOperation(AVACalcSalesQuotationLineMasterPriceContract     _dataContract)
+    {
+        AVACalcSalesQuotationLineMasterPriceContract contract = _datacontract;
+        QuotationId                            quotationId = contract.parmQuotationId();
+        QuotationId                            masterQuotationID = contract.parmMasterQuotationId();
+        SalesPrice                             newSalesPrice;
+        SalesQuotationTable                    masterSalesQuotationTable;
+        SalesQuotationTable                    salesQuotationTable;
+        SalesQuotationLine                     masterSalesQuotationLine;
+
+        masterSalesQuotationTable = SalesQuotationTable::find(masterQuotationID);
+        salesQuotationTable       = SalesQuotationTable::find(quotationId);
+
+        if (!masterSalesQuotationTable.RecId)
+        {
+            error(strFmt("@NDX:NXAMasterPriceNotExist",masterQuotationID));
+            return;
+        }
+
+        if (masterSalesQuotationTable && salesQuotationTable)
+        {
+            if (salesQuotationTable.CurrencyCode != masterSalesQuotationTable.CurrencyCode)
+            {
+                error("@NDX:NXAMasterQuotInTheSameCur");
+                return;
+            }
+            
+            salesQuotationTable.selectForUpdate(true);
+            salesQuotationTable.KCS_RefQuotationId = masterQuotationID;
+            ttsbegin;
+            salesQuotationTable.doUpdate();
+            ttscommit;
+
+
+            while select salesQuotationLine
+            where salesQuotationLine.QuotationId == quotationId
+            {
+                select firstonly masterSalesQuotationLine
+                    where masterSalesQuotationLine.QuotationId == masterQuotationID
+                       && masterSalesQuotationLine.ItemId      == salesQuotationLine.ItemId;
+                if (masterSalesQuotationLine)
+                {
+                    newSalesPrice = masterSalesQuotationLine.SalesPrice;
+                    if (salesQuotationLine.KCS_CalcMark != 'M')
+                    {
+                        if (newSalesPrice  > salesQuotationLine.AVABestPrice)
+                        {
+                            salesQuotationLine.SalesPrice = salesQuotationLine.AVABestPrice;
+                        }
+                        else 
+                        {
+                            salesQuotationLine.SalesPrice     = newSalesPrice;
+                            //salesQuotationLine.AVAMasterPrice = newSalesPrice;
+                            salesQuotationLine.KCS_CalcMark   = 'M';
+                        }
+                    }
+                    else
+                    {
+                        salesQuotationLine.SalesPrice = min(salesQuotationLine.AVABestPrice,newSalesPrice);
+                            
+                    }
+                
+            
+                    this.updateQuotationLineFields(false);
+                    ttsbegin;
+                    salesQuotationLine.selectForUpdate(true);
+                    salesQuotationLine.doUpdate();
+                    ttscommit;
+                }
+            }
+
+            this.updateLVPostion(quotationId);
+        }
+          
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

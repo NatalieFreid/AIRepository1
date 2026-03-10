@@ -1,0 +1,277 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesTableOrigQuotationCheck</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+final class AVASalesTableOrigQuotationCheck
+{
+    public SalesTable  salesTable;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_args">name</param>
+    public static void main(Args        _args)
+    {
+        AVASalesTableOrigQuotationCheck         salesTableOrigQuotCheck;
+
+        if (_args.dataset() != tableNum(SalesTable))
+        {
+            throw Error("@GEE9737");
+            
+        }
+        salesTableOrigQuotCheck = AVASalesTableOrigQuotationCheck::newFromSalesTable(_args.record());
+        salesTableOrigQuotCheck.run();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>newFromSalesTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesTable">_salesTable</param>
+    /// <returns>newFromSalesTable</returns>
+    public static AVASalesTableOrigQuotationCheck  newFromSalesTable(SalesTable     _salesTable)
+    {
+        AVASalesTableOrigQuotationCheck  salestableOrigQuotCheck = new AVASalesTableOrigQuotationCheck(_salesTable);
+        return salestableOrigQuotCheck;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesTable">_salesTable</param>
+    void new(SalesTable       _salesTable)
+    {
+        salesTable    = _salesTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// desogned from AVA
+    /// </summary>
+    public void run()
+    {
+        SalesLine               salesLine;
+        boolean                 hasLinesWithOrigQuot = false;
+        //SalesQuotationTable     salesQuotationTable;
+        Counter                 numOfError;
+        boolean                 hasLineError, hasLineWarnung;
+
+        while select  salesLine
+            where salesLine.SalesId == salesTable.SalesId
+               && salesLine.AVAOrigQuotationId  != ''
+               && salesLine.AVAQuotationId == ''
+        {
+            hasLinesWithOrigQuot = true;
+            [hasLineError, hasLineWarnung]         = salesLine.AVAcheckOrigQuotation(salesTable);
+
+            if (hasLineError || hasLineWarnung)
+            {
+                numOfError  ++;
+                salesLine.AVAEDIQuotationStatus = AVAEDIQuotationStatus::Error;
+            }
+            if (!hasLineError)
+            {
+                salesLine.AVAQuotationId = salesLine.AVAOrigQuotationId;
+                if (!salesTable.KCS_NoUseQuotPrice && !salesLine.AVAItemSetComponent)
+                {
+                    //AVASpecialDiscSalesLine::copyFromQuotationJour(salesLine.AVAQuotationId,salesLine);
+                    this.copyFromQuotationJour(salesLine.AVAQuotationId,salesline);
+                    salesLine.AVApriceCalculation(true,true,true,true,true);
+                    salesLine.LineAmount = salesLine.calcLineAmount();
+                }
+                salesLine.copyCommissSplitFromQuotation(salesLine.AVAQuotationId);
+                salesLine.KCS_BOSCommissCutPct = SalesQuotationTable::find(salesLine.AVAOrigQuotationId).AVACBSCommissCutPct;
+                salesLine.AVAEDIQuotationStatus = AVAEDIQuotationStatus::OK;
+            }
+
+            salesLine.selectForUpdate(true);
+            ttsbegin;
+            salesLine.doUpdate();
+            ttscommit;
+            
+        }
+
+        this.updateQuotTable(); 
+        this.updateSQClerkOnSalesTable();
+
+        if (hasLinesWithOrigQuot)
+        {
+            if (numOfError == 0)
+            {
+                info("@NDX:NXAQuotCheckSuccessfull");
+            }
+            else
+            {
+                info(strFmt("@NDX:NXAQuotChekErrors",numOfError));
+            }
+
+            //FormDataSource      callerSalesTableDS = salesTable.dataSource();
+            FormDataSource  callerSalesTableDS = FormDataUtil::getFormDataSource(salesTable);
+            if(callerSalesTableDS != null)
+            {
+                SalesId  salesIdCur = salesTable.salesId;
+                callerSalesTableDS.executeQuery();
+                callerSalesTableDS.positionToRecordByValue(fieldNum(SalesTable,SalesId),salesIdCur);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyFromQuotationJour</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_quotationId">_quotationId</param>
+    /// <param name = "_salesLine">_salesLine</param>
+    public  void copyFromQuotationJour(QuotationId   _quotationId, SalesLine   _salesLine)
+    {
+        CustQuotationJour           custQuotationJour;
+        AVASpecialDiscSalesLine     specialDiscSalesLine;
+        AVASpecialDiscQuotationJour specialDiscQuotationJour;
+        AVASpecialDiscSalesOrder    specialDiscSalesOrder;
+
+
+        specialDiscSalesLine = AVASpecialDiscSalesLine::find(_salesLine.InventTransId);
+
+        CustQuotationSalesLink    custQuotationSalesLink;
+
+        select firstonly OrigQuotationId, QuotationId from custQuotationSalesLink
+            order by QuotationDate desc, QuotationId desc 
+                where custQuotationSalesLink.origQuotationId    == _quotationId;
+
+        boolean     noQuotPrice = _salesLine.salesTable().KCS_NoUseQuotPrice;
+
+        select firstonly RecId from  custQuotationJour
+            where custQuotationJour.QuotationId == custQuotationSalesLink.quotationId;
+
+        if (custQuotationJour.RecId && !noQuotPrice)
+        {
+            specialDiscQuotationJour = AVASpecialDiscQuotationJour::findQuotation(custQuotationJour.RecId);
+            specialDiscSalesLine.initFromSpecDiscQuotationJour(specialDiscQuotationJour);
+        }
+        else
+        {
+            specialDiscSalesLine.initFromSalesParameters();
+        }
+
+        if (!specialDiscSalesLine.RecId)
+        {
+            specialDiscSalesLine.InventTransId = _salesLine.InventTransId;
+            specialDiscSalesOrder    = AVASpecialDiscSalesOrder::find(_salesLine.SalesId);
+            specialDiscSalesLine.initFromSpecDiscSalesTable(specialDiscSalesOrder);
+            specialDiscSalesLine.doinsert();
+        }
+        else
+        {
+            ttsbegin;
+            specialDiscSalesLine.selectForUpdate(true);
+            specialDiscSalesLine.doupdate();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateQuotTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    public void updateQuotTable()
+    {
+        SalesLine                   salesLine;
+        SalesQuotationTable         salesQuotationTable;
+        KCS_QuotationStatus         quotationStatus;
+        AVAQuotationStatusModify    quotStatusModify;
+        Args                        args = new Args();
+
+        while select AVAQuotationId from salesLine group by AVAQuotationId
+            where salesLine.SalesId == salesTable.SalesId
+               && salesLine.AVAQuotationId
+        {
+            SalesQuotationTable = SalesQuotationTable::find(SalesLine.AVAQuotationId, true);
+            if (salesQuotationTable.KCS_StatusId)
+            {
+                quotationStatus = KCS_QuotationStatus::find(salesQuotationTable.KCS_StatusId);
+                if (quotationStatus.CommissioningId)
+                {
+                    ttsbegin;
+                    salesQuotationTable.selectForUpdate(true);
+                    salesQuotationTable.KCS_StatusId = quotationStatus.CommissioningId;
+                    salesQuotationTable.doUpdate();
+                    ttscommit;
+                    args.record(salesQuotationTable);
+                    quotStatusModify    = AVAQuotationStatusModify::construct(args);
+                    quotStatusModify.init();
+                    quotStatusModify.updateSalesQuotation();
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateSQClerkOnSalesTable</Name>
+				<Source><![CDATA[
+    private void updateSQClerkOnSalesTable()
+    {
+        SalesLine                   salesLine;
+        int64                       max;
+        AVAQuotationId              quotIdMax;
+
+        if (!SalesTable.AVASQClerk)
+        {
+            while select AVAQuotationId, count(RecId) from salesLine group by AVAQuotationId
+            where salesLine.SalesId == salesTable.SalesId
+               && salesLine.AVAQuotationId
+            {
+                if (max < SalesLine.recId)
+                {
+                    max = SalesLine.recid;
+                    quotidMax = SalesLine.AVAQuotationId;
+                }
+            }
+            if (quotIdMax)
+            {
+                ttsbegin;
+                salesTable.selectForUpdate(true);
+                salesTable.AVASQClerk = SalesQuotationTable::find(quotIdMax).WorkerSalesTaker;
+                salesTable.doUpdate();
+                ttscommit;
+            }
+
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

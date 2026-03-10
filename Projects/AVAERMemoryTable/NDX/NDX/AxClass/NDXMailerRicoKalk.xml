@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXMailerRicoKalk</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 11.04.24
+/// send email from RicoKalk transfer
+/// </summary>
+public class NDXMailerRicoKalk
+    extends NDXMailer
+{
+    int subMessageCounter;
+    NDXKBVProtID kBVProtId;
+    KCS_KBVBuildingProjectID kBVBuildingProjectID;
+    NDXRicoKalkBVNr ricoKalkBVNr;
+    NDXProtKopfTyp protKopfTyp;
+    utcdatetime protDateTime;
+    container conMessages;
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 11.04.24
+    /// </summary>
+    protected void new()
+    {
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 11.04.24
+    /// </summary>
+    /// <param name = "_isHTML"></param>
+    /// <param name = "_isInBatch"></param>
+    /// <returns>NDXMailerRicoKalk</returns>
+    public static NDXMailerRicoKalk construct(boolean _isHTML = false, boolean _isInBatch = false)
+    {
+        NDXMailerRicoKalk nDXMailerRicoKalk = new NDXMailerRicoKalk();
+        nDXMailerRicoKalk.isHtml = _isHTML;
+        nDXMailerRicoKalk.sendNonInteractive = _isInBatch;
+        nDXMailerRicoKalk.emailToAddress = 'Alarm.AX@niedax.de';
+        //nDXMailerRicoKalk.emailFromAddress = 'D365FO.Error@niedax.de';        // email address is not authorized
+        nDXMailerRicoKalk.emailFromAddress = 'Hans.Paffhausen@niedax.de';
+        nDXMailerRicoKalk.emailSubject = 'RicoKalk Datentransfer';
+        return nDXMailerRicoKalk;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initialize</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 12.04.24
+    /// </summary>
+    /// <param name = "_protTable">NDX_KBV2RicoProtTable</param>
+    public void initialize(NDX_KBV2RicoProtTable _protTable)
+    {
+        kBVProtId = int2Str(_protTable.KBVProtIDInt);
+        kBVBuildingProjectID = _protTable.KBVBuildingProjectID;
+        ricoKalkBVNr = _protTable.RicoKalkBVNr;
+        protKopfTyp = _protTable.ProtKopfTyp;
+        protDateTime = _protTable.CreatedDateTime;
+        conMessages = conNull();
+        subMessageCounter = 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addSubMessage</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 12.04.24
+    /// add message to conMessages
+    /// </summary>
+    /// <param name = "kBV2RicoProtLine"></param>
+    void addSubMessage(NDX_KBV2RicoProtLine kBV2RicoProtLine)
+    {
+        str cMessage = '';
+        int i;
+        str mapValue, mapKey;
+
+        Map mapMessage = new Map(Types::String, Types::String);
+        mapMessage.insert(NDXRicoKalkConstants::zeitpunkt, datetime2str(kBV2RicoProtLine.createdDateTime));
+        mapMessage.insert(NDXRicoKalkConstants::fehlertyp, enum2str(kBV2RicoProtLine.KBVProtDetail));
+        mapMessage.insert(NDXRicoKalkConstants::bvNrD365FO, kBVBuildingProjectID);
+        mapMessage.insert(NDXRicoKalkConstants::bvNrRico, int2Str(ricoKalkBVNr));
+        mapMessage.insert(NDXRicoKalkConstants::aufgabenTyp, enum2str(protKopfTyp));
+        mapMessage.insert(NDXRicoKalkConstants::meldung, kBV2RicoProtLine.ValueNew);
+        mapMessage.insert(NDXRicoKalkConstants::referenz, kBV2RicoProtLine.ValueOld);
+
+        ++SubMessageCounter;
+
+        MapIterator iterator = new MapIterator(mapMessage);
+        if (this.isHtml)
+        {
+            cMessage += strfmt(NDXHTMLConstants::table_border_frame_open, NDXHTMLConstants::border_1, NDXHTMLConstants::frame_void);         // <table border = '%1' frame='%2'
+            while (iterator.more())
+            {
+                ++i;
+                mapKey = iterator.key();
+                mapValue = iterator.value();
+                cMessage += NDXHTMLConstants::tr;
+                cMessage += strfmt(NDXHTMLConstants::td_bgcolor, NDXHTMLConstants::color_1, SubMessageCounter, mapKey );        // <td bgcolor='%1'>%2.%3</td>
+                cMessage += strfmt(NDXPlaceholderConstants::PlaceHolder5, NDXHTMLConstants::td, NDXHTMLConstants::b,  mapValue, NDXHTMLConstants::b_close, NDXHTMLConstants::td_close );
+                cMessage += NDXHTMLConstants::tr_close;
+                iterator.next();
+            }
+            cMessage += strfmt(NDXPlaceholderConstants::PlaceHolder2, NDXHTMLConstants::table_close, NDXHTMLConstants::br);
+            conMessages += cMessage;
+        }
+        else
+        {
+            while (iterator.more())
+            {
+                ++i;
+                mapKey      = iterator.key();
+                mapValue    = iterator.value();
+                cMessage += strfmt((i > NDXRicoKalkConstants::lineWithoutIndent) ? 
+                    NDXRicoKalkConstants::submessage1Tab :
+                    NDXRicoKalkConstants::submessage2Tab, 
+                    NDXGlobalConstants::Tab, 
+                    mapKey, 
+                    mapValue, 
+                    NDXGlobalConstants::NewLine, 
+                    SubMessageCounter);
+                iterator.next();
+            }
+            conMessages += cMessage;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendMessage</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 12.04.24
+    /// send message
+    /// </summary>
+    /// <param name = "_messageBuilder">SysMailerMessageBuilder</param>
+    /// <returns>message send ok</returns>
+    boolean sendMessage(SysMailerMessageBuilder _messageBuilder = this.buildEmail())
+    {
+        boolean retVal = false;
+        if (!conMessages)
+        {
+            return retVal;
+        }
+        str bodyText = this.parmEmailBody();
+        if (this.isHtml)
+        {
+            bodyText += strFmt(NDXHTMLConstants::table_border_frame_open, NDXHTMLConstants::border_1, NDXHTMLConstants::frame_void);
+            bodyText += strFmt(NDXHTMLConstants::tr_td_1_td_2_td_3, NDXRicoKalkConstants::modul, NDXRicoKalkConstants::protokollId, NDXGlobalConstants::Host);
+            bodyText += strFmt(NDXHTMLConstants::tr_td_h1_1_td_h2_2_td_h2_3, NDXRicoKalkConstants::RicoKalkComparison, kBVProtId, host);
+            bodyText += NDXHTMLConstants::table_close;
+        }
+        else
+        {
+            bodyText += strFmt(NDXPlaceholderConstants::FirstSpace23, NDXRicoKalkConstants::modul, NDXRicoKalkConstants::RicoKalkComparison, NDXGlobalConstants::NewLine);
+            bodyText += strFmt(NDXPlaceholderConstants::FirstSpace23, NDXRicoKalkConstants::protokollId, kBVProtId, NDXGlobalConstants::NewLine);
+        }
+        for (int i = 1; i <= conLen(conMessages); i++)
+        {
+            bodyText += conPeek(conMessages, i);
+        }
+        _messageBuilder.setBody(bodyText, this.isHtml, this.encoding);
+
+        retVal = super(_messageBuilder);
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXDPDCustPackingSlipJour_tbl_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// WolfA 30.05.23
+/// </summary>
+[ExtensionOf(tableStr(NDXDPDCustPackingSlipJour))]
+internal final class NDXDPDCustPackingSlipJour_tbl_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initByNDXDlvAddress</Name>
+				<Source><![CDATA[
+    void initByNDXDlvAddress(NDXDlvAddress _dlvAddress)
+    {
+        next initByNDXDlvAddress(_dlvAddress);
+        this.initDPD();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initDPD</Name>
+				<Source><![CDATA[
+    private void initDPD()
+    {
+        #define.MaxLenAddress(35)
+
+        str company, company2, contactPerson, errAddr;
+        int strLength;
+        container   conAdr = connull();
+        boolean     lAddrNameChanged;
+
+        CustPackingSlipJour lCustPackingSlipJour = CustPackingSlipJour::findRecId(this.RefRecIdCustPackingSlipJour);
+        LogisticsPostalAddress lLogisticsPostalAddress = LogisticsPostalAddress::findRecId(lCustPackingSlipJour.DeliveryPostalAddress);
+
+        RefRecId refRecIdCustPackingSlipId = this.RefRecIdCustPackingSlipJour;
+        
+        if (lLogisticsPostalAddress && lLogisticsPostalAddress.NDXLogisticsLocationName1 != '')
+        {
+            conAdr += lLogisticsPostalAddress.NDXLogisticsLocationName1;
+        }
+
+        if (lLogisticsPostalAddress && lLogisticsPostalAddress.NDXLogisticsLocationName2 != '')
+        {
+            conAdr += lLogisticsPostalAddress.NDXLogisticsLocationName2;
+        }
+
+        if (lLogisticsPostalAddress && lLogisticsPostalAddress.NDXLogisticsLocationName3 != '')
+        {
+            conAdr += lLogisticsPostalAddress.NDXLogisticsLocationName3;
+        }
+
+        if(conlen(conAdr) > 0)
+        {
+            this.Company = '';
+            this.ContactPerson = '';
+            this.AddressError = '';
+            this.DeliveryNameChanged = NoYes::No;
+
+            contactPerson = this.setContactPerson(lCustPackingSlipJour.ShipCarrierDeliveryContact, false);
+
+            if (conlen(conAdr) == 1 || (conlen(conAdr) == 2 && !contactPerson))
+            {
+                company = conpeek(conAdr, 1);
+                strLength = strlen(company);
+
+                // Name und Kontakt kann verlustfrei gespeichert werden
+                if (strLength <= #MaxLenAddress)
+                {
+                    this.Company = company;
+                }
+                else
+                {
+                    lAddrNameChanged = true;
+                    this.Company = substr(company, 1, #MaxLenAddress);
+                    company2 = substr(company, #MaxLenAddress + 1, strLength- #MaxLenAddress);
+                    company2 = strltrim(company2);
+                    this.ContactPerson = company2;
+                }
+
+                if (conlen(conAdr) == 2)
+                {
+                    company = conpeek(conAdr, 2);
+                    company2 = this.ContactPerson + " " + company;
+                    strLength = strlen(company2);
+                    if (this.ContactPerson)
+                    {
+                        this.ContactPerson += " ";
+                    }
+
+                    this.ContactPerson += company;
+                    if (strLength > #MaxLenAddress)
+                    {
+                        lAddrNameChanged = true;
+                        errAddr += strfmt("@NDXDPD:NDXDPDInfo2"             /*[%1] Zeichen der Firma (Kontaktperson) zu lang [%2]*/
+                                , strLength - #MaxLenAddress
+                                , substr(company2, #MaxLenAddress + 1, strLength - #MaxLenAddress)) + '\n';
+
+                    }
+                }
+                else
+                {
+                    if (contactPerson)
+                    {
+                        if (this.ContactPerson == '')
+                        {
+                            this.ContactPerson = contactPerson;
+                        }
+                        else
+                        {
+                            // Kontaktperson kann nicht gespeichert werden, da Teil von der Firma bereits gespeichert ist
+                            this.checkContactPerson(contactPerson);
+                        }
+                    }
+                }
+
+               
+            }
+            else
+            {
+                company = conpeek(conAdr, 1);
+                this.saveCompany(company);
+
+                if (strlen(this.Company + ' ' +  conpeek(conAdr, 2)) <= #MaxLenAddress)
+                {
+                    this.DeliveryNameChanged = true;
+                    this.Company += " " +  conpeek(conAdr, 2);
+                    if (conlen(conAdr) >= 3)
+                    {
+                        if (strlen(this.Company + " " +  conpeek(conAdr, 3)) <= #MaxLenAddress)
+                        {
+                            this.Company += " " +  conpeek(conAdr, 3);
+                            contactPerson = this.setContactPerson(lCustPackingSlipJour.ShipCarrierDeliveryContact);
+                        }
+                        else        // 3. Name passt nicht in Company
+                        {
+                            company = conpeek(conAdr,3);
+                            strLength = strlen(company);
+                            if (strLength <= #MaxLenAddress)
+                            {
+                                this.ContactPerson = conpeek(conAdr,3);
+                            }
+                            else
+                            {
+                                this.ContactPerson = substr(company, 1, #MaxLenAddress);
+                                this.AddressError += strfmt("@NDXDPD:NDXDPDInfo2"             /*[%1] Zeichen der Firma (Kontaktperson) zu lang [%2]*/
+                                        , strLength - #MaxLenAddress
+                                        , substr(company, #MaxLenAddress + 1, strLength - #MaxLenAddress)) + '\n';
+                            }
+
+                            this.checkContactPerson(lCustPackingSlipJour.ShipCarrierDeliveryContact);
+                        }
+                    }
+                    else
+                    {
+                        this.setContactPerson(lCustPackingSlipJour.ShipCarrierDeliveryContact);
+                    }
+                }
+                else         // 2. und ggf.3. Name passt nicht in Company
+                {
+                    company = conpeek(conAdr,2);
+                    strLength = strlen(company);
+                    if (strLength <= #MaxLenAddress)
+                    {
+                        this.ContactPerson = company;
+                    }
+                    else
+                    {
+                        lAddrNameChanged = true;
+                        this.ContactPerson = substr(company, 1, #MaxLenAddress);
+                        this.AddressError += strfmt("@NDXDPD:NDXDPDInfo2"                 // [%1] Zeichen der Firma (Kontaktperson) zu lang [%2]
+                                , strLength - #MaxLenAddress
+                                , substr(company, #MaxLenAddress + 1, strLength - #MaxLenAddress)) + '\n';
+                    }
+                    if (conlen(conAdr) >= 3)
+                    {
+                        if (strlen(this.ContactPerson + ' ' +  conpeek(conAdr, 3)) <= #MaxLenAddress)
+                        {
+                            lAddrNameChanged = true;
+                            this.ContactPerson += ' ' + conpeek(conAdr,3);
+                            this.checkContactPerson(lCustPackingSlipJour.ShipCarrierDeliveryContact);
+                        }
+                        else    // 3.Adresszeile konnte nicht gespeichert werden
+                        {
+                            this.AddressError += strfmt("@NDX:NDXDPDInfo", conpeek(conAdr,3)) + '\n';      // 3. Adresszeile [%1] fehlt!
+                            this.checkContactPerson(lCustPackingSlipJour.ShipCarrierDeliveryContact);
+                        }
+                    }
+                    else    // Kontaktperson vorhanden ?
+                    {
+                        this.checkContactPerson(lCustPackingSlipJour.ShipCarrierDeliveryContact);
+                    }
+                }
+            }
+
+            this.DeliveryNameChanged = lAddrNameChanged ? NoYes::Yes : NoYes::No;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

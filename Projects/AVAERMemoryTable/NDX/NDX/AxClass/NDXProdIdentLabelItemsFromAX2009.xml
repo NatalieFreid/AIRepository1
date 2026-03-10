@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXProdIdentLabelItemsFromAX2009</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using System.Collections;
+using Niedax.AzureServiceBus.ProdIdent;
+using Niedax.AzureServiceBus.Models.ProdIdent;
+
+/// <summary>
+/// PaffH 04.02.23
+/// </summary>
+public class NDXProdIdentLabelItemsFromAX2009 extends NDXProdIdentProcedureFromAX2009
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.02.23
+    /// </summary>
+    /// <returns>NDXProdIdentLabelItemsFromAX2009</returns>
+    public static NDXProdIdentLabelItemsFromAX2009 construct()
+    {
+        NDXProdIdentLabelItemsFromAX2009 nDXProdIdentLabelItemsFromAX2009 = new NDXProdIdentLabelItemsFromAX2009();
+        return nDXProdIdentLabelItemsFromAX2009;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runAsyc</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.02.23
+    /// </summary>
+    /// <returns>System.Threading.Tasks.Task</returns>
+    public static System.Threading.Tasks.Task runAsyc()
+    {
+        System.Threading.Tasks.Task task;
+        Dialog dialog = new Dialog();
+        dialog.addText("@NDX:NDXTransferOfProductLabelsFromAX2009");
+        DialogField fieldMaxRunTime = dialog.addFieldValue(extendedTypeStr(NDXID), 1, "@NDX:NDXMaxRuntimeForAzureQueueQuery");
+        DialogField fieldDeleteActualData = dialog.addFieldValue(extendedTypeStr(NoYesId), NoYes::No, "@NDX:NDXDeleteExistingTransferData");
+        DialogField fieldRunWithoutAction = dialog.addFieldValue(extendedTypeStr(NoYesId), NoYes::No, "@NDX:NDXRemoveContractsWithoutProcessingFromAzureQueue");
+        dialog.run();
+        if (dialog.closedOk())
+        {
+            int maxRunTime = fieldMaxRunTime.value();
+            NoYes deleteActualData = fieldDeleteActualData.value();
+            NoYes runWithoutAction = fieldRunWithoutAction.value();
+            task = runAsync(
+                classNum(NDXProdIdentLabelItemsFromAX2009),
+                staticMethodStr(NDXProdIdentLabelItemsFromAX2009,runableForAsyncCall),
+                [maxRunTime, deleteActualData, runWithoutAction],
+                System.Threading.CancellationToken::None,
+                classNum(NDXProdIdentProcedureFromAX2009),
+                staticMethodStr(NDXProdIdentProcedureFromAX2009,asyncResult));
+        }
+        return task;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runableForAsyncCall</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.02.23
+    /// </summary>
+    /// <param name = "_params">container</param>
+    /// <returns>container</returns>
+    public static container runableForAsyncCall(container _params)
+    {
+        container conRet = conNull();
+        int maxRuntimeInMinutes = conPeek(_params, 1);
+        NoYes deleteActualData = conPeek(_params, 2);
+        NoYes runWithoutAction = conPeek(_params, 3);
+        NDXProdIdentLabelItemsFromAX2009 nDXProdIdentLabelItemsFromAX2009 = NDXProdIdentLabelItemsFromAX2009::construct();
+        nDXProdIdentLabelItemsFromAX2009.ParmDeleteActualData(deleteActualData);
+        nDXProdIdentLabelItemsFromAX2009.ParmRunWithoutAction(runWithoutAction);
+        nDXProdIdentLabelItemsFromAX2009.ReadContractsFromQueue(maxRuntimeInMinutes);
+        return conRet;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteActualData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.02.23
+    /// </summary>
+    protected void deleteActualData()
+    {
+        NDXProdIdentLabelItem nDXProdIdentLabelItem;
+        delete_from nDXProdIdentLabelItem;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>readContractsFromQueue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 04.02.23
+    /// </summary>
+    /// <param name = "_maxRuntimeInMinutes">int</param>
+    public void readContractsFromQueue(int _maxRuntimeInMinutes = 0)
+    {
+        maxRuntimeInMinutes = _maxRuntimeInMinutes;
+
+        NDXProdIdentLabelItem nDXProdIdentLabelItem;
+        boolean loopOK = true;
+        int recCount1, recCount2, recCount3, countReadFromQueue, countRuns;
+        NDXProdIdentLabelItemContract nDXProdIdentLabelItemContract, nDXProdIdentLabelItemContractLast;
+        ProdIdentLabelItemFromAX2009 prodIdentLabelItemFromAX2009 = new ProdIdentLabelItemFromAX2009(connectionString, azureQueueName);
+
+        int sleepDuration = 1000;
+        secStart = NDXHelperCommon::timeNow();
+        int secStartRun = secStart;
+        int secEnd, diffSec;
+        str errInfo;
+        const str dataAreaIdDefault = 'NDX';
+        NDXDataTransferErrorClass dataTransferError = NDXDataTransferErrorClass::construct(tableNum(NDXProdIdentPackaging));
+        recCount1 = 0;
+        recCount2 = 0;
+        recCount3 = 0;
+        countReadFromQueue = 0;
+        countRuns = 0;
+        int runtimeInMinutes;
+        nDXProdIdentLabelItemContractLast = null;
+        isReadingFromQueue = true;
+        info(strFmt('Start : [%1]', NDXHelperCommon::seconds2Str()));
+        if (deleteActualData == NoYes::Yes)
+        {
+            this.deleteActualData();
+            dataTransferError.deleteExistingLog();
+        }
+        while (loopOK)
+        {
+            nDXProdIdentLabelItem = null;
+            nDXProdIdentLabelItemContract = prodIdentLabelItemFromAX2009.Receive1MessageValuesD365FO(true).Contract;
+            if (runWithoutAction == NoYes::Yes)
+            {
+                if (nDXProdIdentLabelItemContract == null)
+                {
+                    break;
+                }
+                else
+                {
+                    continue;
+                }
+            }
+
+
+            if (nDXProdIdentLabelItemContract == null && nDXProdIdentLabelItemContractLast == null)
+            {
+                secEnd = NDXHelperCommon::timeNow();
+                runtimeInMinutes = real2int((secEnd - secStart) / 60);
+                if (maxRuntimeInMinutes != 0 && runtimeInMinutes >= maxRuntimeInMinutes)
+                {
+                    break;
+                }
+                else
+                {
+                    sleep(sleepDuration);
+                    continue;
+                }
+            }
+
+            ++countReadFromQueue;
+            if (nDXProdIdentLabelItemContract == null && nDXProdIdentLabelItemContractLast != null)
+            {
+                nDXProdIdentLabelItemContractLast = null;
+                ++countRuns;
+                secEnd = NDXHelperCommon::timeNow();
+                diffSec = secEnd - secStartRun;
+                Info(strFmt('%1.) Dauer: [%2]', countRuns, NDXHelperCommon::seconds2Str(diffSec)));
+                Info(strFmt('%1.) Azure-Queue Lesevorgänge: [%2]', countRuns, countReadFromQueue));
+                Info(strFmt('%1.) Anzahl DS: Artikel[%2] [%3][%4]', countRuns, recCount1, recCount2, recCount3));
+                runtimeInMinutes = real2int((secEnd - secStart) / 60);
+                if (maxRuntimeInMinutes != 0 && runtimeInMinutes >= maxRuntimeInMinutes)
+                {
+                    break;
+                }
+                else
+                {
+                    sleep(sleepDuration);
+                    continue;
+                }
+            }
+            else
+            {
+                nDXProdIdentLabelItemContractLast = nDXProdIdentLabelItemContract;
+                secStartRun = NDXHelperCommon::timeNow();
+            }
+
+            // read data from: nDXProdIdentPackaging - Contract
+            IEnumerable tList = nDXProdIdentLabelItemContractLast.NDXProdIdentLabelItemsTableContract;
+            IEnumerator enum = tList.GetEnumerator();
+            while (enum.moveNext())
+            {
+                ++recCount1;
+                errInfo = '';
+                NDXProdIdentLabelItemTableContract nDXProdIdentLabelItemTableContract = enum.current;
+
+                if (nDXProdIdentLabelItemTableContract.ItemId != '')
+                {
+                    DataAreaId uk = NDXHelperItem::DataAreaIdFromItemId(nDXProdIdentLabelItemTableContract.ItemId, dataAreaIdDefault);
+                    changecompany(uk)
+                    {
+                        nDXProdIdentLabelItem = NDXProdIdentLabelItem::findOrCreate(nDXProdIdentLabelItemTableContract.LabelId, nDXProdIdentLabelItemTableContract.ItemId, true);
+                        ttsbegin;
+                        nDXProdIdentLabelItem.write();
+                        ttscommit;
+                    }
+                }
+                else
+                {
+                    continue;
+                }
+            }
+        }
+        dataTransferError.endError();
+        secEnd = NDXHelperCommon::timeNow();
+        Info(strFmt('Gesamtlaufzeit: [%1]', NDXHelperCommon::seconds2Str(secEnd - secStart)));
+        isReadingFromQueue = false;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

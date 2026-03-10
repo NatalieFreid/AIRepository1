@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAERPriceListToAzureBlob</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+internal final class AVAERPriceListToAzureBlob
+{
+    container           binaryReport;
+    Filename            fileName;
+    PriceDiscGroup      priceDiscGroup;
+    container           reportMapContainer;
+    boolean             isReportSend;
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_priceDiscGroup">_priceDiscGroup</param>
+    /// <param name = "_reportName">_reportName</param>
+    /// <returns>AVAERPriceListToAzureBlob</returns>
+    public static AVAERPriceListToAzureBlob     construct(PriceDiscGroup   _priceDiscGroup, ReportName _reportName = AVASalesParameters::find().ERPriceListFormat)
+    {
+        AVAERReportToMemory         reportToMemory;
+        AVAERPriceListToAzureBlob   priceListToAzureBlob = new AVAERPriceListToAzureBlob();
+        #define.NiedaxPriceList('NiedaxPriceList')
+
+        select firstonly reportToMemory
+                    where reportToMemory.refRecId == _priceDiscGroup.RecId
+                       && reportToMemory.RefTableId == tableNum(PriceDiscGroup)
+                       && reportToMemory.ReportName == _reportName;
+
+
+        priceListToAzureBlob.parmPriceDiscGroup(_priceDiscGroup);
+        priceListToAzureBlob.parmBinaryReport(reportToMemory.Report);
+        priceListToAzureBlob.parmReportMapContainer(reportToMemory.ReportMap);
+        priceListToAzureBlob.parmFileName(strRem(#NiedaxPriceList + '_' + _priceDiscGroup.GroupId + '_' + 
+            date2Str(DateTimeUtil::gettoday(DateTimeUtil::getUserPreferredTimeZone()),123,2,DateSeparator::None,2,DateSeparator::None,4),' '));
+        return  priceListToAzureBlob;
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmReportMapContainer</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_reportMapContainer">_reportMapContainer</param>
+    /// <returns>container</returns>
+    public container parmReportMapContainer(container  _reportMapContainer = reportMapContainer)
+    {
+        reportMapContainer = _reportMapContainer;
+        return reportMapContainer;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmPriceDiscGroup</Name>
+				<Source><![CDATA[
+    public PriceDiscGroup parmPriceDiscGroup(PriceDiscGroup     _priceDiscGroup  = priceDiscGroup)
+    {
+        PriceDiscGroup = _priceDiscGroup;
+        return PriceDiscGroup;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmbinaryReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_binaryReport">_binaryReport</param>
+    /// <returns>parmbinaryReport</returns>
+    public container parmbinaryReport(container   _binaryReport = binaryReport)
+    {
+        binaryReport = _binaryReport;
+        return binaryReport; 
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmFileName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_fileName">_fileName</param>
+    /// <returns>Filename</returns>
+    public Filename parmFileName(Filename _fileName = Filename)
+    {
+    
+        fileName = _fileName;
+        return fileName;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void run()
+    {
+        AVAMSQAzureFileStorageDefinition          fileStorageDefinition = AVAMSQAzureFileStorageDefinition::find(AVASalesParameters::find().AzureFileStorageId);
+        MapIterator                               mapIterator;
+        str                                       reportFileName;
+        System.IO.Stream                          exportStream;
+        Binary                                    exportbinary;
+        str                                       fileExt;
+        str                                       locFileName;
+
+        if (conLen(reportMapContainer) !=0)
+        {
+            Map   reportMap  = Map::create(conPeek(reportMapContainer,1));
+            if (reportMap)
+            {
+                mapIterator = new MapIterator(reportMap);
+                while (mapIterator.more())
+                {
+                    reportFileName = mapIterator.key();
+                    locFileName    = fileName;
+                    
+                    exportbinary = Binary::constructFromContainer(mapIterator.value());
+                    exportStream = exportbinary.getMemoryStream();
+                    if(exportStream)
+                    {
+                        fileExt = subStr(reportFileName,strFind(reportFileName,'.',1,strLen(reportFileName)),strLen(reportFileName) - (strFind(reportFileName,'.',1,strLen(reportFileName))-1));
+                        if (fileExt != '')
+                        {
+                            locFileName += fileExt;
+                        }
+                        AVAMSQAzureFilestorageInteraction interactionFile                     = AVAMSQAzureFilestorageInteraction::construct(fileStorageDefinition);
+                        interactionFile.UploadFromStream(exportStream,interactionFile.GetCloudFileDirectoryRef(AVAMSQAzureFileStoreDir::Output),locFileName,true);
+                        isReportSend = true;
+                    }
+
+                    mapIterator.next();
+                }
+            }
+        }
+        if (conLen(binaryReport) !=0  && !isReportSend)
+        {
+            exportbinary = Binary::constructFromContainer(binaryReport);
+            exportStream = exportbinary.getMemoryStream();
+
+            AVAMSQAzureFilestorageInteraction interactionFile                     = AVAMSQAzureFilestorageInteraction::construct(fileStorageDefinition);
+            interactionFile.UploadFromStream(exportStream,interactionFile.GetCloudFileDirectoryRef(AVAMSQAzureFileStoreDir::Output),fileName,true);
+            isReportSend = true;
+        }
+        if (!isReportSend)
+        {
+            error(strFmt("@NDX:NXANoERPriceListFound",priceDiscGroup.GroupId));
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

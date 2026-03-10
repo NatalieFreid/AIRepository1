@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXResourcesStatisticBDEJour</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class NDXResourcesStatisticBDEJour extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>fill</Name>
+				<Source><![CDATA[
+    static void fill(NDXJournalBDE journalOrBDE, NDX_Date fromDate, NDX_Date toDate)
+    {
+        AVASFCFeedback                 kCS_SFCFeedbackGrpBDE, kCS_SFCFeedbackGrpEVNR;
+        AVASFCFeedback                 kCS_SFCFeedbackSum, kCS_SFCFeedback;
+        ProdJournalRoute               prodJournalRouteGrp, prodJournalRoute, prodJournalRouteSum;
+        NDXResourcesStatisticBDEJour   nDX_ResourceStatisticBDE;
+
+        Query                   q, q2;
+        QueryRun                qr, qr2;
+        QueryBuildDataSource    qbds, qbds2;
+        QueryBuildFieldList     fields;
+
+        q       = new Query();
+        if (journalOrBDE == NDXJournalBDE::BDE)
+        {
+            qbds    = q.addDataSource(tablenum(AVASFCFeedback));
+            qbds.addRange(fieldnum(AVASFCFeedback, JmgDate)).value(queryValue(fromDate) + '..' + queryValue(toDate));
+            qbds.addRange(fieldnum(AVASFCFeedback, Deactivated)).value(QueryValue(NoYes::No));
+            qbds.orderMode(OrderMode::GroupBy);
+            qbds.addSortField(fieldnum(AVASFCFeedback, NdxSFCId));
+        }
+        else
+        {
+            qbds    = q.addDataSource(tablenum(ProdJournalRoute));
+            qbds.addRange(fieldnum(ProdJournalRoute, TransDate)).value(queryValue(fromDate) + '..' + queryValue(toDate));
+            qbds.addRange(fieldnum(ProdJournalRoute, OprPriority)).value(queryValue(RouteOprPriority::Primary));
+            qbds.orderMode(OrderMode::GroupBy);
+            qbds.addSortField(fieldnum(ProdJournalRoute, JournalId));
+        }
+        qr = new QueryRun(q);
+
+        while (qr.next())
+        {
+            if (journalOrBDE == NDXJournalBDE::BDE)
+            kCS_SFCFeedbackGrpBDE   = qr.get(tablenum(AVASFCFeedback));
+            else
+            prodJournalRouteGrp     = qr.get(tablenum(ProdJournalRoute));
+
+            // Summen zum BDE-Lauf ermitteln (für Sollwert-Ermittlung)
+            q2      = new Query();
+            if (journalOrBDE == NDXJournalBDE::BDE)
+            {
+                qbds2   = q2.addDataSource(tablenum(AVASFCFeedback));
+                qbds2.addRange(fieldnum(AVASFCFeedback, NdxSFCId)).value(kCS_SFCFeedbackGrpBDE.NdxSFCId);
+                qbds2.orderMode(OrderMode::GroupBy);
+                qbds2.addSortField(fieldnum(AVASFCFeedback, NdxSFCId));
+                fields = qbds2.fields();
+                fields.addField(fieldnum(AVASFCFeedback, ProdReportedGood), SelectionField::Sum);
+                fields.addField(fieldnum(AVASFCFeedback, ProdReportedError), SelectionField::Sum);
+            }
+            else
+            {
+                qbds2   = q2.addDataSource(tablenum(ProdJournalRoute));
+                qbds2.addRange(fieldnum(ProdJournalRoute, JournalId)).value(prodJournalRouteGrp.JournalId);
+                qbds2.orderMode(OrderMode::GroupBy);
+                qbds2.addSortField(fieldnum(ProdJournalRoute, JournalId));
+                fields = qbds2.fields();
+                fields.addField(fieldnum(ProdJournalRoute, QtyGood) , SelectionField::Sum);
+                fields.addField(fieldnum(ProdJournalRoute, QtyError), SelectionField::Sum);
+            }
+            qr2 = new QueryRun(q2);
+            while (qr2.next())
+            {
+                ttsbegin;
+                if (journalOrBDE == NDXJournalBDE::BDE)
+                {
+                    kCS_SFCFeedbackSum = qr2.get(tablenum(AVASFCFeedback));
+                    
+                    select firstOnly kCS_SFCFeedback
+                        where kCS_SFCFeedback.NdxSFCId == kCS_SFCFeedbackSum.NdxSFCId;
+
+                    nDX_ResourceStatisticBDE = NDXResourcesStatisticBDEJour::find(journalOrBDE, kCS_SFCFeedbackSum.NdxSFCId, "", true);
+                }
+                else
+                {
+                    prodJournalRouteSum = qr2.get(tablenum(ProdJournalRoute));
+                    select firstOnly    prodJournalRoute
+                    where           prodJournalRoute.JournalId == prodJournalRouteSum.JournalId;
+
+                    nDX_ResourceStatisticBDE = NDXResourcesStatisticBDEJour::find(NDXJournalBDE::Journal, "", prodJournalRouteSum.JournalId, true);
+                }
+                if (!nDX_ResourceStatisticBDE)
+                {
+                    nDX_ResourceStatisticBDE.JournalBDE     = journalOrBDE;
+                    if (journalOrBDE == NDXJournalBDE::BDE)
+                    {
+                        nDX_ResourceStatisticBDE.SFCId          = kCS_SFCFeedbackSum.NdxSFCId;
+                        nDX_ResourceStatisticBDE.JournalId      = "";
+                    }
+                    else
+                    {
+                        nDX_ResourceStatisticBDE.SFCId          = "";
+                        nDX_ResourceStatisticBDE.JournalId      = prodJournalRouteSum.JournalId;
+                    }
+                }
+                if (journalOrBDE == NDXJournalBDE::BDE)
+                {
+                    nDX_ResourceStatisticBDE.ProdReportedGood   = kCS_SFCFeedbackSum.ProdReportedGood;
+                    nDX_ResourceStatisticBDE.ProdReportedError  = kCS_SFCFeedbackSum.ProdReportedError;
+                    nDX_ResourceStatisticBDE.DateFrom           = kCS_SFCFeedback.JmgDate;
+                }
+                else
+                {
+                    nDX_ResourceStatisticBDE.ProdReportedGood   = prodJournalRouteSum.QtyGood;
+                    nDX_ResourceStatisticBDE.ProdReportedError  = prodJournalRouteSum.QtyError;
+                    nDX_ResourceStatisticBDE.DateFrom           = prodJournalRoute.TransDate;
+                }
+                if (nDX_ResourceStatisticBDE.validateWrite())
+                nDX_ResourceStatisticBDE.write();
+                ttscommit;
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    static NDXResourcesStatisticBDEJour find(NDXJournalBDE _journalBDE, AVANdxSFCId _sfcId, ProdJournalIdRoute _journalId = "", boolean _update = false)
+    {
+        NDXResourcesStatisticBDEJour cursor;
+        cursor.selectForUpdate(_update);
+
+        select cursor
+            where   cursor.JournalBDE       == _journalBDE
+                &&  cursor.SFCId            == _sfcId
+                &&  cursor.JournalId        == _journalId;
+
+        return cursor;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<AllowRowVersionChangeTracking>Yes</AllowRowVersionChangeTracking>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>DateFrom</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JournalBDE</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SFCId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>JournalId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedGood</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedError</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>ReportedGoodError</Name>
+			<Label>@NDX:NDXReportedGoodError</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedGood</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProdReportedError</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SFCId</Name>
+			<ExtendedDataType>AVANdxSFCId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ProdReportedGood</Name>
+			<ExtendedDataType>ProdReportedGood</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ProdReportedError</Name>
+			<ExtendedDataType>ProdReportedError</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>JournalId</Name>
+			<ExtendedDataType>ProdJournalIdRoute</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>DateFrom</Name>
+			<ExtendedDataType>NDXDate</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>JournalBDE</Name>
+			<EnumType>NDXJournalBDE</EnumType>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes />
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>AVASFCFeedbackRelation</Name>
+			<RelatedTable>AVASFCFeedback</RelatedTable>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>SFCId</Name>
+					<Field>SFCId</Field>
+					<RelatedField>NdxSFCId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

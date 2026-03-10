@@ -1,0 +1,567 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXKumUmsCustWithSales</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// DebuC 22.09.23
+/// </summary>
+public class NDXKumUmsCustWithSales extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>CheckCustWithSales</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    static void CheckCustWithSales()
+    {
+        CustTable               custTable;
+        DirPartyTable           dirPartyTable;
+        NDXKumUmsCustWithSales  nDXKumUmsCustWithSales;
+        NDXUmsatzClass          nDXUmsatzClass;
+        container               conFirmen;
+        int                     i;
+        Query                   q;
+        QueryBuildDataSource    qbds, qbds2, qbds3, qbds4;
+        QueryRun                qr;
+        ;
+
+        // [%1] : Prüfung - Debitoren mit Umsatz
+        info(strfmt("@NDX:NDXCheckCustomerWithSalesVolume", NDXHelperCommon::seconds2Str()));
+        //<-- 1.2 : NDX/PAFFH//24.08.2017
+        // Sind für alle Debitoren der Umsatz-UK's Referenzen vorhanden?
+        nDXUmsatzClass = NDXUmsatzClass::construct();
+        conFirmen = nDXUmsatzClass.parmConFirmen();
+        for (i=1; i <= conlen(conFirmen); i++)
+        {
+            //--> 1.2 : NDX/PAFFH//24.08.2017
+            // [%1] UK [%2]
+            info(strfmt("@NDX:NDXCheckCustomerWithSalesVolumeCompany", NDXHelperCommon::seconds2Str(), NDXHelperCommon::NDXCompanys2CompanyId(conpeek(conFirmen,i))));
+            //<-- 1.2 : NDX/PAFFH//24.08.2017
+            changecompany(NDXHelperCommon::NDXCompanys2CompanyId(conpeek(conFirmen,i)))
+            {
+                q = new Query();
+                qbds = q.addDataSource(tablenum(CustInvoiceJour));
+                qbds.orderMode(OrderMode::GroupBy);
+                qbds.addGroupByField(fieldnum(CustInvoiceJour, OrderAccount));
+                qbds.addSortField(fieldnum(CustInvoiceJour, OrderAccount));
+                qbds.addRange(fieldnum(CustInvoiceJour, InvoiceId)).value(SysQuery::valueNotEmptyString());     // siehe:classes.NDX_UmsatzClass.fillLiveSales()
+                qbds.addRange(fieldnum(custInvoiceJour, SalesType)).value(SysQuery::valueNot(SalesType::Journal));
+
+                qbds3 = qbds.addDataSource(tablenum(CustTable));
+                qbds3.joinMode(JoinMode::InnerJoin);
+                qbds3.addLink(fieldnum(CustInvoiceJour, OrderAccount), fieldnum(CustTable, AccountNum));
+                qbds3.addGroupByField(fieldnum(CustTable, dataAreaId));
+                qbds3.addGroupByField(fieldnum(CustTable, AccountNum));
+                qbds3.addGroupByField(fieldnum(CustTable, Party));                // 1.1 : NDX/PAFFH/NDX_TASK1235004147/11.07.2017
+                qbds3.fetchMode(QueryFetchMode::One2One);
+
+                qbds4 = qbds3.addDataSource(tablenum(DirPartyTable));
+                qbds4.joinMode(JoinMode::InnerJoin);
+                qbds4.addLink(fieldnum(CustTable, Party), fieldnum(DirPartyTable, RecId));
+                qbds4.addGroupByField(fieldnum(DirPartyTable, NameAlias));
+                qbds4.fetchMode(QueryFetchMode::One2One);
+
+                qbds2 = qbds.addDataSource(tablenum(NDXKumUmsCustWithSales));
+                qbds2.addLink(fieldnum(CustInvoiceJour, dataAreaId), fieldnum(NDXKumUmsCustWithSales, CompanyId));
+                qbds2.addLink(fieldnum(CustInvoiceJour, OrderAccount), fieldnum(NDXKumUmsCustWithSales, CustAccount));
+                qbds2.joinMode(JoinMode::NoExistsJoin);
+                qbds2.fetchMode(QueryFetchMode::One2One);
+                qr = new QueryRun(q);
+
+                while (qr.next())
+                {
+                    custTable       = qr.get(tablenum(CustTable));
+                    dirPartyTable   = qr.get(tableNum(DirPartyTable));
+                    if (custTable.AccountNum)
+                    {
+                        nDXKumUmsCustWithSales.clear();
+                        nDXKumUmsCustWithSales.CompanyId = custTable.dataAreaId;
+                        nDXKumUmsCustWithSales.NameAlias   = dirPartyTable.NameAlias;
+                        nDXKumUmsCustWithSales.Company     = conpeek(conFirmen,i);
+                        nDXKumUmsCustWithSales.CustAccount = custTable.AccountNum;
+                        nDXKumUmsCustWithSales.Party       = custTable.Party;
+                        nDXKumUmsCustWithSales.insert();
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkPartyId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    static void checkPartyId()
+    {
+        NDXKumUmsCustWithSales      nDXKumUmsCustWithSales;
+        CustTable                   custTable;
+        DirPartyTable               dirPartyTable;
+        nDXUmsatzCompanies          nDXUmsatzCompanies;
+
+        Query                       q;
+        QueryRun                    qr;
+        QueryBuildDataSource        qbds, qbds2, qbds3;
+        QueryBuildFieldList         fields2, fields3;
+        int                         anz;
+        ;
+        while select * from nDXUmsatzCompanies where nDXUmsatzCompanies.Active == NoYes::Yes && nDXUmsatzCompanies.CompanyId
+        {
+            changecompany(nDXUmsatzCompanies.CompanyId)
+            {
+
+                setprefix(strfmt("@NDX:NDXCheckMissingPartyInKumUms", NDXHelperCommon::seconds2Str()));
+                anz = 0;
+                q = new Query();
+                //q.allowCrossCompany(true);
+                qbds = q.addDataSource(tablenum(NDXKumUmsCustWithSales));
+                qbds.update(true);
+                qbds.addRange(fieldnum(NDXKumUmsCustWithSales, Party)).value(SysQuery::valueEmptyString());
+
+                qbds2 = qbds.addDataSource(tablenum(CustTable));
+                fields2 = qbds2.fields();
+                fields2.addField(fieldnum(CustTable, AccountNum));
+                qbds2.joinMode(JoinMode::InnerJoin);
+                qbds2.fetchMode(QueryFetchMode::One2One);
+                qbds2.relations(true);
+
+                qbds3 = qbds2.addDataSource(tablenum(DirPartyTable));
+                fields3 = qbds3.fields();
+                fields3.addField(fieldnum(DirPartyTable, PartyNumber));
+                qbds3.joinMode(JoinMode::InnerJoin);
+                qbds3.fetchMode(QueryFetchMode::One2One);
+                qbds3.addLink(fieldnum(CustTable, Party), fieldnum(DirPartyTable, RecId));
+
+                qr = new QueryRun(q);
+
+                while (qr.next())
+                {
+                    nDXKumUmsCustWithSales = qr.get(tablenum(NDXKumUmsCustWithSales));
+                    custTable               = qr.get(tablenum(CustTable));
+                    dirPartyTable           = qr.get(tablenum(DirPartyTable));
+
+                    ++anz;
+                    Warning(strfmt("@NDX:NDXNewParty", anz, nDXUmsatzCompanies.CompanyId, nDXKumUmsCustWithSales.CustAccount, dirPartyTable.PartyNumber));
+                    ttsbegin;
+                    nDXKumUmsCustWithSales.Party = dirPartyTable.RecId;
+                    nDXKumUmsCustWithSales.update();
+                    ttscommit;
+                }
+                if (anz)
+                {
+                    Error(strfmt("@NDX:NDXEntriesWithoutParty", NDXHelperCommon::seconds2Str(), nDXUmsatzCompanies.CompanyId, anz));
+                }
+
+                //--> 1.1 : NDX/PAFFH/NDX_TASK1235004221/11.04.2018
+                anz = 0;
+                q = new Query();
+                qbds = q.addDataSource(tablenum(NDXKumUmsCustWithSales));
+                qbds.update(true);
+                qbds.addRange(fieldnum(NDXKumUmsCustWithSales, CustAccount)).value(SysQuery::valueNotEmptyString());
+
+                qbds2 = qbds.addDataSource(tablenum(CustTable));
+                fields2 = qbds2.fields();
+                fields2.addField(fieldnum(CustTable, AccountNum));
+                fields2.addField(fieldnum(CustTable, Party));
+                qbds2.joinMode(JoinMode::InnerJoin);
+                qbds2.fetchMode(QueryFetchMode::One2One);
+                qbds2.relations(true);
+
+                qr = new QueryRun(q);
+
+                setprefix(strfmt("@NDX:NDXDifferentParty", NDXHelperCommon::seconds2Str()));
+                while (qr.next())
+                {
+                    nDXKumUmsCustWithSales = qr.get(tablenum(NDXKumUmsCustWithSales));
+                    custTable               = qr.get(tablenum(CustTable));
+
+                    if (nDXKumUmsCustWithSales.Party == custTable.Party)
+                    {
+                        continue;
+                    }
+
+                    ttsbegin;
+                    ++anz;
+                    Warning(strfmt("@NDXUmsAusw:NDXKumUmsWarning001", anz, nDXUmsatzCompanies.CompanyId, nDXKumUmsCustWithSales.CustAccount, nDXKumUmsCustWithSales.Party, custTable.Party));
+
+                    nDXKumUmsCustWithSales.Party = custTable.Party;
+                    nDXKumUmsCustWithSales.update();
+                    ttscommit;
+
+                }
+                if (anz)
+                {
+                    Error(strfmt("@NDXUmsAusw:NDXKumUmsWarning002", nDXUmsatzCompanies.CompanyId, anz));
+                }
+                //<-- 1.1 : NDX/PAFFH/NDX_TASK1235004221/11.04.2018
+
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_custAccount">CustAccount</param>
+    /// <param name = "_CompanyId">CompanyId</param>
+    /// <param name = "_forUpdate">boolean</param>
+    /// <returns>NDXKumUmsCustWithSales</returns>
+    static NDXKumUmsCustWithSales find(CustAccount     _custAccount,
+                                    CompanyId       _CompanyId = curext(),
+                                    boolean         _forUpdate = false)
+    {
+        NDXKumUmsCustWithSales nDXKumUmsCustWithSales;
+        ;
+
+        //if (nDX_KumUmsCustWithSales)
+        {
+            if (_forUpdate)
+            {
+                nDXKumUmsCustWithSales.selectForUpdate(_forUpdate);
+            }
+
+            select firstonly    nDXKumUmsCustWithSales
+            where           nDXKumUmsCustWithSales.CustAccount     == _custAccount &&
+                            nDXKumUmsCustWithSales.CompanyId       == _CompanyId;
+        }
+        return nDXKumUmsCustWithSales;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAccountNumPerCompany</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "lPerCompany">boolean</param>
+    /// <returns>Map</returns>
+    Map getAccountNumPerCompany(boolean lPerCompany = true)
+    {
+        CustTable               custTable;
+
+        Map                     map;
+        NDXUmsatzClass          nDXUmsatzClass;
+        container               conCompany;
+        int                     i;
+        Query                   q;
+        QueryRun                qr;
+        QueryBuildDataSource    qbds;
+        CompanyId               company;
+
+        ;
+        if (lPerCompany)
+        {
+            map = new Map(Types::String, Types::String);
+        }
+        else
+        {
+            map = new Map(Types::Integer, Types::String);
+        }
+
+        if(this.Party)
+        {
+            nDXUmsatzClass = NDXUmsatzClass::construct();
+            conCompany      = nDXUmsatzClass.parmConCompanies();
+
+            q       = new Query();
+            q.allowCrossCompany(true);
+            for (i = 1; i <= conlen(conCompany); i++)
+            {
+                company  = conpeek(conCompany, i);
+                q.addCompanyRange(company);
+            }
+            qbds   = q.addDataSource(tablenum(CustTable));
+            qbds.addRange(fieldnum(CustTable, Party)).value(queryValue(this.Party));
+
+            qr = new QueryRun(q);
+
+            while (qr.next())
+            {
+                custTable          = qr.get(tablenum(CustTable));
+                if (lPerCompany)
+                {
+                    map.insert(custTable.dataAreaId, custTable.AccountNum);
+                }
+                else
+                {
+                    map.insert(NDXHelperCommon::CompanyId2NDXCompany(custTable.dataAreaId), custTable.AccountNum);
+                }
+            }
+        }
+
+        return map;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>custTableFromAccount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "accountNum">AccountNum</param>
+    /// <param name = "firma">NDXCompanys</param>
+    /// <returns>CustTable</returns>
+    static CustTable custTableFromAccount(AccountNum accountNum, NDXCompanys firma)
+    {
+        CustTable                   custTable;
+        NDXKumUmsCustWithSales      nDX_KumUmsCustWithSales;
+        Map                         accountNumPerCompany;
+        CompanyId                   company;
+        ;
+
+        company = NDXHelperCommon::NDXCompanys2CompanyId(firma);
+        nDX_KumUmsCustWithSales = NDXKumUmsCustWithSales::find(accountNum, company);
+        if (nDX_KumUmsCustWithSales)
+        {
+            accountNumPerCompany = nDX_KumUmsCustWithSales.getAccountNumPerCompanies(accountNum, company);
+            if (accountNumPerCompany.exists(company))
+            {
+                return CustTable::findByCompany(company, accountNumPerCompany.lookup(company));
+            }
+        }
+        else
+        {
+            changecompany(company)
+            {
+                custTable = null;
+                custTable = CustTable::find(accountNum);
+            }
+        }
+        return custTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAccountNumPerCompanies</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "custAccount">CustAccount</param>
+    /// <param name = "companyId">CompanyId</param>
+    /// <param name = "lPerCompany">boolean</param>
+    /// <returns>map</returns>
+    map getAccountNumPerCompanies(CustAccount custAccount, CompanyId companyId, boolean lPerCompany = true)
+    {
+        CustTable   custTable;
+        Map         map;
+        ;
+
+        if (this.CompanyId == companyId &&
+        this.CustAccount == custAccount)
+        {
+            return this.getAccountNumPerCompany(lPerCompany);
+        }
+        else if (custAccount)
+        {
+            if (lPerCompany)
+            {
+                map = new Map(Types::String, Types::String);
+            }
+            else
+            {
+                map = new Map(Types::Integer, Types::String);
+            }
+
+            custTable = custTable::findByCompany(companyId, custAccount);
+            if (custTable)
+            {
+                // Positionieren auf einen Kunden mit Umsatz
+                select firstonly this where this.Party == custTable.Party;
+                if (this.Party)
+                {
+                    return this.getAccountNumPerCompany(lPerCompany);
+                }
+            }
+        }
+        return map;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findKdNr</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 22.09.23
+    /// </summary>
+    /// <param name = "_KdNr">NDXKdNr</param>
+    /// <param name = "_Firma">NDXCompanyBE</param>
+    /// <param name = "_forUpdate">boolean</param>
+    /// <returns>NDXKumUmsCustWithSales</returns>
+    static NDXKumUmsCustWithSales findKdNr(NDXKdNr        _KdNr,
+                                        NDXCompanyBE     _Firma,
+                                        boolean         _forUpdate = false)
+    {
+        NDXKumUmsCustWithSales nDX_KumUmsCustWithSales;
+        ;
+
+        if (_KdNr)
+        {
+            if (_forUpdate)
+            {
+                nDX_KumUmsCustWithSales.selectForUpdate(_forUpdate);
+            }
+
+            select firstonly    nDX_KumUmsCustWithSales
+            where           nDX_KumUmsCustWithSales.KdNr    == _KdNr &&
+                            nDX_KumUmsCustWithSales.Company   == _Firma;
+        }
+        return nDX_KumUmsCustWithSales;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NDXKumUmsCustWithSalesDev</DeveloperDocumentation>
+	<Label>@NDX:NDXKumUmsCustWithSales</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>CustAccount</TitleField1>
+	<CacheLookup>Found</CacheLookup>
+	<ClusteredIndex>CustAccountIdx</ClusteredIndex>
+	<CreatedBy>Yes</CreatedBy>
+	<CreatedDateTime>Yes</CreatedDateTime>
+	<ModifiedBy>Yes</ModifiedBy>
+	<ModifiedDateTime>Yes</ModifiedDateTime>
+	<PrimaryIndex>CustAccountIdx</PrimaryIndex>
+	<SaveDataPerCompany>No</SaveDataPerCompany>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>CompanyId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CustAccount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>NameAlias</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KdNr</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Company</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Party</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CompanyId</Name>
+			<ExtendedDataType>DataAreaId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CustAccount</Name>
+			<ExtendedDataType>CustAccount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>NameAlias</Name>
+			<ExtendedDataType>CustName</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>KdNr</Name>
+			<ExtendedDataType>NDXKDNr</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Company</Name>
+			<Label>@NDX:NDXCompany</Label>
+			<EnumType>NDXCompanyBE</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>Party</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>CustAccountIdx</Name>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>CompanyId</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>CustAccount</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Company</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>KdNr</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>CustTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<RelatedTable>CustTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>CustAccount</Name>
+					<SourceEDT>CustAccount</SourceEDT>
+					<Field>CustAccount</Field>
+					<RelatedField>AccountNum</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

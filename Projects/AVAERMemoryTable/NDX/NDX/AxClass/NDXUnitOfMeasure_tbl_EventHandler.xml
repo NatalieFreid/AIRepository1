@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXUnitOfMeasure_tbl_EventHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// WolfA 28.04.23
+/// UnitOfMeasure table event handler
+/// </summary>
+internal final class NDXUnitOfMeasure_tbl_EventHandler
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>UnitOfMeasure_onModifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Modified field event handler
+    /// </summary>
+    /// <param name="sender">UnitOfMeasure sender</param>
+    /// <param name="e">DataEventArgs</param>
+    [DataEventHandler(tableStr(UnitOfMeasure), DataEventType::ModifiedField)]
+    public static void UnitOfMeasure_onModifiedField(Common sender, DataEventArgs e)
+    {
+        ModifyFieldEventArgs event = e as ModifyFieldEventArgs;
+        UnitOfMeasure unitOfMeasure = sender as UnitOfMeasure;
+        FieldId fieldId = event.parmFieldId();
+
+        UnitOfMeasureConversion unitConvert;
+
+        switch(fieldId)
+        {
+            case fieldnum(UnitOfMeasure, NDXHeight):
+            case fieldnum(UnitOfMeasure, NDXLength):
+            case fieldnum(UnitOfMeasure, NDXWidth):
+
+                if(!unitOfMeasure.NDXUnitHeightVariable && !unitOfMeasure.NDXUnitLengthVariable && !unitOfMeasure.NDXUnitWidthVariable)
+                {
+                    unitOfMeasure.NDXVolume = (unitOfMeasure.NDXHeight / 1000) * (unitOfMeasure.NDXLength / 1000) * (unitOfMeasure.NDXWidth / 1000);
+                }
+                break;
+
+            case fieldnum(UnitOfMeasure, NDXUnitItemReference):
+                if(InventTable::findRecId(UnitOfMeasure.NDXUnitItemReference))
+                {
+                    unitOfMeasure.NDXLength = InventTable::findByRecId(unitOfMeasure.NDXUnitItemReference).grossDepth;
+                    unitOfMeasure.NDXWidth  = InventTable::findByRecId(unitOfMeasure.NDXUnitItemReference).grossWidth;
+                    unitOfMeasure.NDXHeight = InventTable::findByRecId(unitOfMeasure.NDXUnitItemReference).grossHeight;
+                    unitOfMeasure.NDXWeight = InventTable::findByRecId(unitOfMeasure.NDXUnitItemReference).grossWeight() / 1000;
+
+                    if(unitOfMeasure.NDXHeight && unitOfMeasure.NDXLength && unitOfMeasure.NDXWidth)
+                    {
+                        unitOfMeasure.NDXVolume = (unitOfMeasure.NDXHeight / 1000) * (unitOfMeasure.NDXLength / 1000) * (unitOfMeasure.NDXWidth / 1000);
+                    }
+
+                    //Alle Verpackungsstufen updaten
+                    select count(RecId) from unitConvert where unitConvert.FromUnitOfMeasure == unitOfMeasure.RecId && unitConvert.NDXUnitConvertPrevLevel;
+                }
+                else
+                {
+                    //Alle Verpackungsstufen updaten
+                    select count(RecId) from unitConvert where unitConvert.FromUnitOfMeasure == unitOfMeasure.RecId;
+
+                    if(Box::yesNo(strFmt("@NDX:NDXUnitConverCheckInfoTxt10", unitConvert.RecId), DialogButton::No) == DialogButton::Yes)
+                    {
+                        unitOfMeasure.NDXLength = 0;
+                        unitOfMeasure.NDXWidth  = 0;
+                        unitOfMeasure.NDXHeight = 0;
+                        unitOfMeasure.NDXWeight = 0;
+
+                        if(unitOfMeasure.NDXHeight && unitOfMeasure.NDXLength && unitOfMeasure.NDXWidth)
+                        {
+                            unitOfMeasure.NDXVolume = 0;
+                        }
+                    }
+                }
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

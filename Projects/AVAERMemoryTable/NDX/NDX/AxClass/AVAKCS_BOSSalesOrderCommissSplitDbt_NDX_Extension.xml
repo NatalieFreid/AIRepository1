@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAKCS_BOSSalesOrderCommissSplitDbt_NDX_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>AVAKCS_BOSSalesOrderCommissSplitDbt_NDX_Extension</c> class is the extension for <c>KCS_BOSSalesOrderCommissSplit</c>
+/// </summary>
+[ExtensionOf(tableStr(KCS_BOSSalesOrderCommissSplit))]
+final class AVAKCS_BOSSalesOrderCommissSplitDbt_NDX_Extension
+{
+ }
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaItemSetExistInventTransId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Updates the <c>avaItemSetExistInventTransId</c> based on the given item.
+    /// </summary>
+    /// <param name="_inventTransId">
+    ///     The <c>InventTransId</c> buffer to initialize from.
+    /// </param>
+    /// <returns>
+    ///     <c>boolean</c> as type
+    /// </returns>
+    public static boolean avaItemSetExistInventTransId(InventTransId _inventTransId)
+    {
+        boolean retVal;
+        
+        KCS_BOSSalesOrderCommissSplit locKCS_BOSSalesOrderCommissSplit;
+        
+        if(_inventTransId)
+        {
+            select firstonly RecId
+            from    locKCS_BOSSalesOrderCommissSplit
+            where   locKCS_BOSSalesOrderCommissSplit.InventTransId == _inventTransId;
+
+            if(locKCS_BOSSalesOrderCommissSplit.RecId)
+            {
+                retVal = true;
+            }
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaItemSetCopySalesLine2SalesLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Updates the <c>avaItemSetCopySalesLine2SalesLine</c> based on the given item.
+    /// </summary>
+    /// <param name="_inventTransIdFrom">
+    ///     The <c>InventTransId</c> buffer to initialize from.
+    /// </param>
+    /// <param name="_inventTransIdTo">
+    ///     The <c>InventTransId</c> buffer to initialize from.
+    /// </param>
+    /// <returns>
+    ///     <c>boolean</c> as type
+    /// </returns>
+    public static boolean avaItemSetCopySalesLine2SalesLine(InventTransId   _inventTransIdFrom,
+                                                            InventTransId   _inventTransIdTo,
+                                                            boolean         _deleteExisting     = false)
+    {
+        boolean                         retVal;
+        SalesLine                       locSalesLineFrom;
+        SalesLine                       locSalesLineTo;
+
+        KCS_BOSSalesOrderCommissSplit   locKCS_BOSSalesOrderCommissSplitFrom;
+        KCS_BOSSalesOrderCommissSplit   locKCS_BOSSalesOrderCommissSplitTo;
+
+
+        if(_inventTransIdFrom && _inventTransIdTo)
+        {
+            locSalesLineFrom = SalesLine::findInventTransId(_inventTransIdFrom);
+            
+            if(locSalesLineFrom.RecId)
+            {
+                locSalesLineTo = SalesLine::findInventTransId(_inventTransIdTo);
+                
+                if(locSalesLineTo.RecId)
+                {
+                    ttsbegin;
+
+                    if(_deleteExisting == true)
+                    {
+                        delete_from locKCS_BOSSalesOrderCommissSplitTo
+                        where   locKCS_BOSSalesOrderCommissSplitTo.SalesId          == locSalesLineTo.SalesId
+                            &&  locKCS_BOSSalesOrderCommissSplitTo.InventTransId    == locSalesLineTo.InventTransId;
+                    }
+
+                    while select locKCS_BOSSalesOrderCommissSplitFrom
+                    where locKCS_BOSSalesOrderCommissSplitFrom.InventTransId == _inventTransIdFrom
+                    {
+                        locKCS_BOSSalesOrderCommissSplitTo.clear();
+                        buf2Buf(locKCS_BOSSalesOrderCommissSplitFrom, locKCS_BOSSalesOrderCommissSplitTo);
+                        locKCS_BOSSalesOrderCommissSplitTo.selectForUpdate(true);
+                        locKCS_BOSSalesOrderCommissSplitTo.InventTransId = _inventTransIdTo;
+                        locKCS_BOSSalesOrderCommissSplitTo.insert();
+                    }
+                    ttscommit;
+                }
+            }
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaItemSetSyncComponents</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Updates the <c>avaItemSetSyncComponents</c> based on the given item.
+    /// </summary>
+    /// <param name="_inventTransId">
+    ///     The <c>InventTransId</c> buffer to initialize from.
+    /// </param>
+    /// <param name="_basedOnItemSet">
+    ///     The <c>boolean</c> buffer to initialize from.
+    /// </param>
+    /// <returns>
+    ///     <c>boolean</c> as type
+    /// </returns>
+    public static boolean avaItemSetSyncComponents( InventTransId   _inventTransId,
+                                                    boolean         _basedOnItemSet = false )
+    {
+        boolean                         retVal;
+        SalesLine                       locSalesLineBase;
+        SalesLine                       locSalesLineSearch;
+        InventTransId                   locInventTransIdItemSet;
+
+        KCS_BOSSalesOrderCommissSplit   locKCS_BOSSalesOrderCommissSplitFrom;
+        KCS_BOSSalesOrderCommissSplit   locKCS_BOSSalesOrderCommissSplitTo;
+
+        if(_inventTransId)
+        {
+            locSalesLineBase = SalesLine::findInventTransId(_inventTransId);
+            if(locSalesLineBase.RecId)
+            {
+                if(locSalesLineBase.AVAItemSetComponent && _basedOnItemSet)
+                {
+                    locSalesLineBase = SalesLine::findInventTransId(locSalesLineBase.AVAItemSetParent);
+                }
+                if(locSalesLineBase.RecId)
+                {
+                    locInventTransIdItemSet = locSalesLineBase.avaItemSetInventTransId();
+                }
+            }
+
+            if(locSalesLineBase.RecId && locInventTransIdItemSet)
+            {
+                while select locSalesLineSearch
+                where   locSalesLineSearch.SalesId          == locSalesLineBase.SalesId
+                    &&  locSalesLineSearch.InventTransId    != locSalesLineBase.InventTransId
+                    &&  (   (   locSalesLineSearch.AVAItemSet           == NoYes::Yes && locSalesLineSearch.InventTransId       == locInventTransIdItemSet  )
+                        ||  (   locSalesLineSearch.AVAItemSetComponent  == NoYes::Yes && locSalesLineSearch.AVAItemSetParent    == locInventTransIdItemSet  )   )
+                {
+                    KCS_BOSSalesOrderCommissSplit::avaItemSetCopySalesLine2SalesLine(locSalesLineBase.InventTransId, locSalesLineSearch.InventTransId, true);
+                    retVal = true;
+                }
+            }
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVATSTimesheetEntryFrm_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of form TSTimesheetEntry
+/// </summary>
+[ExtensionOf(formStr(TSTimesheetEntry))]
+public final class AVATSTimesheetEntryFrm_Extension
+{
+    public AVAHoursBooked      postedHours;
+    public AVAHoursUnbooked    notPostedHours;
+    public AVAHoursTotal       totalHours;
+
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaCheckLineExtTxts</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if all line external texts are filled
+    /// </summary>
+    public void avaCheckLineExtTxts()
+    {
+        TSTimesheetLineWeek locTimesheetLineWeek;
+
+        for(int day = 1; day <= 7; day++)
+        {
+            select firstonly locTimesheetLineWeek
+                where locTimesheetLineWeek.TimesheetNbr == TSTimesheetTable.TimesheetNbr
+                && locTimeSheetLineWeek.Hours[day] != 0
+                && locTimesheetLineWeek.ExternalComments[day] == '';               
+
+            if(locTimesheetLineWeek.RecId != 0)
+            {
+                throw error("@NDX:NXATimesheetExtCommentEmptyError");
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setLineObjects</Name>
+				<Source><![CDATA[
+    public void setLineObjects(boolean _enable)
+    {
+        boolean showIntComment = !projParameters::find().HideTimesheetIntComments;
+        next setLineObjects(_enable);
+
+        tsTimesheetLineWeek_ds.object(fieldId2Ext(fieldNum(TSTimesheetLineWeek, InternalComments),1)).visible(showintComment);
+        tsTimesheetLineWeek_ds.object(fieldId2Ext(fieldNum(TSTimesheetLineWeek, InternalComments),2)).visible(showintComment);
+        tsTimesheetLineWeek_ds.object(fieldId2Ext(fieldNum(TSTimesheetLineWeek, InternalComments),3)).visible(showintComment);
+        tsTimesheetLineWeek_ds.object(fieldId2Ext(fieldNum(TSTimesheetLineWeek, InternalComments),4)).visible(showintComment);
+        tsTimesheetLineWeek_ds.object(fieldId2Ext(fieldNum(TSTimesheetLineWeek, InternalComments),5)).visible(showintComment);
+        tsTimesheetLineWeek_ds.object(fieldId2Ext(fieldNum(TSTimesheetLineWeek, InternalComments),6)).visible(showintComment);
+        tsTimesheetLineWeek_ds.object(fieldId2Ext(fieldNum(TSTimesheetLineWeek, InternalComments),7)).visible(showintComment);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setFocusOnDayIndex</Name>
+				<Source><![CDATA[
+    public void setFocusOnDayIndex(int _index)
+    {
+        next setFocusOnDayIndex(_index);
+
+        TSTimesheetSummaryLine  sumLineView;
+        TransDate               transDate;
+        ProjJournalTrans        projJournalTrans;
+        int                     offset = 0;
+
+        TSTimesheetLine curLine = TSTimesheetLine_ds.cursor();
+        TSTimesheetLineWeek curLineWeek = TSTimesheetLineWeek_ds.cursor();
+        offset = dayOfWk(curLineWeek.DayFrom)-1;
+        transDate = DateTimeUtil::date(DateTimeUtil::addDays(DateTimeUtil::newDateTime(curLineWeek.DayFrom,0,DateTimeUtil::getUserPreferredTimeZone()),_index - offset));
+
+        select firstonly projJournalTrans where projJournalTrans.Resource == curLine.Resource
+                                             && projJournalTrans.TransDate == transDate;
+        notPostedHours = projJournalTrans.avaDisplayUnbookedHours();
+
+        if (!projJournalTrans)
+        {
+            select sum(Hours) from sumlineView where (sumLineView.ApprovalStatus == tsappstatus::Create || sumLineView.ApprovalStatus == TSAppStatus::Returned)
+                                              && sumLineView.Resource == curLine.Resource
+                                              && sumLineView.DayFrom == curLineWeek.DayFrom
+                                              && sumLineView.DayTo == curLineWeek.DayTo;
+            notPostedHours = sumLineView.Hours[_index];
+        }
+        postedHours    = projJournalTrans.avaDisplayBookedHours();
+        totalHours     = notPostedHours + postedHours;
+
+        AVANotPostedHours.realValue(notPostedHours);
+        AVAPostedHours.realValue(postedHours);
+        AVATotalHours.realvalue(totalHours);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

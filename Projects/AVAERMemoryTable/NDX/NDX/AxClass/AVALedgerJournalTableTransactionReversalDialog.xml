@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVALedgerJournalTableTransactionReversalDialog</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using System.ComponentModel.Composition;
+
+/// <summary>
+/// Journal Header provider for the transaction reversal dialog.
+/// </summary>
+[ExportMetadataAttribute(enumStr(TransactionReversalSourceType), TransactionReversalSourceType::AVALedgerJournalTable)]
+[ExportAttribute('Dynamics.AX.Application.TransactionReversalBaseDialog')]
+public final class AVALedgerJournalTableTransactionReversalDialog  extends TransactionReversalBaseDialog
+{
+    private container callingJournalNumbers;
+    private LedgerJournalTable callingJournalHeader;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        super();
+
+        if (this.parmFormRun().args() && this.parmFormRun().args().record())
+        {
+            Common selectedRecord = this.parmFormRun().args().record();
+
+            if (selectedRecord is LedgerJournalTable)
+            {
+                FormDataSource ledgerJournalTable_ds = FormDataUtil::getFormDataSource(selectedRecord);
+                MultiSelectionHelper    helper = MultiSelectionHelper::createFromCaller(this.parmFormRun().args().caller());
+                helper.createQueryRanges(ledgerJournalTable_ds.queryBuildDataSource(), fieldStr(LedgerJournalTable, RecId));
+                LedgerJournalTable  selectedLedgerJournalTable = helper.getFirst();
+                LedgerJournalTable allocationLedgerJournalTable;
+                callingJournalHeader = selectedLedgerJournalTable;
+                while (selectedLedgerJournalTable)
+                {
+                    callingJournalNumbers += selectedLedgerJournalTable.JournalNum;
+                    if (selectedLedgerJournalTable.AVAAllocationRefRecId)
+                    {
+                        allocationLedgerJournalTable = LedgerJournalTable::findByRecId(selectedLedgerJournalTable.AVAAllocationRefRecId, true);
+                        ttsbegin;
+                        allocationLedgerJournalTable.AVAReversed = NoYes::Yes;
+                        allocationLedgerJournalTable.doUpdate();
+                        ttscommit;
+                    }
+                    selectedLedgerJournalTable = helper.getNext();
+                }
+            }
+            else
+            {
+                throw error(Error::wrongUseOfFunction(funcName()));
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateReversalTable</Name>
+				<Source><![CDATA[
+    public void populateReversalTable()
+    {
+        int i;
+        LedgerJournalId journalNum;
+        for (i = 1; i <= conLen(callingJournalNumbers); i++)
+        {
+            journalNum = conPeek(callingJournalNumbers, i);
+            this.populateReversalTableForJournalNum(journalNum);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateReversalTableForJournalNum</Name>
+				<Source><![CDATA[
+    private void populateReversalTableForJournalNum(LedgerJournalId _journalNum)
+    {
+        LedgerJournalTable ledgerJournalTable = LedgerJournalTable::find(_journalNum);
+        LedgerJournalTrans firstLedgerJournalTrans;
+        LedgerTransType callingJournalTransactionType;
+        TransactionReversalExecutionDetail reversalExecutionDetail;
+        TransactionReversalTrans transactionReversalTrans;
+        LedgerJournalTrans ledgerJournalTrans;
+        GeneralJournalAccountEntry generalJournalAccountEntry;
+        GeneralJournalEntry generalJournalEntry;
+
+        // Stage known data for use in set-based insert statement
+        int processing = enum2int(TransactionReversalStatus::Waiting);
+        RefRecId refRecId = ledgerJournalTable.RecId;
+        int journalHeaderTableId = tableNum(LedgerJournalTable);
+        LedgerJournalId journalNum = _journalNum;
+        guid localExecutionId = this.getExecutionId();
+
+        select firstonly TransactionType from firstLedgerJournalTrans
+            where firstLedgerJournalTrans.JournalNum == _journalNum;
+        callingJournalTransactionType = firstLedgerJournalTrans.TransactionType;
+
+        ttsbegin;
+
+        insert_recordset reversalExecutionDetail(
+            Status,
+            ReferenceTableId,
+            ReferenceRecId,
+            JournalBatchNumber,
+            ExecutionId,
+            SubledgerVoucher,
+            TransactionDate,
+            JournalCategory)
+        select
+            processing,
+            journalHeaderTableId,
+            refRecId,
+            journalNum,
+            localExecutionId,
+            Voucher,
+            TransDate,
+            callingJournalTransactionType
+        from ledgerJournalTrans
+            group by ledgerJournalTrans.JournalNum, ledgerJournalTrans.Voucher, ledgerJournalTrans.TransDate
+                where ledgerJournalTrans.JournalNum == journalNum
+            join generalJournalEntry
+                group by generalJournalEntry.SubledgerVoucherDataAreaId, generalJournalEntry.SubledgerVoucher, generalJournalEntry.AccountingDate
+                where generalJournalEntry.SubledgerVoucher == ledgerJournalTrans.Voucher
+                   && generalJournalEntry.AccountingDate == ledgerJournalTrans.TransDate
+                   && generalJournalEntry.SubledgerVoucherDataAreaId == ledgerJournalTrans.DataAreaId
+            exists join generalJournalAccountEntry
+                where generalJournalAccountEntry.GeneralJournalEntry == generalJournalEntry.RecId
+                   && generalJournalAccountEntry.IsCredit == NoYes::No
+            notexists join transactionReversalTrans
+                where transactionReversalTrans.RefRecId == generalJournalAccountEntry.RecId
+                   && transactionReversalTrans.RefTableId == generalJournalAccountEntry.TableId;
+
+        // We can't populate the amount above because LedgerJournalTrans can have N lines for each voucher
+        // which can result in the amount being doubled, tripled, etc...  The TransationReversalExecutionDetail
+        // table will only have one record for each voucher and since X++ doesn't support group by's in update_recordset
+        // we use a tmp table to sum the amounts.  Then move the totals back into the reversal table.
+        LedgerJournalTransTransactionReversalAmountTmp amountTmp;
+        insert_recordset amountTmp(
+            ExecutionDetailRecId,
+            Amount)
+            select
+                RecId
+            from reversalExecutionDetail
+                group by reversalExecutionDetail.RecId
+                where reversalExecutionDetail.ExecutionId == localExecutionId
+            join generalJournalEntry
+                group by generalJournalEntry.SubledgerVoucherDataAreaId, generalJournalEntry.SubledgerVoucher, generalJournalEntry.AccountingDate
+                where generalJournalEntry.SubledgerVoucher == reversalExecutionDetail.SubledgerVoucher
+                   && generalJournalEntry.AccountingDate == reversalExecutionDetail.TransactionDate
+                   && generalJournalEntry.SubledgerVoucherDataAreaId == reversalExecutionDetail.DataAreaId
+            join sum(AccountingCurrencyAmount) from generalJournalAccountEntry
+                where generalJournalAccountEntry.GeneralJournalEntry == generalJournalEntry.RecId
+                   && generalJournalAccountEntry.IsCredit == NoYes::No;
+
+        update_recordset reversalExecutionDetail
+            setting TransactionAmount = amountTmp.Amount
+            join amountTmp
+            where reversalExecutionDetail.RecId == amountTmp.ExecutionDetailRecId;
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>lineCount</Name>
+				<Source><![CDATA[
+    [Hookable(false)]
+    public int64 lineCount()
+    {
+        LedgerJournalTrans ledgerJournalTrans;
+        TransactionReversalExecutionDetail reversalExecutionDetail;
+
+        select count(RecId) from ledgerJournalTrans
+            exists join reversalExecutionDetail
+            where ledgerJournalTrans.JournalNum == reversalExecutionDetail.JournalBatchNumber
+               && ledgerJournalTrans.Voucher == reversalExecutionDetail.SubledgerVoucher
+               && reversalExecutionDetail.ExecutionId == this.getExecutionId();
+
+        return ledgerJournalTrans.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>shouldShowReversalStatusButton</Name>
+				<Source><![CDATA[
+    [Hookable(false)]
+    public boolean shouldShowReversalStatusButton()
+    {
+        return doesReversalCollideWithActiveReversal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getReversalStatusMenuItemName</Name>
+				<Source><![CDATA[
+    [Hookable(false)]
+    public MenuItemName getReversalStatusMenuItemName()
+    {
+        return menuItemDisplayStr(LedgerJournalTransactionReversalStatus);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCurrentlyProcessingReversalContract</Name>
+				<Source><![CDATA[
+    [Hookable(false)]
+    public TransactionReversalContract getCurrentlyProcessingReversalContract()
+    {
+        guid activeReversalExecutionId = TransactionReversalExecutionDetail::getReversalExecutionIdForRecord(callingJournalHeader);
+
+        return TransactionReversalContract::newFromExecutionId(activeReversalExecutionId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getProcessingStartTimeForActiveReversal</Name>
+				<Source><![CDATA[
+    protected TransDateTime getProcessingStartTimeForActiveReversal()
+    {
+        TransactionReversalExecutionDetail transactionReversalExecutionDetail;
+
+        select firstonly ProcessingDate from transactionReversalExecutionDetail
+            where transactionReversalExecutionDetail.ReferenceRecId == callingJournalHeader.RecId
+               && transactionReversalExecutionDetail.ReferenceTableId == callingJournalHeader.TableId
+               && transactionReversalExecutionDetail.Status == TransactionReversalStatus::Processing;
+
+        return transactionReversalExecutionDetail.ProcessingDate;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

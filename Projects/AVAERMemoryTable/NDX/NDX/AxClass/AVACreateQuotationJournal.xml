@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACreateQuotationJournal</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA class for creating a customer quotation journal with lines from code
+/// IMPORTANT: quotation confirmation not implemented
+/// </summary>
+public class AVACreateQuotationJournal extends RunBaseBatch
+{
+    SalesQuotationTable             salesQuotationTable;
+    SalesQuotationLine              salesQuotationLine;
+    SalesQuotationParmTable         salesQuotationParmTable;
+    SalesQuotationParmLine          salesQuotationParmLine;
+    SalesQuotationParmUpdate        salesQuotationParmUpdate;
+    Counter                         numberOfRecords;
+    Counter                         recordsUpdated;
+    DocumentStatus                  documentStatus;
+    str                             parmSalesProj;
+    container                       callerRecordsPackedMap;
+    ParmId                          parmid;
+    KCS_SendMode                    sendMode;
+
+    #define.CurrentVersion(4)
+    #localmacro.CurrentList
+        DocumentStatus,
+        parmSalesProj,
+        SalesQuotationTable
+    #endmacro
+
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "args">args</param>
+    public static void main(Args args)
+    {
+        SalesQuotationTable                 salesQuotationTable;
+        boolean                             postJour = false;
+        AVACreateQuotationJournal           createQuotationJournal = AVACreateQuotationJournal::construct(args);
+        createQuotationJournal.parmInBatch(false);
+
+        DocumentStatus documentStatus = args.parmEnum();
+        str parmSalesProj = args.parm();
+        Common record = args.record();
+        FormDataSource salesQuotationTable_ds;
+        if (record && record.TableId == tableNum(SalesQuotationTable))
+        {
+            salesQuotationTable_ds  = FormDataUtil::getFormDataSource(record);
+            salesQuotationTable = record;
+        }
+        
+        KCS_HDMSalesQuotationTableInfoFields    infoFields = KCS_HDMSalesQuotationTableInfoFields::find(salesQuotationTable.QuotationId, true);
+
+        if (infoFields.InfoField2 != '' && infoFields.InfoField2Finished == NoYes::No)
+        {
+            if (Box::yesNo(strFmt("@NDX:NXACommitInfo2", infoFields.InfoField2), DialogButton::Yes) == DialogButton::Yes)
+            {
+                ttsbegin;
+                infoFields.InfoField2Finished = NoYes::Yes;
+                infoFields.InfoField2FinishedDateTime = DateTimeUtil::getSystemDateTime();
+                infoFields.InfoField2FinishedUser = curUserId();
+                infoFields.update();
+                ttscommit;
+                postJour = true;
+            }
+        }
+        else
+        {
+            postJour = true;
+        }
+
+        if (postJour)
+        {
+            container callerRecordsPackedMap;
+            if (salesQuotationTable_ds)
+            {
+                callerRecordsPackedMap = FormLetter::getFormRecord(salesQuotationTable_ds);
+            }
+
+            SalesQuotationEditLinesForm salesQuotationEditLinesForm = SalesQuotationEditLinesForm::construct(args.parmEnum(), args.parm());
+
+            boolean promptedOk;
+            boolean doExecuteQuery;
+            QuotationIdBase origQuotationId;
+
+            using (SysErrorMessageHelpScope scope = SysErrorMessageHelpScope::newErrorContext(args))
+            {
+                [promptedOk, doExecuteQuery, origQuotationId]
+                = createQuotationJournal.initializeAndRun(salesQuotationEditLinesForm, documentStatus, parmSalesProj, record, callerRecordsPackedMap);
+
+                if(scope)
+                {
+                    boolean BPCheck;
+                    BPCheck = true;
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSendMode</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_sendMode">_sendMode</param>
+    /// <returns>KCS_SendMode</returns>
+    public KCS_SendMode     parmSendMode(KCS_SendMode       _sendMode = sendMode)
+    {
+        sendMode = _sendMode;
+        return sendMode;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeAndRun</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "EditLinesForm">SalesQuotationEditLinesForm</param>
+    /// <param name = "_documentStatus">DocumentStatus</param>
+    /// <param name = "_parmSalesProj">str</param>
+    /// <param name = "_record">Common</param>
+    /// <param name = "_callerRecordsPackedMap">container</param>
+    /// <returns>container</returns>
+    container initializeAndRun(SalesQuotationEditLinesForm EditLinesForm, DocumentStatus _documentStatus, str _parmSalesProj, Common _record, container _callerRecordsPackedMap)
+    {
+        QuotationIdBase origQuotationId;
+        if (_record)
+        {
+            if (_record.TableId == tableNum(SalesQuotationTable))
+            {
+                EditLinesForm.salesQuotationTable(_record);
+                CallerRecordsPackedMap = _callerRecordsPackedMap;
+                origQuotationId = salesQuotationTable.QuotationId;
+            }
+        }
+
+        parmid = NumberSeq::newGetNum(CompanyInfo::numRefParmId()).num();
+        EditLinesForm.parmId(parmId);
+        EditLinesForm.parmTransDate(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+        EditLinesForm.parmSendMode(sendMode);
+
+        EditLinesForm.prePromptInit();
+        boolean promptedOk;
+        boolean doExecuteQuery;
+        EditLinesForm.runOperation();
+
+        promptedOk = true;
+        doExecuteQuery = (EditLinesForm.numberOfRecords() > 1);
+
+        return [promptedOk, doExecuteQuery, origQuotationId];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmDocumentStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_docStatus">_docStatus</param>
+    /// <returns>DocumentStatus</returns>
+    public DocumentStatus  parmDocumentStatus(DocumentStatus _docStatus = DocumentStatus)
+    {
+        documentStatus = _docStatus;
+        return documentStatus;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSalesProj</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_parmSalesProj">_parmSalesProj</param>
+    /// <returns>str</returns>
+    public str parmSalesProj(str _parmSalesProj = parmSalesProj)
+    {
+        parmSalesProj = _parmSalesProj;
+        return parmSalesProj;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSalesQuotationTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesQuotationTable">_salesQuotationTable</param>
+    /// <returns>SalesQuotationTable</returns>
+    public SalesQuotationTable parmSalesQuotationTable(SalesQuotationTable _salesQuotationTable = SalesQuotationTable)
+    {
+        salesQuotationTable  = _salesQuotationTable;
+        return salesQuotationTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>container</returns>
+    public container pack()
+    {
+        return [#CurrentVersion, #CurrentList];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "packedClass">packedClass</param>
+    /// <returns>boolean</returns>
+    public boolean unpack(container packedClass)
+    {
+        Version version = runbase::getVersion(packedClass);
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version, #CurrentList] = packedClass;
+                break;
+            default:
+                return false;
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_args">_args</param>
+    /// <returns>AVACreateQuotationJournal</returns>
+    static AVACreateQuotationJournal construct(Args _args)
+    {
+        AVACreateQuotationJournal createQuotationJournal = new AVACreateQuotationJournal();
+
+        createQuotationJournal.parmDocumentStatus(_args.parmEnum());
+        createQuotationJournal.parmSalesProj(_args.parm());
+        createQuotationJournal.parmSalesQuotationTable(_args.record());
+        createQuotationJournal.parmSendMode(_args.parm() != 'GAEB' ? KCS_SendMode::Email : KCS_SendMode::GAEB);
+
+        return createQuotationJournal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <returns>description</returns>
+    public static ClassDescription description()
+    {
+        return "@NDX:NXAEmailQuotation";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from  AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    protected boolean canRunInNewSession()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runOperationNow</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from 
+    /// </summary>
+    protected void runOperationNow()
+    {
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canGoBatchJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    protected boolean canGoBatchJournal()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runsImpersonated</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean runsImpersonated()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

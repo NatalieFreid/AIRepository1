@@ -1,0 +1,678 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>KCS_KBVBPCompanySpecific</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>KCS_KBVPotentialSalesVolumeTbl</c> class is the extension of table <c>common</c>
+/// </summary>
+public class KCS_KBVBPCompanySpecific extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    // original class in 2009 KCS_KBVPeriodicUpdate
+
+    /// <summary>
+    ///    AVA <c>validateWrite</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean validateWrite()
+    {
+        boolean ret;
+    
+        ret = super();
+    
+        if(     ret 
+            &&  this.KCS_KBVSetMRManual
+            &&  !this.KCS_KBVMainResponsible)
+        {
+            ret = CheckFailed("@NDX:NXAMainResponsibleMandatory");
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>find</c> method.
+    /// </summary>
+    /// <param name="_recordId">
+    ///    <c>KCS_KBVBuildingProjectID</c> as type
+    /// </param>
+    /// <param name="_forUpdate">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>KCS_KBVBPCompanySpecific</c> as return value
+    /// </returns>
+    public static KCS_KBVBPCompanySpecific find(KCS_KBVBuildingProjectID    _recordId,
+                                                boolean                     _forUpdate = false)
+    {
+        KCS_KBVBPCompanySpecific record;
+
+        if (_recordId)
+        {
+            record.selectForUpdate(_forUpdate);
+
+            select firstonly record
+            index hint KCS_KBVBuildingProjectIDIdx
+            where   record.KCS_KBVBuildingProjectID == _recordId;
+        }
+
+        return record;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isClosed</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>isClosed</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean isClosed()
+    {
+        boolean ret;
+
+        ret =  AVAKBVBuildingProjectHelper::isBPClosed(this.KCS_KBVStatus, this.KCS_KBVBuildingProjectID, this.TableId);
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayPotentialSalesVolume</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayPotentialSalesVolume</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>KCS_KBVPotentialSalesVolume</c> as return value
+    /// </returns>
+    display KCS_KBVPotentialSalesVolume displayPotentialSalesVolume()
+    {
+        KCS_KBVPotentialSalesVolumeTbl  locKCS_KBVPotentialSalesVolumeTbl;
+
+        locKCS_KBVPotentialSalesVolumeTbl = KCS_KBVPotentialSalesVolumeTbl::find(this.KCS_KBVBuildingProjectID);
+
+        return locKCS_KBVPotentialSalesVolumeTbl.KCS_KBVPotentialSalesVolume;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>exist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>exist</c> method.
+    /// </summary>
+    /// <param name="_recordId">
+    ///    <c>KCS_KBVBuildingProjectID</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public static boolean exist(KCS_KBVBuildingProjectID    _recordId)
+    {
+        boolean ret;
+
+        ret =  _recordId && (select firstonly KCS_KBVBPCompanySpecific where KCS_KBVBPCompanySpecific.KCS_KBVBuildingProjectID == _recordId).Recid != 0;
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>initValue</c> method.
+    /// </summary>
+    public void initValue()
+    {
+        super();
+        
+        this.KCS_KBVStatus = KCS_KBVStatus::Inquired;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCompanySpecStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// updateCompanySpecStatus
+    /// </summary>
+    /// <param name = "_buildingProjectId">_buildingProjectId</param>
+    /// <param name = "_showInfo">_showInfo</param>
+    public server static void updateCompanySpecStatus(  KCS_KBVBuildingProjectID    _buildingProjectId,
+                                                        boolean                     _showInfo = true    )
+    {
+        KCS_KBVRequestTable         kcs_KBVRequestTable;
+        SalesQuotationTable         salesQuotationTable;
+        KCS_DirProductGroupID       kcs_DirProductGroupID;
+
+        KCS_KBVStatus               new_KBVStatus;
+        container                   productGroups;
+        int                         numOfRequests, numOfRequestsRefused, numOfRequestsAnswered, numOfQuotations, numOfQuotationsLost;
+        int                         numOfQuotationsCancelled, numOfQuotationsConfirmed, numOfQuotationsSent;
+        int                         i;
+        int                         numOfPgWon, numOfPgLost, numOfPg;
+
+        SalesQuotationTable         lastModifiedSalesQuotationTable;
+        KCS_KBVRequestTable         lastModifiedRequestTable;
+        KCS_KBVBuildingProjectTable locbuildingProjectTable;
+        kcs_KBVBPCompanySpecific    kcs_KBVBPCompanySpecific;
+
+        numOfRequests               = 0;
+        numOfRequestsRefused        = 0;
+        numOfRequestsAnswered       = 0;
+        numOfQuotations             = 0;
+        numOfQuotationsLost         = 0;
+        
+        numOfQuotationsCancelled    = 0;
+        numOfQuotationsConfirmed    = 0;
+        numOfQuotationsSent         = 0;
+
+        numOfPgWon                  = 0;
+        numOfPgLost                 = 0;
+        numOfPg                     = 0;
+
+
+        if (!_buildingProjectId)
+        {
+            return;
+        }
+
+        select firstonly lastModifiedRequestTable
+            join locbuildingProjectTable
+                where locbuildingProjectTable.KCS_KBVBuildingProjectID == lastModifiedRequestTable.KCS_KBVBuildingProjectID
+                     && locbuildingProjectTable.StatusModified  < lastModifiedRequestTable.ModifiedDateTime
+                     && locbuildingProjectTable.KCS_KBVBuildingProjectID == _buildingProjectId;
+
+        if (!lastModifiedRequestTable.RecId)
+        {
+            select firstonly lastModifiedSalesQuotationTable
+                join locbuildingProjectTable
+                where locbuildingProjectTable.KCS_KBVBuildingProjectID == lastModifiedSalesQuotationTable.KCS_KBVBuildingProjectID
+                    && locbuildingProjectTable.StatusModified  <  lastModifiedSalesQuotationTable.ModifiedDateTime
+                    && locbuildingProjectTable.KCS_KBVBuildingProjectID == _buildingProjectId;
+        }
+
+        if(lastModifiedRequestTable.RecId || lastModifiedSalesQuotationTable.RecId)
+        {
+            //Requests
+            while select KCS_KBVBuildingProjectID, KCS_KBVRequestStatus, count(RecId)
+        from        kcs_KBVRequestTable
+        group by    KCS_KBVRequestStatus
+        where       kcs_KBVRequestTable.KCS_KBVBuildingProjectID == _buildingProjectId
+            {
+                //Anzahl Anfragen insgesamt
+                numOfRequests = numOfRequests + int642int(kcs_KBVRequestTable.RecId);
+
+                switch(kcs_KBVRequestTable.KCS_KBVRequestStatus)
+                {
+                    case KCS_KBVRequestStatus::Answered:    //Beantwortet
+                        numOfRequestsAnswered = int642int(kcs_KBVRequestTable.RecId);
+                        break;
+                    case KCS_KBVRequestStatus::Refused:     //Abgelehnt
+                        numOfRequestsRefused = int642int(kcs_KBVRequestTable.RecId);
+                        break;
+                }
+            }
+
+            //Quotations
+            while select KCS_KBVBuildingProjectID, QuotationStatus, count(recid)
+        from        salesQuotationTable
+        group by    QuotationStatus
+        where       salesQuotationTable.KCS_KBVBuildingProjectID == _buildingProjectId
+            {
+                //Anzahl Angebote insgesamt
+                numOfQuotations = numOfQuotations + int642int(salesQuotationTable.RecId);
+                switch(salesQuotationTable.QuotationStatus)
+                {
+                    case SalesQuotationStatus::Lost:        //Verloren
+                        numOfQuotationsLost         = int642int(salesQuotationTable.RecId);
+                        break;
+                    case SalesQuotationStatus::Confirmed:   //Bestätigt
+                        numOfQuotationsConfirmed    = int642int(salesQuotationTable.RecId);
+                        break;
+                    case SalesQuotationStatus::Cancelled:   //Storniert
+                        numOfQuotationsCancelled    = int642int(salesQuotationTable.RecId);
+                        break;
+                    case SalesQuotationStatus::Sent:        //Versendet
+                        numOfQuotationsSent         = int642int(salesQuotationTable.RecId);
+                        break;
+                }
+            }
+
+            //--> NDX/STABK/NDX_TASK1235003643/26.02.2014
+            //Ermittlung der Kombinationen
+            new_KBVStatus = KCS_KBVStatus::Project;
+
+            //mindestens eine Anfrage vorhanden, die nicht abgelehnt oder beantwortet ist
+            //--> angefragt
+            if(     numOfRequests > 0
+            &&  ((numOfRequestsAnswered + numOfRequestsRefused) < numOfRequests)    )
+            {
+                new_KBVStatus   = KCS_KBVStatus::Inquired;
+            }
+
+            //alle Anfragen beantwortet oder abgelehnt
+            //--> beantwortet
+            if(     numOfRequests > 0
+            &&  ((numOfRequestsRefused + numOfRequestsAnswered) == numOfRequests)   )
+            {
+                new_KBVStatus   = KCS_KBVStatus::Answered;
+            }
+
+            //alle Anfragen abelehnt
+            //--> abelehnt
+            if(     numOfRequests > 0
+            &&  numOfRequests == numOfRequestsRefused   )
+            {
+                new_KBVStatus   = KCS_KBVStatus::Declined;
+            }
+
+            //alle Angebote storniert oder verloren
+            //--> verloren
+            if (    numOfQuotations > 0
+            &&  ((numOfQuotationsLost + numOfQuotationsCancelled) == numOfQuotations)   )
+            {
+                new_KBVStatus   = KCS_KBVStatus::Lost;
+            }
+
+            //mindestens ein Angebot bestätigt, alle anderen haben endgültigen Status
+            //--> gewonnen
+            if(     numOfQuotationsConfirmed > 0
+            &&  (numOfQuotationsConfirmed + numOfQuotationsCancelled + numOfQuotationsLost) == numOfQuotations  )
+            {
+                new_KBVStatus   = KCS_KBVStatus::Won;
+            }
+
+            //mindestens ein Angebot gewonnen und eins verloren, Produktgruppen prüfen
+            //-->teilweise gewonnen
+            if (    numOfQuotationsConfirmed > 0
+            &&  numOfQuotationsLost > 0
+            &&  ((numOfQuotationsConfirmed + numOfQuotationsLost + numOfQuotationsCancelled) == numOfQuotations)    )
+            {
+                kcs_DirProductGroupID = '';
+                productGroups = connull();
+
+                while select KCS_KBVBuildingProjectID, KCS_KBVProductGroupID
+            from        salesQuotationTable
+            group by    KCS_KBVProductGroupID
+            where       salesQuotationTable.KCS_KBVBuildingProjectID == _buildingProjectId
+                {
+                    productGroups += AVABPJobsUpdateStatus::StatusPerProductGroup(_buildingProjectId, salesQuotationTable.KCS_KBVProductGroupID);
+                }
+
+                for (i = 1; i <= conLen(productGroups); i++)
+                {
+                    numOfPg++;
+
+                    if (conPeek(productGroups, i) == 1)
+                    {
+                        numOfPgWon++;
+                    }
+                    if (conPeek(productGroups, i) == 2)
+                    {
+                        numOfPgLost++;
+                    }
+                }
+
+                if (numOfPgWon == numOfPg && numOfPg > 0)
+                {
+                    new_KBVStatus   = KCS_KBVStatus::Won;
+                }
+                else if (numOfPgWon > 0 && numOfPgLost > 0)
+                {
+                    new_KBVStatus   = KCS_KBVStatus::PartialWon;
+                }
+            }
+
+            select firstonly kcs_KBVBPCompanySpecific
+                where kcs_KBVBPCompanySpecific.KCS_KBVBuildingProjectID  == _buildingProjectId
+                && kcs_KBVBPCompanySpecific.KCS_KBVStatus != new_KBVStatus;
+
+            if (kcs_KBVBPCompanySpecific.RecId)
+            {
+                kcs_KBVBPCompanySpecific.selectForUpdate(true);
+
+                if (_showInfo)
+                {
+                    info(strfmt("@NDX:NXACompanySpecificStatusChangedFromTo",   _buildingProjectId,
+                                                                            kcs_KBVBPCompanySpecific.dataAreaId,
+                                                                            kcs_KBVBPCompanySpecific.KCS_KBVStatus,
+                                                                            new_KBVStatus));
+                }
+                kcs_KBVBPCompanySpecific.KCS_KBVStatus = new_KBVStatus;
+                ttsbegin;
+                kcs_KBVBPCompanySpecific.doUpdate();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NXACompanySpecificData</DeveloperDocumentation>
+	<FormRef>AVAKBVBPCompanySpecific</FormRef>
+	<Label>@NDX:NXACompanySpecificData</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>KCS_KBVBuildingProjectID</TitleField1>
+	<TitleField2>KCS_KBVStatus</TitleField2>
+	<CreatedBy>Yes</CreatedBy>
+	<CreatedDateTime>Yes</CreatedDateTime>
+	<ModifiedBy>Yes</ModifiedBy>
+	<ModifiedDateTime>Yes</ModifiedDateTime>
+	<ReplacementKey>KCS_KBVBuildingProjectIDIdx</ReplacementKey>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVBuildingProjectID</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>smmSalesUnitId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CommissSalesGroup</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVMainResponsible</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVSmmSalesUnitIndoor</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVCompSpecZipCode</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVCompSpecCountryId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVSetMRManual</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>NDX_BVSalesDistrictSource</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVBuildingProjectID</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Overview</Name>
+			<Label>@SYS34991</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVBuildingProjectID</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>smmSalesUnitId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CommissSalesGroup</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVMainResponsible</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVSmmSalesUnitIndoor</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVCompSpecZipCode</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVCompSpecCountryId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVSetMRManual</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>NDX_BVSalesDistrictSource</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>KCS_KBVBuildingProjectID</Name>
+			<ExtendedDataType>KCS_KBVBuildingProjectID</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>smmSalesUnitId</Name>
+			<ExtendedDataType>smmSalesUnitId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CommissSalesGroup</Name>
+			<ExtendedDataType>CommissSalesGroup</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>KCS_KBVMainResponsible</Name>
+			<ExtendedDataType>smmContactPersonMainResponsibleWorker</ExtendedDataType>
+			<Label>@SYS38349</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>KCS_KBVStatus</Name>
+			<EnumType>KCS_KBVStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>KCS_KBVSmmSalesUnitIndoor</Name>
+			<ExtendedDataType>KCS_KBVSmmSalesUnitIndoor</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>KCS_KBVCompSpecZipCode</Name>
+			<ExtendedDataType>KCS_KBVCompSpecZipCode</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>KCS_KBVCompSpecCountryId</Name>
+			<ExtendedDataType>KCS_KBVCompSpecCountryId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>KCS_KBVSetMRManual</Name>
+			<ExtendedDataType>NoYesId</ExtendedDataType>
+			<HelpText>@NDX:NXASetMainResponsibleManualHelp</HelpText>
+			<Label>@NDX:NXASetMainResponsibleManual</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>NDX_BVSalesDistrictSource</Name>
+			<Visible>No</Visible>
+			<EnumType>NDX_BVSalesDistrictSource</EnumType>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>KCS_KBVBuildingProjectIDIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>KCS_KBVBuildingProjectID</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>KCS_KBVBuildingProjectTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>KCS_KBVBuildingProjectTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>KCS_KBVBuildingProjectID</Name>
+					<SourceEDT>KCS_KBVBuildingProjectID</SourceEDT>
+					<Field>KCS_KBVBuildingProjectID</Field>
+					<RelatedField>KCS_KBVBuildingProjectID</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>KCS_KBVMainResponsible</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HcmWorker</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>HcmWorker</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Role>HcmWorker_ContactPerson</Role>
+			<UseDefaultRoleNames>No</UseDefaultRoleNames>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>KCS_KBVMainResponsible</Name>
+					<Field>KCS_KBVMainResponsible</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>smmSalesUnitId</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>smmSalesUnit</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>smmSalesUnit</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Role>smmOpportunityTable</Role>
+			<UseDefaultRoleNames>No</UseDefaultRoleNames>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>smmSalesUnitId</Name>
+					<SourceEDT>smmSalesUnitId</SourceEDT>
+					<Field>smmSalesUnitId</Field>
+					<RelatedField>SalesUnitId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>SalesUnitIdx</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>KCS_KBVSmmSalesUnitIndoor</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>smmSalesUnit</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>smmSalesUnit</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Role>smmOpportunityTable</Role>
+			<UseDefaultRoleNames>No</UseDefaultRoleNames>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>KCS_KBVSmmSalesUnitIndoor</Name>
+					<SourceEDT>KCS_KBVSmmSalesUnitIndoor</SourceEDT>
+					<Field>KCS_KBVSmmSalesUnitIndoor</Field>
+					<RelatedField>SalesUnitId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>SalesUnitIdx</Index>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>KCS_KBVCompSpecZipCode</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>LogisticsAddressCountryRegion</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>KCS_KBVCompSpecCountryId</Name>
+					<SourceEDT>LogisticsAddressCountryRegionId</SourceEDT>
+					<Field>KCS_KBVCompSpecCountryId</Field>
+					<RelatedField>CountryRegionId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>CommissionSalesGroup</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>CommissionSalesGroup</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>CommissSalesGroup</Name>
+					<SourceEDT>CommissSalesGroup</SourceEDT>
+					<Field>CommissSalesGroup</Field>
+					<RelatedField>GroupId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

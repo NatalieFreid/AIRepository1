@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAUpdateInventTableProdPoolService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA
+/// </summary>
+class AVAUpdateInventTableProdPoolService extends sysoperationServiceBase
+{
+    str         packedQuery;
+    boolean     updateProdPool;
+
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>startOperation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_dataContract">AVACRLCreditOverrunContract</param>
+    public void startOperation(AVAUpdateInventTableProdPoolContract _dataContract)
+    {
+        System.Exception ex;
+        #OCCRetryCount
+
+        packedQuery             = _dataContract.parmPackedQuery();
+        updateProdPool          = _dataContract.parmUpdatePool();
+
+        try
+        {
+            this.processOperation();
+        }
+
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+
+        catch (Exception::Error)
+        {
+            error("@NDX:NXAErrorOccured");
+            retry;
+        }
+
+        catch (Exception::CLRError)
+        {
+            ex = ClrInterop::getLastException();
+
+            if (ex != null)
+            {
+                ex = ex.get_InnerException();
+                if (ex != null)
+                {
+                    error("@NDX:NXAErrorOccured");
+                }
+            }
+
+            retry;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processOperation</Name>
+				<Source><![CDATA[
+    private void processOperation()
+    {
+        Query                           query = new Query(SysOperationHelper::base64Decode(packedQuery));
+        QueryRun                        queryRun;
+        InventTable                     inventTable;
+
+        queryrun = new QueryRun(query);
+
+        if (updateProdPool)
+        {
+            while (queryRun.next())
+            {
+                inventTable     = queryRun.get(tableNum(inventTable));
+                this.updateProdPool(inventTable);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateProdPool</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "inventTable">InventTable</param>
+    void updateProdPool(InventTable inventTable)
+    {
+        InventTable     inventTableUpdate;
+        ProdPoolId      prodPoolId;
+
+        //if (inventTable.isBOMAllowed())
+        //{
+        prodPoolId = this.getProdPool(inventTable);
+
+        if(prodPoolId && (inventTable.ProdPoolId != prodPoolId))
+        {
+            ttsbegin;
+            inventTableUpdate               = InventTable::find(inventTable.ItemId,true);
+            inventTableUpdate.ProdPoolId    = prodPoolId;
+            inventTableUpdate.doUpdate();
+            ttscommit;
+        }
+        /*}
+        else
+        {
+            return;
+        }*/
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getProdPool</Name>
+				<Source><![CDATA[
+    ProdPoolId  getProdPool(InventTable _inventTable)
+    {
+        Qty                             standardQty;
+        BOMVersion                      bOMVersion;
+        BOM                             bOM;
+        RouteVersion                    routeVersion;
+        Route                           route;
+        RouteOpr                        routeOpr;
+        InventDim                       inventDim;
+        ProdPoolId                      prodPoolId;
+        WrkCtrTable                     wrkCtrTable;
+        WrkCtrResourceGroup             wrkCtrGroup;
+        RecId                           recId;
+        WrkCtrId                        wrkCtrGrpId;
+        WrkCtrActivityRequirement       wrkCtrActivityRequirement;
+        WrkCtrActivityRequirementType   relationShipType;
+
+        standardQty = InventItemInventSetup::findDefault(_inventTable.ItemId).StandardQty;
+
+        select firstOnly routeVersion order by fromQty desc
+        where routeVersion.ItemId == _inventTable.ItemId
+        && routeVersion.Active
+        && routeVersion.FromQty <= standardQty
+        && (!routeVersion.FromDate || routeVersion.FromDate <= DateTimeUtil::date(DateTimeUtil::getSystemDateTime()))
+        && (!routeVersion.ToDate   || routeVersion.ToDate   >= DateTimeUtil::date(DateTimeUtil::getSystemDateTime()));
+
+        route = Route::findFirst(routeVersion.RouteId);
+
+        select firstOnly routeOpr where routeOpr.ItemCode       == TableGroupAll::Table
+                                     && routeOpr.ItemRelation   == _inventTable.ItemId
+                                     && routeOpr.RouteCode      == RouteAll::Route
+                                     && routeOpr.RouteRelation  == routeVersion.RouteId
+                                     && routeOpr.OprId          == route.OprId;
+        
+        //if (routeOpr.RecId && WrkCtrTable::find(routeOpr.WrkCtrId).ProdPoolId)
+        //{
+        inventDim.InventSiteId = routeVersion.inventSiteId();
+        inventDim   = inventDim::findDim(inventDim);
+        BOMVersion  = BOMVersion::findActive(_inventTable.ItemId, DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()),0,inventDim);
+        select firstOnly BOM where BOM.BOMId == BOMVersion.BOMId
+                                               && BOM.BOMType == BOMType::Phantom;
+        if (BOM.RecId)
+        {
+            return this.getProdPool(InventTable::find(BOM.ItemId));
+        }
+        else
+        {
+            if (routeOpr)
+            {
+                recId = routeOpr.activityRequirementSet().RecId;
+
+                select firstonly WrkCtrActivityRequirement
+                    where WrkCtrActivityRequirement.ActivityRequirementSet == recid;
+                wrkCtrGrpId =  WrkCtrActivityRequirement.requirementEdit();
+                relationShipType = WrkCtrActivityRequirement.RelationshipType;
+       
+                if (relationShipType == WrkCtrActivityRequirementType::ResourceGroup)
+                {
+                    //select firstonly AVAProdPoolId from wrkCtrGroup where wrkCtrGroup.WrkCtrId == routeOpr.WrkCtrIdCost;
+                    select firstonly AVAProdPoolId from wrkCtrGroup where wrkCtrGroup.WrkCtrId == wrkCtrGrpId;
+                    prodPoolId = wrkCtrGroup.AVAProdPoolId;
+                }
+                if (!prodPoolId)
+                {
+                    select firstOnly AVAProdPoolId from wrkCtrTable where wrkCtrTable.WrkCtrId == wrkCtrGrpId;
+                    prodPoolId = wrkCtrTable.AVAProdPoolId;
+                }
+            }
+            return prodPoolId;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

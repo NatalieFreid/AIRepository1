@@ -1,0 +1,510 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>AVAGroupBalance</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class AVAGroupBalance extends FormRun
+{
+    CredManCreditLimitId					groupTableId;
+    CredManCreditLimitCustGroup				creditLimitCustGroup;
+    CredManCreditLimitCustGroupLine			creditLimitCustGroupLine;
+    CustTable								custTableCaller;
+    //private CredManBlockExclusionValueType	thresholdType;
+    CredManParameters						credManParameters = CredManParameters::avaFindCredManParameters();
+   
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+    
+        super();
+    
+        if(element.args() && element.args().record() && credManParameters.CrossCompanyCreditCheck)
+        {
+            switch(element.args().dataset())
+            {
+                case tableNum(CredManCreditLimitCustGroup):
+                    creditLimitCustGroup = element.args().record();
+                    groupTableId = creditLimitCustGroup.CreditLimitId;
+                    break;
+                
+                case tableNum(CustTable):
+                    custTableCaller = element.args().record();
+                    
+                    select firstonly creditLimitCustGroupLine
+                        where creditLimitCustGroupLine.custAccount == custTableCaller.AccountNum
+                           && creditLimitCustGroupLine.Company == custTableCaller.DataAreaId
+                    join creditLimitCustGroup
+                        where creditLimitCustGroup.RecId == creditLimitCustGroupLine.CreditLimitCustGroup;
+
+                    groupTableId = creditLimitCustGroup.CreditLimitId;
+                    break;
+                
+                default:
+                    throw error(error::missingFormActiveBuffer(element.design().caption()));
+            }
+    
+            if( !groupTableId)
+            {
+                throw error("@AVAFCM:CreditLimitError");
+            }
+        }
+        else
+        {
+            throw error(error::missingFormActiveBuffer(element.design().caption()));
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateBalance</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// update the temp table records
+    /// </summary>
+    public void updateBalance()
+    {
+        tmpCustVendTrans          tmpCustVendTrans;
+        tmpCustVendTrans          tmpCustVendTransHelper;
+        AmountMST                 totalAmountMST;
+        CustCreditMaxCur		  limitAmountMST;
+        AmountMst                 totalNetEstimatedAmount;
+        CredManBlockExclusionRule CredManBlockExclusionRule;
+        AVAFCMGroupTable		  groupTable;
+        //CredManCreditLimitCustGroupLine     CRLCustGroupLine;
+        //CredManCreditLimitCustGroup         CRLCustGroup;
+                
+        //If form is opened for a customer
+        if (custTableCaller)
+        {
+            //tmpCustVendTrans = AVAFCMGroupTable::getBalanceTmpTableByGroupForBalanceFormByCust(groupTableId, custTableCaller.AccountNum);
+            tmpCustVendTrans = AVAFCMGroupTableHelper::getBalanceTmpTableByGroupForBalanceFormByCust(groupTableId, custTableCaller.AccountNum);
+        }
+        //If form is opened for a credit limit group
+        else
+        {
+            //tmpCustVendTrans = AVAFCMGroupTable::getBalanceTmpTableByGroupForBalanceForm(groupTableId);
+            tmpCustVendTrans = AVAFCMGroupTableHelper::getBalanceTmpTableByGroupForBalanceForm(groupTableId);
+        }
+    
+        tmpCustVendTransHelper.setTmpData(tmpCustVendTrans);
+        
+        //Accounting balance logic is already handled in above code
+        if (!custTableCaller)
+        {
+            while select sum(AmountMST), sum(AmountCur), sum(AVAFPLNetEstimatedAmount), sum(AVAFPLNetEstimatedInvoicedAmount) from tmpCustVendTransHelper
+            {
+                totalAmountMST          += tmpCustVendTransHelper.amountMST;
+                totalNetEstimatedAmount += tmpCustVendTransHelper.AVAFPLNetEstimatedAmount;
+            }
+
+            // Total im standard currency
+            tmpCustVendTrans.CurrencyCode   = CompanyInfoHelper::standardCurrency();
+            tmpCustVendTrans.AmountMst      = totalAmountMST;
+            tmpCustVendTrans.AmountCur      = 0;
+            tmpCustVendTrans.TotalAmountMst = 0;
+            tmpCustVendTrans.AVAFPLNetEstimatedAmount = totalNetEstimatedAmount;
+            tmpCustVendTrans.Txt            = "@SYS94871";
+            tmpCustVendTrans.insert();
+        }
+        else
+        {
+            select sum(AmountMST), sum(AVAFPLNetEstimatedAmount), sum(AVAFPLNetEstimatedInvoicedAmount), sum(AmountCur) from tmpCustVendTransHelper
+                where tmpCustVendTransHelper.Txt == "@AVAFCM:AccountBalanceCurrentCustomer"
+                || tmpCustVendTransHelper.Txt == "@AVAFCM:AccountBalanaceOtherCustomer";
+
+            totalAmountMST          = tmpCustVendTransHelper.amountMST;
+            totalNetEstimatedAmount = tmpCustVendTransHelper.AVAFPLNetEstimatedAmount;
+        }
+        
+        limitAmountMST = groupTable.showLimitAmountMST(groupTableId);
+    
+        tmpCustVendTrans.CurrencyCode   = CompanyInfoHelper::standardCurrency();
+        tmpCustVendTrans.AmountMst      = limitAmountMST;
+        tmpCustVendTrans.AmountCur      = 0;
+        tmpCustVendTrans.TotalAmountMst = 0;
+        tmpCustVendTrans.AVAFPLNetEstimatedAmount = limitAmountMST;
+        tmpCustVendTrans.Txt            = "@SYS1532";
+        tmpCustVendTrans.insert();
+
+        if (custTableCaller.AccountNum)
+        {
+            select firstonly CredManBlockExclusionRule
+                where CredManBlockExclusionRule.RuleId == CredManBlockExclusionRuleType::ExceedCreditLimit
+                && CredManBlockExclusionRule.TableGroupAll == TableGroupAll::Table
+                && CredManBlockExclusionRule.CustRelation == custTableCaller.AccountNum;
+        }
+
+        /*if (!CredManBlockExclusionRule && !custTableCaller.AVAIsCreditLimitRiscDebtor())
+        {
+            select firstonly CRLCustGroupLine where CRLCustGroupLine.CustAccount == custTableCaller.AccountNum
+                join CRLCustGroup where CRLCustGroup.RecId == CRLCustGroupLine.CreditLimitCustGroup
+                                     && CRLCustGroup.AVACompanyId == curExt();
+            select firstonly CredManBlockExclusionRule
+                where CredManBlockExclusionRule.CustRelation == CRLCustGroup.AVARiscDebtor;
+        }*/
+   
+        if (!CredManBlockExclusionRule && groupTableId)
+        {
+            select firstonly CredManBlockExclusionRule
+                where CredManBlockExclusionRule.RuleId == CredManBlockExclusionRuleType::ExceedCreditLimit 
+                && CredManBlockExclusionRule.TableGroupAll == TableGroupAll::GroupId 
+                && CredManBlockExclusionRule.CustRelation == groupTableId;
+        }
+
+        if (!CredManBlockExclusionRule)
+        {
+            select firstonly CredManBlockExclusionRule
+                            where CredManBlockExclusionRule.TableGroupAll == TableGroupAll::All
+                               && CredManBlockExclusionRule.RuleId == CredManBlockExclusionRuleType::ExceedCreditLimit;
+        }
+
+        CredManCreditLimitThreshold threshold =  CredManBlockExclusionRule.CreditLimitThreshold;
+        //thresholdType = CredManBlockExclusionValueType::Percent;
+
+        tmpCustVendTrans.CurrencyCode   = CompanyInfoHelper::standardCurrency();
+        tmpCustVendTrans.AmountMst      = limitAmountMST * (threshold/100);
+        tmpCustVendTrans.AmountCur      = 0;
+        tmpCustVendTrans.TotalAmountMst = 0;
+        tmpCustVendTrans.AVAFPLNetEstimatedAmount = limitAmountMST * (threshold/100);
+        tmpCustVendTrans.Txt            = "@AVAFCM:CreditLimitThreshold";
+        tmpCustVendTrans.insert();
+
+        tmpCustVendTrans.CurrencyCode   = CompanyInfoHelper::standardCurrency();
+        if (threshold)
+        {
+            tmpCustVendTrans.AmountMst      = limitAmountMST * (threshold/100) - totalAmountMST;
+        }
+        else
+        {
+            tmpCustVendTrans.AmountMst      = limitAmountMST - totalAmountMST;
+        }
+        tmpCustVendTrans.AmountCur      = 0;
+        tmpCustVendTrans.TotalAmountMst = 0;
+        if (threshold)
+        {
+            tmpCustVendTrans.AVAFPLNetEstimatedAmount = limitAmountMST * (threshold/100) - totalNetEstimatedAmount;
+        }
+        else
+        {
+            tmpCustVendTrans.AVAFPLNetEstimatedAmount = limitAmountMST - totalNetEstimatedAmount;
+        }
+        tmpCustVendTrans.Txt            = "@SYS94872";
+        tmpCustVendTrans.insert();
+    
+        delete_from tmpCustVendTrans where tmpCustVendTrans.Txt == "@AVAFCM:BalanceOtherCustomers";
+
+        GroupBalanceCurrency.setTmpData(tmpCustVendTrans);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateDesign</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Update the form design
+    /// </summary>
+    public void updateDesign()
+    {
+        //Show/hide Balance and Estimated net amount columns based on parameter
+        if (CustParameters::find().AVAFCMCalcBalance == AVAFCMCalcBalance::Gross)
+        {
+            GroupBalanceCurrency_ds.object(fieldNum(TmpCustVendTrans, AVAFPLNetEstimatedAmount)).visible(false);
+            GroupBalanceCurrency_ds.object(fieldNum(TmpCustVendTrans, AmountMST)).visible(true);
+        }
+        else
+        {
+            GroupBalanceCurrency_ds.object(fieldNum(TmpCustVendTrans, AVAFPLNetEstimatedAmount)).visible(true);
+            GroupBalanceCurrency_ds.object(fieldNum(TmpCustVendTrans, AmountMST)).visible(false);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>GroupBalanceCurrency</Name>
+				<Methods>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///     Populates the temp table and updates the design
+        /// </summary>
+        public void executeQuery()
+        {
+            if (credManParameters.CrossCompanyCreditCheck)
+            {
+                element.updateBalance();
+                element.updateDesign();
+            }
+            //QueryBuildRange     qbr = SysQuery::findOrCreateRange(this.queryBuildDataSource(), fieldNum(tmpcustvendtrans, Txt));
+            //qbr.value(SysQuery::valueNot("@AVAFCM:AccountBalanaceOtherCustomer"));
+
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="" />
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>GroupBalanceCurrency</Name>
+			<Table>TmpCustVendTrans</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AccountNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountCur</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountMst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAFPLNetEstimatedAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankDiscNoticeDeadline</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankRemittanceFileId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Company</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CurrencyCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DueDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Invoice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NegInstId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NegInstSeqNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NegInstStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymMode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymReference</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PostingProfile</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingCurrencyAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TotalAmountMst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Txt</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Voucher</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AutoQuery>No</AutoQuery>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@SYS95</Caption>
+		<Pattern xmlns="">SimpleList</Pattern>
+		<PatternVersion xmlns="">1.1</PatternVersion>
+		<Style xmlns="">SimpleList</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>FormActionPaneControl1</Name>
+				<Type>ActionPane</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>FormGroupControl1</Name>
+				<Pattern>CustomAndQuickFilters</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl>
+						<Name>QuickFilterControl1</Name>
+						<FormControlExtension>
+							<Name>QuickFilterControl</Name>
+							<ExtensionComponents />
+							<ExtensionProperties>
+								<AxFormControlExtensionProperty>
+									<Name>targetControlName</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>placeholderText</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>defaultColumnName</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+							</ExtensionProperties>
+						</FormControlExtension>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+				<FrameType>None</FrameType>
+				<Style>CustomFilter</Style>
+				<ViewEditMode>Edit</ViewEditMode>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGridControl">
+				<Name>FormGridControl1</Name>
+				<Type>Grid</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>GroupBalanceCurrency_Txt</Name>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Txt</DataField>
+						<DataSource>GroupBalanceCurrency</DataSource>
+						<Label>@SYS25589</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>GroupBalanceCurrency_CurrencyCode</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>CurrencyCode</DataField>
+						<DataSource>GroupBalanceCurrency</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>GroupBalanceCurrency_AmountCur</Name>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Real</Type>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AmountCur</DataField>
+						<DataSource>GroupBalanceCurrency</DataSource>
+						<DisplaceNegative>0</DisplaceNegative>
+						<DisplaceNegativeMode>Fixed</DisplaceNegativeMode>
+						<Label>@SYS12883</Label>
+						<NoOfDecimals>-1</NoOfDecimals>
+						<ShowZero>No</ShowZero>
+						<SignDisplay>Prefixed</SignDisplay>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>GroupBalanceCurrency_AmountMst</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<HeightMode>Auto</HeightMode>
+						<Type>Real</Type>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AmountMst</DataField>
+						<DataSource>GroupBalanceCurrency</DataSource>
+						<DisplaceNegative>0</DisplaceNegative>
+						<DisplaceNegativeMode>Fixed</DisplaceNegativeMode>
+						<Label>@AVAFCM:SumOfEstimatedGrossAmount</Label>
+						<NoOfDecimals>-1</NoOfDecimals>
+						<ShowZero>No</ShowZero>
+						<SignDisplay>Prefixed</SignDisplay>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>GroupBalanceCurrency_AVAFPLNetEstimatedAmount</Name>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Real</Type>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AVAFPLNetEstimatedAmount</DataField>
+						<DataSource>GroupBalanceCurrency</DataSource>
+						<DisplaceNegative>0</DisplaceNegative>
+						<DisplaceNegativeMode>Fixed</DisplaceNegativeMode>
+						<NoOfDecimals>-1</NoOfDecimals>
+					</AxFormControl>
+				</Controls>
+				<Style>Tabular</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

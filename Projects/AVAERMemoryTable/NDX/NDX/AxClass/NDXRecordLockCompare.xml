@@ -1,0 +1,428 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXRecordLockCompare</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Class to analyse the differents between record on database and current record
+/// </summary>
+internal final class NDXRecordLockCompare
+{
+    FormRun formRun;
+    NDXRecordLockCompareDifferences lNDX_RecordDifferences;
+    DictTable dictTable;
+    DictRelation dictRelationAvailable;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    void new (TableId _tableId)
+    {
+        dictTable = new DictTable(_tableid);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmDictRelation</Name>
+				<Source><![CDATA[
+    public DictRelation parmDictRelation(DictRelation _dictRelationAvailable = dictRelationAvailable)
+    {
+        dictRelationAvailable = _dictRelationAvailable;
+        return dictRelationAvailable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getNumberOfDifferences</Name>
+				<Source><![CDATA[
+    public int getNumberOfDifferences()
+    {
+        select count(RecId) from lNDX_RecordDifferences;
+        return lNDX_RecordDifferences.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>recordInformation</Name>
+				<Source><![CDATA[
+    private str recordInformation(Common _record)
+    {
+        str recordInforamtion = '';
+        Common newRecord;
+
+        newRecord = NDXRecordLockCompare::getCurrentRecord(_record);
+
+        if(newRecord.modifiedBy != '' || newRecord.modifiedDateTime > DateTimeUtil::minValue())
+        {
+            recordInforamtion = strFmt("@NDX:NDXNewVersionAvailable", newRecord.modifiedBy, newRecord.modifiedBy, DateTimeUtil::applyTimeZoneOffset(newRecord.modifiedDateTime, DateTimeUtil::getUserPreferredTimeZone()));
+        }
+        else
+        {
+            recordInforamtion = "@NDX:NDXNewVersion";
+        }
+
+        return recordInforamtion;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkRecordForDifference</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Check record
+    /// </summary>
+    /// <param name = "_record">some record</param>
+    public void checkRecordForDifference(Common _record)
+    {
+        if(NDXRecordLockCompare::recordHasNewVersion(_record))
+        {
+            this.showRecordDifferences(_record);
+            throw Error(this.recordInformation(_record));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showRecordDifferences</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// opens information dialog with differences
+    /// </summary>
+    /// <param name = "_common">some record</param>
+    private void showRecordDifferences(Common _common)
+    {
+        Args argsNew;
+
+        argsNew = new Args(formStr(NDXRecordLockCompare));
+        argsNew.caller(this);
+        argsNew.record(_common);
+
+        argsNew.parm(this.recordInformation(NDXRecordLockCompare::getCurrentRecord(_common)));
+
+        if(formRun != null)
+        {
+            formRun.close();
+        }
+
+        new MenuFunction(menuItemDisplayStr(NDXRecordLockCompare),MenuItemType::Display).run(argsNew);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>transferFieldValue2StrFieldValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Converts field value to str
+    /// </summary>
+    /// <param name = "_record">record</param>
+    /// <param name = "_fieldId">field of record</param>
+    /// <returns>string value</returns>
+    private str transferFieldValue2StrFieldValue(Common _record, FieldId _fieldId)
+    {
+        //DictTable dictTable = new DictTable(_record.TableId);
+        DictField dictField = dictTable.fieldObject(_fieldId);
+
+        str fieldValue = '';
+
+        if(!dictField.isSystem())
+        {
+            switch(dictField.baseType())
+            {
+                case Types::Enum:
+                    fieldValue = enum2Symbol(dictField.enumId(), _record.(_fieldId));
+                    break;
+                case Types::Integer:
+                    fieldValue = int2str(_record.(_fieldId));
+                    break;
+                case Types::Real:
+                    break;
+                case Types::Date:
+                    fieldValue = date2str(_record.(_fieldId),1231,DateDay::Digits2,DateSeparator::Dot,DateMonth::Digits2,DateSeparator::Dot,DateYear::Digits4);
+                    break;
+                case Types::UtcDateTime:
+                    fieldValue = datetime2str(_record.(_fieldId));
+                    break;
+                default:
+                    fieldValue = _record.(_fieldId);
+                    break;
+            }
+        }
+        return fieldValue;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Populates table with diferences for a given record
+    /// </summary>
+    /// <param name = "_record">Some record </param>
+    /// <returns>Buffer with records</returns>
+    public NDXRecordLockCompareDifferences populateTable(Common _record)
+    {
+        Common currentRecord;
+        Common currentRecordOrig;
+        Common currentRecordDatabase;
+
+        DictField dictField;
+        FieldId fieldId;
+
+        DictType  dictType;
+
+        currentRecord = _record;
+        currentRecordOrig = currentRecord.orig();
+        
+        currentRecordDatabase = dictTable.makeRecord();
+
+        changecompany(currentRecordDatabase.dataAreaId)
+        {
+            select currentRecordDatabase
+                where currentRecordDatabase.RecId == currentRecord.RecId;
+        }
+
+        fieldId = dictTable.fieldNext(0);
+        while(fieldId)
+        {
+            dictField = dictTable.fieldObject(fieldId);
+
+            if(!dictField.isSystem() && currentRecord.(fieldId) != currentRecordDatabase.(fieldId))
+            {
+                lNDX_RecordDifferences.clear();
+                lNDX_RecordDifferences._TableId = currentRecord.TableId;
+                lNDX_RecordDifferences._FieldId = fieldId;
+                
+                lNDX_RecordDifferences.FieldName = dictField.label();
+                lNDX_RecordDifferences.FieldTypeId = dictField.typeId();
+
+                dictType = new DictType(dictField.typeId());
+                
+                if(dictType.name() == 'RecId' || dictType.name() == 'RefRecId' || dictType.isExtendedFrom('RecId') || dictType.isExtendedFrom('RefRecId'))
+                {
+                    lNDX_RecordDifferences.FieldValueDataBase = currentRecordDatabase.selectRefRecord(fieldId).ToString();
+                    lNDX_RecordDifferences.UserId = currentRecordDatabase.ModifiedBy;
+                    lNDX_RecordDifferences.FieldValueOrig = currentRecordOrig.selectRefRecord(fieldId).ToString();
+                    lNDX_RecordDifferences.FieldValue = currentRecord.selectRefRecord(fieldId).ToString();
+                }
+                else
+                {
+                    lNDX_RecordDifferences.FieldValueDataBase = this.transferFieldValue2StrFieldValue(currentRecordDatabase, fieldId);
+                    lNDX_RecordDifferences.UserId = currentRecordDatabase.ModifiedBy;
+                    lNDX_RecordDifferences.FieldValueOrig = this.transferFieldValue2StrFieldValue(currentRecordOrig, fieldId);
+                    lNDX_RecordDifferences.FieldValue = this.transferFieldValue2StrFieldValue(currentRecord, fieldId);
+                }
+
+                lNDX_RecordDifferences.insert();
+            }
+            fieldId = dictTable.fieldNext(fieldId);
+        }
+
+        return lNDX_RecordDifferences;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getRealtion</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets relation for a fieldId
+    /// </summary>
+    /// <param name = "_dictField">field id</param>
+    /// <returns>DictRelation object</returns>
+    public DictRelation getRealtion(DictField _dictField)
+    {
+        DictType dictType = new DictType(_dictField.typeId());
+        DictRelation dictRelation = new DictRelation(_dictField.tableid());
+        int cnt1, cnt2, relationCnt, relationLinesCnt;
+
+        str relationName, relFieldName, relTab, relExternFieldName, relExttab;
+
+        boolean relationFound;
+
+        if(dictType.name() == 'RecId' || dictType.name() == 'RefRecId' || dictType.isExtendedFrom('RecId') || dictType.isExtendedFrom('RefRecId'))
+        {
+            relationCnt = dictTable.relationCnt();
+
+            //Loop relations
+            for(cnt1 = 1; cnt1 <= relationCnt; cnt1++)
+            {
+                relationName = dictTable.relation(cnt1);
+                dictRelation.loadNameRelation(relationName);
+                    
+                relationLinesCnt = dictRelation.lines();
+                    
+                //Loop condition of relation
+                for(cnt2 = 1; cnt2 <= relationLinesCnt; cnt2++)
+                {
+                    relExternFieldName = fieldId2Name(dictRelation.externTable(),dictRelation.lineExternTableValue(cnt2));
+                    relExttab = tableId2Name(dictRelation.externTable());
+                        
+                    relFieldName = fieldId2Name(dictRelation.table(),dictRelation.lineTableValue(cnt2));
+                    relTab = tableId2Name(dictRelation.table());
+
+                    if(relFieldName == _dictField.name() && relTab == dictTable.name())
+                    {
+                        relationFound = true;
+                        dictRelationAvailable = dictRelation;
+                        break;
+                    }
+                }
+
+                if(relationFound)
+                {
+                    break;
+                }
+            }
+        }
+
+        return dictRelationAvailable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCurrentRecord</Name>
+				<Source><![CDATA[
+    public static Common getCurrentRecord(Common _record)
+    {
+        DictTable dictTable;
+        Common record;
+
+        dictTable = new DictTable(_record.TableId);
+        record = dictTable.makeRecord();
+
+        select firstonly record
+            where record.RecId == _record.RecId;
+
+        return record;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>recordHasNewVersion</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Check if new version of a record exist
+    /// </summary>
+    /// <param name = "_record">record</param>
+    /// <returns>true or false</returns>
+    public static boolean recordHasNewVersion(Common _record)
+    {
+        Common record;
+        
+        boolean newVersion;
+
+        record = NDXRecordLockCompare::getCurrentRecord(_record);
+        newVersion = record && record.RecVersion != _record.RecVersion;
+
+        return newVersion;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>useRecordLockView</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// check if view can be used
+    /// </summary>
+    /// <param name = "_record">some record</param>
+    /// <returns>true or false</returns>
+    public static boolean useRecordLockView(Common _record)
+    {
+        NDXRecordLockSetup lNDX_RecordLockSetup;
+        NDXRecordLockSetupUser lNDX_RecordLockSetupUser;
+        NDXRecordLockSetupRole lNDXRecordLockSetupRole;
+        NDXRecordLockSetupDuty lNDXRecordLockSetupDuty;
+
+        container userRolesCon;
+        int index_;
+
+        boolean useView;
+        
+        select firstonly lNDX_RecordLockSetup
+            where lNDX_RecordLockSetup.Lock_TableID == _record.TableId
+                && lNDX_RecordLockSetup.Lock == true;
+
+        //User has priority
+        if(lNDX_RecordLockSetup)
+        {
+            select firstonly lNDX_RecordLockSetupUser
+                where lNDX_RecordLockSetupUser.NDXRecordLockSetupRefRecID == lNDX_RecordLockSetup.RecId
+                    && lNDX_RecordLockSetupUser.UserId == curUserId();
+
+            useView = lNDX_RecordLockSetupUser.RecId > 0;
+        }
+
+        //then role based
+        if(lNDX_RecordLockSetup && !useView)
+        {
+            select firstonly lNDXRecordLockSetupDuty
+                where lNDXRecordLockSetupDuty.NDXRecordLockSetupRefRecID == lNDX_RecordLockSetup.RecId;
+
+            if(lNDXRecordLockSetupDuty)
+            {
+                
+
+                while select lNDXRecordLockSetupDuty
+                    where lNDXRecordLockSetupDuty.NDXRecordLockSetupRefRecID == lNDX_RecordLockSetup.RecId
+                {
+                    useView = NDXHelperSecurity::hasUserSecurityDuty(lNDXRecordLockSetupDuty.DutyIdentifier, curUserId());
+                    
+                    if(useView)
+                    {
+                        break;
+                    }
+
+                }
+            }
+
+        }
+        
+        //then role based
+        if(lNDX_RecordLockSetup && !useView)
+        {
+            select firstonly lNDXRecordLockSetupRole
+                where lNDXRecordLockSetupRole.NDXRecordLockSetupRefRecID == lNDX_RecordLockSetup.RecId;
+
+            if(lNDXRecordLockSetupRole)
+            {
+                userRolesCon = xUserInfo::getUserRoles(curUserId());
+
+                while select lNDXRecordLockSetupRole
+                    where lNDXRecordLockSetupRole.NDXRecordLockSetupRefRecID == lNDX_RecordLockSetup.RecId
+                {
+                    index_ = conFind(userRolesCon, lNDXRecordLockSetupRole.RoleIdentifier);
+
+                    useView = index_ > 0;
+
+                    if(useView)
+                    {
+                        break;
+                    }
+
+                }
+            }
+
+        }
+
+        return useView;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

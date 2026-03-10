@@ -1,0 +1,259 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAWHSLocDirCopy2BatchEventHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Event handler class for the Copy2Batch button on WHSLocDirTable form.
+/// Handles copying a location directive action to a batch-enabled version while preserving the query.
+/// </summary>
+internal final class AVAWHSLocDirCopy2BatchEventHandler
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>onClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Event handler for Copy2Batch button click.
+    /// </summary>
+    /// <param name="_sender">The form button control</param>
+    /// <param name="_e">Event arguments</param>
+    [FormControlEventHandler(formControlStr(WHSLocDirTable, AVACopy2BatchButton), FormControlEventType::Clicked)]
+    public static void AVACopy2BatchButton_OnClicked(FormControl _sender, FormControlEventArgs _e)
+    {
+        FormRun formRun = _sender.formRun();
+        FormDataSource actionDS = formRun.dataSource(formDataSourceStr(WHSLocDirTable, WHSLocDirAction));
+        WHSLocDirAction sourceAction = actionDS.cursor();
+        
+        if (sourceAction.RecId)
+        {
+            AVAWHSLocDirCopy2BatchEventHandler::copy2Batch(sourceAction, formRun);
+        }
+        else
+        {
+            warning("@SYS18447"); // No record selected
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copy2Batch</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Copies a location directive action to a batch-enabled version.
+    /// </summary>
+    /// <param name="_sourceAction">The source action to copy</param>
+    /// <param name="_formRun">The form run context</param>
+    private static void copy2Batch(WHSLocDirAction _sourceAction, FormRun _formRun)
+    {
+        WHSLocDirAction newAction;
+        Query clonedQuery;
+        container queryCon;
+        
+        if (_sourceAction.isBatchEnabled)
+        {
+            warning("@AVAExtension:AVAActionAlreadyBatch");
+            return;
+        }
+        
+        try
+        {
+            ttsbegin;
+            
+            // Step 1: Clone the query BEFORE changing any flags
+            clonedQuery = AVAWHSLocDirCopy2BatchEventHandler::cloneActionQuery(_sourceAction);
+            
+            // Step 2: Create new action record with all fields copied
+            newAction = AVAWHSLocDirCopy2BatchEventHandler::copyActionRecord(_sourceAction);
+            
+            // Step 3: Set isBatchEnabled = Yes on new record
+            newAction.isBatchEnabled = NoYes::Yes;
+            newAction.insert();
+            
+            // Step 4: Re-apply the cloned query to the new record
+            if (clonedQuery)
+            {
+                AVAWHSLocDirCopy2BatchEventHandler::applyQueryToAction(newAction, clonedQuery);
+            }
+            
+            // Step 5: Set isCopied = Yes on source record
+            _sourceAction.selectForUpdate(true);
+            _sourceAction.AVAIsCopied = NoYes::Yes;
+            _sourceAction.update();
+            
+            ttscommit;
+            
+            info(strFmt("@AVAExtension:AVACopy2BatchSuccess", newAction.SequenceNumber));
+            
+            // Refresh the form
+            if (_formRun)
+            {
+                FormDataSource actionDS = _formRun.dataSource(formDataSourceStr(WHSLocDirTable, WHSLocDirAction));
+                actionDS.research(true);
+            }
+        }
+        catch (Exception::Error)
+        {
+            error("@AVAExtension:AVACopy2BatchError");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>cloneActionQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Clones the query from a location directive action.
+    /// </summary>
+    /// <param name="_sourceAction">The source action</param>
+    /// <returns>Cloned query</returns>
+    private static Query cloneActionQuery(WHSLocDirAction _sourceAction)
+    {
+        Query sourceQuery;
+        Query clonedQuery;
+        container queryCon;
+        
+        if (!_sourceAction)
+        {
+            return null;
+        }
+        
+        // Get the packed query from the action record
+        queryCon = _sourceAction.QueryCriteria;
+        
+        if (queryCon && conLen(queryCon) > 0)
+        {
+            // Unpack and repack to clone
+            clonedQuery = new Query();
+            clonedQuery.unpack(queryCon);
+        }
+        else
+        {
+            // If no query container, try to get from strategy
+            sourceQuery = AVAWHSLocDirActionQueryHelper::getActionQuery(_sourceAction);
+            if (sourceQuery)
+            {
+                clonedQuery = AVAWHSLocDirActionQueryHelper::cloneQuery(sourceQuery);
+            }
+        }
+        
+        return clonedQuery;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyActionRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Copies all fields from source action to a new action record.
+    /// </summary>
+    /// <param name="_sourceAction">The source action to copy from</param>
+    /// <returns>New action record (not yet inserted)</returns>
+    private static WHSLocDirAction copyActionRecord(WHSLocDirAction _sourceAction)
+    {
+        WHSLocDirAction newAction;
+        
+        buf2Buf(_sourceAction, newAction);
+        
+        // Clear system fields
+        newAction.RecId = 0;
+        newAction.RecVersion = 0;
+        newAction.createdBy = '';
+        newAction.createdDateTime = DateTimeUtil::minValue();
+        newAction.modifiedBy = '';
+        newAction.modifiedDateTime = DateTimeUtil::minValue();
+        
+        // Don't copy the isCopied flag to new record
+        newAction.AVAIsCopied = NoYes::No;
+        
+        // Adjust sequence number to be unique
+        newAction.SequenceNumber = AVAWHSLocDirCopy2BatchEventHandler::getNextSequenceNumber(_sourceAction.LocDirId);
+        
+        return newAction;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getNextSequenceNumber</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the next available sequence number for a location directive.
+    /// </summary>
+    /// <param name="_locDirId">Location directive ID</param>
+    /// <returns>Next sequence number</returns>
+    private static WHSLocDirSequenceNumber getNextSequenceNumber(WHSLocDirId _locDirId)
+    {
+        WHSLocDirAction action;
+        WHSLocDirSequenceNumber maxSeq = 0;
+        
+        select maxof(SequenceNumber) from action
+            where action.LocDirId == _locDirId;
+        
+        maxSeq = action.SequenceNumber;
+        
+        return maxSeq + 10;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>applyQueryToAction</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Applies a cloned query to a location directive action.
+    /// </summary>
+    /// <param name="_action">The action to update</param>
+    /// <param name="_query">The query to apply</param>
+    private static void applyQueryToAction(WHSLocDirAction _action, Query _query)
+    {
+        container queryCon;
+        
+        if (!_action || !_query)
+        {
+            return;
+        }
+        
+        // Pack the query
+        queryCon = _query.pack();
+        
+        if (queryCon && conLen(queryCon) > 0)
+        {
+            // Update the action with the query
+            _action.selectForUpdate(true);
+            _action.QueryCriteria = queryCon;
+            _action.update();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isButtonEnabled</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Determines if the Copy2Batch button should be enabled.
+    /// </summary>
+    /// <param name="_sender">The form button control</param>
+    /// <param name="_e">Event arguments</param>
+    [FormControlEventHandler(formControlStr(WHSLocDirTable, AVACopy2BatchButton), FormControlEventType::Validating)]
+    public static void AVACopy2BatchButton_OnValidating(FormControl _sender, FormControlEventArgs _e)
+    {
+        FormRun formRun = _sender.formRun();
+        FormDataSource actionDS = formRun.dataSource(formDataSourceStr(WHSLocDirTable, WHSLocDirAction));
+        WHSLocDirAction action = actionDS.cursor();
+        
+        // Enable button only when isBatchEnabled = No
+        _sender.enabled(action.RecId && !action.isBatchEnabled);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

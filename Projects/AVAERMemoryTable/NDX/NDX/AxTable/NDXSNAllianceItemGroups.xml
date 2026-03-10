@@ -1,0 +1,347 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXSNAllianceItemGroups</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// code for table NDX_SNAllianceItemGroups
+/// </summary>
+public class NDXSNAllianceItemGroups extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>findPriceGroupTOS</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// finds a NDX_SNAllianceItemGroups record for provided PriceGroupId, NDXCompanys and AVATOSId
+    /// </summary>
+    /// <param name = "_itemGroup">item group</param>
+    /// <param name = "_companys">NDXCompanys</param>
+    /// <param name = "_tosId">AVATOSId</param>
+    /// <param name = "_selectForUpdate">boolean</param>
+    /// <returns>NDXSNAllianceClients</returns>
+    public static NDXSNAllianceItemGroups findPriceGroupTOS(
+        ItemGroupId     _itemGroup,
+        NDXCompanys     _companys,
+        AVATOSId        _tosId,
+        boolean         _selectForUpdate = false)
+    {
+        NDXSNAllianceItemGroups alliancePriceGroup;
+
+        if(_selectForUpdate)
+        {
+            alliancePriceGroup.selectForUpdate(_selectForUpdate);
+        }
+
+        select firstonly alliancePriceGroup
+            where alliancePriceGroup.ArtGrp   == _itemGroup
+                && alliancePriceGroup.Companys == _companys
+                && alliancePriceGroup.TOSId    == _tosId;
+ 
+        return alliancePriceGroup;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>existsRecordPriceGroupTOS</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// checks if a records exists in NDX_SNAllianceItemGroups with provided TOSId and PriceGroupId
+    /// </summary>
+    /// <param name = "_priceGroupId">PriceGroupId</param>
+    /// <param name = "_tosId">AVATOSId</param>
+    /// <param name = "_companys">NDXCompanys</param>
+    /// <returns>boolean</returns>
+    public static boolean existsRecordPriceGroupTOS(
+        PriceGroupId    _priceGroupId,
+        AVATOSId        _tosId,
+        NDXCompanys     _companys)
+    {
+        return NDXSNAllianceItemGroups::findPriceGroupTOS(_priceGroupId, _companys, _tosId).RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateClientsForTOSId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// creates new NDX_SNAllianceItemGroups records for not yet existing Party records in provided TOS
+    /// </summary>
+    /// <param name = "_tosId">AVATOSId</param>
+    public static void populateClientsForTOSId(AVATOSId _tosId)
+    {
+        NDXSNAllianceItemGroups    allianceItemGroups;
+        NDXSNCompanys           allianceCompanys;
+        PriceDiscGroup              priceDiscGroup;
+        RecordInsertList            insertList = new RecordInsertList(tableNum(NDXSNAllianceItemGroups));
+
+        ttsbegin;
+
+        while select crosscompany priceDiscGroup
+            join allianceCompanys
+            order by priceDiscGroup.GroupId
+            where priceDiscGroup.Module == ModuleInventCustVend::Invent
+            && priceDiscGroup.DataAreaId == allianceCompanys.CompanyId
+            && (priceDiscGroup.Type == PriceGroupType::LineDiscGroup
+                || priceDiscGroup.Type == PriceGroupType::MultiLineDiscGroup)
+        {
+            if(NDXSNAllianceItemGroups::existsRecordPriceGroupTOS(priceDiscGroup.GroupId, _tosID, NDXHelperCommon::CompanyId2NDXCompany(priceDiscGroup.company())))
+            {
+                continue;
+            }
+
+            allianceItemGroups.clear();
+
+            allianceItemGroups.TOSId        = _tosId;
+            allianceItemGroups.Companys     = NDXHelperCommon::CompanyId2NDXCompany(priceDiscGroup.company());
+            allianceItemGroups.ArtGrp = priceDiscGroup.GroupId;
+            allianceItemGroups.Determined   = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+
+            allianceItemGroups.insert();
+        }
+        
+        insertList.insertDatabase();
+
+        ttscommit;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// find
+    /// </summary>
+    /// <param name = "_alliance">alliance</param>
+    /// <param name = "_company">company </param>
+    /// <param name = "_artGrp">item group</param>
+    /// <param name = "_update">for update </param>
+    /// <returns>NDXSNAllianceItemGroups record</returns>
+    static NDXSNAllianceItemGroups find(CustAccount _alliance, NDXCompanyBE _company, NDXItemGroup _artGrp, boolean _update = false)
+    {
+        NDXSNAllianceItemGroups nDX_SNAllianceItemGroups;
+        
+        nDX_SNAllianceItemGroups.selectForUpdate(_update);
+
+        select firstonly nDX_SNAllianceItemGroups
+            where nDX_SNAllianceItemGroups.TOSId == _alliance
+                && nDX_SNAllianceItemGroups.Companys == _company
+                && nDX_SNAllianceItemGroups.ArtGrp == _artGrp;
+
+        return nDX_SNAllianceItemGroups;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findOrCreate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// find or create
+    /// </summary>
+    /// <param name = "_alliance">alliance</param>
+    /// <param name = "_company">company</param>
+    /// <param name = "_artGrp">item group</param>
+    /// <returns>NDXSNAllianceItemGroups record</returns>
+    static NDXSNAllianceItemGroups findOrCreate(CustAccount _alliance, NDXCompanyBE _company, NDXItemGroup _artGrp)
+    {
+        NDXSNAllianceItemGroups nDX_SNAllianceItemGroups;
+
+        nDX_SNAllianceItemGroups = NDXSNAllianceItemGroups::find(_alliance, _company, _artGrp, true);
+
+        if (!nDX_SNAllianceItemGroups)
+        {
+            nDX_SNAllianceItemGroups.TOSId   = _alliance;
+            nDX_SNAllianceItemGroups.Companys = _company;
+            nDX_SNAllianceItemGroups.ArtGrp = _artGrp;
+            nDX_SNAllianceItemGroups.Determined = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+            nDX_SNAllianceItemGroups.insert();
+        }
+
+        return nDX_SNAllianceItemGroups;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NXATurnoverItemGroupsDevDoc</DeveloperDocumentation>
+	<Label>@NDX:NXAItemGroups</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>ArtGrp</TitleField1>
+	<TitleField2>Companys</TitleField2>
+	<AllowRowVersionChangeTracking>Yes</AllowRowVersionChangeTracking>
+	<ReplacementKey>TOSIdPriceGroupIdx</ReplacementKey>
+	<SaveDataPerCompany>No</SaveDataPerCompany>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>Companys</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>TOSId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ArtGrp</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ArtGrpMap</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Active</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Determined</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>TOSId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ArtGrp</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ArtGrpMap</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Companys</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>Companys</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>TOSId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ArtGrp</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>TOSId</Name>
+			<ExtendedDataType>AVATOSId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Active</Name>
+			<ExtendedDataType>AVAActive</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Companys</Name>
+			<ExtendedDataType>NDXCompanys</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Mandatory>Yes</Mandatory>
+			<EnumType>NDXCompanyBE</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ArtGrp</Name>
+			<ExtendedDataType>AVAPriceGroupId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ArtGrpMap</Name>
+			<ExtendedDataType>AVAPriceGroupMap</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>Determined</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>AVADetermined</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>TOSIdPriceGroupIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>Companys</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>ArtGrp</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>TOSId</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>KCS_TOSTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>KCS_TOSTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>TOSId</Name>
+					<Field>TOSId</Field>
+					<RelatedField>TosId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>NDXSNAllianceRelation</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>NDXSNAlliance</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>TOSId</Name>
+					<Field>TOSId</Field>
+					<RelatedField>TOSId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

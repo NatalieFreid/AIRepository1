@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAInventJournalCountDiff</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN/2025/07/03   AVA_013362_InventJournal_Count
+/// </summary>
+internal final class AVAInventJournalCountDiff extends RunBaseBatch
+{
+    const String10                  inv = 'Diff';
+    InventJournalId                 inventJournalIdBase;
+    TransDate                       transDate;
+    String15                        prefJournalInvDescription;
+    InventJournalNameId             inventJournalNameId;
+    InventJournalTable              inventJournalTableNew;
+    JournalId                       journalId;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    public void new()
+    {
+        super();
+        this.initParmDefault();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initParmDefault</Name>
+				<Source><![CDATA[
+    public void initParmDefault()
+    {
+
+        int    nYear = DateTimeUtil::year(DateTimeUtil::utcNow());
+
+        super();
+
+        transDate                   = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+        inventJournalNameId         = InventJournalName::standardJournalName(InventJournalType::Count);
+        prefJournalInvDescription   = strfmt("@NDX:NXAVar1SpaceVar2", Inv, nYear);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>newInventJournalTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/07/03   AVA_013362_InventJournal_Count
+    /// </summary>
+    /// <returns>InventJournalTable</returns>
+    InventJournalTable newInventJournalTable()
+    {
+
+        JournalTableData            newJournalTableData;
+        InventJournalName           inventJournalName;
+        InventJournalTable          inventJournalTableBase;
+
+        inventJournalTableBase  = InventJournalTable::find(inventJournalIdBase);
+        ttsbegin;
+
+        newJournalTableData = JournalTableData::newTable(inventJournalTableNew);
+
+        if (! InventJournalName::checkExist(inventJournalNameId))
+        {
+            throw error(error::missingRecord(tableStr(inventJournalName)));
+        }
+
+        inventJournalName = InventJournalName::find(inventJournalNameId);
+
+        inventJournalTableNew.clear();
+        inventJournalTableNew.initFromInventJournalName(inventJournalName);
+        inventJournalTableNew.JournalId             = newJournalTableData.nextJournalId();
+        //inventJournalTableNew.Description           = strfmt("@NXD9053", prefJournalInvDescription, inventJournalTableBase.KCS_InventLocationId, inventJournalTableBase.NDX_WMSLocationId, inventJournalIdBase);    // %1-%2-%3-Basis:%4
+        inventJournalTableNew.Description           = strfmt("@NDX:NXACountJourDescription", prefJournalInvDescription, inventJournalTableBase.InventLocationId, inventJournalTableBase.NDXWMSLocationId, inventJournalIdBase);    // %1-%2-%3-Basis:%4
+        inventJournalTableNew.InventDimFixed        = inventJournalTableBase.InventDimFixed;
+        inventJournalTableNew.InventLocationId  = inventJournalTableBase.InventLocationId;
+        inventJournalTableNew.NDXWMSLocationId  = inventJournalTableBase.NDXWMSLocationId;
+        //inventJournalTableNew.KCS_TransDate         = transDate;
+        inventJournalTableNew.NDXJournalIdBase     = inventJournalIdBase;
+        if (inventJournalTableNew.validateWrite())
+        {
+            inventJournalTableNew.insert();
+        }
+        else
+        {
+            throw Error("@NDX:NXACountJourError");        // Inventur-Journal konnte nicht erzeugt werden!
+        }
+
+        ttscommit;
+
+        this.parmJournalId(inventJournalTableNew.JournalId);
+
+        return inventJournalTableNew;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createInventJournalRecount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/07/03   AVA_013362_InventJournal_Count
+    /// </summary>
+    /// <param name = "lInventJournalIdBase">InventJournalId</param>
+    /// <param name = "infoNoMarkedLines">boolean</param>
+    /// <param name = "askCreateNewJournal">boolean</param>
+    public void createInventJournalRecount(InventJournalId  lInventJournalIdBase, boolean infoNoMarkedLines = false, boolean askCreateNewJournal = true)
+    {
+        InventJournalTrans      inventJournalTrans;
+        ;
+        inventJournalIdBase = lInventJournalIdBase;
+
+        // are there any "Nachzählen" positions
+        select count(RecId) from inventJournalTrans
+        where inventJournalTrans.JournalId  == inventJournalIdBase
+            &&  inventJournalTrans.NDXRecount == NoYes::Yes;
+        if (!inventJournalTrans.RecId)
+        {
+            if (infoNoMarkedLines)
+            {
+                Error(strfmt("@NDX:NXANoPosForCounting", inventJournalIdBase));
+            }
+            return;
+        }
+        if (askCreateNewJournal && box::yesNo(strfmt("@NDX:NXACreateNewJournal", inventJournalTrans.RecId), DialogButton::Yes) == DialogButton::No)
+        {
+            return;
+        }
+
+        // Header
+        this.newInventJournalTable();
+
+        // Lines
+        this.createInventJournalTrans();
+
+        info(strfmt("@NDX:NXANewCountCournal", this.parmJournalId()));     
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createInventJournalTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/07/03   AVA_013362_InventJournal_Count
+    /// </summary>
+    void createInventJournalTrans()
+    {
+        InventJournalTrans      inventJournalTransLocal;
+        InventJournalTrans      inventJournalTrans;
+        InventTable             inventTable;
+        Query                   q = new Query();
+        QueryRun                qr;
+        QueryBuildDataSource    qbds1, qbds2;
+        int                     numOfLines, lineNum;
+        RecordInsertList        insList = new RecordInsertList(tableNum(InventJournalTrans));
+
+        if (!inventJournalIdBase)
+        {
+            throw Error("@NDX:NXANoBasicJourId");    
+        }
+
+        qbds1 = q.addDataSource(tablenum(InventJournalTrans));
+        qbds1.addRange(fieldnum(InventJournalTrans, JournalId)).value(inventJournalIdBase);
+        qbds1.addRange(fieldnum(InventJournalTrans, NDXRecount)).value(QueryValue(NoYes::Yes));
+
+        qbds2 = qbds1.addDataSource(tablenum(InventTable));
+        qbds2.joinMode(JoinMode::InnerJoin);
+        qbds2.fetchMode(QueryFetchMode::One2One);
+        qbds2.relations(true);
+
+        qr = new QueryRun(q);
+
+        ttsbegin;
+        while (qr.next())
+        {
+            ++lineNum;
+            inventJournalTransLocal     = qr.get(tablenum(InventJournalTrans));
+            inventTable                 = qr.get(tablenum(InventTable));
+
+            inventJournalTrans.clear();
+            inventJournalTrans.JournalId    = inventJournalTableNew.JournalId;
+            inventJournalTrans.initFromInventJournalTable(inventJournalTableNew);
+            inventJournalTrans.transDate        = transDate;
+            inventJournalTrans.initFromInventTable(inventTable, false);
+            inventJournalTrans.inventDimId      = inventJournalTransLocal.inventDimId;
+            inventJournalTrans.lineNum          = lineNum;
+
+            /*inventMov_Jour_Loss_SumUp = new InventMov_Jour_Loss_SumUp(inventJournalTrans);
+            inventJournalTrans.InventOnHand     = inventMov_Jour_Loss_SumUp.dateOnHandPhysical(InventDim::find(inventJournalTransLocal.inventDimId)); */
+            inventJournalTrans.InventOnHand = this.dateOnHandPhysical(inventJournalTrans, InventDim::find(inventJournalTransLocal.inventDimid));
+
+            if (inventJournalTrans.PriceUnit)
+            {
+                inventJournalTrans.UnitQty = inventJournalTrans.Qty / inventJournalTrans.PriceUnit;
+            }
+
+            insList.add(inventJournalTrans);
+        }
+        numOfLines = insList.insertDatabase();
+
+        // Anzahl Positionen im Kopf speichern
+        inventJournalTableNew.selectForUpdate(true);
+        inventJournalTableNew.NumOfLines    = numOfLines;
+        inventJournalTableNew.update();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmJournalId</Name>
+				<Source><![CDATA[
+    public JournalId parmJournalId(JournalId _journalId = journalId)
+    {
+        journalId = _journalId;
+
+        return journalId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dateOnHandPhysical</Name>
+				<Source><![CDATA[
+    private InventQty  dateOnHandPhysical(InventJournalTrans    _inventJournalTrans, InventDim _inventDim)
+    {
+        InventDimParm   inventDimParm;
+
+        inventDimParm.initFromInventDim(_inventDim);
+        inventDimParm = InventDimParm::orParms(inventDimParm,InventJournalTable::journalId2inventDimParm(_inventJournalTrans.JournalId));
+
+        return InventSumDatePhysicalDim::onHandQty(_inventJournalTrans.TransDate,_inventJournalTrans.ItemId,_inventDim,inventDimParm);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    protected boolean canRunInNewSession()
+    {    
+        return true;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPriceDiscAdmCheckPostCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed by AVANADE
+/// </summary>
+[ExtensionOf(classStr(PriceDiscAdmCheckPost))]
+final class AVAPriceDiscAdmCheckPostCls_Extension
+{
+    private boolean         fromDateErrorFound, fromDateTableErrorFound;
+    public boolean          dateOverlapFound;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>checkJournalLines</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    protected void checkJournalLines()
+    {
+        PriceDiscTable  priceDiscTable;
+
+        next checkJournalLines();
+
+        Query queryCheckJournal = this.buildCheckJournalLinesQuery();
+
+        if (!queryCheckJournal)
+        {
+            return;
+        }
+
+        QueryRun queryRun = new QueryRun(queryCheckJournal);
+
+        while (queryRun.next())
+        {
+            PriceDiscAdmTrans priceDiscAdmTrans = queryRun.get(tableNum(PriceDiscAdmTrans));
+            priceDiscTable  = PriceDiscTable::findRecId(priceDiscAdmTrans.PriceDiscTableRef);
+
+            if (priceDiscAdmTrans.KCS_NewAndClose && !priceDiscAdmTrans.FromDate)
+            {
+                fromDateErrorFound = true;
+            }
+            if (priceDiscAdmTrans.KCS_NewAndClose)
+            {
+                if (priceDiscAdmTrans.FromDate <= priceDiscTable.FromDate)
+                {
+                    fromDateTableErrorFound = true;
+                }
+            }
+        }
+
+       
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAcheckOverlapDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_queryRun">_queryRun</param>
+    public void AVAcheckOverlapDate(QueryRun    _queryRun)
+    {
+        PriceDiscAdmTrans       priceDiscAdmTrans = _queryRun.get(tableNum(PriceDiscAdmTrans));
+        PriceDiscAdmTrans       overlapPriceDiscAdmTrans;
+        PriceDiscTable          overlapPriceDiscTable;
+        boolean                 locDateOverlapFound;
+
+        if (priceDiscAdmTrans.AVAGraduatedPrice)
+        {
+            select firstonly overlapPriceDiscAdmTrans
+                    where overlapPriceDiscAdmTrans.relation          == priceDiscAdmTrans.relation
+                       && overlapPriceDiscAdmTrans.AVAGraduatedPrice == NoYes::Yes
+                       && overlapPriceDiscAdmTrans.AccountCode       == priceDiscAdmTrans.AccountCode
+                       && overlapPriceDiscAdmTrans.AccountRelation   == priceDiscAdmTrans.AccountRelation
+                       && overlapPriceDiscAdmTrans.itemCode          == priceDiscAdmTrans.ItemCode
+                       && overlapPriceDiscAdmTrans.ItemRelation      == priceDiscAdmTrans.ItemRelation
+                       && overlapPriceDiscAdmTrans.FromDate          <= priceDiscAdmTrans.FromDate
+                       && (overlapPriceDiscAdmTrans.ToDate  == dateNull()
+                        || overlapPriceDiscAdmTrans.ToDate >= priceDiscAdmTrans.FromDate)
+                       && overlapPriceDiscAdmTrans.JournalNum        == priceDiscAdmTrans.JournalNum
+                       && overlapPriceDiscAdmTrans.RecId             != priceDiscAdmTrans.RecId;
+
+            if (overlapPriceDiscAdmTrans.RecId)
+            {
+                locDateOverlapFound = true;
+            }
+            else
+            {
+                select firstonly overlapPriceDiscTable
+                    where overlapPriceDiscTable.relation          == priceDiscAdmTrans.relation
+                       && overlapPriceDiscTable.AVAGraduatedPrice == NoYes::Yes
+                       && overlapPriceDiscTable.AccountCode       == priceDiscAdmTrans.AccountCode
+                       && overlapPriceDiscTable.AccountRelation   == priceDiscAdmTrans.AccountRelation
+                       && overlapPriceDiscTable.itemCode          == priceDiscAdmTrans.ItemCode
+                       && overlapPriceDiscTable.ItemRelation      == priceDiscAdmTrans.ItemRelation
+                       && overlapPriceDiscTable.FromDate          <= priceDiscAdmTrans.FromDate
+                       && (overlapPriceDiscTable.ToDate  == dateNull()
+                        || overlapPriceDiscTable.ToDate >= priceDiscAdmTrans.FromDate)
+                       && overlapPriceDiscTable.RecId             != priceDiscAdmTrans.PriceDiscTableRef;
+
+                if (overlapPriceDiscTable.RecId)
+                {
+                    locDateOverlapFound = true;
+                }
+            }
+            if (locDateOverlapFound)
+            {
+                priceDiscAdmTrans.selectForUpdate(true);
+                ttsbegin;
+                priceDiscAdmTrans.Log = strFmt("@NDX:NXADataOverlapPriceError",priceDiscAdmTrans.ItemRelation);
+                priceDiscAdmTrans.doUpdate();
+                ttscommit;
+                dateOverlapFound = true;
+            }
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_acceptWarnings">boolean</param>
+    /// <returns>boolean</returns>
+    public boolean checkJournal(boolean _acceptWarnings)
+    {
+        boolean ret = next checkJournal(_acceptWarnings);
+
+        Query queryCheckJournal = this.buildCheckJournalLinesQuery();
+        QueryRun queryRun = new QueryRun(queryCheckJournal);
+
+        while (queryRun.next())
+        {
+            this.AVAcheckOverlapDate(queryRun);
+        }
+
+        //ret = ret || fromDateErrorFound || dateOverlapFound;
+        ret = ret || fromDateErrorFound || fromDateTableErrorFound || dateOverlapFound;
+
+        if (fromDateErrorFound)
+        {
+            Error("@NDX:NXAFromDateError");
+        }
+
+        if (fromDateTableErrorFound)
+        {
+            error("@NDX:NXAFromDateTableError");
+        }
+
+        if (dateOverlapFound)
+        {
+            Error("@NDX:NXADataOverlapFound");
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addSelectionFieldsForCheckJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_priceDiscAdmTransSource">QueryBuildDataSource</param>
+    protected void addSelectionFieldsForCheckJournal(QueryBuildDataSource _priceDiscAdmTransSource)
+    {
+        next addSelectionFieldsForCheckJournal(_priceDiscAdmTransSource);
+
+        _priceDiscAdmTransSource.addSelectionField(fieldNum(PriceDiscAdmTrans, KCS_NewAndClose));
+        _priceDiscAdmTransSource.addSelectionField(fieldNum(PriceDiscAdmTrans, FromDate));
+        _priceDiscAdmTransSource.addSelectionField(fieldNum(PriceDiscAdmTrans, AVAGraduatedPrice));
+        _priceDiscAdmTransSource.addSelectionField(fieldNum(PriceDiscAdmTrans, RecId));
+        _priceDiscAdmTransSource.addSelectionField(fieldNum(PriceDiscAdmTrans, PriceDiscTableRef));
+        _priceDiscAdmTransSource.addSelectionField(fieldNum(PriceDiscAdmTrans, AVAEffectivePrice));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    void postJournal()
+    {
+        next postJournal();
+        PriceDiscAdmTrans       locPricediscAdmTrans;
+        PriceDiscTable          priceDiscTable;
+
+        while select locPricediscAdmTrans where locPricediscAdmTrans.JournalNum == journalNum
+        {
+            if (locPricediscAdmTrans.PriceDiscTableRef)
+            {
+                priceDiscTable = PriceDiscTable::findRecId(locPricediscAdmTrans.PriceDiscTableRef, true);
+                if (locPricediscAdmTrans.KCS_NewAndClose)
+                {
+                    //Wenn NewAndClose bleibt der HV-Datensatz unverändert und bekommt ein Bis-Datum
+                    if (!priceDiscTable.ToDate)
+                    {
+                        priceDiscTable.ToDate = locPricediscAdmTrans.FromDate - 1;
+                    }
+                    else
+                    {
+                        priceDiscTable.ToDate = locPricediscAdmTrans.AVAOldToDate;
+                    }
+                    priceDiscTable.FromDate = locPricediscAdmTrans.AVAOldFromDate;
+                    priceDiscTable.Currency = locPricediscAdmTrans.AVAOldCurrency;
+                    priceDiscTable.Amount   = locPricediscAdmTrans.KCS_AmountOld;
+                    
+                    priceDiscTable.update();
+
+                    //und es wird ein neuer HV-Datensatz mit geänderten Werten erstellt.
+                    priceDiscTable.clear();
+                    priceDiscTable.AVAGraduatedPrice = NoYes::Yes;
+                    priceDiscTable.AVAEffectivePrice = locPricediscAdmTrans.AVAEffectivePrice;
+                    priceDiscTable.initFromPriceDiscAdm(locPricediscAdmTrans);
+                    priceDiscTable.insert();
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAVendInvoiceDocumentDPCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// ExtensionOf class VendInvoiceDocumentDP
+/// </summary>
+[ExtensionOf(classStr(VendInvoiceDocumentDP))]
+final class AVAVendInvoiceDocumentDPCls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>populateVendInvoiceDocumentTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Populates values into the <c>VendInvoiceDocumentTmp</c> table.
+    /// </summary>
+    /// <param name="_purchInvoiceTransOrTaxTrans">
+    ///     A value that indicates whether it is transaction details or tax details.
+    /// </param>
+    ///     <param name="_vendPaymSched">
+    ///     The <c>vendPaymSched</c> variable.
+    /// </param>
+    protected void populateVendInvoiceDocumentTmp(NoYes _purchInvoiceTransOrTaxTrans, NoYes _vendPaymSched)
+    {
+        VendFormletterDocument avaVendFormletterDocument = VendFormletterDocument::find();
+
+        next populateVendInvoiceDocumentTmp(_purchInvoiceTransOrTaxTrans, _vendPaymSched);
+
+        vendInvoiceDocumentTmp.AVADlvTerm               = vendInvoiceJour.DlvTerm;
+        vendInvoiceDocumentTmp.Payment                  = vendInvoiceJour.Payment;
+        vendInvoiceDocumentTmp.AVAWPPName               = HcmWorker::find(vendInvoiceJour.AVAWorkerPurchPlacer).avaPersonName();
+        vendInvoiceDocumentTmp.AVAWPPEmail              = HcmWorker::find(vendInvoiceJour.AVAWorkerPurchPlacer).email();
+        vendInvoiceDocumentTmp.AVAWPPPhone              = HcmWorker::find(vendInvoiceJour.AVAWorkerPurchPlacer).phone() + ' ' + HcmWorker::find(vendInvoiceJour.AVAWorkerPurchPlacer).phoneLocal();
+        vendInvoiceDocumentTmp.AVAEmailRecipient        = vendInvoiceJour.AVAEmailRecipient;
+        vendInvoiceDocumentTmp.AVAOrderConfirmation     = AgreementLine::find(vendInvoiceJour.purchTable().avaFindFirstPurchLine().matchingAgreementLine()).AVAOrderConfirmation;
+        vendInvoiceDocumentTmp.AVAPurchNumberSequence   = PurchAgreementHeader::find(vendInvoiceJour.AVAMatchingAgreement).PurchNumberSequence;
+        vendInvoiceDocumentTmp.AVAInvoiceAccount        = vendInvoiceJour.InvoiceAccount;
+        vendInvoiceDocumentTmp.AVAOrderAccount          = vendInvoiceJour.OrderAccount;
+        vendInvoiceDocumentTmp.AVACashDisc              = vendInvoiceJour.AVACashDisc;
+
+        vendInvoiceDocumentTmp.AVARequesterName         = HcmWorker::find(vendInvoiceJour.AVARequester).avaPersonName();
+        vendInvoiceDocumentTmp.AVARequesterEmail        = HcmWorker::find(vendInvoiceJour.AVARequester).email();
+        vendInvoiceDocumentTmp.AVARequesterPhone        = HcmWorker::find(vendInvoiceJour.AVARequester).phone() + ' ' + HcmWorker::find(vendInvoiceJour.AVARequester).phoneLocal();
+
+        vendInvoiceDocumentTmp.AVADeliveryDate          = vendInvoiceTrans.AVADeliveryDate;
+        vendInvoiceDocumentTmp.AVAPriceUnit             = vendInvoiceTrans.PriceUnit;
+        vendInvoiceDocumentTmp.AVAInventLocationId      = vendInvoiceTrans.inventDim().InventLocationId;
+        vendInvoiceDocumentTmp.AVAReqAttention          = vendInvoiceTrans.AVAReqAttention;
+
+        [vendInvoiceDocumentTmp.AVATotalMarkupAmount, vendInvoiceDocumentTmp.AVAMarkupCodeList, vendInvoiceDocumentTmp.AVAMarkupValueList] = this.avaLineMarkup(vendInvoiceJour, vendInvoiceTrans);
+
+        vendInvoiceDocumentTmp.AVAFormLetterRemarksTxt  = FormLetterRemarks::find(vendInvoiceJour.LanguageId, FormTextType::AVAVendInvoice).Txt;
+        vendInvoiceDocumentTmp.AVAFormLetterRemarksTxt2 = FormLetterRemarks::find(vendInvoiceJour.LanguageId, FormTextType::AVAVendInvoice2).Txt;
+
+        if((avaVendFormletterDocument.DocuOnPurchOrder == DocuOnFormular::Line)
+            || (avaVendFormletterDocument.DocuOnPurchOrder == DocuOnFormular::All))
+        {
+            vendInvoiceDocumentTmp.AVALineNotes    = Docu::concatDocuRefNotes(DocuRefSearch::newTypeIdAndRestriction(
+                                                                                vendInvoiceTrans,
+                                                                                avaVendFormletterDocument.DocuTypePurchOrder,
+                                                                                DocuRestriction::External));
+        }
+
+        vendInvoiceDocumentTmp.DeliveryName         = vendInvoiceJour.DeliveryName;
+        VendInvoiceDocumentTmp.DeliveryAddress      = vendInvoiceJour.deliveryAddress();
+
+        vendInvoiceDocumentTmp.LanguageId           = vendInvoiceJour.LanguageId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaLineMarkup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// gets a container with relevant report charges values from MarkupTrans
+    /// </summary>
+    /// <param name = "_vendInvoiceJour">VendInvoiceJour</param>
+    /// <param name = "_vendInvoiceTrans">VendInvoiceTrans</param>
+    /// <returns>container</returns>
+    public container avaLineMarkup(
+        VendInvoiceJour _vendInvoiceJour,
+        VendInvoiceTrans _vendInvoiceTrans)
+    {
+        str avaMarkupCodeList, avaMarkupCodeValue;
+        MarkupAmount avaTotalMarkupAmount, avaCalcAmount;
+        MarkupTrans avaMarkupTrans;
+        TableId avaTransTableId = _vendInvoiceTrans.TableId;
+        RecId   avaTransRecId = _vendInvoiceTrans.RecId;
+
+        if(isProforma)
+        {
+            avaTransTableId = _vendInvoiceTrans.purchLine().TableId;
+            avaTransRecId   = _vendInvoiceTrans.purchLine().RecId;
+        }
+
+        while select avaMarkupTrans
+            where avaMarkupTrans.TransTableId == avaTransTableId
+            && avaMarkupTrans.TransRecId == avaTransRecId
+        {
+            if(avaMarkupCodeList != ''
+                || avaMarkupCodeValue != '')
+            {
+                avaMarkupCodeList += '\n';
+                avaMarkupCodeValue += '\n';
+            }
+
+            avaCalcAmount = avaMarkupTrans.calcDistributionAmount(_vendInvoiceTrans.Qty, _vendInvoiceTrans.LineAmount, _vendInvoiceJour.InvoiceDate);
+            avaTotalMarkupAmount += avaCalcAmount;
+            avaMarkupCodeList += avaMarkupTrans.MarkupCode + ': ' + avaMarkupTrans.Txt;
+
+            if(avaMarkupTrans.MarkupCategory == MarkupCategory::Fixed)
+            {
+                avaMarkupCodeValue += strFmt('%1 %2', num2Str(avaCalcAmount, 1, 2, 2, 1), avaMarkupTrans.CurrencyCode);
+            }
+            else if(avaMarkupTrans.MarkupCategory == MarkupCategory::Percent)
+            {
+                avaMarkupCodeValue += strFmt('%1 %', num2Str(avaMarkupTrans.Value, 1, 2, 2, 1));
+            }
+            else if(avaMarkupTrans.MarkupCategory == MarkupCategory::Pcs)
+            {
+                avaMarkupCodeValue += strFmt("@NDX:NXAPOPerPiece", num2Str(avaMarkupTrans.Value, 1, 2, 2, 1), avaMarkupTrans.CurrencyCode, num2Str(this.avaGetMarkupPriceUnit(_vendInvoiceTrans.ItemId, avaMarkupTrans.ModuleType), 1, 0, 2, 1));
+            }
+            else if(avaMarkupTrans.MarkupCategory == MarkupCategory::AVAMTZ)
+            {
+                avaMarkupCodeValue += strFmt('%1 %2',  num2Str(avaCalcAmount, 1, 2, 2, 1), avaMarkupTrans.CurrencyCode);
+            }
+            else
+            {
+                avaMarkupCodeValue += strFmt('%1 %2', num2Str(avaCalcAmount, 1, 2, 2, 1), avaMarkupTrans.CurrencyCode);
+            }
+
+        }
+
+        return [avaTotalMarkupAmount, avaMarkupCodeList, avaMarkupCodeValue];
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetMarkupPriceUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the priceUnit for an ItemId and its associated ModuleType
+    /// </summary>
+    /// <param name = "_itemId">_itemId</param>
+    /// <param name = "_moduleType">_moduleType</param>
+    /// <returns>PriceUnit</returns>
+    public PriceUnit avaGetMarkupPriceUnit(ItemId _itemId, MarkupModuleType _moduleType)
+    {
+        PriceUnit avaPriceUnit;
+        InventTable avaInventTable = InventTable::find(_itemId);
+
+        if(avaInventTable
+        && _moduleType == MarkupModuleType::Cust)
+        {
+            avaPriceUnit = avaInventTable.inventTableModuleSales().priceUnit();
+        }
+        else if(avaInventTable
+        && _moduleType == MarkupModuleType::Vend)
+        {
+            avaPriceUnit = avaInventTable.inventTableModulePurch().priceUnit();
+        }
+        else if(avaInventTable
+        && _moduleType == MarkupModuleType::Invent)
+        {
+            avaPriceUnit = avaInventTable.inventTableModuleInvent().priceUnit();
+        }
+
+        return avaPriceUnit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

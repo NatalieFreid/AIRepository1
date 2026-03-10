@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAAvaEDISalesTableImportClass_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(classStr(AVAEDISalesTableImportClass))]
+final class AVAAvaEDISalesTableImportClass_Extension
+{
+    
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>checkPurchOrderFormNum</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    protected void checkPurchOrderFormNum()
+    {
+        
+        next checkPurchOrderFormNum();
+
+        if (salesTable.AVAPurchOrderDublicate == NoYes::Yes)
+        {
+            ediHeaderStatus = AVAEDIHeaderStatus::DoubleCustRef;
+            this.setHeaderEDIError(ediHeaderStatus);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initSalesLineFromOrig</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesLineOrigUpd">_salesLineOrigUpd</param>
+    protected void initSalesLineFromOrig(AVAEDISalesLineOrig	_salesLineOrigUpd)
+    {
+        boolean hasQuotWarnung, hasQuotErrors;
+        next initSalesLineFromOrig(_salesLineOrigUpd);
+
+        if (_salesLineOrigUpd.ediQuotationNum != '')
+        {
+            salesLine.AVAOrigQuotationId  = _salesLineOrigUpd.EDIQuotationNum;
+            [hasQuotErrors, hasQuotWarnung] =  salesLine.AVAcheckOrigQuotation();
+            if (!hasQuotErrors)
+            {
+                salesLine.AVAQuotationId = salesLine.AVAOrigQuotationId;
+                if (!salesTable.KCS_NoUseQuotPrice)
+                {
+                    salesLine.AVApriceCalculation(true,true,true,true,true);
+                    salesLine.LineAmount = salesLine.calcLineAmountForced();
+                }
+            }
+            else
+            {
+                //ediLineStatus = AVAEDILineStatus::AVAQuotationCheckFailed;
+                //this.setEDIError(ediLineStatus);
+                salesLine.AVAEDIQuotationStatus = AVAEDIQuotationStatus::Error;
+            }
+        }
+        else
+        {
+            salesLine.AVApriceCalculation(true,true,true,true,true);
+            salesLine.LineAmount = salesLine.calcLineAmountForced();
+        }
+
+        InventTable     locInventTable = salesLine.inventTable();
+        if (locInventTable.AVAItemSet)
+        {
+            salesLine.avaItemSetInitFromInventTable(locInventTable);
+        }
+
+        if (!_salesLineOrigUpd.EDIExternalItemId)
+        {
+            salesLine.ExternalItemId = locInventTable.externalItemId(ModuleInventCustVend::Cust,salesTable.CustAccount);
+        }
+        //this.salesPrice(salesLine.SalesPrice);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initSalesTableFromOrig</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    protected void initSalesTableFromOrig()
+    {
+        next initSalesTableFromOrig();
+        salesTable.KCS_PurchRefDate = salesTableOrigUpd.EDIPurchOrderDate;
+        salesTable.PurchOrderFormNum    = salesTableOrigUpd.EDIPurchOrderNum;
+        salesTable.AVARepPckSlipNum     = salesTableOrigUpd.AVARepPckSlipNum;
+        salesTable.AVACheckPODublicate(true);
+        this.setContactId();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>salesQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesQty">_salesQty</param>
+    /// <returns>SalesQty</returns>
+    protected SalesQty salesQty(SalesQty  _salesQty)
+    {
+        Qty     returnQty = next salesQty(_salesQty);
+
+        InventTable     locInventTable = salesLine.inventTable();
+        
+        if (salesLineOrigUpd.EDIQty)
+        {
+            returnQty = str2Num(salesLineOrigUpd.EDIQty);
+            if (returnQty != _salesQty)
+            {
+                ediLineStatus = AVAEDILineStatus::QtyDifference;
+                //this.setEDIError(ediLineStatus);
+                ediError += strFmt( '%1 -> %2', salesLineOrigUpd.EDIQty, num2str(_salesQty,-1,-1,-1,-1));
+            
+                if (CustTable::find(salesTable.CustAccount).AVAEDIUpdateQty)
+                {
+                    if (!locInventTable.AVAItemSet)
+                    {
+                        returnQty = _salesQty;
+                    }
+                }
+            }
+        }
+        else
+        {
+            returnQty = _salesQty;
+        }
+
+        return returnQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>salesPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 18.07.2024
+    /// </summary>
+    /// <param name = "_salesPrice">_salesPrice</param>
+    /// <returns>SalesPrice</returns>
+    protected SalesPrice salesPrice(SalesPrice  _salesPrice)
+    {
+        AVAEDIPrice     origEDIPrice =  salesLineOrigUpd.EDIPrice;
+        salesLineOrigUpd.EDIPrice = '';
+
+        SalesPrice      salesPrice = next salesPrice(_salesPrice);
+
+        salesLineOrigUpd.EDIPrice = origEDIPrice;
+        return salesPrice;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setContactId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 20.01.2025
+    /// </summary>
+    void setContactId()
+    {
+        AVAEDIAddress       ediAddress;
+        ContactPerson       contactPerson;
+        CustTable           custTable = CustTable::find(salesTable.CustAccount);
+        LogisticsElectronicAddress  logisticsElectronicAddress;
+        DirPartyLocation    dirPartyLocation;
+        
+
+        while select ediAddress
+            where  ediAddress.EDIGUID == salesTableOrigUpd.EDIGUID
+                && ediAddress.EDIAddressType == AVAEDIAddressType::Buyer                
+        {
+            select firstonly logisticsElectronicAddress
+                where logisticsElectronicAddress.Type    == LogisticsElectronicAddressMethodType::Email
+                   && LogisticsElectronicAddress.Locator == ediAddress.ContactPersonEmail 
+                join dirPartyLocation
+                    where dirPartyLocation.Location == logisticsElectronicAddress.Location
+                        join contactPerson
+                            where contactPerson.Party  == dirPartyLocation.Party
+                               && contactPerson.ContactForParty == custTable.Party;
+
+            if (contactPerson)
+            {
+                salesTable.ContactPersonId = contactPerson.ContactPersonId;
+                break;
+            }
+
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkQuotationId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 20.01.2025
+    /// </summary>
+    protected void checkQuotationId()
+    {
+        AVAEDIQuotationNum      ediQuotationNum = salesLineOrigUpd.EDIQuotationNum;
+        salesLineOrigUpd.EDIQuotationNum = '';
+        next checkQuotationId();
+        salesLineOrigUpd.EDIQuotationNum = ediQuotationNum;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

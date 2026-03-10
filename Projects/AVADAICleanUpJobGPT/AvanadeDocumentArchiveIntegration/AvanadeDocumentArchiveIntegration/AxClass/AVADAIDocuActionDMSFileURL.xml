@@ -1,0 +1,823 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADAIDocuActionDMSFileURL</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using Microsoft.Dynamics.AX.Framework.FileManagement;
+
+/// <summary>
+/// The <c>DocuActionFile</c> class extends <c>DocuAction</c>. All document classes that work with external files should extend from this class.
+/// </summary>
+public class AVADAIDocuActionDMSFileURL extends DocuActionFile
+{
+    AVADAIParameters avaDAIParameters = AVADAIParameters::find();
+    AVADAIReport avaDAIReport;
+    AVADAIReportMetadata avaDAIReportMetadata;
+    AVADAIExecutionId executionId;
+    AVADAIRefNum refNum;
+    AVADAIFileExt fileExt;       
+    AVADAIReportExportTable avaDAIReportExportTable;
+   
+    RecordInsertList avaDAIReportExportLineInsertList;
+    
+    #localmacro.DMSFileURLDescription
+        'Attach temp file (DAI)'
+    #endmacro
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>add</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Add
+    /// </summary>
+    /// <param name = "_docuRef">DocuRef</param>
+    /// <param name = "_filename">FileName</param>
+    public void add(DocuRef _docuRef, Filename _filename = '')
+    {
+        // Get the DocuView form data source
+        FormDataSource docuViewDataSource = FormDataUtil::getFormDataSource(_docuRef);
+
+        DocuRef updatedRecord = DocumentFileHelper::getDocumentFromUserForDocuRef(_docuRef);
+
+        if (updatedRecord)
+        {
+            DocuValue docuValue = updatedRecord.docuValue();
+
+            // If the extension isn't valid, remove the record and error out;
+            // otherwise if the extension is valid, then refresh the data source and select the newly added record
+            if (!Docu::validateExtension(docuValue.FileType))
+            {
+                this.deleteDocuRefAndDocuValueRecords(updatedRecord, docuValue);
+                error("@SYS99219");
+            }
+            else
+            {
+                docuViewDataSource.executeQuery();
+                docuViewDataSource.refresh();
+                docuViewDataSource.positionToRecord(updatedRecord);
+
+                DocuAction::RecordCreated(docuViewDataSource.formRun());
+            }
+        }
+        else
+        {
+            this.cleanupDocuRef(_docuRef);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findDocuRefRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// The method finds the docu ref record associated with the field ID and other parameters.
+    /// </summary>
+    /// <param name="_dataAreaId">The data area ID associated with the record to find</param>
+    /// <param name="_fileIdGuid">The file ID associated with the record to find</param>
+    /// <param name="_tableId">The table ID associated with the record to find</param>
+    /// <param name="_recId">The record ID associated with the record to find</param>
+    /// <returns>DocuRef</returns>
+    private static DocuRef findDocuRefRecord(str _dataAreaId, guid _fileIdGuid, TableId _tableId, RecId _recId)
+    {
+        DocuRef docuRef;
+        DocuValue docuValue;
+        
+        // Find the records associated with the parameter data area, table, and record ID
+        docuRef = DocuRef::findTableIdRecId(_dataAreaId, _tableId, _recId);
+        
+        // Loop through all found document references to find the record associated with the parameter file ID
+        while (docuRef)
+        {
+            // If the document reference has a value attached, check to see if its document value contains the parameter file ID
+            if (docuRef.isValueAttached())
+            {
+                docuValue = docuRef.docuValue();
+
+                // If the file IDs match, break (we found the record)
+                if (docuValue.FileId == _fileIdGuid)
+                {
+                    break;
+                }
+            }
+
+            next docuRef;
+        }
+
+        return docuRef;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findDocuRefRecordByExecutionId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// The method finds the docu ref record associated with the execution ID and other parameters.
+    /// </summary>
+    /// <param name="_dataAreaId">The data area ID associated with the record to find</param>
+    /// <param name="_executionId">The execution ID associated with the record to find</param>
+    /// <param name="_tableId">The table ID associated with the record to find</param>
+    /// <param name="_recId">The record ID associated with the record to find</param>
+    /// <param name="_forUpdate">Select record for update</param>
+    /// <returns>DocuRef</returns>
+    public static DocuRef findDocuRefRecordByExecutionId(str _dataAreaId, AVADAIExecutionId _executionId, TableId _tableId, RecId _recId, boolean _forUpdate = false)
+    {
+        DocuRef docuRef;
+        
+        if (_dataAreaId && _executionId && _tableId && _recId)
+        {
+            if (_forUpdate)
+            {
+                docuRef.selectForUpdate(true);
+            }
+
+            TableId tableId = DocuRef::GetRootTableID(_tableId);
+            select firstonly docuRef
+                where docuRef.RefCompanyId == _dataAreaId
+                    && docuRef.RefTableId == tableId       
+                    && docuRef.RefRecId == _recId
+                    && docuRef.AVADAIExecutionId == _executionId;
+        }
+
+        return docuRef;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canSetup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Can setup
+    /// </summary>
+    /// <returns>True</returns>
+    boolean canSetup()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>hasOption</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Has option
+    /// </summary>
+    /// <returns>False</returns>
+    boolean hasOption()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>cleanupDocuRef</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// The method removes the referenced docuRef record
+    /// </summary>
+    /// <param name="_docuRef">The docuRef record to remove</param>
+    [Microsoft.Dynamics.BusinessPlatform.SharedTypes.InternalUseOnlyAttribute]
+    public void cleanupDocuRef(DocuRef _docuRef)
+    {
+        DocuRef docuReference;
+
+        ttsbegin;
+        docuReference = DocuRef::findRecId(_docuRef.RecId, true);
+        docuReference.doDelete();
+        ttscommit;
+
+        if (DocuSharedParameters::isDocuHistoryEnabled())
+        {
+            // Remove the DocuHistory entry created for the DocuRef.
+            AVADAIDocuActionDMSFileURL::cleanupDocuHistoryEntry(
+                docuReference.RefCompanyId,
+                docuReference.RefTableId,
+                docuReference.RecId);
+        }
+        
+        if (FormDataUtil::getFormDataSource(_docuRef))
+        {
+            FormDataUtil::getFormDataSource(_docuRef).research();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>cleanupDocuHistoryEntry</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Removes empty DocuHistory entry.
+    /// </summary>
+    /// <param name = "_refCompanyId">Reference company ID of the empty DocuHistory entry</param>
+    /// <param name = "_refTableId">Reference table ID of the empty DocuHistory entry</param>
+    /// <param name = "_docuRefRecId">DocuRef reference recor ID of the empty DocuHistory entry</param>
+    private static void cleanupDocuHistoryEntry(DataAreaId _refCompanyId, RefTableId _refTableId, DocuRefRecId _docuRefRecId)
+    {
+        DocuHistory docuHistory;
+        select forupdate firstonly docuHistory
+            where docuHistory.RefCompanyId == _refCompanyId
+                && docuHistory.RefTableId == _refTableId
+                && docuHistory.DocuRefRecId == _docuRefRecId;
+
+        ttsbegin;
+        docuHistory.doDelete();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteDocuRefAndDocuValueRecords</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Delete DocuRef and DocuValue reords
+    /// </summary>
+    /// <param name = "_docuRef">DocuRef</param>
+    /// <param name = "_docuValue">DocuValue</param>
+    private final void deleteDocuRefAndDocuValueRecords(DocuRef _docuRef, DocuValue _docuValue)
+    {
+        ttsbegin;
+        _docuValue.delete();
+        this.cleanupDocuRef(_docuRef);
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>handlesRecordCreation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// HandlesRecordCreation
+    /// </summary>
+    /// <returns>True</returns>
+    public boolean handlesRecordCreation()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeAndValidate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initialize
+    /// </summary>
+    /// <param name = "_docuRef">Docu Ref</param>
+    /// <returns>Boolean - True if validation was ok</returns>
+    protected boolean initializeAndValidate(DocuRef _docuRef)
+    {
+        boolean result = true;
+
+        if (!isConfigurationKeyEnabled(configurationkeynum(AVADAIAttachment)))
+        {
+            result = checkFailed("@AVADAIExt:AttachmentConfigKeyMissing");
+        }
+        
+        if (AVADAIServer::findServer(avaDAIParameters.ServerId).ExportActive == NoYes::No)
+        {
+            result = checkFailed("@AVADAIExt:DAIServerNotActive");
+        }
+        
+        if (_docuRef.RecId == 0)
+        {
+            result = checkFailed("@AVADAIExt:NoDocuRef");
+        }
+
+        TableName tableName = tableId2Name(_docuRef.RefTableId);
+        avaDAIReport = avaDAIReport::find(avaDAIParameters.ServerId, tableName, this.description());
+            
+        if (avaDAIReport.RecId == 0 || avaDAIReport.Active == NoYes::No)
+        {
+            result = checkFailed(strFmt("@AVADAI:AVADAINoActiveReportConfiguration", tableName));
+        }
+
+        avaDAIReportMetadata = AVADAIReportMetadata::find(avaDAIReport.MetaDataId);
+        if (avaDAIReportMetadata.RecId == 0)
+        {
+            result = checkFailed(strFmt("@AVADAI:AVADAINoMetadataConfiguration", tableName));
+        }
+
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Run
+    /// </summary>
+    /// <param name = "_args">Args</param>
+    public void run(Args _args)
+    {
+        boolean openHandled = false;
+        DocuRef docuRef;
+
+        if (_args.record() is DocuRef)
+        {
+            docuRef = _args.record() as DocuRef;
+        }
+
+        if (!this.initializeAndValidate(docuRef))
+        {
+            this.cleanupDocuRef(docuRef);
+            return;
+        }
+
+        switch (_args.parmEnum())
+        {
+            case DocuCode::Open:
+                openHandled = true;                    
+
+                if (docuRef.AVADAIDocumentId)
+                {
+                    AVADAIParameters parameters = AVADAIParameters::find();
+                    if (parameters.Enabled == NoYes::Yes)
+                    {
+                        AVADAIServer dmsServer = AVADAIServer::findServer(parameters.ServerId);
+                        if (dmsServer && dmsServer.LinkOpenType == AVADAILinkOpenType::DocumentId)
+                        {
+                            str url = dmsServer.OpenDocUrl;
+
+                            if (dmsServer.InsertCompany == NoYes::Yes && dmsServer.EscapeStrCompany)
+                            {
+                                url = strReplace(url, dmsServer.EscapeStrCompany, docuRef.ActualCompanyId);
+                            }
+
+                            if (dmsServer.EscapeStr)
+                            {
+                                url = strReplace(url, dmsServer.EscapeStr, docuRef.AVADAIDocumentId);
+                            }
+                            else
+                            {
+                                //%1 will be replaced if no escapeStr is defined.
+                                url = strfmt(url, docuRef.AVADAIDocumentId);
+                            }
+
+                            Browser browser = new Browser();
+                            browser.navigate(url);
+                        }
+                    }
+                }
+                break;            
+        }
+
+        if (!openHandled)
+        {
+            super(_args);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>attachFile</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Attaches a file document value to the provided document reference.
+    /// </summary>
+    /// <param name="_ref">The <c>DocuRef</c> record that the file should be tied to.</param>
+    /// <param name="_fileName">The name of the file to attach.</param>
+    /// <param name="_fileContentType">The MIME type of the file to attach.</param>
+    /// <param name="_fileContents">The contents of the file to attach.</param>
+    /// <returns><c>true</c> if the document reference was successfully updated; otherwise, <c>false</c>.</returns>    
+    public boolean attachFile(DocuRef _ref, str _fileName, str _fileContentType, System.IO.Stream _fileContents)
+    {
+        boolean result;
+
+        if (this.initializeAndValidate(_ref))
+        {
+            result = this.locValidateFileExtension(_fileName) && this.locValidateFileSize(_ref, _fileContents);
+        
+            if (result)
+            {
+                ttsbegin;
+
+                DocuValue value = this.createFileAttachment(_ref, _fileName, _fileContentType, _fileContents);
+                result = (value.RecId != 0);
+            
+                ttscommit;
+            }
+        }
+
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createFileAttachment</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates a new file attachment for the provided DocuRef record.
+    /// </summary>
+    /// <param name="_ref">The <c>DocuRef</c> record that the file should be tied to.</param>
+    /// <param name="_fileName">The name of the file to attach.</param>
+    /// <param name="_fileContentType">The MIME type of the file to attach.</param>
+    /// <param name="_fileContents">The contents of the file to attach.</param>
+    /// <returns>The DocuValue record that was created for the new attachment.</returns>
+    protected DocuValue createFileAttachment(DocuRef _ref, str _fileName, str _fileContentType, System.IO.Stream _fileContents)
+    {
+        str uniqueFileName = _fileName;
+        str fileNameWithoutExtension = System.IO.Path::GetFileNameWithoutExtension(uniqueFileName);
+        str fileExtension = Docu::GetFileExtension(uniqueFileName);
+        str fileContentType;
+
+        if (!_fileContentType)
+        {
+            fileContentType = System.Web.MimeMapping::GetMimeMapping(_fileName);
+        }
+
+        DocuValue docValue;
+        docValue.initFromDocuRef(_ref);
+        docValue.FileId = newGuid();
+        docValue.FileName = fileNameWithoutExtension;
+        docValue.FileType = fileExtension;
+        docValue.OriginalFileName = _fileName;
+        docValue.Type = DocuValueType::Others;
+
+        docValue.StorageProviderId = DocuStorageProviderType::Azure;
+            
+        boolean result = this.sendFileAndExportInformation(_ref, _fileContents);
+
+        if (result)
+        {
+            if (docValue.validateWrite())
+            {                
+                docValue.insert();
+                _ref.AVADAIExecutionId = executionId;
+                _ref.ValueRecId = docValue.RecId;
+                _ref.update();
+                return docValue;
+            }
+            else
+            {
+                // Validation errors should be logged by validateWrite as warnings.
+                throw Exception::Warning;
+            }
+        }
+
+        return null;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Class description
+    /// </summary>
+    /// <returns>Class description</returns>
+    public ClassDescription description()
+    {
+        return AVADAIDocuActionDMSFileURL::classDescription();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>classDescription</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Class description
+    /// </summary>
+    /// <returns>Class description</returns>
+    public static ClassDescription classDescription()
+    {
+        return #DMSFileURLDescription;    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendFileAndExportInformation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Upload file and send export information
+    /// </summary>
+    /// <param name = "_ref">Docu ref</param>
+    /// <param name = "_fileContentInStream">File content stream</param>
+    /// <returns>Boolean - True if process was ok</returns>
+    protected boolean sendFileAndExportInformation(DocuRef _ref, System.IO.Stream _fileContentInStream)
+    {
+        boolean result;
+
+        executionId = guid2StrWithoutBraces(newGuid());
+        avaDAIReportExportLineInsertList = new RecordInsertList(tableNum(AVADAIReportExportLine));
+
+        avaDAIReportExportTable = AVADAIReportExportTable::findOrCreate(avaDAIReport, executionId, true);
+
+        result = this.sendAVADAIExportFileInformation(_fileContentInStream);
+        result = result && this.sendAVADAIExportMetaData(_ref);
+        result = result && this.sendAVADAIExportData();
+
+        if (result)
+        {
+            avaDAIReportExportLineInsertList.insertDatabase();
+
+            avaDAIReportExportTable.selectForUpdate(true);
+            avaDAIReportExportTable.ReportExported = NoYes::Yes;
+            avaDAIReportExportTable.MetaDataExported = NoYes::Yes;
+            avaDAIReportExportTable.ProcessStatus = AVADAIReportExportTable::getProcessStatusMetadataExported();
+            avaDAIReportExportTable.update();
+        }
+        
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendAVADAIExportData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Send DAI export data
+    /// </summary>
+    /// <returns>Boolean - True if process was ok</returns>
+    protected boolean sendAVADAIExportData()
+    {
+        boolean result;
+        
+        if (avaDAIReportExportTable.RecId)
+        {
+            AVADAIFileName metadataFileName = AVADAIReport::getExportFileName(avaDAIReport, '.' + avaDAIReport.MetaDataFileExt, executionId, refNum);
+            AVADAIFileName reportFileName = AVADAIReport::getExportFileName(avaDAIReport, '.' + fileExt, executionId, refNum);
+            
+            avaDAIReportExportTable.MetaDataId = avaDAIReport.MetaDataId;
+            avaDAIReportExportTable.MetaDataFileName = metadataFileName;
+            avaDAIReportExportTable.ReportFileName = reportFileName;
+            avaDAIReportExportTable.ExportId = executionId;
+            avaDAIReportExportTable.RefNum = refNum;
+            avaDAIReportExportTable.CompanyLanguage = CompanyInfo::languageId();
+            avaDAIReportExportTable.ReportType = avaDAIReport.ReportType;
+
+            if (avaDAIReportExportTable.validateWrite())
+            {
+                avaDAIReportExportTable.update();
+                result = true;
+            }
+        }
+
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendAVADAIExportMetaData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Send DAI export meta data
+    /// </summary>
+    ///  <param name = "_ref">Docu ref</param>
+    /// <returns>Boolean - True if process was ok</returns>
+    protected boolean sendAVADAIExportMetaData(DocuRef _ref)
+    {
+        boolean result;
+
+        DictTable dictTable = new DictTable(_ref.RefTableId);
+        Common common = dictTable.makeRecord();
+
+        select firstonly common
+            where common.RecId == _ref.RefRecId;
+
+        if (common.RecId != 0)
+        {
+            result = this.sendAVADAIDAIExportDynamicMetaData(common, dictTable);
+            result = result && this.sendAVADAIDAIExportDefaultMetaData();
+        }
+
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendAVADAIDAIExportDynamicMetaData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Send DAI export dynamic meta data
+    /// </summary>
+    /// <param name = "_common">Common</param>
+    /// <param name = "_dictTable">Dict table</param>
+    /// <returns>Boolean - True if process was o</returns>
+    protected boolean sendAVADAIDAIExportDynamicMetaData(Common _common, DictTable _dictTable)
+    {
+        boolean result = true;
+        TableName tableName = tableId2Name(_common.TableId);
+        
+        AVADAIReportMetadataField avaDAIReportMetadataField;
+        while select avaDAIReportMetadataField
+            where avaDAIReportMetadataField.MetaDataId == avaDAIReportMetadata.MetaDataId
+                && avaDAIReportMetadataField.IgnoreArchive == NoYes::No
+                && avaDAIReportMetadataField.Table == tableName
+        {
+            //get value for field
+            AVADAIExportedValue value;
+            anytype origValue;
+            FieldId fieldId = fieldName2Id(_common.TableId, avaDAIReportMetadataField.FieldMethod);
+
+            if (fieldId)
+            {
+                SysDictField sysDictField = new SysDictField(_common.TableId, fieldId);
+                origValue = _common.(fieldId);
+                value = AVADAIGlobal::anyToStr(origValue, sysDictField.baseType(), sysDictField.typeId(), sysDictField.enumId());
+            }
+            else if (strScan(avaDAIReportMetadataField.FieldMethod, '()', 1, strLen(avaDAIReportMetadataField.FieldMethod)))
+            {
+                AVADAITableFieldMethod methodName = strReplace(avaDAIReportMetadataField.FieldMethod, '()', '');
+
+                if (tableHasMethod(_dictTable, methodName))
+                {
+                    origValue = _dictTable.callObject(methodName, _common);
+                    value = AVADAIGlobal::anyToStr(origValue);
+                }
+            }
+
+            if (avaDAIReportMetadataField.DocumentKey)
+            {
+                refNum = value;
+            }
+                
+            AVADAIReportExportLine avaDAIReportExportLine;
+            avaDAIReportExportLine.clear();
+            avaDAIReportExportLine.ExportId = executionId;
+            avaDAIReportExportLine.Table = tableName;
+            avaDAIReportExportLine.FieldMethod = avaDAIReportMetadataField.FieldMethod;
+            avaDAIReportExportLine.IsMethod = false;
+            avaDAIReportExportLine.Alias = avaDAIReportMetadataField.Alias != '' ? avaDAIReportMetadataField.Alias : avaDAIReportMetadataField.FieldMethod;
+            avaDAIReportExportLine.RefRecId = _common.RecId;
+            avaDAIReportExportLine.value = value;
+
+            if (avaDAIReportExportLine.validateWrite())
+            {    
+                avaDAIReportExportLineInsertList.add(avaDAIReportExportLine);
+            }
+            else
+            {
+                result = false;
+            }
+        }
+
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendAVADAIDAIExportDefaultMetaData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Send DAI export default meta data
+    /// </summary>    
+    /// <returns>Boolean - True if process was o</returns>
+    protected boolean sendAVADAIDAIExportDefaultMetaData()
+    {
+        boolean result = true;
+        
+        AVADAIReportMetadataDefaultValues avaDAIMetadataDefaultValues;
+        while select avaDAIMetadataDefaultValues
+            where avaDAIMetadataDefaultValues.MetaDataId == avaDAIReportMetadata.MetaDataId
+        {
+            AVADAIReportExportLine avaDAIReportExportLine;
+            avaDAIReportExportLine.clear();
+            avaDAIReportExportLine.ExportId = executionId;
+            avaDAIReportExportLine.Table = 'Default';
+            avaDAIReportExportLine.FieldMethod = avaDAIMetadataDefaultValues.Alias;
+            avaDAIReportExportLine.IsMethod = false;
+            avaDAIReportExportLine.Alias = avaDAIMetadataDefaultValues.Alias;
+            avaDAIReportExportLine.RefRecId = avaDAIMetadataDefaultValues.RecId;
+            avaDAIReportExportLine.value = avaDAIMetadataDefaultValues.Value;
+
+            if (avaDAIReportExportLine.validateWrite())
+            {
+                avaDAIReportExportLineInsertList.add(avaDAIReportExportLine);
+            }
+            else
+            {
+                result = false;
+            }
+        }
+
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendAVADAIExportFileInformation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Send DAI export file information
+    /// </summary>
+    /// <param name = "_fileContentInStream">File content stream</param>
+    /// <returns>Boolean - True if export was successfully</returns>
+    protected boolean sendAVADAIExportFileInformation(System.IO.Stream _fileContentInStream)
+    {
+        boolean result;
+
+        if (executionId && avaDAIReportExportTable && avaDAIReport)
+        {
+            // check whether report is generated
+            if (!CLRInterop::isNull(_fileContentInStream))
+            {
+                System.Byte[] fileContentInBytes = this.stream2ByteArray(_fileContentInStream);
+        
+                AVADAIReportExportWork avaDAIReportExportWork = AVADAIReportExportWork::findOrCreate(avaDAIReportExportTable, true);
+                avaDAIReportExportWork.ReportData = AVAMSQFileHandling::uploadBufferToContainer(fileContentInBytes);
+                avaDAIReportExportWork.update();
+
+                result = true;
+            }
+        }
+        
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>locValidateFileExtension</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Validate file extension
+    /// </summary>
+    /// <param name = "_fileName">File name</param>
+    /// <returns>Boolean - True if file extension validation is ok</returns>
+    private final boolean locValidateFileExtension(str _fileName)
+    {
+        fileExt = Docu::GetFileExtension(_fileName);
+
+        if (fileExt && !Docu::validateExtension(fileExt))
+        {
+            throw error("@SYS99219");
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>locValidateFileSize</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Validate file size
+    /// </summary>
+    /// <param name = "_ref">Docu ref</param>
+    /// <param name = "_fileContents">File content</param>
+    /// <returns>Boolean - True if file size validation is ok</returns>
+    private final boolean locValidateFileSize(DocuRef _ref, System.IO.Stream _fileContents)
+    {
+        DocuType docType = _ref.docuType();
+
+        if (!Docu::validateFileSize(docType, _fileContents.Length))
+        {
+            throw error("@SYS97286");
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>stream2ByteArray</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Convert system io stream to byte array
+    /// </summary>
+    /// <param name = "_stream">System io stream</param>
+    /// <returns>Byte array</returns>
+    private System.Byte[] stream2ByteArray(System.IO.Stream _stream)
+    {
+        System.Byte[] bytes;
+
+        _stream.Seek(0, System.IO.SeekOrigin::Begin);
+
+        using (var memStream = new System.IO.MemoryStream())
+        {
+            _stream.CopyTo(memStream);
+            bytes = memStream.ToArray();
+        }
+
+        return bytes;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

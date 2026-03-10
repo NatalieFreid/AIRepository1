@@ -1,0 +1,91 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVARUMDSDFeeReportDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[SRSReportParameterAttribute(classStr(AVARUMDSDFeeReportContract))]
+class AVARUMDSDFeeReportDP extends SrsReportDataProviderBase
+{
+    AVARUMDSDFeeReportTmp      feeReportTmp;
+    AVARUMDSDFeeReportContract contract;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getContract</Name>
+				<Source><![CDATA[
+    public AVARUMDSDFeeReportContract getContract()
+    {
+        return this.parmDataContract() as AVARUMDSDFeeReportContract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    [SysEntryPointAttribute(false)]
+    public void processReport()
+    {
+        contract = this.getContract();
+
+        AVARUMDSDFeePostedFilter  postedFilter = contract.parmPostedFilter();
+        FromDate                  fromDate     = contract.parmFromDate();
+        ToDate                    toDate       = contract.parmToDate();
+
+        AVARUMDSDFeeTable   feeTable;
+        AVARUMDSDCodeTable  codeTable;
+
+        // Only include fees whose Code has a validity period in AVARUMDSDCodeTable
+        // that OVERLAPS the dialog period [fromDate, toDate].
+        // Overlap condition:
+        //   codeTable.FromDate <= toDate  AND  codeTable.ToDate >= fromDate
+        // dateNull() on either side means open-ended (no restriction on that bound).
+
+        while select feeTable
+            exists join codeTable
+                where codeTable.Code == feeTable.Code
+                   && (fromDate == dateNull() || codeTable.ToDate   == dateNull() || codeTable.ToDate   >= fromDate)
+                   && (toDate   == dateNull() || codeTable.FromDate == dateNull() || codeTable.FromDate <= toDate)
+        {
+            // Posted / Open filter
+            if (postedFilter == AVARUMDSDFeePostedFilter::Posted && !feeTable.Entered)
+                continue;
+            if (postedFilter == AVARUMDSDFeePostedFilter::Open && feeTable.Entered)
+                continue;
+            // AVARUMDSDFeePostedFilter::All — no filter applied
+
+            feeReportTmp.clear();
+            feeReportTmp.Code            = feeTable.Code;
+            feeReportTmp.CodeClass       = feeTable.CodeClass;
+            feeReportTmp.Entered         = feeTable.Entered;
+            feeReportTmp.ItemId          = feeTable.ItemId;
+            feeReportTmp.InvoiceDate     = feeTable.InvoiceDate;
+            feeReportTmp.InvoiceId       = feeTable.InvoiceId;
+            feeReportTmp.SalesId         = feeTable.SalesId;
+            feeReportTmp.Qty             = feeTable.Qty;
+            feeReportTmp.Fee             = feeTable.Fee;
+            feeReportTmp.FeeWithOutTaxes = feeTable.FeeWithOutTaxes;
+            feeReportTmp.ExactFee        = feeTable.ExactFee;
+            feeReportTmp.BaseUnit        = feeTable.BaseUnit;
+            feeReportTmp.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTmpTable</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute(tableStr(AVARUMDSDFeeReportTmp))]
+    public AVARUMDSDFeeReportTmp getTmpTable()
+    {
+        select * from feeReportTmp;
+        return feeReportTmp;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

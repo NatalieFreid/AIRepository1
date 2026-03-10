@@ -1,0 +1,279 @@
+﻿# Deployment Guide - AVA Sales Invoice Report
+
+## Overview
+This guide provides step-by-step instructions for deploying the AVA Sales Invoice Report to a D365 Finance and Operations environment.
+
+## Prerequisites
+
+1. **Visual Studio with D365FO Development Tools**
+   - Visual Studio 2019 or later
+   - Dynamics 365 for Finance and Operations development tools
+   - Access to a D365FO development environment
+
+2. **Required Configuration Keys**
+   - LogisticsBasic configuration key must be enabled
+
+3. **Required Tables**
+   - SalesTable
+   - CustTable
+   - CustInvoiceJour
+   - CustInvoiceTrans
+
+## File Structure
+
+```
+AVAExtension/
+├── AxQuery/
+│   └── AVASalesInvoiceReportQuery.xml
+├── AxClass/
+│   ├── AVASalesInvoiceReportContract.xml
+│   └── AVASalesInvoiceReportController.xml
+├── AxReport/
+│   └── AVASalesInvoiceReport.xml
+└── AxMenuItemOutput/
+    └── AVASalesInvoiceReport.xml
+```
+
+## Deployment Steps
+
+### Step 1: Create or Open Model Project
+
+1. Open Visual Studio
+2. Create a new Dynamics 365 project or open an existing model
+3. Name your model (e.g., "AVAExtension" or use your existing model name)
+
+### Step 2: Import XML Files
+
+#### Option A: Manual Import via Visual Studio
+
+1. In Solution Explorer, right-click your project
+2. Select **Add → Existing Item**
+3. Navigate to each folder and select the XML file:
+   - Add `AVASalesInvoiceReportQuery.xml` from AxQuery folder
+   - Add `AVASalesInvoiceReportContract.xml` from AxClass folder
+   - Add `AVASalesInvoiceReportController.xml` from AxClass folder
+   - Add `AVASalesInvoiceReport.xml` from AxReport folder
+   - Add `AVASalesInvoiceReport.xml` from AxMenuItemOutput folder
+
+#### Option B: Copy Files to Model Directory
+
+1. Locate your model's metadata folder:
+   - Typically: `C:\AOSService\PackagesLocalDirectory\YourModel\YourModel\`
+2. Copy the folder structure:
+   - Copy `AxQuery` folder with XML file
+   - Copy `AxClass` folder with XML files
+   - Copy `AxReport` folder with XML file
+   - Copy `AxMenuItemOutput` folder with XML file
+3. In Visual Studio, right-click the project → **Refresh**
+4. The new items should appear in Solution Explorer
+
+### Step 3: Create Label File (if needed)
+
+Create the following labels in your label file (e.g., AxLabelFile with AVA prefix):
+
+```
+@AVA:SalesInvoiceReport = "Sales Invoice Report"
+@AVA:SalesInvoiceReportHelp = "Display all invoices associated with sales orders"
+```
+
+If you don't have a custom label file, you can use system labels instead:
+- Update the menu item XML to use: `Label="@SYS318698"` (Sales invoice report)
+- Update the help text to use: `HelpText="@SYS318699"` (View sales invoices)
+
+### Step 4: Build the Project
+
+1. In Visual Studio, select **Build → Build Solution** (Ctrl+Shift+B)
+2. Check the **Output** window for any errors
+3. Resolve any compilation errors:
+   - Missing label references
+   - Table access issues
+   - Syntax errors in X++ code
+
+Common build errors and solutions:
+- **"Cannot find label '@AVA:xxx'"** → Create the label or use system labels
+- **"Cannot find type 'SrsReportDataContractBase'"** → Verify SSRS framework is available
+- **"Table 'SalesTable' does not exist"** → Verify database is synchronized
+
+### Step 5: Synchronize Database
+
+1. In Visual Studio, select **Dynamics 365 → Synchronize Database...**
+2. Select your model from the list
+3. Click **Synchronize**
+4. Wait for synchronization to complete
+
+### Step 6: Deploy Report
+
+#### For Development Environment:
+
+1. Build the solution (already done in Step 4)
+2. The report is automatically deployed to the local report server
+
+#### For Cloud-Hosted or Test Environments:
+
+1. Create a deployable package:
+   - In Visual Studio, select **Dynamics 365 → Create Deployable Package**
+   - Select your model
+   - Choose output location
+   - Click **Create**
+
+2. Deploy the package:
+   - Upload to Lifecycle Services (LCS)
+   - Navigate to your environment
+   - Select **Maintain → Apply updates**
+   - Select the package and apply
+
+### Step 7: Configure Security
+
+1. **Create a new privilege (optional):**
+   - Right-click project → Add → New Item
+   - Select "Security Privilege"
+   - Name: `AVASalesInvoiceReportView`
+   - Add entry point: Point to menu item `AVASalesInvoiceReport`
+   - Set Access Level: `Read`
+
+2. **Add to duties:**
+   - Add the privilege to appropriate duties (e.g., SalesClerk, AccountsReceivableClerk)
+   - Or grant directly to roles for testing
+
+3. **For testing, grant access:**
+   - Navigate to **System administration → Security → Security configuration**
+   - Assign the menu item or privilege to your user role
+
+### Step 8: Add Menu Item to Navigation
+
+1. **Create or extend a menu:**
+   - Right-click project → Add → New Item → Menu
+   - Or extend an existing menu (e.g., AccountsReceivableReports)
+
+2. **Add menu item reference:**
+   ```xml
+   <AxMenuReference>
+     <Name>AVASalesInvoiceReport</Name>
+     <MenuItemType>Output</MenuItemType>
+     <MenuItemName>AVASalesInvoiceReport</MenuItemName>
+   </AxMenuReference>
+   ```
+
+3. **Common locations:**
+   - Accounts Receivable → Inquiries and reports → Reports
+   - Sales and marketing → Inquiries and reports → Sales reports
+
+### Step 9: Test the Report
+
+1. **Launch D365FO client**
+2. **Navigate to the report:**
+   - Go to the menu where you added the menu item
+   - Click on "Sales Invoice Report"
+
+3. **Enter parameters:**
+   - Customer Account: Leave blank for all customers, or enter specific account
+   - Delivery Date From: Enter start date (optional)
+   - Delivery Date To: Enter end date (optional)
+
+4. **Run the report:**
+   - Click **OK**
+   - Report should generate and display in SSRS viewer
+
+5. **Verify output:**
+   - Check that data is displayed correctly
+   - Verify grouping by Sales Order and Invoice
+   - Verify subtotals and grand total
+   - Test export to PDF, Excel, Word
+
+## Troubleshooting
+
+### Report not appearing in menu
+- **Check:** Security privileges
+- **Check:** Menu item configuration
+- **Check:** Navigation menu configuration
+- **Solution:** Grant appropriate security access
+
+### "Query not found" error
+- **Check:** Query XML is properly imported
+- **Check:** Query name matches in all references
+- **Solution:** Rebuild project and synchronize
+
+### No data displayed
+- **Check:** Database has sales orders with invoices
+- **Check:** Delivery dates match test data
+- **Check:** User has access to legal entity (DataAreaId)
+- **Solution:** Create test data or adjust filters
+
+### Parameter dialog doesn't show
+- **Check:** Controller class is set as Object in menu item
+- **Check:** Contract class is properly referenced
+- **Solution:** Verify menu item ObjectType is "Class"
+
+### Report crashes or errors during execution
+- **Check:** Build output for compilation errors
+- **Check:** Event viewer for detailed error messages
+- **Check:** Query can execute independently in AOT
+- **Solution:** Debug controller preRunModifyContract method
+
+### Performance issues
+- **Check:** Indexes on SalesTable (SalesId, CustAccount, DeliveryDate)
+- **Check:** Indexes on CustInvoiceJour (SalesId, InvoiceId)
+- **Check:** Date range is reasonable
+- **Solution:** Add indexes or optimize query
+
+## Post-Deployment Verification
+
+### Checklist:
+- [ ] All XML files imported successfully
+- [ ] Project builds without errors
+- [ ] Database synchronized
+- [ ] Labels created or system labels used
+- [ ] Security configured
+- [ ] Menu item added to navigation
+- [ ] Report accessible from UI
+- [ ] Parameter dialog displays correctly
+- [ ] Report generates with data
+- [ ] Grouping and totals are correct
+- [ ] Export functions work (PDF, Excel, Word)
+
+## Rollback Procedure
+
+If you need to remove the report:
+
+1. **Remove menu item reference** from navigation menu
+2. **Delete security privileges** (if created)
+3. **Delete the AOT objects:**
+   - Delete menu item: AVASalesInvoiceReport
+   - Delete report: AVASalesInvoiceReport
+   - Delete controller class: AVASalesInvoiceReportController
+   - Delete contract class: AVASalesInvoiceReportContract
+   - Delete query: AVASalesInvoiceReportQuery
+4. **Build and synchronize** the project
+5. **Redeploy** if in test/production environment
+
+## Support and Maintenance
+
+### Version Control
+- Commit all XML files to source control
+- Track changes to query, contract, and controller
+- Document any customizations
+
+### Updates and Enhancements
+- Modify query to add/remove fields
+- Update contract to add new parameters
+- Extend controller for custom logic
+- Redesign report layout in SSRS Report Designer
+
+### Monitoring
+- Check report execution logs in D365FO
+- Monitor performance via SQL Server profiler
+- Review user feedback and error reports
+
+## Additional Resources
+
+- [Microsoft Docs: SSRS Reports for Finance and Operations](https://docs.microsoft.com/dynamics365/fin-ops-core/dev-itpro/analytics/)
+- [Microsoft Docs: Query-based SSRS reports](https://docs.microsoft.com/dynamics365/fin-ops-core/dev-itpro/analytics/create-nextgen-reporting-solution)
+- [Microsoft Docs: Report Controller framework](https://docs.microsoft.com/dynamics365/fin-ops-core/dev-itpro/analytics/reporting-solutions)
+
+---
+
+**Deployment Date:** _______________  
+**Deployed By:** _______________  
+**Environment:** _______________  
+**Model Name:** _______________  
+**Package Version:** _______________

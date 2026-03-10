@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXProdStatusChangedGenerateTransportLabelEventContractInteraction</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 05.01.22
+/// interactions for NDXProdStatusChangedGenerateTransportLabelEventContract
+/// </summary>
+public class NDXProdStatusChangedGenerateTransportLabelEventContractInteraction
+    extends NDXBusinessEventContractInteraction
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>newFromProdId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.01.22
+    /// fill contract with data from prodTable
+    /// </summary>
+    /// <param name = "_prodId">ProdId</param>
+    /// <returns>contract NDXProdStatusChangedGenerateTransportLabelEventContract</returns>
+    NDXProdStatusChangedGenerateTransportLabelEventContract newFromProdId(ProdId _prodId)
+    {
+        NDXProdStatusChangedGenerateTransportLabelEventContract contract = new NDXProdStatusChangedGenerateTransportLabelEventContract();
+        this.initializeContract(contract);
+        contract.ParmProdId(_prodId);
+        NDXProdStatusChangedGenerateTransportLabelEventContractInteraction::populateContract(contract);
+
+        return contract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 01.03.22
+    /// populate contract with data
+    /// and save them to NDXProdIdentControlPanel
+    /// </summary>
+    /// <param name = "_contract">NDXProdStatusChangedGenerateTransportLabelEventContract</param>
+    static void populateContract(NDXProdStatusChangedGenerateTransportLabelEventContract _contract)
+    {
+        NDXProdIdent nDXProdIdent = NDXProdIdent::construct();
+        _contract.ParmProdIdentControlPanelLines(nDXProdIdent.fillFromProdStatusChangedGenerateTransportLabelEventContract(_contract));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>triggerEvent</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.01.22
+    /// does the business event need to be triggered?
+    /// </summary>
+    /// <param name = "_callerParameters">container</param>
+    /// <returns>boolean (event has to be triggered)</returns>
+    public static container triggerEvent(container _callerParameters)
+    {
+        ProdId prodId = conPeek(_callerParameters, 1);
+        NDXStepCurrent stepCurrent = 1;
+
+        NDXPAWithLabelInfo nDXPAWithLabelInfo;
+        boolean paWithLabelInfo = NDXProdStatusChangedGenerateTransportLabelEventContractInteraction::GenerateLabelForPA(prodId);
+
+        ttsbegin;
+        nDXPAWithLabelInfo = NDXPAWithLabelInfo::findOrCreate(prodId);
+        if (paWithLabelInfo)
+        {
+            NDXHistoryLogProdIdentOnPremLabelContract::construct(stepCurrent).saveAsSuccess(strFmt("@NDX:NDXGenerateBatchJobBrokerMessageLabelContract", prodId));
+
+            // generate batch job for generating the brockermessage with the label contract in the azure service bus queue
+            Args args = new Args();
+            args.parm(prodId);
+            NDXBatchJobGeneratePALabel nDXBatchJobGeneratePALabel = NDXBatchJobGeneratePALabel::construct();
+            //NDXBatchJobGeneratePALabel nDXBatchJobGeneratePALabel = NDXBatchJobGeneratePALabel::construct(5637284076);
+            RefRecId refRecId = nDXBatchJobGeneratePALabel.addTask(args);
+            nDXPAWithLabelInfo.BatchHeaderRefRecId = refRecId;
+            nDXPAWithLabelInfo.PAWithLabelInfo = NoYes::Yes;
+        }
+        else
+        {
+            NDXHistoryLogProdIdentOnPremLabelContract::construct(stepCurrent).saveAsInfo(strFmt("@NDX:NDXPAWithoutLabelInfo", prodId));
+        }
+        nDXPAWithLabelInfo.update();
+
+        ttscommit;
+
+        return [prodId, paWithLabelInfo];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>GenerateLabelForPA</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 08.02.22
+    /// check whether labels for the production order have to be generated
+    /// </summary>
+    /// <param name = "_prodId">ProdId</param>
+    /// <returns>boolean</returns>
+    [SuppressBPWarning('BPLocalVariableNotUsed','Parameter "prodTable"')]
+    public static boolean GenerateLabelForPA(ProdId _prodId)
+    {
+        ProdTable prodTable = ProdTable::find(_prodId);
+        return (prodTable.ProdStatus == NDXProdIdentParameters::find().ProdStatusLabelTransfer &&
+            NDXProdLabelExclude::checkProdTable(prodTable));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>TriggerEventCallback</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 08.02.22
+    /// callback after async call of triggerEvent
+    /// </summary>
+    /// <param name = "_taskResult">AsyncTaskResult</param>
+    [SuppressBPWarning('BPLocalVariableNotUsed','Parameter "resultStr"')]
+    public static void TriggerEventCallback(AsyncTaskResult _taskResult)
+    {
+        NDXStepCurrent stepCurrent = 2;
+        str messageAsString = '';
+        container result = _taskResult.getResult();
+        str resultStr = '';
+        if (conlen(result) > 0)
+        {
+            resultStr = strFmt("@NDXBase:NDXPA", conPeek(result, 1));
+        }
+        container resultInfolog = _taskResult.getInfologData();
+        if (resultInfolog != conNull())
+        {
+            InfoLogExtension::showMessagesFromContainer(resultInfolog);
+            messageAsString = NDXHelperCommon::SysInfoLogDataAsString(resultInfolog);
+        }
+        messageAsString += ' ' + resultStr;
+        NDXHistoryLogProdIdentOnPremLabelContract::construct(stepCurrent).saveAsSuccess(strFmt("@NDXBase:NDXBatchJobGenerated", messageAsString));
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

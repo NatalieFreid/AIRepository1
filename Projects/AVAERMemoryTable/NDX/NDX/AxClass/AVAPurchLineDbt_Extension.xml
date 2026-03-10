@@ -1,0 +1,713 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPurchLineDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of table <t>PurchLine</t>
+/// </summary>
+[ExtensionOf(tableStr(PurchLine))]
+final class AVAPurchLineDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>delete</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of delete method
+    /// </summary>
+    /// <param name = "_showInfoDelReserv">boolean</param>
+    /// <param name = "_updateOrderLineOfDeliverySchedule">boolean</param>
+    public void delete(boolean _showInfoDelReserv, boolean _updateOrderLineOfDeliverySchedule)
+    {
+        AgreementLineRecId avaAgreementLine = this.MatchingAgreementLine;
+
+        next delete(_showInfoDelReserv, _updateOrderLineOfDeliverySchedule);
+
+        if(avaAgreementLine)
+        {
+            this.avaUpdateAgreementLineQty(avaAgreementLine);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateAgreementLineQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates agreementLine rest quantity for provided AgreementLine recid
+    /// </summary>
+    /// <param name = "_agreementLine">AgreementLineRecId</param>
+    public void avaUpdateAgreementLineQty(AgreementLineRecId _agreementLine)
+    {
+        AgreementLine avaAgreementLine = AgreementLine::find(_agreementLine);
+
+        avaAgreementLine.avaUpdateSubRestQty();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckItemPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// throws a warning if current item has a Z item group, a state of EK-Sperre and no priceDiscTable
+    /// </summary>
+    public void avaCheckItemPrice()
+    {
+        PriceDiscTable      avaPriceDiscTable;
+        InventTable         avaInventTable          = this.inventTable();
+        InventItemGroupItem avaItemGroup            = InventItemGroupItem::findByItemIdLegalEntity(this.ItemId, this.DataAreaId);
+        PurchTable          avaPurchTable           = this.purchTable();
+
+        str                 avaItemGroupStart       = 'Z*';
+        str                 avaItemGroupExclude     = 'ZBE';
+        str                 avaItemGroupExclude2    = 'ZTB';
+
+        if (!this.AVAItemSetComponent && !avaPurchTable.InterCompanyOrder)
+        {
+            if(this.ItemId != ''
+            && avaPurchtable
+            && avaInventTable
+            && avaItemGroup.ItemGroupId         like avaItemGroupStart
+            && avaItemGroup.ItemGroupId         != avaItemGroupExclude
+            && avaItemGroup.ItemGroupId         != avaItemGroupExclude2)
+            {
+                avaPriceDiscTable = PriceDiscTable::avaFindPriceDiscTablePurchLine(this);
+            
+                if(!avaPriceDiscTable)
+                {
+                    warning(strFmt("@NDX:NXAWarningNoValidPrice", this.ItemId));
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// extension of method insert
+    /// </summary>
+    /// <param name = "_dropInvent">boolean</param>
+    /// <param name = "_findMarkup">boolean</param>
+    /// <param name = "_updatePurchTableDistributions">boolean</param>
+    /// <param name = "_skipPurchTableUpdate">boolean</param>
+    /// <param name = "_skipInterCompanyCalcDisc">boolean</param>
+    public void insert(
+        boolean     _dropInvent,
+        boolean     _findMarkup,
+        boolean     _updatePurchTableDistributions,
+        boolean     _skipPurchTableUpdate,
+        boolean     _skipInterCompanyCalcDisc)
+    {
+        this.avaCheckItemPrice();
+
+        /*
+        if(this.PurchQty)
+        {
+            this.AVAPurchRemainPercentage   = roundDownDec(this.RemainPurchPhysical / this.PurchQty * 100, 2);
+        }
+        */
+        this.avaCalcPurchRemainPercentage(false);
+
+        next insert(_dropInvent, _findMarkup, _updatePurchTableDistributions, _skipPurchTableUpdate, _skipInterCompanyCalcDisc);
+
+        if(     this.avaIsOnlyLine()
+            &&  this.ProcurementCategory    )
+        {
+            this.avaCopyCategoryNoteToHeader();
+        }
+}
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateMarkupTransBasedOnIntercompanySkipUpdate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the markup transactions based on the invent dim.
+    /// </summary>
+    /// <param name = "_findMarkup">If it is true, it finds makup</param>
+    /// <param name = "_deleteExistingMarkupTrans">if it is true it deletes existing record in <c>MarkupTrans</c> table</param>
+    protected void updateMarkupTransBasedOnIntercompanySkipUpdate(boolean _findMarkup, boolean _deleteExistingMarkupTrans)
+    {
+        AgreementLine avaAgreementLine = this.avaGetAgreementLine();
+
+        if(avaAgreementLine.avaExistMarkup())
+        {
+            PurchLine::avaCopyMarkup(avaAgreementLine, this);
+        }
+
+        next updateMarkupTransBasedOnIntercompanySkipUpdate(_findMarkup, _deleteExistingMarkupTrans);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetAgreementLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets related <c>AgreementLine</c> record
+    /// </summary>
+    /// <returns>AgreementLine</returns>
+    public AgreementLine avaGetAgreementLine()
+    {
+        return AgreementLine::find(this.MatchingAgreementLine);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCopyMarkup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Copies <c>Markup</c> records from origin to destination record
+    /// </summary>
+    /// <param name = "_fromLine">Common - normally AgreementLine</param>
+    /// <param name = "_toLine">Common - normally PurchLine</param>
+    public static void avaCopyMarkup(Common _fromLine, Common _toLine)
+    {
+        Markup::copy(NoYes::No, _fromLine, _toLine);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setLocation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Sets delivery address information and related information.
+    /// </summary>
+    /// <param name="_locationRecId">
+    ///    The record ID of the logistics location.
+    /// </param>
+    /// <param name="_source">
+    ///    The record that has an associated address.
+    /// </param>
+    /// <remarks>
+    ///    If <c>_source</c> parameter is not specified, the address related information will be set based on the logistics location.
+    /// </remarks>
+    void setLocation(LogisticsLocationRecId  _locationRecId, Common _source)
+    {
+        next setLocation(_locationRecId, _source);
+        
+        LogisticsPostalAddress avaLogisticsPostalAddress = LogisticsPostalAddress::findByLocation(_locationRecId);
+
+        if (this.PurchaseType != PurchaseType::ReturnItem)
+        {
+            if (avaLogisticsPostalAddress.avaName())
+            {
+                this.DeliveryName       = avaLogisticsPostalAddress.avaName();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setAddressFromVendTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of method setAddressFromVendTable
+    /// </summary>
+    /// <param name = "_vendTable">VendTable</param>
+    void setAddressFromVendTable(VendTable _vendTable)
+    {
+        next setAddressFromVendTable(_vendTable);
+
+        this.DeliveryName               =_vendTable.avaName();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaIsOnlyLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA <c>avaIsOnlyLine</c>
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean avaIsOnlyLine()
+    {
+        PurchLine purchLineLoc;
+
+        select count(RecId) from purchLineLoc
+            where purchLineLoc.PurchId == this.PurchId;
+
+        if(purchLineLoc.RecId == 1)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCopyCategoryNoteToHeader</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA <c>avaCopyCategoryNoteToHeader</c>
+    /// </summary>
+    public void avaCopyCategoryNoteToHeader()
+    {
+        EcoResCategory ecoResCategoryLoc = EcoResCategory::find(this.ProcurementCategory);
+        PurchTable purchTableLoc = this.purchTable();
+
+        Docu::copy(ecoResCategoryLoc, purchTableLoc);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDeleteMarkupTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Deletes all markupTrans records related to this purchLine record with the specified MarkupCategory
+    /// </summary>
+    /// <param name = "_markupCategory">MarkupCategory</param>
+    public void avaDeleteMarkupTrans(MarkupCategory _markupCategory)
+    {
+        MarkupTrans markupTransLoc;
+
+        ttsbegin;
+
+        delete_from markupTransLoc
+            where markupTransLoc.TransTableId == this.TableId
+            && markupTransLoc.TransRecId == this.RecId
+            && markupTransLoc.MarkupCategory == _markupCategory;
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdatePurchLineMarkup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// updates connected MarkupTrans records with newest ChargeSpecification values
+    /// </summary>
+    public void avaUpdatePurchLineMarkup()
+    {
+        MarkupTrans markupTransLoc;
+        MarkupAutoLine markupAutoLineLoc;
+        MarkupAutoTable markupAutoTableLoc;
+        AVAChargeSpecification chargeSpecification;
+
+        ttsbegin;
+
+        while select forupdate markupTransLoc
+            where markupTransLoc.TransTableId == this.TableId
+            && markupTransLoc.TransRecId == this.RecId
+            && markupTransLoc.MarkupCategory == MarkupCategory::AVAMTZ
+            && markupTransLoc.MarkupAutoLineRecId != 0
+        {
+            markupAutoLineLoc = MarkupAutoLine::avaFindByRecId(markupTransLoc.MarkupAutoLineRecId);
+            markupAutoTableLoc = MarkupAutoTable::avaFindByRecId(markupAutoLineLoc.TableRecId);
+            chargeSpecification = AVAChargeSpecification::find(markupAutoTableLoc.AccountCode, markupAutoTableLoc.AccountRelation, markupAutoTableLoc.ItemCode, markupAutoTableLoc.ItemRelation, AVAChargeType::MTZ);
+
+            if(chargeSpecification)
+            {
+                markupTransLoc.AVACalcQty   = chargeSpecification.CalcQty;
+                markupTransLoc.Value        = chargeSpecification.Charge;
+                markupTransLoc.update();
+            }
+        }
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromPurchRFQReplyLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of method initFromPurchRFQReplyLine
+    /// </summary>
+    /// <param name = "_purchRFQReplyLine">PurchRFQReplyLine</param>
+    void initFromPurchRFQReplyLine(PurchRFQReplyLine _purchRFQReplyLine)
+    {
+        next initFromPurchRFQReplyLine(_purchRFQReplyLine);
+
+        if(this.ExternalItemId == '')
+        {
+            this.ExternalItemId = InventTable::find(this.ItemId).externalItemId(ModuleInventCustVend::Vend, this.vendAccount());
+            this.Name += '\n' + InventTable::find(this.ItemId).externalItemDescription(ModuleInventCustVend::Vend, this.vendAccount());
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromPurchRFQLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Initializes the <c>PurchLine</c> record from the <c>PurchRFQLine</c> record.
+    /// </summary>
+    /// <param name="_purchRFQLine">
+    ///    The <c>PurchRFQLine</c> record from which to initialize the <c>PurchLine</c> record.
+    /// </param>
+    void initFromPurchRFQLine(PurchRFQLine _purchRFQLine)
+    {
+        next initFromPurchRFQLine(_purchRFQLine);
+
+        if(this.ExternalItemId == '')
+        {
+            this.ExternalItemId = InventTable::find(_purchRFQLine.ItemId).externalItemId(ModuleInventCustVend::Vend, _purchRFQLine.vendAccount());
+            this.Name += '\n' + InventTable::find(_purchRFQLine.ItemId).externalItemDescription(ModuleInventCustVend::Vend, _purchRFQLine.vendAccount());
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromReqPO</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Initializes the <c>PurchLine</c> record from the <c>ReqPO</c> record.
+    /// </summary>
+    /// <param name="_reqPO">
+    ///    The <c>ReqPO</c> record from which to initialize the <c>PurchLine</c> record.
+    /// </param>
+    void initFromReqPO(ReqPO _reqPO)
+    {
+        next initFromReqPo(_reqPo);
+
+        if(_reqPo.AVAAgreementLineRecId)
+        {
+            this.MatchingAgreementLine = _reqPo.AVAAgreementLineRecId;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// extension of validateWriteMethod
+    /// </summary>
+    /// <returns>boolean</returns>
+    boolean validateWrite()
+    {
+        this.avaChangeFirstConfDlvDate();
+
+        boolean ret = next validateWrite();
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the <c>PurchLine</c> record.
+    /// </summary>
+    /// <param name="_dropInvent">
+    /// A Boolean value that indicates whether the inventory movement that is associated with the line must
+    /// be updated; optional; false by default.
+    /// </param>
+    /// <param name="_updateOrderLineOfDeliverySchedule">
+    /// A Boolean value that indicates whether to update the order line after updating its delivery line;
+    /// optional; true by default. Parameter is obsolete.
+    /// </param>
+    /// <param name="_updatePurchTableDropShipStatus">
+    /// A Boolean value that indicates whether the drop shipment status should be updated for all lines on the purchase order;
+    /// optional; true by default.
+    /// </param>
+    public void update(boolean  _dropInvent,
+                       boolean  _updateOrderLineOfDeliverySchedule,
+                       boolean  _updatePurchTableDropShipStatus)
+    {
+        /*
+        if(     (   this.PurchQty               != this.orig().PurchQty
+                ||  this.RemainPurchPhysical    != this.orig().RemainPurchPhysical)
+            &&  this.PurchQty != 0)
+        {
+            this.AVAPurchRemainPercentage   = roundDownDec(this.RemainPurchPhysical / this.PurchQty * 100, 2);
+        }
+        */
+        this.avaCalcPurchRemainPercentage(false);
+
+        this.avaChangeFirstConfDlvDate();
+
+        next update(_dropInvent, _updateOrderLineOfDeliverySchedule, _updatePurchTableDropShipStatus);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaChangeFirstConfDlvDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Changes field AVAFirstConfDlv with ConfirmedDlv value if conditions are met
+    /// </summary>
+    public void avaChangeFirstConfDlvDate()
+    {
+        if(this.ConfirmedDlv != this.orig().ConfirmedDlv
+            && this.orig().ConfirmedDlv != dateNull())
+        {
+            this.AVAConfDlvDateCounter++;
+        }
+
+        if(this.ConfirmedDlv != dateNull()
+            && this.orig().ConfirmedDlv == dateNull()
+            && this.AVAFirstConfDlvDate == dateNull())
+        {
+            this.AVAFirstConfDlvDate = this.ConfirmedDlv;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayAmountPlusMarkup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA <c>avaDisplayAmountPlusMarkup</c>
+    /// </summary>
+    /// <returns>AVAPurchAmountMarkupSum</returns>
+    public display AVAPurchAmountMarkupSum avaDisplayAmountPlusMarkup()
+    {
+        AVAPurchAmountMarkupSum avaAmountPlusMarkup = this.LineAmount;
+        MarkupTrans avaMarkupTrans;
+        MonetaryDocumentLineMap monetaryDocumentLine = MonetaryDocumentLineMap::initFromCommon(this);
+
+        while select avaMarkupTrans
+            where avaMarkupTrans.TransTableId == this.TableId
+            && avaMarkupTrans.TransRecId == this.RecId
+        {
+            avaAmountPlusMarkup += Markup::calcMarkupAmount(avaMarkupTrans,
+                                        monetaryDocumentLine.Qty,
+                                        monetaryDocumentLine.LineAmount,
+                                        0,
+                                        this.MonetaryDocumentLineMap::inclTax(),
+                                        NoYes::No,                                   // Default value
+                                        avaMarkupTrans.CurrencyCode,                 // Default value
+                                        avaMarkupTrans.TransDate,                    // Default value
+                                        0,                                           // Default value
+                                        0,                                           // Default value
+                                        null,                                        // Default value
+                                        false,                                       // Default value
+                                        0,                                           // Default value
+                                        '',                                          // Default value
+                                        false,                                       // Default value
+                                        false);                                      // Not default value : _isIntercompanyMarkup false we don't want to generate intercompany charges
+        }
+
+        return avaAmountPlusMarkup;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcProjSalesPrice</Name>
+				<Source><![CDATA[
+    private ProjSalesPriceCost avaCalcProjSalesPrice()
+    {
+        //LineAmount          lineAmount              = this.LineAmount;
+        ProjSalesPriceCost  ret;
+        //InventQty           qtyOrdered              = this.QtyOrdered;
+        //KCS_ItemSalesPrice  itemSalesPrice          = KCS_ItemSalesPrice::findCategoryIdIdx(this.ProjCategoryId);
+        InventTableModule   inventTableModuleSales  = this.inventTable().inventTableModuleSales();
+        
+        if (this.QtyOrdered)
+        {
+            ret = this.lineAmount / this.QtyOrdered /** (100 + itemSalesPrice.Percent) / 100*/;
+        }
+        else
+        {
+            ret = this.lineAmount;
+        }
+
+        if (this.PurchUnit != this.ProjSalesUnitId)
+        {
+            //ret = UnitConvert::price(ret, this.PurchUnit, this.ProjSalesUnitId, this.ItemId);
+            ret = EcoResProductUnitConverter::convertForReleasedProduct(this.ItemId, this.InventDimId, ret, UnitOfMeasure::findBySymbol(this.PurchUnit).RecId, UnitOfMeasure::findBySymbol(this.ProjSalesUnitId).RecId);
+        }
+
+        if (this.CurrencyCode != this.ProjSalesCurrencyId)
+        {
+            //ret = Currency::curAmount2CurAmount(ret, this.CurrencyCode, this.ProjSalesCurrencyId);
+            ret = CurrencyExchangeHelper::curAmount2CurAmount(ret, this.CurrencyCode, this.ProjSalesCurrencyId);
+        }
+
+        ret = ret * inventTableModuleSales.priceUnit();
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetProjSalesPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_008398_CalcProjectSalesPrice
+    /// </summary>
+    public void avaSetProjSalesPrice()
+    {
+        if (this.ProjId && this.ProjCategoryId && !this.projTable().ProjPriceGroup)
+        {
+            this.ProjSalesPrice = this.avaCalcProjSalesPrice();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromProjTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_008398_CalcProjectSalesPrice
+    /// </summary>
+    /// <param name = "projTable">ProjTable</param>
+    /// <param name = "updateSalesPriceOnly">boolean</param>
+    void initFromProjTable(ProjTable projTable, boolean updateSalesPriceOnly)
+    {
+        next initFromProjTable(projTable, updateSalesPriceOnly);
+        this.avaSetProjSalesPrice();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>lineAmountModified</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_008398_CalcProjectSalesPrice
+    /// </summary>
+    public void lineAmountModified()
+    {
+        next lineAmountModified();
+        this.avaSetProjSalesPrice();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setProjSalesPrice</Name>
+				<Source><![CDATA[
+    protected void setProjSalesPrice()
+    {
+        next setProjSalesPrice();
+        this.avaSetProjSalesPrice();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcPurchRemainPercentage</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaCalcPurchRemainPercentage</c> method.
+    ///     AVA - Schneider 13.05.2024
+    /// </summary>
+    ///     /// <param name="_calcOnly">
+    ///     <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>AVAPurchRemainPercentage</c> as return value
+    /// </returns>
+    public AVAPurchRemainPercentage avaCalcPurchRemainPercentage(boolean _calcOnly = true)
+    {
+        AVAPurchRemainPercentage    retVal;
+
+        if(this.PurchQty)
+        {
+            retVal = abs(roundDownDec(this.RemainPurchPhysical / this.PurchQty * 100, 2));
+        }
+        else
+        {
+            retVal = 0.00;
+        }
+
+        if(!_calcOnly)
+        {
+            this.AVAPurchRemainPercentage = retVal;
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayProductName1</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/10/25     AVA_012605_ProductNameFields_PurchForms
+    /// </summary>
+    /// <returns>NDXProductName1</returns>
+    display NDXProductName1 avaDisplayProductName1()
+    {
+        return this.inventTable().NDXProductName1();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayProductName2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/10/25     AVA_012605_ProductNameFields_PurchForms
+    /// </summary>
+    /// <returns>NDXProductName2</returns>
+    display NDXProductName2 avaDisplayProductName2()
+    {
+        return this.inventTable().NDXProductName2();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromSalesLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/02/21       AVA_013113_IC_PAInfo
+    /// </summary>
+    /// <param name = "_salesLine">SalesLine</param>
+    void initFromSalesLine(SalesLine _salesLine)
+    {
+        next initFromSalesLine(_salesLine);
+        this.AVAPAInfo = _salesLine.NDX_PAInfo;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setInventDimIdFromInventDim</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/06/02  AVA_013382_FallbackInventLocation
+    /// </summary>
+    /// <param name = "_inventDim">InventDim</param>
+    public void setInventDimIdFromInventDim(InventDim _inventDim)
+    {
+        InventDim   inventDim;
+
+        inventDim = InventDim::findOrCreate(_inventDim);
+        if (inventDim.InventSiteId && !inventDim.InventLocationId)
+        {
+            inventDim.InventLocationId = InventSite::find(inventDim.InventSiteId).AVAInventLocationIdDefault;
+        }
+
+        next setInventDimIdFromInventDim(inventDim);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

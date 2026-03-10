@@ -1,0 +1,685 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>AVAPurchAgreementLookup</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class AVAPurchAgreementLookup extends FormRun
+{
+    ReqPO               reqPo;
+    FormStringControl   callingNameControl; // used for filtering on user input
+    FormInt64Control    callingIdControl;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>callingNameControl</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// set FormStringControl for NameControl
+    /// </summary>
+    /// <param name = "_callingNameControl">FormStringControl</param>
+    public void callingNameControl(FormStringControl _callingNameControl)
+    {
+        callingNameControl = _callingNameControl;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>callingIdControl</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// set FormInt64Control for callingIdControl
+    /// </summary>
+    /// <param name = "_callingIdControl">FormInt64Control</param>
+    public void callingIdControl(FormInt64Control _callingIdControl)
+    {
+        callingIdControl = _callingIdControl;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>reqPoRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// set ReqPo record
+    /// </summary>
+    /// <param name = "_reqPo"></param>
+    public void reqPoRecord(reqPo _reqPo)
+    {
+        reqPo = _reqPo;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeSelect</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// closeSelect method
+    /// </summary>
+    /// <param name = "p1">selected return string</param>
+    public void closeSelect(str p1)
+    {
+        agreementLine_ds.leaveRecord();
+
+        if (callingIdControl)
+        {
+            reqPo.AVAAgreementLineRecId = AgreementLine.RecId;
+            super(p1);
+        }
+        else
+        {
+            super(p1);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// init method
+    /// </summary>
+    public void init()
+    {
+        super();
+        if (! element.args() ||
+            ! element.args().caller() ||
+            element.args().caller().handle() != classNum(FormStringControl))
+        {
+            throw error("@SYS22539");
+        }
+
+        element.selectMode(PurchAgreementHeader_PurchNumberSequence);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// run method
+    /// </summary>
+    public void run()
+    {
+        boolean             filterLookup    = false;
+
+        if (callingNameControl && callingNameControl.text() && callingNameControl.hasChanged())
+        {
+            filterLookup = true;
+            purchAgreementHeader_ds.autoSearch(false);
+        }
+
+        super();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>PurchAgreementHeader</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Initializing the form data source Purchase Agreement Header.
+        /// </summary>
+        /// <remarks>
+        /// Setting Purchase Agreement Header record sorting to follow the Agreement ID and filters out
+        /// deleted records.
+        /// </remarks>
+        public void init()
+        {
+            QueryBuildDataSource qbds;
+            QueryBuildRange      qbr;
+            super();
+
+            qbds = this.query().dataSourceTable(tableNum(PurchAgreementHeader));
+
+            qbr = qbds.addRange(fieldNum(PurchAgreementHeader, IsDeleted));
+            qbr.value(queryValue(NoYes::No));
+            qbr.status(RangeStatus::Hidden);
+
+            qbr = qbds.addRange(fieldNum(PurchAgreementHeader, BuyingLegalEntity));
+            qbr.value(queryValue(CompanyInfo::current()));
+            qbr.status(RangeStatus::Hidden);
+
+            qbr = qbds.addRange(fieldNum(PurchAgreementHeader, AgreementState));
+            qbr.value(queryValue(AgreementState::Effective));
+            qbr.status(RangeStatus::Hidden);
+
+            qbr = qbds.addRange(fieldNum(PurchAgreementHeader, VendAccount));
+            qbr.value(queryValue(reqPo.VendId));
+            qbr.status(RangeStatus::Hidden);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>AgreementLine</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Initializing the form data source Agreement Line and setting range values.
+        /// </summary>
+        public void init()
+        {
+            QueryBuildDataSource qbds;
+            QueryBuildRange      qbr;
+
+            super();
+
+            qbds = this.query().dataSourceTable(tableNum(AgreementLine));
+
+            qbr = qbds.addRange(fieldNum(AgreementLine, IsDeleted));
+            qbr.value(queryValue(NoYes::No));
+            qbr.status(RangeStatus::Hidden);
+
+            qbr = qbds.addRange(fieldNum(AgreementLine, AVAStopped));
+            qbr.value(queryValue(NoYes::No));
+            qbr.status(RangeStatus::Hidden);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>AVAReleaseAgreementItemMapping</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// init method
+        /// </summary>
+        public void init()
+        {
+            QueryBuildDataSource qbds;
+            QueryBuildRange qbr;
+
+            super();
+
+            qbds = this.query().dataSourceTable(tableNum(AVAReleaseAgreementItemMapping));
+
+            qbr = qbds.addRange(fieldNum(AVAReleaseAgreementItemMapping, ReleaseItem));
+            qbr.value(queryValue(ReqPO.ItemId));
+            qbr.status(RangeStatus::Hidden);
+
+            qbds.clearLinks();
+            qbds.addLink(fieldNum(AgreementLine, ItemId), fieldNum(AVAReleaseAgreementItemMapping, AgreementItem), tableStr(AgreementLine));
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="" />
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>PurchAgreementHeader</Name>
+			<Table>PurchAgreementHeader</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AgreementClassification</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgreementState</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BuyingLegalEntity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Currency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultAgreementLineEffectiveDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultAgreementLineExpirationDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultAgreementLineType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocumentExternalReference</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocumentTitle</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EarliestLineEffectiveDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InstanceRelationType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterCompanySkipUpdate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterestBasedOnCEB_PSN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsDeleted</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_BOSCommissCutPct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Language</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LatestLineExpirationDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MaximumAmount_PSN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MinimumAmount_PSN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Originator</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ParentPurchAgreementID_PSN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryResponsibleWorker</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProcurementClassification_PSN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PurchAgreementType_PSN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PurchNumberSequence</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Purpose_PSN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Renewable_PSN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SecondaryResponsibleWorker</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VendAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VendorDataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WorkflowStatus_PSN</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>AgreementLine</Name>
+			<Table>AgreementLine</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AgreedReleaseLineMaxAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgreedReleaseLineMinAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Agreement</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgreementLineProduct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgreementLineType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVACBSSpecialPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVARestQtyCallOffItem</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAStopped</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AVAWidthCoilMM</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Category</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Currency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EffectiveDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExpirationDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InstanceRelationType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterCompanySkipUpdate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntraCompanySkipUpdate_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimDataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsDeleted</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsMaxEnforced</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsModified</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsPriceInformationMandatory</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemDataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_BOSCommissCutPct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_BOSConditionsGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KCS_BOSPriceListID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineDiscountPercent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProjectDataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProjectProjId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>PurchAgreementHeader</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCheck>No</AllowCheck>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources>
+				<AxFormDataSourceDerived>
+					<Name>AgreementLine_AgreementLineQuantityCommitment</Name>
+					<Table>AgreementLineQuantityCommitment</Table>
+					<Fields>
+						<AxFormDataSourceField>
+							<DataField>CommitedQuantity</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>LineDiscountAmount</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>Partition</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>PdsCWCommitedQuantity</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>PricePerUnit</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>PriceUnit</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>ProductUnitOfMeasure</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>RecId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>TableId</DataField>
+						</AxFormDataSourceField>
+					</Fields>
+					<ReferencedDataSources />
+					<DerivedDataSources />
+				</AxFormDataSourceDerived>
+				<AxFormDataSourceDerived>
+					<Name>AgreementLine_AgreementLineVolumeCommitment</Name>
+					<Table>AgreementLineVolumeCommitment</Table>
+					<Fields>
+						<AxFormDataSourceField>
+							<DataField>CommitedAmount</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>Partition</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>RecId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>TableId</DataField>
+						</AxFormDataSourceField>
+					</Fields>
+					<ReferencedDataSources />
+					<DerivedDataSources />
+				</AxFormDataSourceDerived>
+			</DerivedDataSources>
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>AVAReleaseAgreementItemMapping</Name>
+			<Table>AVAReleaseAgreementItemMapping</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AgreementItem</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Priority</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReleaseItem</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>AgreementLine</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<HeightMode xmlns="">SizeToContent</HeightMode>
+		<Pattern xmlns="">LookupGridOnly</Pattern>
+		<PatternVersion xmlns="">1.1</PatternVersion>
+		<Style xmlns="">Lookup</Style>
+		<WidthMode xmlns="">SizeToAvailable</WidthMode>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGridControl">
+				<Name>Grid</Name>
+				<AllowEdit>No</AllowEdit>
+				<HeightMode>SizeToContent</HeightMode>
+				<Type>Grid</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>PurchAgreementHeader_PurchNumberSequence</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>PurchNumberSequence</DataField>
+						<DataSource>PurchAgreementHeader</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>AgreementLine_LineNumber</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>LineNumber</DataField>
+						<DataSource>AgreementLine</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>PurchAgreementHeader_VendAccount</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>VendAccount</DataField>
+						<DataSource>PurchAgreementHeader</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>vendName</Name>
+						<AllowEdit>No</AllowEdit>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<CacheDataMethod>Yes</CacheDataMethod>
+						<DataMethod>vendName</DataMethod>
+						<DataSource>PurchAgreementHeader</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AgreementLine_ItemId</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>ItemId</DataField>
+						<DataSource>AgreementLine</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>AgreementLine_AgreementLineQuantityCommitment_PricePerUnit</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>PricePerUnit</DataField>
+						<DataSource>AgreementLine_AgreementLineQuantityCommitment</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>AgreementLine_AgreementLineQuantityCommitment_CommitedQuantity</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>CommitedQuantity</DataField>
+						<DataSource>AgreementLine_AgreementLineQuantityCommitment</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>AgreementLine_quantityRemainingRelease</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<CacheDataMethod>Yes</CacheDataMethod>
+						<DataMethod>quantityRemainingRelease</DataMethod>
+						<DataSource>AgreementLine</DataSource>
+						<Label>@NDX:NDAAgreementRemainQty</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormInt64Control">
+						<Name>AgreementLine_RecId</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Int64</Type>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>RecId</DataField>
+						<DataSource>AgreementLine</DataSource>
+					</AxFormControl>
+				</Controls>
+				<MultiSelect>No</MultiSelect>
+				<ShowRowLabels>No</ShowRowLabels>
+				<Style>Tabular</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

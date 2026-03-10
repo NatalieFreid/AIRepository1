@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAInventPurchPriceAgreementCalculation_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// defined from AVA
+/// </summary>
+[ExtensionOf(classStr(InventPurchPriceAgreementCalculation))]
+final class AVAInventPurchPriceAgreementCalculation_Extension
+{
+    public boolean     avaGraduatedPrice;
+    public CostingVersion   costingVersion;
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>purchPriceAgreement</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// defined from AVA
+    /// </summary>
+    /// <returns>InventPurchPriceAgreementCalculationResult</returns>
+    public InventPurchPriceAgreementCalculationResult purchPriceAgreement()
+    {
+        VendTable           vendTable;
+        InventTableModule   inventTableModule;
+
+        PriceDisc           priceDisc;
+
+        #ISOCountryRegionCodes
+        boolean             countryRegion_RU = SysCountryRegionCode::isLegalEntityInCountryRegion([#isoRU]);
+
+        InventPurchPriceAgreementCalculationResult result = next purchPriceAgreement();
+        
+
+        if (!parameters.currencyCode)
+        {
+            parameters.currencyCode = CompanyInfoHelper::standardCurrency();
+        }
+        
+        inventTableModule= InventTableModule::find(parameters.inventTable.ItemId, ModuleInventPurchSales::Purch);
+
+        if (parameters.unit  != inventTableModule.UnitId)
+        {
+            parameters.qty = EcoResProductUnitConverter::convertGivenUnitSymbolsForReleasedProduct(parameters.inventTable.ItemId,
+                                                                                         parameters.inventDim.inventDimId,
+                                                                                         parameters.qty,
+                                                                                         parameters.unit,
+                                                                                         inventTableModule.UnitId,
+                                                                                         NoYes::Yes);
+        }
+
+        vendTable= VendTable::find(parameters.accountNum);
+
+        priceDisc = parameters.inventTable.callCreatePriceDiscInstance(parameters.inventTable.callCreateAndInitPriceDiscParameters(ModuleInventPurchSales::Purch,
+                                  parameters.inventTable.ItemId,
+                                  parameters.inventDim,
+                                  inventTableModule.UnitId,
+                                  parameters.priceDate,
+                                  parameters.qty,
+                                  vendTable.AccountNum,
+                                  parameters.currencyCode));
+
+        if (avaGraduatedPrice)
+        {
+            priceDisc.parmAvaGraduatedPrice(avaGraduatedPrice);
+            priceDisc.parmCostingVersionFromDate(costingVersion.DefaultDate);
+            priceDisc.parmCostingVersionToDate(costingVersion.KCS_ToDate);
+        }
+
+        if (!priceDisc.findPrice(vendTable.PriceGroup, false))
+        {
+            // Price agreement is not found
+            if (countryRegion_RU)
+            {
+                result.costPrice = 0;
+                result.costPriceUnit = 1;
+                result.costMarkup = 0;
+                result.priceDiscFromDate = dateNull();
+                result.priceDiscToDate = dateNull();
+                result.costPriceSecCur = 0;
+                result.costMarkupSecCur = 0;
+            }
+            else
+            {
+                result.costPrice = 0;
+                result.costPriceUnit = 1;
+                result.costMarkup = 0;
+                result.priceDiscFromDate = dateNull();
+                result.priceDiscToDate = dateNull();
+            }
+
+            return result;
+        }
+
+        InventPurchPriceCalculation priceCalc = this.calculatePriceAndMarkupForPurchaseAgreement(priceDisc, parameters.includeLineDisc, vendTable);
+
+     
+        if (countryRegion_RU)
+        {
+            result.costPrice = ExchangeRateHelper::mstPrice(priceCalc.price, parameters.currencyCode);
+            result.costPriceUnit = priceCalc.priceUnit;
+            result.costMarkup = ExchangeRateHelper::mstPrice(priceCalc.priceMarkup, parameters.currencyCode);
+            result.priceDiscFromDate = priceDisc.priceTable().FromDate;
+            result.priceDiscToDate = priceDisc.priceTable().ToDate;
+            result.costPriceSecCur = priceCalc.priceSecCur;
+            result.costMarkupSecCur = priceCalc.priceMarkupSecCur;
+        }
+        else
+        {
+            result.costPrice = ExchangeRateHelper::mstPrice(priceCalc.price, parameters.currencyCode);
+            result.costPriceUnit = priceCalc.priceUnit;
+            result.costMarkup = ExchangeRateHelper::mstPrice(priceCalc.priceMarkup, parameters.currencyCode);
+            result.priceDiscFromDate = priceDisc.priceTable().FromDate;
+            result.priceDiscToDate = priceDisc.priceTable().ToDate;
+        }
+
+        PriceDiscTable  priceDiscTable = priceDisc.priceTable();
+        Amount          chargedAmount = priceDiscTable.avaCalcHKChargesAmount(priceDiscTable.Amount,parameters.PriceDate);
+        if (chargedAmount != 0)
+        {
+            result.costPrice += chargedAmount; 
+        }
+
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmAVAGraduatedPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_avaGraduatedPrice">_avaGraduatedPrice</param>
+    /// <returns>boolean</returns>
+    public boolean parmAVAGraduatedPrice(AVAGraduatedPrice      _avaGraduatedPrice = AVAGraduatedPrice)
+    {
+        avaGraduatedPrice  = _avaGraduatedPrice;
+        return avaGraduatedPrice;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCostingVersion</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_costingVersion">_costingVersion</param>
+    /// <returns>CostingVersion</returns>
+    public CostingVersion   parmCostingVersion(CostingVersion           _costingVersion = costingVersion)
+    {
+        costingVersion = _costingVersion;
+        return costingVersion;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

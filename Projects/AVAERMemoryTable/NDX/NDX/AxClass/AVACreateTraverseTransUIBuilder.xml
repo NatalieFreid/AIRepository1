@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACreateTraverseTransUIBuilder</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>AVACreateTraverseTransUIBuilder</c> class is the UI builder class for <c>Creating contact persons based on GAB</c>
+/// </summary>
+class AVACreateTraverseTransUIBuilder extends SysOperationAutomaticUIBuilder
+{
+    DialogField df_ItemId, df_BasketId, df_Qty, df_TravNum, df_PieceQty, df_ProdUnit, df_pieceUnit;
+    AVACreateTraverseTransContract  contract;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>postBuild</Name>
+				<Source><![CDATA[
+    public void postBuild()
+    {
+        super();
+
+        df_ItemId.registerOverrideMethod(methodStr(FormStringControl, lookup), methodStr(AVACreateTraverseTransUIBuilder, lookupItemId), this);
+        df_BasketId.registerOverrideMethod(methodStr(FormStringControl, modified), methodStr(AVACreateTraverseTransUIBuilder, modifiedBasketId), this);
+        df_PieceQty.registerOverrideMethod(methodStr(FormRealControl, modified),methodStr(AVACreateTraverseTransUIBuilder, modifiedPieceQty), this);
+        df_ProdUnit.registerOverrideMethod(methodStr(FormStringControl, modified), methodStr(AVACreateTraverseTransUIBuilder, modifiedProdUnit), this);
+        df_Qty.registerOverrideMethod(methodStr(FormRealControl, modified), methodStr(AVACreateTraverseTransUIBuilder, modifiedProdQty), this);
+        df_ItemId.registerOverrideMethod(methodStr(FormStringControl, modified), methodStr(AVACreateTraverseTransUIBuilder, modifiedItemId), this);
+        df_pieceUnit.enabled(false);
+        df_PieceQty.enabled(df_ItemId.value());
+        df_Qty.enabled(df_ItemId.value());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>lookupItemId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// lookupItemId method
+    /// </summary>
+    /// <param name = "_control">FormStringControl</param>
+    private void lookupItemId(FormStringControl _control)
+    {
+        SysTableLookup sysTableLookup = SysTablelookup::newParameters(tableNum(InventTable), _control);
+        QueryBuildDataSource qbdsProdBOM;
+        Query          query = new Query();
+
+        QueryBuildDataSource qbds = SysQuery::findOrCreateDataSource(query, tableNum(InventTable));
+        qbdsProdBOM = qbds.addDataSource(tablenum(prodbom));
+        qbdsProdBOM.relations(true);
+        //AVACreateTraverseTransContract contract = this.dataContractObject();
+        SysQuery::findOrCreateRange(qbdsProdBOM, fieldNum(ProdBOM, ProdId)).value(contract.parmProdId());
+        sysTableLookup.addLookupfield(fieldNum(InventTable, ItemId));
+        sysTableLookup.addLookupfield(fieldNum(InventTable, NameAlias));
+        sysTableLookup.addSelectionField(fieldNum(InventTable, Product));
+        sysTableLookup.addLookupMethod(tableMethodStr(InventTable, NDXProductName1)) ;
+        sysTableLookup.addLookupMethod(tableMethodStr(InventTable, NDXProductName2)) ;
+        sysTableLookup.addLookupfield(fieldNum(InventTable, NDXModelNumber));
+        sysTableLookup.addLookupfield(fieldNum(InventTable, KCS_KAOItemState));
+        sysTableLookup.parmQuery(query);
+        
+        sysTableLookup.performFormLookup();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedBasketId</Name>
+				<Source><![CDATA[
+    private boolean modifiedBasketId(FormStringControl _control)
+    {
+        if (df_BasketId.value())
+        {
+            df_Qty.value(0);
+            df_Qty.enabled(false);
+            df_TravNum.value(df_Basketid.value());
+            df_TravNum.enabled(false);
+        }
+        else
+        {
+            df_Qty.enabled(true);
+        }
+
+        return _control.modified();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedItemId</Name>
+				<Source><![CDATA[
+    private boolean modifiedItemId(FormStringControl _control)
+    {
+        ProdBOM prodBOM;
+
+        if (df_ItemId.value())
+        {
+            select firstonly prodBOM where prodBOM.ProdId == contract.parmProdId()
+                        && prodBOM.ItemId == df_ItemId.value();
+            df_ProdUnit.value(prodBOM.UnitId);
+        }
+        if (df_Qty.value())
+        {
+            this.calcQty(true);
+        }
+        else
+        {
+            this.calcQty(false);
+        }
+        df_PieceQty.enabled(df_ItemId.value());
+        df_Qty.enabled(df_ItemId.value());
+
+        return _control.modified();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcQty</Name>
+				<Source><![CDATA[
+    private void calcQty(boolean calcPieces = true)
+    {
+        ProdBOM prodBOM;
+        Qty prodQty, pieceQty;
+        UnitOfMeasureSymbol prodUnit, pieceUnit;
+        ItemId itemid = df_ItemId.value();
+        prodQty = df_Qty.value();
+        pieceQty = df_PieceQty.value();
+        prodUnit = df_ProdUnit.value();
+        pieceUnit = df_pieceUnit.value();
+
+        if (calcPieces)
+        {
+            if (itemid && prodUnit != pieceUnit)
+            {
+                select firstonly prodBOM where prodBOM.ProdId == contract.parmProdId()
+                        && prodBOM.ItemId == df_ItemId.value();
+          
+                pieceQty = EcoResProductUnitConverter::convertForReleasedProduct(itemid, prodBOM.InventDimId, prodQty, UnitOfMeasure::unitOfMeasureIdBySymbol(prodUnit), UnitOfMeasure::unitOfMeasureIdBySymbol(pieceUnit));
+                df_PieceQty.value(pieceQty);
+            }
+            else
+            {
+                df_PieceQty.value(prodQty);
+            }
+        }
+        else
+        {
+            if (itemid && prodUnit != pieceUnit)
+            {
+                select firstonly prodBOM where prodBOM.ProdId == contract.parmProdId()
+                        && prodBOM.ItemId == df_ItemId.value();
+          
+                prodQty = EcoResProductUnitConverter::convertForReleasedProduct(itemid, prodBOM.InventDimId, pieceQty, UnitOfMeasure::unitOfMeasureIdBySymbol(pieceUnit), UnitOfMeasure::unitOfMeasureIdBySymbol(prodUnit));
+                df_Qty.value(prodQty);
+            }
+            else
+            {
+                df_Qty.value(pieceQty);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedProdQty</Name>
+				<Source><![CDATA[
+    private boolean modifiedProdQty(FormRealControl _control)
+    {
+        this.calcQty(true);
+        return _control.modified();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedPieceQty</Name>
+				<Source><![CDATA[
+    private boolean modifiedPieceQty(FormRealControl _control)
+    {
+        this.calcQty(false);
+        return _control.modified();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedProdUnit</Name>
+				<Source><![CDATA[
+    private boolean modifiedProdUnit(FormStringControl _control)
+    {
+        this.calcQty(true);
+        return _control.modified();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>preBuild</Name>
+				<Source><![CDATA[
+    public void preBuild()
+    {
+     
+        super();
+
+        contract = this.dataContractObject();
+        //nur Traversennummer vom letzten Aufruf bleibt stehen
+        contract.parmItemId("@NDX:NDXEmptyEntry");
+        contract.parmQty(0);
+        contract.parmBasketNum("@NDX:NDXEmptyEntry");
+        contract.parmPieceQty(0);
+        contract.parmProdUnit("@NDX:NDXEmptyEntry");
+        contract.parmPiecesUnit("@NDX:NXAPieceUnit");
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>build</Name>
+				<Source><![CDATA[
+    public void build()
+    {
+        super();
+        df_ItemId = this.bindInfo().getDialogField(this.dataContractObject(), methodStr(AVACreateTraverseTransContract, parmItemId));
+        df_BasketId = this.bindInfo().getDialogField(this.dataContractObject(), methodStr(AVACreateTraverseTransContract, parmBasketNum));
+        df_Qty = this.bindInfo().getDialogField(this.dataContractObject(), methodStr(AVACreateTraverseTransContract, parmQty));
+        df_TravNum = this.bindInfo().getDialogField(this.dataContractObject(), methodStr(AVACreateTraverseTransContract, parmTraverseNum));
+        df_PieceQty = this.bindInfo().getDialogField(this.dataContractObject(), methodStr(AVACreateTraverseTransContract, parmPieceQty));
+        df_ProdUnit = this.bindInfo().getDialogField(this.dataContractObject(), methodStr(AVACreateTraverseTransContract, parmProdUnit));
+        df_pieceUnit = this.bindInfo().getDialogField(this.dataContractObject(), methodStr(AVACreateTraverseTransContract, parmPiecesUnit));
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

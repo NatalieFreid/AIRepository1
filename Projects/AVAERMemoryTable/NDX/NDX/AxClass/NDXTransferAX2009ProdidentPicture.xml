@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXTransferAX2009ProdidentPicture</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 19.12.24
+/// Service: update ProdIdent-Picture-Mapping from AX2009
+/// </summary>
+public class NDXTransferAX2009ProdidentPicture
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>ProdIdentPictureItemTransfer</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 19.12.24
+    /// </summary>
+    /// <param name = "_inputContract">NDXTransferAX2009ProdidentPictureInputContract</param>
+    /// <returns>NDXTransferAX2009ProdidentPictureReturnContract</returns>
+    public NDXTransferAX2009ProdidentPictureReturnContract ProdIdentPictureItemTransfer(NDXTransferAX2009ProdidentPictureInputContract _inputContract)
+    {
+        System.Exception ex;
+        FileName filePath;
+        FileName filename;
+        FileName fileExt;
+        DocuValue docuValue;
+        DocuRef docuRef;
+
+        NDXTransferAX2009ProdidentPictureReturnContract returnContract = NDXTransferAX2009ProdidentPictureReturnContract::construct();
+        returnContract.start();
+        NDXProdIdentPictureItemContract prodIdentPictureItemContract;
+        NDXUpdatedUTC nDXUpdatedUTC = DateTimeUtil::utcNow();
+        container conCompany = conNull();
+        conCompany += NDXHelperDataArea::DataAreaIdFromEnum(NDXDataAreaIdEnum::Niedax);
+        conCompany += NDXHelperDataArea::DataAreaIdFromEnum(NDXDataAreaIdEnum::Kleinhuis);
+        conCompany += NDXHelperDataArea::DataAreaIdFromEnum(NDXDataAreaIdEnum::Fintech);
+
+        try
+        {
+            if (_inputContract.parmPictureItemList())
+            {
+                ListEnumerator enum = _inputContract.parmPictureItemList().getEnumerator();
+                while (enum.moveNext())
+                {
+                    prodIdentPictureItemContract = enum.current();
+                    returnContract.incrementElementsCounter();
+
+                    DataAreaId dataAreaId = prodIdentPictureItemContract.parmDataAreaId();
+                    if (conFind(conCompany, dataAreaId))
+                    {
+                        changecompany(dataAreaId)
+                        {
+                            NDXProdIdentPicture nDXProdIdentPicture;
+                            NDXProdIdentPictureItemIdMapping nDXProdIdentPictureItemIdMapping;
+                            ItemId itemId = prodIdentPictureItemContract.parmItemId();
+                            InventTable inventTable = InventTable::find(ItemId);
+                            if (!inventTable)
+                            {
+                                returnContract.addErrorToList(NDXErrorContract::construct('ItemNotFound', strFmt('Artikel [%1-%2] nicht lokalisiert!', dataAreaId, ItemId)));
+                                continue;
+                            }
+                            NDXBTItemPicture nDXBTItemPicture = prodIdentPictureItemContract.parmPictureName();
+                            nDXProdIdentPicture = NDXProdIdentPicture::findOrCreate(nDXBTItemPicture, false);
+                            if (nDXProdIdentPicture.RecId == 0)
+                            {
+                                returnContract.incrementElementsNewPicture();
+                            }
+                            else
+                            {
+                                returnContract.incrementElementsWithoutChangePicture();
+                            }
+                            nDXProdIdentPicture.PictureId = prodIdentPictureItemContract.parmPictureId();
+                            nDXProdIdentPicture.Approval = prodIdentPictureItemContract.parmApproval();
+                            nDXProdIdentPicture.ApprovalBy = prodIdentPictureItemContract.parmApprovalBy();
+                            nDXProdIdentPicture.ApprovalDateTime = prodIdentPictureItemContract.parmApprovalDateTime();
+                            nDXProdIdentPicture.UpdatedUTC = nDXUpdatedUTC;
+
+                            nDXProdIdentPictureItemIdMapping = NDXProdIdentPictureItemIdMapping::findOrCreate(itemId, nDXBTItemPicture, false);
+                            if (nDXProdIdentPictureItemIdMapping.RecId == 0)
+                            {
+                                returnContract.incrementElementsCounterNewPictureItemIdMapping();
+                            }
+                            else
+                            {
+                                returnContract.incrementElementsCounterWithoutChangePictureItemIdMapping();
+                            }
+                            nDXProdIdentPictureItemIdMapping.Active = prodIdentPictureItemContract.parmAktiv();
+                            nDXProdIdentPictureItemIdMapping.UpdatedUTC = nDXUpdatedUTC;
+
+                            ttsbegin;
+                            nDXProdIdentPicture.write();
+                            nDXProdIdentPictureItemIdMapping.write();
+                            ttscommit;
+
+                            // get picture
+                            if (prodIdentPictureItemContract.parmBase64Content())
+                            {
+                                [filePath, filename, fileExt] = fileNameSplit(prodIdentPictureItemContract.parmPictureName());
+                                fileExt = subStr(fileExt, 2, strLen(fileExt));
+                                select forupdate firstonly docuValue
+                                    where docuValue.FileName == filename &&
+                                    docuValue.FileType == fileExt;
+                                if (!docuValue)
+                                {
+                                    docuValue.initValue();
+                                    docuValue.FileName = filename;
+                                    docuValue.Name = filename;
+                                    docuValue.FileType = fileExt;
+                                    docuValue.OriginalFileName = prodIdentPictureItemContract.parmPictureName();
+                                }
+                                System.Byte[] byteArray = System.Convert::FromBase64String(prodIdentPictureItemContract.parmBase64Content());
+                                System.IO.MemoryStream memoryStream = new System.IO.MemoryStream(byteArray);
+                                Binary binaryData = Binary::constructFromMemoryStream(memoryStream);
+                                ttsbegin;
+                                docuValue.File = binaryData.getContainer();
+                                docuValue.write();
+                                ttscommit;
+
+                                DocuTypeId docuTypeId = "ProdK Bild DB";
+                                Name docuTypeName = "Produktkatalog Bild DB";
+                                DocuActionNote docuActionNote;
+                                int classid = classIdGet(docuActionNote);
+                                DocuType docuType = DocuType::find(docuTypeId);
+                                if (!docuType)
+                                {
+                                    docuType.initValue();
+                                    docuType.TypeId = docuTypeId;
+                                    docuType.Name = docuTypeName;
+                                    docuType.TypeGroup = DocuTypeGroup::Note;
+                                    docuType.FilePlace = DocuFilePlace::Database;
+                                    docuType.insert();
+                                }
+
+                                docuRef = DocuRef::findTableIdRecId(dataAreaId, tableNum(NDXProdIdentPicture), nDXProdIdentPicture.RecId);
+                                docuRef.selectForUpdate(true);
+                                if (!docuRef)
+                                {
+                                    docuRef.initValue();
+                                    docuRef.RefCompanyId = dataAreaId;
+                                    docuRef.RefTableId = tableNum(NDXProdIdentPicture);
+                                    docuRef.RefRecId = nDXProdIdentPicture.RecId;
+                                }
+                                docuRef.TypeId = docuTypeId;
+                                docuRef.Name = filename;
+                                docuRef.ValueRecId = docuValue.RecId;
+                                ttsbegin;
+                                docuRef.write();
+                                ttscommit;
+
+                                //docuRef = DocumentManagement::attachFileForRecord(
+                                //    nDXProdIdentPicture,
+                                //    docuTypeId,
+                                //    memoryStream,
+                                //    filename,
+                                //    filename);
+                            }
+                        }
+                    }
+                }
+
+                // Delete not updated records
+                for (int i=1; i<=conLen(conCompany); i++)
+                {
+                    changecompany(conPeek(conCompany, i))
+                    {
+                        NDXProdIdentPicture nDXProdIdentPicture;
+                        delete_from nDXProdIdentPicture
+                            where nDXProdIdentPicture.UpdatedUTC
+                            && nDXProdIdentPicture.UpdatedUTC != nDXUpdatedUTC;
+                        returnContract.parmelementsDeleted(returnContract.parmelementsDeleted() + int642int(nDXProdIdentPicture.RowCount()));
+
+                        NDXProdIdentPictureItemIdMapping nDXProdIdentPictureItemIdMapping;
+                        delete_from nDXProdIdentPictureItemIdMapping
+                            where nDXProdIdentPictureItemIdMapping.UpdatedUTC
+                            && nDXProdIdentPictureItemIdMapping.UpdatedUTC != nDXUpdatedUTC;
+                        returnContract.parmelementsDeleted(returnContract.parmelementsDeleted() + int642int(nDXProdIdentPictureItemIdMapping.RowCount()));
+
+                        NDXProdIdentPicture::checkNumberOfItemAssignments();
+                    }
+                }
+            }
+        }
+        catch (ex)
+        {
+            throw ex;
+        }
+        returnContract.end();
+        return returnContract;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

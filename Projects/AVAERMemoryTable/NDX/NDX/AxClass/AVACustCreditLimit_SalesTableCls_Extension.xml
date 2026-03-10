@@ -1,0 +1,315 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACustCreditLimit_SalesTableCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed by AVANADE
+/// </summary>
+[ExtensionOf(classStr(CustCreditLimit_SalesTable))]
+internal final class AVACustCreditLimit_SalesTableCls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>shouldCheckCreditAvailable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean shouldCheckCreditAvailable()
+    {
+        boolean ret;
+        ret = next shouldCheckCreditAvailable();
+
+        if (this.custTable().MandatoryCreditLimit)
+        {
+            ret = true;
+        }
+        else
+        {
+            ret = false;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>check</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Performs the actual credit limit excess check.
+    /// </summary>
+    /// <returns>
+    ///    false if the credit limit is exceeded; otherwise, true.
+    /// </returns>
+    /// <remarks>
+    ///    The method returns false if the credit limit is exceeded, regardless of the warning flag. It is up
+    ///    to the caller to determine the consequences of an exceeded credit.
+    /// </remarks>
+    public boolean check()
+    {
+        //CredManTable                    credManTable;
+        //AmountMST                       salesTableTotal, groupRemainingAmont, balance, orderBalance, notInvoiced;
+        AmountMST                       groupRemainingAmont, balance, orderBalance, notInvoiced, threshold, credMax;
+        boolean                         ret = true, retLocal = true;
+        CredManCreditLimitCustGroupLine crlCustGroupLine;
+        CredManCreditLimitCustGroup     crlCustGroup;
+        SalesTotals                     salesTotalsSales;
+        //salesTable                      salesTableLocal;
+        str                             msg;
+        CredManBlockExclusionRule           CredManBlockExclusionRule;
+
+        
+        salesTotalsSales = salesTotals::construct(this.salesTable);
+        salesTotalssales.parmCalcEstimate(NoYes::Yes);
+        salesTotalsSales.calc();  
+        //salesTable.setEstimate(salesTotalsSales) ; 
+        /*salesTableLocal = this.salesTable;
+        if (salesTableLocal.setEstimate(salesTotalsSales))
+        {
+            ttsbegin;
+            salesTableLocal.selectForUpdate();
+            salesTableLocal.update();
+            ttscommit;
+        }  */
+
+
+        if (this.custTable().AVACRLCreditBlocked)
+        {
+            retLocal = false;
+            throw error("@NDX:NXACreditLimitBlockedError");
+        }
+
+        /*if (retLocal)
+        {
+            select firstonly credManTable order by ReleasedDateTime 
+                                            where credManTable.SalesId == this.salesTable.salesId;
+            salesTableTotal = this.salesTableAmount();
+            if (credManTable.RecId && salesTableTotal > credManTable.SalesTotal)
+            {
+                retLocal = false;
+                error("@NDX:NXACRLCredManTotalError");
+            }
+        }*/
+        
+        ret = next check();
+
+        select firstonly CreditLimitCustGroup from crlCustGroupLine where crlCustGroupLine.CustAccount == this.custTable().AccountNum
+                                                                       && crlCustGroupLine.company == this.custTable().DataAreaId;
+        if (!crlCustGroupLine.CreditLimitCustGroup)
+        {
+            retLocal = ret;
+            if (!ret)
+            {
+                select firstonly CredManBlockExclusionRule
+                //where CredManBlockExclusionRule.CustRelation == this.custtable().AccountNum;
+                where CredManBlockExclusionRule.RuleId == CredManBlockExclusionRuleType::ExceedCreditLimit
+                && CredManBlockExclusionRule.TableGroupAll == TableGroupAll::Table
+                && CredManBlockExclusionRule.CustRelation == this.custTable().AccountNum;
+                if (!CredManBlockExclusionRule)
+                {
+                    select firstonly CredManBlockExclusionRule
+                    where CredManBlockExclusionRule.RuleId == CredManBlockExclusionRuleType::ExceedCreditLimit
+                        && CredManBlockExclusionRule.TableGroupAll == TableGroupAll::All;                
+                }
+                if (CredManBlockExclusionRule)
+                {
+                    threshold = CredManBlockExclusionRule.CreditLimitThreshold;
+                    if (threshold )
+                    {
+                        threshold = this.getCurrentCreditMax() * threshold / 100;
+                    }
+                    if (Threshold < (balanceTotals + balanceNotInvoiced))
+                    {
+                        warning(strFmt("@NDX:NXACreditLimitThreshold", threshold));
+                    }
+                }
+            }
+        }
+        else
+        {
+            select firstonly CreditLimitId from crlCustGroup where crlCustGroup.RecId == crlCustGroupLine.CreditLimitCustGroup;
+            //[groupRemainingAmont, notInvoiced, balance] = this.groupRemainingAmount(crlCustGroup.CreditLimitId);
+            [groupRemainingAmont, notInvoiced, balance, threshold] = this.groupRemainingAmount(crlCustGroup.CreditLimitId);
+            orderBalance = salesTotalsSales.totalBalance() + salesTotalsSales.totalMarkup();
+            //if (salesTableTotal < groupRemainingAmont)
+            //if (salesTableTotal > groupRemainingAmont)
+            //if (orderBalance > groupRemainingAmont)
+            if (groupRemainingAmont < 0)
+            {
+                if (retLocal)
+                {
+                    //warning(strFmt("@NDX:NXACRLGroupRemainError", groupRemainingAmont, salesTableTotal)); 
+                    msg = "@NDX:NXAGroupCLExceeded" + ' \n';
+
+                    msg += this.currentMessage("@NDX:NXAGroupOpenBalance", balance + notInvoiced - orderBalance);
+                    msg += this.currentMessage("@SYS79459", orderBalance);
+                    msg += this.currentMessage("@SYS79460", (balance + notInvoiced));
+                    credMax = checkAgreementLimit ? agreementCreditLimitMax : this.getCurrentCreditMax();
+                    msg += this.currentMessage("@SYS1532", CredMax);
+                    msg += this.currentMessage("@SYS79461", groupRemainingAmont);
+                    if (threshold)
+                    {
+                        threshold = CredMax * threshold / 100;
+                        if (threshold < (balance + notInvoiced))
+                        {
+                            msg += this.currentMessage("@KFB:CreditLimitThreshold", threshold);
+                        }
+                    }
+                    checkFailed(msg);
+
+                }
+                retLocal = false;
+            }
+        }
+
+        return retlocal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setShouldDisplayMessage</Name>
+				<Source><![CDATA[
+    protected void setShouldDisplayMessage()
+    {
+        CredManCreditLimitCustGroupLine crlCustGroupLine;
+
+        next setShouldDisplayMessage();
+
+        select firstonly CreditLimitCustGroup from crlCustGroupLine where crlCustGroupLine.CustAccount == this.custTable().AccountNum
+                                                                       && crlCustGroupLine.company == this.custTable().DataAreaId;
+        if (crlCustGroupLine.CreditLimitCustGroup)
+        {
+            displayMessage = false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>salesTableAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// calc salesTable totalAmount
+    /// </summary>
+    /// <returns>amountMst</returns>
+    display AmountMST  salesTableAmount()
+    {
+        SalesLine                   salesLine;
+        AmountCur                   amountCur = 0;
+        AmountMST                   amountMst;
+
+        while select salesLine
+                index hint SalesLineIdx
+                where salesLine.SalesId     == this.salestable.SalesId
+        {
+            amountCur += salesLine.calcLineAmountExclTax(salesLine.SalesQty);
+        }
+
+        AmountMST   = CurrencyExchangeHelper::mstAmount(amountCur, this.salestable.CurrencyCode, DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), this.salesTable.fixedEuroTriangulation(), this.salestable.fixedExchRate(), this.salestable.fixedExchRateSecondary());
+
+        return amountMst;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>groupRemainingAmount</Name>
+				<Source><![CDATA[
+    //private AmountMST groupRemainingAmount(CredManCreditLimitId _creditLimitId)
+    private container groupRemainingAmount(CredManCreditLimitId _creditLimitId)
+    {
+        CustCreditMaxCur		            limitAmountMST;
+        //AmountMST                           ret, notInvoicedAmountWithoutTaxes, balance;
+        AmountMST                           remaining, notInvoicedAmountWithoutTaxes, balance;
+        AVAFCMGroupTable		            groupTable;
+        CredManBlockExclusionRule           CredManBlockExclusionRule;
+        Query						        query;
+        QueryRun					        queryRun;
+        CredManCreditLimitCustGroupView		credManCreditLimitCustGroupView;
+        custTable                           locCustTable;
+        //CredManCreditLimitCustGroupLine     CRLCustGroupLine;
+        //CredManCreditLimitCustGroup         CRLCustGroup;
+        CredManCreditLimitId                CrlCustGroup;
+    
+        limitAmountMST = groupTable.showLimitAmountMST(_creditLimitId);
+        locCustTable    = this.custTable();
+
+        //if (this.custTable().AccountNum)
+        if (locCustTable.AccountNum)
+        {
+            select firstonly CredManBlockExclusionRule
+                //where CredManBlockExclusionRule.CustRelation == this.custtable().AccountNum;
+                where CredManBlockExclusionRule.RuleId == CredManBlockExclusionRuleType::ExceedCreditLimit
+                && CredManBlockExclusionRule.TableGroupAll == TableGroupAll::Table
+                && CredManBlockExclusionRule.CustRelation == locCustTable.AccountNum;
+        }
+
+        /*if (!CredManBlockExclusionRule && !locCustTable.AVAIsCreditLimitRiscDebtor())
+        {
+            select firstonly CRLCustGroupLine where CRLCustGroupLine.CustAccount == locCustTable.AccountNum
+                join CRLCustGroup where CRLCustGroup.RecId == CRLCustGroupLine.CreditLimitCustGroup
+                                     && CRLCustGroup.AVACompanyId == curExt();
+            select firstonly CredManBlockExclusionRule
+                where CredManBlockExclusionRule.CustRelation == CRLCustGroup.AVARiscDebtor;
+        } */
+        if (!CredManBlockExclusionRule)
+        {
+            CRLCustGroup = locCustTable.AVACreditLimitCustGroup();
+            select firstonly CredManBlockExclusionRule
+                where CredManBlockExclusionRule.RuleId == CredManBlockExclusionRuleType::ExceedCreditLimit
+                && CredManBlockExclusionRule.TableGroupAll == TableGroupAll::GroupId
+                && CredManBlockExclusionRule.CustRelation == CRLCustGroup;
+        }
+
+        if (!CredManBlockExclusionRule)
+        {
+            select firstonly CredManBlockExclusionRule
+                where CredManBlockExclusionRule.TableGroupAll == TableGroupAll::All
+                && CredManBlockExclusionRule.RuleId == CredManBlockExclusionRuleType::ExceedCreditLimit;
+        }
+
+        CredManCreditLimitThreshold threshold =  CredManBlockExclusionRule.CreditLimitThreshold;
+
+        query       = AVAFCMGroupTable::buildAllocatedCustomersQuery(_creditLimitId);
+        queryRun    = new queryRun(query);
+        while (queryRun.next())
+        {
+            credManCreditLimitCustGroupView = queryRun.get(tableNum(CredManCreditLimitCustGroupView));
+    
+            changeCompany (credManCreditLimitCustGroupView.Company)
+            {
+                custTable = custTable::find(credManCreditLimitCustGroupView.AccountNum);
+    
+                //notInvoicedAmountWithoutTaxes   += AVAFCMGroupTable::getnotInvoicedAmountWithoutTaxesByCustTable(custTable);
+                //notInvoicedAmountWithoutTaxes   += AVAFCMGroupTable::getnotInvoicedAmountWithoutTaxesWithMarkupsByCustTable(custTable);
+                notInvoicedAmountWithoutTaxes   += AVAFCMGroupTableHelper::getnotInvoicedAmountWithoutTaxesByCustTable(custTable);
+                //balance                         += AVAFCMGroupTable::getInvoicedAmountWithoutTaxesByCustTable(custTable);
+                balance                         += AVAFCMGroupTable::getInvoicedAmountWithoutTaxesWithMarkupsByCustTable(custTable);
+            }
+        }
+
+        /*if (threshold)
+        {
+            remaining = limitAmountMST * (threshold/100) - notInvoicedAmountWithoutTaxes - balance;
+        }
+        else
+        {*/
+            remaining = limitAmountMST - notInvoicedAmountWithoutTaxes - balance;
+        //}
+
+        //return ret;
+        return [remaining, notInvoicedAmountWithoutTaxes, balance, threshold];
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

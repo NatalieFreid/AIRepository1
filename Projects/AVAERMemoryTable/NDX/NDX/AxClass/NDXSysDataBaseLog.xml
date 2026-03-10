@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXSysDataBaseLog</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// NDX Databaselog class sesigned by NDX
+/// </summary>
+abstract class NDXSysDataBaseLog
+{
+    SysDatabaseLog sysDatabaseLog;
+    int            nAnz;
+    container      con;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>deleteRecords</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// deletes record with by  _recIdInventTable
+    /// </summary>
+    /// <param name = "_recIdInventTable">reference to invent table</param>
+    abstract void deleteRecords(RecId _recIdInventTable){}
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getLatest</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Get stored latest record
+    /// </summary>
+    /// <returns>time of the latest created histor record </returns>
+    abstract createdDateTime getLatest(){}
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Stor values to the corresponding tables
+    /// </summary>
+    /// <param name = "_inventTable">inventtable record</param>
+    abstract void storeValues(InventTable _inventTable){}
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getInfo_ItemTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Designed by NDX
+    /// </summary>
+    /// <param name = "_fieldIdCheck">field id</param>
+    /// <param name = "_onlyNew">only new</param>
+    /// <param name = "_recIdInventTable">inventtable recid</param>
+    /// <param name = "_showinfo">show infor</param>
+    /// <param name = "_checkOnlyMissing">check only missing</param>
+    public void getInfo_ItemTable(fieldId _fieldIdCheck, boolean _onlyNew = true, RecId _recIdInventTable = 0, boolean _showinfo = true, boolean _checkOnlyMissing = false)
+    {
+        InventTable                         inventTable;
+        
+        DataArea                            dataArea;
+
+        Query                   q = new Query();
+        QueryRun                qr1, qr2;
+        QueryBuildDataSource    qbds1;
+
+        List                    dataList;
+        ListEnumerator          enumerator;
+        fieldId                 fieldId;
+        createdDateTime         fromDateTime;
+        
+        if(_showinfo)
+        {
+            info(strfmt("@NDX:DataBaseLogStartAnalyze", DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone())));      // [%1] Start: Untersuchung SysDatabaseLog
+        }
+
+        while select dataArea where dataArea.isVirtual == false
+        {
+            changecompany(dataArea.Id)
+            {
+                if (!_onlyNew && !_checkOnlyMissing)
+                {
+                    this.deleteRecords(_recIdInventTable);
+                }
+
+                if (_onlyNew)
+                {
+                    fromDateTime = this.getLatest();
+                }
+
+                q =  new Query();
+                qbds1 = q.addDataSource(tablenum(InventTable));
+                if (_recIdInventTable)
+                {
+                    qbds1.addRange(fieldnum(InventTable, RecId)).value(queryValue(_recIdInventTable));
+                }
+
+                qr1 = new QueryRun(q);
+                while (qr1.next())
+                {
+                    inventTable = qr1.get(tablenum(InventTable));
+
+                    q       = new Query();
+                    qbds1   = q.addDataSource(tablenum(SysDataBaseLog));
+                    qbds1.addOrderByField(fieldnum(SysDataBaseLog, table));
+                    qbds1.addOrderByField(fieldnum(SysDataBaseLog, LogRecId));
+                    qbds1.addOrderByField(fieldnum(SysDataBaseLog, createdDateTime));
+                    qbds1.addRange(fieldnum(SysDataBaseLog, table)).value(QueryValue(tablenum(InventTable)));
+                    qbds1.addRange(fieldnum(SysDataBaseLog, LogRecId)).value(QueryValue(inventTable.RecId));
+                    
+                    if (_onlyNew)
+                    {
+                        qbds1.addRange(fieldnum(sysDatabaseLog, createdDateTime)).value(strFmt('>%1', fromDateTime));
+                    }
+                    qr2 = new QueryRun(q);
+                    while (qr2.next())
+                    {
+                        sysDatabaseLog  = qr2.get(tablenum(SysDataBaseLog));
+                        // Nur prüfen, wenn in den zu untersuchenden Feldern Änderungen vorgenommen wurden
+                        if (!(sysDatabaseLog.fieldChanged(fieldnum(InventTable, NetWeight)) || sysDatabaseLog.fieldChanged(fieldnum(InventTable, KCS_HK2GroupId))))
+                        {
+                            continue;
+                        }
+
+                        dataList        = sysDatabaseLog.getDataAslist();
+                        enumerator      = dataList.getEnumerator();
+                        while (enumerator.moveNext())
+                        {
+                            con = enumerator.current();
+                            fieldId = conpeek(con, 1);
+
+                            if (FieldExt2Id(fieldId) == _fieldIdCheck)
+                            {
+                                this.storeValues(inventTable);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if(_showinfo)
+        {
+            info(strfmt("@NDX:DataBaseLogEndAnalyze", DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()), nAnz ));        // [%1] Ende: Untersuchung SysDatabaseLog [%2] Einträge
+        }
+        return;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

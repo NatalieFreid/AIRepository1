@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAInventItemLocationUpdateService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// N.Freidenberger 26.05.2025
+/// </summary>
+internal final class AVAInventItemLocationUpdateService  extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 26.05.2025
+    /// </summary>
+    public void process(AVAInventItemLocationUpdateContract     _dataContract)
+    {
+
+        Query                   inventOnHandQuery = new Query(SysOperationHelper::base64Decode(_dataContract.parmPackedQuery()));
+        QueryRun                queryRun;
+        InventSum               inventSum;
+        InventItemLocation      inventItemLocation;
+        InventDim               inventDim;
+        InventDim               itemLocationInventDim;
+       
+
+        inventOnHandQuery.dataSourceTable(tableNum(InventDim)).addGroupByField(fieldNum(InventDim,InventLocationId));
+        inventOnHandQuery.dataSourceTable(tableNum(InventSum)).addGroupByField(fieldNum(InventSum,ItemId));
+        inventOnHandQuery.dataSourceTable(tableNum(InventSum)).addSelectionField(fieldNum(InventSum,PhysicalInvent),SelectionField::Sum);
+        inventOnHandQuery.dataSourceTable(tableNum(InventSum)).addRange(fieldNum(InventSum,PhysicalInvent)).value('> 0');
+
+        queryRun = new QueryRun(inventOnhandQuery);
+        while (queryRun.next())
+        {
+            inventSum = queryRun.get(tableNum(InventSum));
+            inventDim = queryRun.get(tableNum(InventDim));
+
+            select firstonly inventItemLocation
+                where inventItemLocation.ItemId == inventSum.ItemId
+                 join itemLocationInventDim
+                    where itemLocationInventDim.inventDimId == inventItemLocation.inventDimId
+                       && itemLocationInventDim.InventLocationId == inventDim.InventLocationId
+                       && itemLocationInventDim.inventBatchId    == ''
+                       && itemLocationInventDim.InventColorId    == ''
+                       && itemLocationInventDim.InventSizeId     == ''
+                       && itemLocationInventDim.configId         == ''
+                       && itemLocationInventDim.wMSLocationId    == '';
+
+            if (!inventItemLocation.RecId)
+            {
+                inventItemLocation.ItemId = inventSum.ItemId;
+                inventItemLocation.initValue();
+                inventItemLocation.inventDimId = InventDim::findOrCreate(inventDim).inventDimId;
+                inventItemLocation.AVAInvCountNeeded = NoYes::Yes;
+                inventItemLocation.insert();
+            }
+            else
+            {
+                if (year(inventItemLocation.AVAInvCountLast) <= year(today()))
+                {
+                    inventItemLocation.AVAInvCountMaxOnHand = inventSum.PhysicalInvent > inventItemLocation.AVAInvCountMaxOnHand ? inventSum.PhysicalInvent : inventItemLocation.AVAInvCountMaxOnHand;
+                    inventItemLocation.AVAInvCountNeeded = NoYes::Yes;
+                    ttsbegin;
+                    inventItemLocation.selectForUpdate(true);
+                    inventItemLocation.update();
+                    ttscommit;
+                }
+            }
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

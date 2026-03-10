@@ -1,0 +1,580 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>AVATonnageCalcedData</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class AVATonnageCalcedData extends FormRun
+{
+    KCS_TonnageSetup    frmKCS_TonnageSetup;
+    
+    InventSiteId    frmInventSiteId;
+    StartDate       frmStartDate;
+    EndDate         frmEndDate;
+
+    Query                   frmQueryKCS_TonnageCalcedData;
+    QueryBuildDataSource    frmQbdsTransDate;
+    QueryBuildRange         frmQbrTransDate;
+
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>init</c> method.
+    /// </summary>
+    public void init()
+    {
+        frmKCS_TonnageSetup = KCS_TonnageSetup::find();
+
+        super();
+
+        this.initQuery();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>initQuery</c> method.
+    /// </summary>
+    public void initQuery()
+    {
+        //frmQbdsTransDate    = KCS_TonnageCalcedData_DS.query().dataSourceTable( tableNum(KCS_TonnageCalcedData));
+        //frmQbrTransDate     = frmQbdsTransDate.addRange(fieldNum(KCS_TonnageCalcedData, TransDate));
+
+        frmStartDate    = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        frmEndDate      = frmStartDate + frmKCS_TonnageSetup.Days;
+
+        KCS_TonnageCalcedData_StartDate.dateValue(frmStartDate);
+        KCS_TonnageCalcedData_EndDate.dateValue(frmEndDate);
+
+        this.modifyQueryDateRange(true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifyQueryDateRange</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>modifyQueryRange</c> method.
+    /// </summary>
+    public void modifyQueryDateRange(boolean _initMode = false)
+    {
+        //frmQbrTransDate = SysQuery::findOrCreateRange(KCS_TonnageCalcedData_DS.queryBuildDataSource(), fieldNum(KCS_TonnageCalcedData, TransDate));
+        
+        if (frmStartDate && frmEndDate)
+        {
+            //frmQbrTransDate.value(SysQuery::range(frmStartDate, frmEndDate));
+            SysQuery::findOrCreateRange(KCS_TonnageCalcedData_DS.queryBuildDataSource(), fieldNum(KCS_TonnageCalcedData, TransDate)).value(SysQuery::range(frmStartDate, frmEndDate));
+        }
+        else if (frmStartDate)
+        {
+            //frmQbrTransDate.value(SysQuery::range(frmStartDate, DateTimeUtil::maxValue()));
+            SysQuery::findOrCreateRange(KCS_TonnageCalcedData_DS.queryBuildDataSource(), fieldNum(KCS_TonnageCalcedData, TransDate)).value(SysQuery::range(frmStartDate, DateTimeUtil::maxValue()));
+        }
+        else if (frmEndDate)
+        {
+            //frmQbrTransDate.value(SysQuery::range(DateTimeUtil::minValue(), frmEndDate));
+            SysQuery::findOrCreateRange(KCS_TonnageCalcedData_DS.queryBuildDataSource(), fieldNum(KCS_TonnageCalcedData, TransDate)).value(SysQuery::range(DateTimeUtil::minValue(), frmEndDate));
+        }
+        else
+        {
+            //frmQbrTransDate.value(SysQuery::valueUnlimited());
+            SysQuery::findOrCreateRange(KCS_TonnageCalcedData_DS.queryBuildDataSource(), fieldNum(KCS_TonnageCalcedData, TransDate)).value(SysQuery::valueUnlimited());
+        }
+
+        //SysQuery::findOrCreateRange(KCS_TonnageCalcedData_DS.queryBuildDataSource(), fieldNum(KCS_TonnageCalcedData, TransDate)).value(queryValue(frmQbrTransDate));
+        if(!_initMode)
+        {
+            KCS_TonnageCalcedData_DS.executeQuery();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calculateTonnageData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>calculateTonnageData</c> method.
+    /// </summary>
+    public void calculateTonnageData()
+    {
+        Args                locArgs;
+        AVATonnageContract  locAVATonnageContract;
+        AVATonnageExecution locAVATonnageExecution;
+
+        locArgs = new Args();
+        locArgs.caller(this);
+
+        locAVATonnageContract = new AVATonnageContract();
+        
+        locAVATonnageContract.parmArgs(locArgs);
+        locAVATonnageContract.parmAutomaticMode(false);
+        locAVATonnageContract.parmEndDate(KCS_TonnageCalcedData_EndDate.dateValue());
+        locAVATonnageContract.parmInventSiteId(KCS_TonnageCalcedData_InventSiteId.valueStr());
+        locAVATonnageContract.parmStartDate(KCS_TonnageCalcedData_StartDate.dateValue());
+        locAVATonnageContract.parmTonnageDaysForwardCalculation(frmKCS_TonnageSetup.Days);
+        locAVATonnageContract.parmTonnagePercentageWarning(frmKCS_TonnageSetup.PercentWarning);
+
+        locAVATonnageExecution = AVATonnageExecution::newFromArgs(locAVATonnageContract.parmArgs());
+        locAVATonnageExecution.parmDataContract(locAVATonnageContract);
+        locAVATonnageExecution.init();
+
+        locAVATonnageExecution.calcTonnageFromParams();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>CalculateButton</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>clicked</c> method.
+        /// </summary>
+        public void clicked()
+        {
+            super();
+
+            element.calculateTonnageData();
+
+            KCS_TonnageCalcedData_DS.research();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>KCS_TonnageCalcedData_InventSiteId</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>modified</c> method.
+        /// </summary>
+        /// <returns>
+        ///    <c>boolean</c> as return value
+        /// </returns>
+        public boolean modified()
+        {
+            boolean         retVal;
+
+            InventSiteId    qValue;
+    
+            retVal = super();
+    
+            qValue = this.valueStr();
+
+            if (qValue)
+            {
+                SysQuery::findOrCreateRange(KCS_TonnageCalcedData_DS.queryBuildDataSource(), fieldNum(KCS_TonnageCalcedData, InventSiteId)).value(queryValue(qValue));
+            }
+            else
+            {
+                SysQuery::findOrCreateRange(KCS_TonnageCalcedData_DS.queryBuildDataSource(), fieldNum(KCS_TonnageCalcedData, InventSiteId)).value(SysQueryRangeUtil::valueUnlimited());
+            }
+    
+            KCS_TonnageCalcedData_DS.executeQuery();
+
+            return retVal;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>KCS_TonnageCalcedData_StartDate</Name>
+				<Type>Date</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>modified</c> method.
+        /// </summary>
+        /// <returns>
+        ///    <c>boolean</c> as return value
+        /// </returns>
+        public boolean modified()
+        {
+            boolean retVal;
+
+            //StartDate   qValue;
+    
+            retVal = super();
+    
+            frmStartDate    = this.dateValue();
+
+            element.modifyQueryDateRange();
+            /*
+            qValue          = this.dateValue();
+
+            if (qValue)
+            {
+                SysQuery::findOrCreateRange(KCS_TonnageCalcedData_DS.queryBuildDataSource(), fieldNum(KCS_TonnageCalcedData, TransDate)).value(queryValue(qValue));
+            }
+            else
+            {
+                SysQuery::findOrCreateRange(KCS_TonnageCalcedData_DS.queryBuildDataSource(), fieldNum(KCS_TonnageCalcedData, TransDate)).value(SysQueryRangeUtil::valueUnlimited());
+            }
+            */
+            return retVal;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>KCS_TonnageCalcedData_EndDate</Name>
+				<Type>Date</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///    AVA <c>modified</c> method.
+        /// </summary>
+        /// <returns>
+        ///    <c>boolean</c> as return value
+        /// </returns>
+        public boolean modified()
+        {
+            boolean retVal;
+
+            retVal = super();
+    
+            frmEndDate      = this.dateValue();
+
+            element.modifyQueryDateRange();
+
+            return retVal;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>KCS_TonnageCalcedData</Name>
+			<Table>KCS_TonnageCalcedData</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvLines</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvLinesDelivered</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvLinesOpen</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvWeight</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvWeightDelivered</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvWeightOpen</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventSiteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Percent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesOrders</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransDate</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@NDX:NXATonnageCalcedData</Caption>
+		<Pattern xmlns="">SimpleList</Pattern>
+		<PatternVersion xmlns="">1.1</PatternVersion>
+		<Style xmlns="">SimpleList</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>ActionPane</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>ActionPane</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonGroupControl">
+						<Name>ActionPaneButtonGroup</Name>
+						<Type>ButtonGroup</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonControl">
+								<Name>CalculateButton</Name>
+								<HelpText>@NDX:NXATonnageCalculateHelp</HelpText>
+								<Type>Button</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<NormalImage>Calculate</NormalImage>
+								<Text>@NDX:NXATonnageCalculate</Text>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<AlignChildren>No</AlignChildren>
+				<ArrangeMethod>Vertical</ArrangeMethod>
+				<DataSource>KCS_TonnageCalcedData</DataSource>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>CustomFilterGroup</Name>
+				<Pattern>CustomAndQuickFilters</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl>
+						<Name>QuickFilterControl</Name>
+						<FormControlExtension>
+							<Name>QuickFilterControl</Name>
+							<ExtensionComponents />
+							<ExtensionProperties>
+								<AxFormControlExtensionProperty>
+									<Name>targetControlName</Name>
+									<Type>String</Type>
+									<Value>Grid</Value>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>placeholderText</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>defaultColumnName</Name>
+									<Type>String</Type>
+									<Value>Grid_InventSiteId</Value>
+								</AxFormControlExtensionProperty>
+							</ExtensionProperties>
+						</FormControlExtension>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>KCS_TonnageCalcedDataFilterFields</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>KCS_TonnageCalcedData_InventSiteId</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>InventSiteId</ExtendedDataType>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>KCS_TonnageCalcedData_StartDate</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>Date</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>StartDate</ExtendedDataType>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>KCS_TonnageCalcedData_EndDate</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>Date</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>EndDate</ExtendedDataType>
+							</AxFormControl>
+						</Controls>
+						<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+						<DataSource>KCS_TonnageCalcedData</DataSource>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+				<FrameType>None</FrameType>
+				<Style>CustomFilter</Style>
+				<ViewEditMode>Edit</ViewEditMode>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGridControl">
+				<Name>Grid</Name>
+				<ElementPosition>1431655764</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>Grid</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>Grid_TransDate</Name>
+						<Type>Date</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>TransDate</DataField>
+						<DataSource>KCS_TonnageCalcedData</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Grid_InventSiteId</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>InventSiteId</DataField>
+						<DataSource>KCS_TonnageCalcedData</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormIntegerControl">
+						<Name>Grid_SalesOrders</Name>
+						<Type>Integer</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>SalesOrders</DataField>
+						<DataSource>KCS_TonnageCalcedData</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>Grid_Percent</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Percent</DataField>
+						<DataSource>KCS_TonnageCalcedData</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormIntegerControl">
+						<Name>Grid_DlvLines</Name>
+						<Type>Integer</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>DlvLines</DataField>
+						<DataSource>KCS_TonnageCalcedData</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormIntegerControl">
+						<Name>Grid_DlvLinesDelivered</Name>
+						<Type>Integer</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>DlvLinesDelivered</DataField>
+						<DataSource>KCS_TonnageCalcedData</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormIntegerControl">
+						<Name>Grid_DlvLinesOpen</Name>
+						<Type>Integer</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>DlvLinesOpen</DataField>
+						<DataSource>KCS_TonnageCalcedData</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>Grid_DlvWeight</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>DlvWeight</DataField>
+						<DataSource>KCS_TonnageCalcedData</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>Grid_DlvWeightDelivered</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>DlvWeightDelivered</DataField>
+						<DataSource>KCS_TonnageCalcedData</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>Grid_DlvWeightOpen</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>DlvWeightOpen</DataField>
+						<DataSource>KCS_TonnageCalcedData</DataSource>
+					</AxFormControl>
+				</Controls>
+				<AlternateRowShading>No</AlternateRowShading>
+				<DataGroup>Overview</DataGroup>
+				<DataSource>KCS_TonnageCalcedData</DataSource>
+				<ShowRowLabels>No</ShowRowLabels>
+				<Style>Tabular</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXUtilitasDataOpService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Service class for Utilitas data papulation
+/// </summary>
+internal final class NDXUtilitasDataOpService extends SysOperationServiceBase
+{
+    NDXUtilitasDataOpServiceController controller;
+    utcdatetime lastPopulateData;
+
+    identifierName className;
+    identifierName methodName;
+
+    str importKey = 'ImportKey';
+
+    NDXUtilitasDataTransfer lNDXUtilitasDataTransfer;
+    D365PIMCoreImportExport pimCoreImportExport;
+
+    utcdatetime transferBegin;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmController</Name>
+				<Source><![CDATA[
+    public NDXUtilitasDataOpServiceController parmController(NDXUtilitasDataOpServiceController _controller = controller)
+    {
+        controller = _controller;
+        return controller;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    protected void new()
+    {
+        SysOperationExecutionMode executionMode = SysOperationExecutionMode::Asynchronous;
+                
+        className = classId2Name(classIdGet(this));
+        methodName = 'populateUtilitasData';
+        importKey = strFmt('%1%2%3',className, methodName, importKey);
+        lastPopulateData = DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(), DateTimeUtil::getUserPreferredTimeZone());
+
+        controller = NDXUtilitasDataOpServiceController::construct(className, methodName, executionMode);
+        controller.parmDialogCaption("@NDX:NDXUtilitasData");
+
+        pimCoreImportExport = D365PIMCoreImportExport::construct();
+
+        transferBegin = DateTimeUtil::getSystemDateTime();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Creates Utilitas data record out of item
+    /// </summary>
+    /// <param name = "_inventTable">InventTable record</param>
+    public Niedax.Utilitas.UtilitasDataContract createRecord(InventTable _inventTable)
+    {
+        Niedax.Utilitas.UtilitasDataContract utilitasContract;
+        Niedax.PIMCore.Models.Product product;
+
+        if(!_inventTable)
+        {
+            return utilitasContract;
+        }
+        
+        //if everything works then item should allready exist in PIMCore
+        product = pimCoreImportExport.importProduct(_inventTable);
+
+        utilitasContract = new Niedax.Utilitas.UtilitasDataContract();
+        
+        utilitasContract.EAN = product.ean;
+        utilitasContract.ItemId = _inventTable.itemId;
+        utilitasContract.InventTableRecId = _inventTable.RecId;
+        utilitasContract.Company = _inventTable.DataAreaId;
+
+        utilitasContract.Modelnumber = _inventTable.NDXModelNumber;
+
+        utilitasContract.ItemName = _inventTable.NDXProductName1();
+        utilitasContract.ItemName2 = _inventTable.NDXProductName2();
+        utilitasContract.ItemNameAlias = EcoResProduct::find(_inventTable.Product).SearchName;
+
+        utilitasContract.GrossLenght = _inventTable.grossDepth;
+        utilitasContract.GrossWidth = _inventTable.grossWidth;
+        utilitasContract.GrossHeight = _inventTable.grossHeight;
+
+        utilitasContract.Length = _inventTable.NDX_NominalSize_Depth;
+        utilitasContract.Width = _inventTable.NDX_NominalSize_Width;
+        utilitasContract.Height = _inventTable.NDX_NominalSize_Height;
+
+        utilitasContract.TransferBegin = transferBegin;
+        
+        //if product is in PIMCore then collect Keywords, SearchCriteria and Etim data
+        if(product != null && product.id != '')
+        {
+            utilitasContract.ItemGroup = product.getFirstProductBlockTextValue('artikelbezeichnung');
+            utilitasContract.ItemDescription = product.ausschreibungstext;
+
+            Niedax.PIMCore.Models.Features.csFeatureTextarea feature = product.findFeatureByCXMAttributeId(21080);
+            
+            if(feature != null)
+            {
+                utilitasContract.KeyWords = feature.text;
+            }
+            
+            feature = product.findFeatureByCXMAttributeId(35553);
+
+            if(feature != null)
+            {
+                utilitasContract.OPKSearchCriteria = feature.text;
+            }
+
+            //ToDo: Etim still missing in PIMCORE or somewhere else
+        }
+
+        //Fill Related Items
+        this.getRelatedItems(utilitasContract);
+
+        return utilitasContract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getRelatedItems</Name>
+				<Source><![CDATA[
+    private void getRelatedItems(Niedax.Utilitas.UtilitasDataContract _utilitasContract)
+    {
+        Niedax.Utilitas.UtilitasDataContract utilitasContract;
+        EcoResProductRelationTable lEcoResProductRelationTable;
+        EcoResProductRelationType lEcoResProductRelationType;
+        EcoResProductRelationTypeTranslation lEcoResProductRelationTypeTranslation;
+
+        InventTable inventTable, lRelatedItem;
+        
+        if(_utilitasContract != null && _utilitasContract.InventTableRecId)
+        {
+            inventTable = InventTable::findByRecId(_utilitasContract.InventTableRecId);
+            
+            while select lEcoResProductRelationTable 
+                where lEcoResProductRelationTable.Product1 == inventTable.Product
+            {
+                lRelatedItem = InventTable::findByProductInCompany(lEcoResProductRelationTable.Product2, inventTable.DataAreaId);
+                utilitasContract = this.createRecord(lRelatedItem);
+                lEcoResProductRelationType = EcoResProductRelationType::findRecId(lEcoResProductRelationTable.ProductRelationType);
+
+                if(utilitasContract != null)
+                {
+                    utilitasContract.ScopeId = lEcoResProductRelationType.Name;
+                    utilitasContract.ScopeDescription = EcoResProductRelationTypeTranslation::findByProductRelationTypeLanguage(lEcoResProductRelationType.RecId, 'de').Description;
+                    _utilitasContract.addRelatedItem(utilitasContract);
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildItemQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Builds query that hold all InventTable records
+    /// </summary>
+    /// <param name = "_companies">companies</param>
+    /// <returns>Query</returns>
+    protected Query buildItemQuery(NDXUtilitasDataOpContract _utilitasDataOpContract)
+    {
+        QueryBuildDataSource qbds;
+        Query q = new Query();
+
+        if(_utilitasDataOpContract == null || (!_utilitasDataOpContract.parmAllCatalogItems() && _utilitasDataOpContract.parmItemId() == ''))
+        {
+            throw Error("@NDX:NDXUtilitasInfo");
+        }
+
+        qbds = q.addDataSource(tableNum(InventTable));
+        q.allowCrossCompany();
+
+        qbds.company(_utilitasDataOpContract.parmCompanies());
+        qbds.addRange(fieldNum(InventTable, KCS_KAOItemState)).value(SysQuery::valueNot('ARCHIV'));
+        qbds.addRange(fieldNum(InventTable, KCS_IsSalesItem)).value(SysQuery::value(NoYes::Yes));
+
+        if(!_utilitasDataOpContract.parmAllCatalogItems() && _utilitasDataOpContract.parmItemId() != '')
+        {
+            qbds.addRange(fieldNum(InventTable, ItemId)).value(_utilitasDataOpContract.parmItemId());
+        }
+        
+        return q;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Constructor
+    /// </summary>
+    /// <returns>D365PIMCoreExportService instance</returns>
+    static public NDXUtilitasDataOpService construct()
+    {
+        return new NDXUtilitasDataOpService();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateUtilitasData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Populates Utilitas data
+    /// </summary>
+    /// <param name = "_utilitasDataOpContract">NDXUtilitasDataOpContract contract</param>
+    public void populateUtilitasData(NDXUtilitasDataOpContract _utilitasDataOpContract)
+    {
+        InventTable inventTable;
+        QueryRun qr = new QueryRun(this.buildItemQuery(_utilitasDataOpContract));
+       
+        while(qr.next())
+        {
+            inventTable = qr.get(tableNum(InventTable));
+            NDXUtilitasData::findOrCreateByObject(this.createRecord(inventTable));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>startPopulateBatch</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Starts the batch job
+    /// </summary>
+    /// <param name = "_args">aguments</param>
+    static public void startPopulateBatch(Args _args)
+    {
+        NDXUtilitasData ndxUtilitasData;
+        SysOperationStartResult result;
+
+        NDXUtilitasDataOpServiceController controller;
+        NDXUtilitasDataOpService populateService;
+
+        if(_args != null && _args.dataset() == tableNum(NDXUtilitasData) && _args.record() != null)
+        {
+            ndxUtilitasData = _args.record();
+        }
+
+        populateService = NDXUtilitasDataOpService::construct();
+        controller = populateService.parmController();
+        
+        NDXUtilitasDataOpContract utilitasDataOpContract =  controller.getDataContractObject();
+        utilitasDataOpContract.parmItemId(ndxUtilitasData.ItemId);
+        utilitasDataOpContract.initialize();
+
+        result = controller.startOperation();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    static public void main(Args _args)
+    {
+        NDXUtilitasDataOpService::startPopulateBatch(_args);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

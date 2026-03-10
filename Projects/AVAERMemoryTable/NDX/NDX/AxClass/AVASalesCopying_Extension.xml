@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesCopying_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// extension of class SalesCopying
+/// </summary>
+[ExtensionOf(classStr(SalesCopying))]
+final class AVASalesCopying_Extension
+{
+    public str clsQtyCorrectionTxt;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>copyLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA <c>copyLine</c>
+    /// </summary>
+    /// <param name = "_salesLine">SalesLine</param>
+    /// <param name = "_salesLineCopyFromSource">SalesLineCopyFromSource</param>
+    protected void copyLine(SalesLine _salesLine, SalesLineCopyFromSource _salesLineCopyFromSource)
+    {
+        AVASpecialDiscSalesLine         extSpecDiscSL;
+        //boolean                         locUpdateSalesLine;
+        //Args                            locArgs;
+        //AVAItemSetSalesLineExplodeBOM   locClassInstance;
+        //SalesLine                       locSalesLine;
+        SalesLine                       locSalesLineFrom;
+        AVASpecialDiscSalesLine         extSpecDiscSLFrom;
+
+        SalesQty                            locSalesQty;
+        SalesQty                            locSalesQtyOrig;
+        SalesQty                            locSalesQtyEntered;
+        SalesUnit                           locSalesUnit;
+        UnitOfMeasure                       locUnitOfMeasure;
+        SalesQty                            locSalesQtyInt;
+        TmpFrmVirtual                       locTmpFrmVirtual;
+        SalesLineCopyFromCustQuotationTrans locSalesLineCopyFromCustQuotationTrans;
+        CustQuotationTrans                  locCustQuotationTrans;
+        CustQuotationJour                   locCustQuotationJour;
+
+        if(_salesLineCopyFromSource is SalesLineCopyFromCustQuotationTrans)
+        {
+            locTmpFrmVirtual                        = this.tmpFrmVirtualLines;
+            locSalesLineCopyFromCustQuotationTrans  = _salesLineCopyFromSource;
+            locCustQuotationTrans                   = locSalesLineCopyFromCustQuotationTrans.retrieveSource() as CustQuotationTrans;
+            locSalesQtyOrig                         = locSalesLineCopyFromCustQuotationTrans.retrieveSourceQty(); // original quantitity, but not the entered one
+            locSalesQtyEntered                      = locTmpFrmVirtual.Qty;
+            locSalesUnit                            = locCustQuotationTrans.SalesUnit;
+
+            locUnitOfMeasure                        = UnitOfMeasure::find(UnitOfMeasure::unitOfMeasureIdBySymbol(locSalesUnit));
+            if(     locUnitOfMeasure.RecId
+                &&  locUnitOfMeasure.DecimalPrecision   == 0
+                &&  locUnitOfMeasure.UnitOfMeasureClass == UnitOfMeasureClass::Quantity)
+            {
+                // integer value needed
+                ttsbegin;
+                locTmpFrmVirtual.selectForUpdate(true);
+                locTmpFrmVirtual.Qty    = roundUp(locSalesQtyEntered, 1);
+                locTmpFrmVirtual.update();
+                ttscommit;
+            }
+        }
+
+        next copyLine(_salesLine, _salesLineCopyFromSource);
+
+        select firstonly RecId from extSpecDiscSL
+            where extSpecDiscSL.InventTransId == _salesLine.InventTransId;
+        
+        if (_salesLine.InventTransIdReturn != '' && _salesLine.InventTransId != '' && !extSpecDiscSL.RecId)
+        {
+            AVASpecialDiscSalesLine::creatFromOrigSalesLine(_salesLine.InventTransIdReturn,_salesLine.InventTransId);
+            
+            ttsbegin;
+            _salesLine.selectForUpdate(true);
+            _salesLine.update();
+            ttscommit;
+        }
+        
+        locSalesLineFrom = SalesLine::findInventTransId(_salesLine.InventTransIdReturn);
+        if(locSalesLineFrom.RecId) // credit note position since InventTransIdReturn set
+        {
+            if (extSpecDiscSL.RecId)
+            {
+                extSpecDiscSL       = AVASpecialDiscSalesLine::find(_salesLine.InventTransId);
+                extSpecDiscSLFrom   = AVASpecialDiscSalesLine::find(locSalesLineFrom.InventTransId);
+                ttsbegin;
+                buf2Buf(extSpecDiscSLFrom, extSpecDiscSL);
+                extSpecDiscSL.InventTransId = _salesLine.InventTransId;
+                extSpecDiscSL.selectForUpdate(true);
+                extSpecDiscSL.update();
+                ttscommit;
+            }
+
+            if(     locSalesLineFrom.AVAQuotationId
+                ||  locSalesLineFrom.AVAPriceSurchargeCode 
+                ||  locSalesLineFrom.AVAPriceSurchargePercentage    )
+            {
+                _salesLine.AVAQuotationId                 = locSalesLineFrom.AVAQuotationId;
+                _salesLine.AVAPriceSurchargeCode          = locSalesLineFrom.AVAPriceSurchargeCode;
+                _salesLine.AVAPriceSurchargePercentage    = locSalesLineFrom.AVAPriceSurchargePercentage;
+                _salesLine.AVAOrigQuotationId             = locSalesLineFrom.AVAQuotationId;
+
+                //locUpdateSalesLine = true;
+                ttsbegin;
+                _salesLine.selectForUpdate(true);
+                _salesLine.update();
+                ttscommit;
+            }
+        }
+
+        if(_salesLineCopyFromSource.retrieveSource().TableId  == tableNum(CustQuotationTrans))
+        {
+            locCustQuotationTrans = _salesLineCopyFromSource.retrieveSource();
+            locCustQuotationJour  = locCustQuotationTrans.custQuotationJour();
+            _salesLine.AVAQuotationId = locCustQuotationTrans.origQuotationId;
+            _salesLine.AVAOrigQuotationId  = locCustQuotationTrans.origQuotationId;
+            _salesLine.KCS_BOSCommissCutPct = locCustQuotationJour.salesQuotationTable().AVACBSCommissCutPct;
+            _salesLine.copyCommissSplitFromQuotation(locCustQuotationJour.KCS_QuotationId);
+                    
+        }
+
+        if (_salesLine.AVAOrigQuotationId != '')
+        {
+            boolean    hasQuotErrors, hasQuotWarnung;
+            [hasQuotErrors, hasQuotWarnung] = _salesLine.AVAcheckOrigQuotation();
+            if (hasQuotErrors)
+            {
+                _salesLine.AVAQuotationId = '';
+                _salesLine.AVApriceCalculation(true,true,true,true,true);
+                _salesLine.AVAEDIQuotationStatus = AVAEDIQuotationStatus::Error;
+            }
+        }
+
+       // _salesLine.reread();
+        if(_salesLine.returnItem())
+        {
+            _salesLine.LineAmount = _salesLine.calcLineAmount(_salesLine.ExpectedRetQty);
+        }
+            
+        ttsbegin;
+        _salesLine.selectForUpdate(true);
+        _salesLine.update();
+        ttscommit;
+
+        /*if(     _salesLine.AVAItemSet 
+            &&  _salesLine.avaIsItemSetPositionExpandable() )
+        {
+            locArgs = new Args();
+            locArgs.caller(this);
+            locSalesLine = SalesLine::findRecId(_salesLine.RecId);
+            locArgs.record(locSalesLine);
+            
+            locClassInstance = AVAItemSetSalesLineExplodeBOM::newFromArgs(locArgs);
+            locClassInstance.init();
+            locClassInstance.run();
+        }*/
+
+        locSalesQty = _salesLine.SalesQty;
+
+        if(     locSalesQty > locSalesQtyEntered
+            &&  locSalesQty != 0            )
+        {
+            if(_salesLineCopyFromSource is SalesLineCopyFromCustQuotationTrans)
+            {
+                if(     _salesLine.AVAItemSet             != NoYes::Yes
+                    &&  _salesLine.AVAItemSetComponent    != NoYes::Yes   )
+                {
+                    if(clsQtyCorrectionTxt != '')
+                    {
+                        clsQtyCorrectionTxt += '\n';
+                    }
+                    clsQtyCorrectionTxt += strFmt("%1 %2: ", "@NDX:NXAPosDot", _salesLine.LineNum);
+                    clsQtyCorrectionTxt += strFmt(  "@NDX:NXAItemP1QuantityIncreasedFromP2ToNextPossibleP3",
+                                                    _salesLine.ItemId,
+                                                    locSalesQtyEntered,
+                                                    locSalesQty                                             );
+                }
+                else if(_salesLine.AVAItemSet == NoYes::Yes)
+                {
+                    if(clsQtyCorrectionTxt != '')
+                    {
+                        clsQtyCorrectionTxt += '\n';
+                    }
+                    clsQtyCorrectionTxt += strFmt("%1 %2: ", "@NDX:NXAPosDot", _salesLine.LineNum);
+                    clsQtyCorrectionTxt += strFmt(  "@AVAItemSet:ItemSetP1QuantityIncreasedFromP2ToNextPossibleP3",
+                                                    _salesLine.ItemId,
+                                                    locSalesQtyEntered,
+                                                    locSalesQty                                                     );
+                }
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyLines</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Copies all the lines from the given source record.
+    /// </summary>
+    /// <returns>
+    ///     true if the lines were copied sucessfully; otherwise, false.
+    /// </returns>
+    protected boolean copyLines()
+    {
+        boolean retVal;
+        
+        retVal = next copyLines();
+
+        if(clsQtyCorrectionTxt)
+        {
+            warning(clsQtyCorrectionTxt);
+            //Box::info(clsQtyCorrectionTxt);
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

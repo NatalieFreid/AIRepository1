@@ -1,0 +1,481 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAGAEBExportD94CreateFile</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed by AVANADE
+/// </summary>
+class AVAGAEBExportD94CreateFile extends RunBaseBatch
+{
+    CustQuotationJour       custQuotationJour;
+
+    #define.CurrentVersion(1)
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmcustQuotationJour</Name>
+				<Source><![CDATA[
+    public custQuotationJour parmcustQuotationJour(custQuotationJour _custQuotationJour = custQuotationJour)
+    {
+        custQuotationJour  = _custQuotationJour;
+        return custQuotationJour;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    public container pack()
+    {
+        return [#CurrentVersion];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    public boolean unpack(container packedClass)
+    {
+        Version version = runbase::getVersion(packedClass);
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version] = packedClass;
+                break;
+            default:
+                return false;
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    static AVAGAEBExportD94CreateFile construct(CustQuotationJour _custQuotationJour)
+    {
+        AVAGAEBExportD94CreateFile createFile = new AVAGAEBExportD94CreateFile();
+
+        createFile.parmcustQuotationJour(_custQuotationJour);
+
+        return createFile;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <returns>description</returns>
+    public static ClassDescription description()
+    {
+        return "@NDX:NXAGAEBExport";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    protected boolean canRunInNewSession()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runOperationNow</Name>
+				<Source><![CDATA[
+    protected void runOperationNow()
+    {
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canGoBatchJournal</Name>
+				<Source><![CDATA[
+    protected boolean canGoBatchJournal()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runsImpersonated</Name>
+				<Source><![CDATA[
+    public boolean runsImpersonated()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendGAEB</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    public void sendGAEB()
+    {
+        str                             strFileName, quotDate, quotTime, lineOZ, lineArtNr, lineME;
+        real                            headDiscAmount, linePrNetto;
+        int                             lfdNr = 0, totalObj = 0, totalEle = 0;
+        CustQuotationTrans              custQuotationTrans;
+        AVASpecialDiscQuotationJour     manualDiscQuotationJour;
+        AVASalesParameters              gaebParams = AVASalesParameters::find();
+        DocuRef                         docuRef, addDocuRef;
+        DocuValue                       addDocuValue;                                    
+        Boolean                         doCR;                                       
+        AmountCur                       linePrNetto2; 
+        CommaTextStreamIo               addstream;  
+        TextStreamIo                    io;
+        LogisticsPostalAddress          Companyaddress, deliveryAddress;
+        ContactPerson                   contactPerson;
+        HcmWorker                       workerSalesTaker;
+        utcdatetime                     fileDateTime;
+        str                             FileExtension;
+        #File
+
+
+        if(!custQuotationJour)
+        {
+            throw error("@SYS83964");
+        }
+
+        fileDateTime = DateTimeUtil::applyTimeZoneOffset(custQuotationJour.createdDateTime, DateTimeUtil::getUserPreferredTimeZone());
+        quotDate = date2str(DateTimeUtil::date(fileDateTime), 123, DateDay::Digits2, DateSeparator::Dot, DateMonth::Digits2, DateSeparator::Dot, DateYear::Digits4);
+        quotTime = time2str(DateTimeUtil::time(fileDateTime), TimeSeparator::Auto, TimeSeparator::Auto);
+        quotTime = substr(quotTime,1,5);
+
+        select firstonly manualDiscQuotationJour where manualDiscQuotationJour.QuotationJourRefRecId == custQuotationJour.RecId;
+        headDiscAmount = manualDiscQuotationJour.SpecialDiscountAmount1 + manualDiscQuotationJour.SpecialDiscountAmount2 + manualDiscQuotationJour.SpecialDiscountAmount3;
+
+        Companyaddress = DirParty::primaryPostalAddress(CompanyInfo::find().RecId);
+        deliveryAddress = LogisticsPostalAddress::findRecId(custQuotationJour.DeliveryPostalAddress);
+
+        contactPerson = ContactPerson::find(custQuotationJour.salesQuotationTable().ContactPersonId);
+        workerSalesTaker    = HcmWorker::find(custQuotationJour.WorkerSalesTaker);
+        
+        //stream = CommaTextStreamIo::constructForWrite();
+        io = TextStreamIo::constructForWrite();
+
+        io.write('#begin[GAEB]');
+        totalObj++;
+        io.write('  #begin[GAEBInfo]');
+        totalObj++;
+        io.write(strFmt('       [Version]%1[end]', gaebParams.GAEBD94Version));
+        totalEle++;
+        io.write(strFmt('       [VersMon]%1[end]', gaebParams.GAEBD94VersionMonat));
+        totalEle++;
+        io.write(strFmt('       [VersJahr]%1[end]', gaebParams.GAEBD94VersionYear));
+        totalEle++;
+        io.write(strFmt('       [Datum]%1[end]', quotDate));
+        totalEle++;
+        io.write(strFmt('       [Uhrzeit]%1[end]', quotTime));
+        totalEle++;
+        io.write(strFmt('       [ProgSystem]%1[end]', gaebParams.GAEBProg));
+        totalEle++;
+        io.write(strFmt('       [Zeichensatz]%1[end]', gaebParams.GAEBD94CharSet));
+        totalEle++;
+        io.write('  #end[GAEBInfo]');
+
+        if(/*custQuotationJour.salesQuotationTable().KCS_GAEBHeadDisc() && */headDiscAmount != 0)
+        {
+            io.write('   #begin[Vergabe]');
+            totalObj++;
+            io.write('      #begin[LV]');
+            totalObj++;
+            io.write('          #begin[LVInfo]');
+            totalObj++;
+            io.write(strFmt('              [NachlassProz]%1[end]',num2str(headDiscAmount, 0, 2, 1, 0)));
+            totalEle++;
+            io.write('          #end[LVInfo]');
+            io.write('      #end[LV]');
+            io.write('  #end[Vergabe]');
+        }
+
+        io.write('  #begin[PrjInfo]');
+        totalObj++;
+        io.write(strFmt('      [Name]%1[end]', custQuotationJour.KCS_KBVBuildingProjectID));
+        totalEle++;
+        io.write('      #begin[ZusText]');
+        totalObj++;
+        io.write(strFmt('          [Text]Unsere Angebotsnummer: %1', custQuotationJour.salesQuotationTable().QuotationId));
+        io.write(strFmt('           Bauvorhaben-Nummer: %1', custQuotationJour.KCS_KBVBuildingProjectID));
+        io.write(strFmt('           Bauvorhaben-Bezeichnung: %1', custQuotationJour.KCS_KBVSubject));
+        io.write(' ');
+        io.write(strFmt('           %1', gaebParams.GAEBAdditionText));
+
+        while select docuRef order by docuRef.RecId desc
+                 where docuRef.RefTableId   == tableNum(CustQuotationJour) &&
+                       docuRef.RefRecId     == custQuotationJour.RecId 
+        {
+            io.write(' ');
+            io.write(strFmt('           %1', docuRef.Notes));
+        }
+
+        io.write('          [end]');
+        totalEle++;
+        io.write('      #end[ZusText]');
+        io.write('  #end[PrjInfo]');
+
+        io.write('  #begin[Bestellung]');
+        totalObj++;
+        io.write('      [DP]94[end]');
+        totalEle++;
+        io.write('      #begin[BestInfo]');
+        totalObj++;
+        io.write('          [AnfrArt]P[end]'); 
+        totalEle++;
+        io.write(strFmt('           [AnfrNrKunde]%1[end]', custQuotationJour.salesQuotationTable().KCS_GAEBInquiry));
+        totalEle++;
+        io.write(strFmt('           [AngebNrLief]%1[end]', custQuotationJour.salesQuotationTable().QuotationId));
+        totalEle++;
+        io.write(strFmt('           [PrBindDatum]%1[end]', custQuotationJour.salesQuotationTable().QuotationExpiryDate));
+        totalEle++;
+        io.write('           [VersArt]Lieferung[end]');
+        totalEle++;
+        io.write(strFmt('           [Wae]%1[end]', custQuotationJour.CurrencyCode));
+        totalEle++;
+        io.write(strFmt('           [AbgabeDatum]%1[end]', custQuotationJour.salesQuotationTable().QuotationExpiryDate));
+        totalEle++;
+        io.write('      #end[BestInfo]');
+
+        io.write('      #begin[BestLieferant]'); 
+        totalObj++;
+        io.write('          #begin[Adresse]'); 
+        totalObj++;
+        io.write(strFmt('               [Name1]%1[end]', CompanyInfo::find().name()));
+        totalEle++;
+        io.write(strFmt('               [Strasse]%1[end]', Companyaddress.Street));
+        totalEle++;
+        io.write(strFmt('               [PLZ]%1[end]', Companyaddress.ZipCode));
+        totalEle++;
+        io.write(strFmt('               [Ort]%1[end]', Companyaddress.City));
+        totalEle++;
+        io.write(strFmt('               [AnsprPartner]%1[end]', workerSalesTaker.name()));
+        totalEle++;
+        io.write(strFmt('               [Telefon]%1[end]', workerSalesTaker.phone() + workerSalesTaker.phoneLocal()));
+        totalEle++;
+        io.write(strFmt('               [Fax]%1[end]', CompanyInfo::find().teleFax()));
+        totalEle++;
+        io.write(strFmt('               [Email]%1[end]', workerSalesTaker.email()));
+        totalEle++;
+        io.write('          #end[Adresse]');
+        io.write('      #end[BestLieferant]');
+        io.write('      #begin[BestKunde]'); 
+        totalObj++;
+        io.write('          #begin[Adresse]'); 
+        totalObj++;
+        io.write(strFmt('               [Name1]%1[end]', custQuotationJour.DeliveryName));
+        totalEle++;
+        io.write(strFmt('               [Strasse]%1[end]', deliveryAddress.Street));
+        totalEle++;
+        io.write(strFmt('               [PLZ]%1[end]', deliveryAddress.ZipCode));
+        totalEle++;
+        io.write(strFmt('               [Ort]%1[end]', deliveryAddress.City));
+        totalEle++;
+        io.write(strFmt('               [AnsprPartner]%1[end]', contactPerson.partyName()));
+        totalEle++;
+        io.write(strFmt('               [Telefon]%1[end]', contactPerson.phone() + contactPerson.phoneLocal()));
+        totalEle++;
+        io.write(strFmt('               [Fax]%1[end]', contactPerson.telefax()));
+        totalEle++;
+        io.write(strFmt('               [Email]%1[end]', contactPerson.email()));
+        totalEle++;
+        io.write('          #end[Adresse]');
+        io.write('      #end[BestKunde]');
+
+        while select custQuotationTrans where custQuotationTrans.QuotationId == custQuotationJour.QuotationId
+        {
+            lfdNr++;
+
+            if(custQuotationTrans.KCS_GAEBOZ)
+            {
+                lineOZ = custQuotationTrans.KCS_GAEBOZ;
+            }
+            else
+            {
+                lineOZ = '';
+            }
+
+            lineArtNr = custQuotationTrans.KCS_ModelNumber;
+            if(strlen(lineArtNr) > 15)
+            {
+                lineArtNr = substr(lineArtNr, 1, 15);
+            }
+            lineME = custQuotationTrans.salesUnitTxt();
+            if(strlen(lineME) > 4)
+            {
+                lineME = substr(lineMe, 1, 4);
+            }
+            linePrNetto2 = SalesQuotationLine::findInventTransId(custQuotationTrans.InventTransId).KCS_CalcPDPPrice;
+            if (linePrNetto2)
+            {
+                linePrNetto = linePrNetto2;
+            }
+            else
+            {
+                linePrNetto = custQuotationTrans.LineAmount / (custQuotationTrans.Qty / custQuotationTrans.PriceUnit);
+            }
+            //if(!custQuotationJour.salesQuotationTable().KCS_GAEBHeadDisc())
+            linePrNetto = linePrNetto * ((100-headDiscAmount) / 100);
+
+            io.write('      #begin[BestPosition]'); 
+            totalObj++;
+            io.write(strFmt('           [Lfdnr]%1[end]', lfdNr)); 
+            totalEle++;
+            if (custQuotationTrans.KCS_CRMIsAlternativeLine)
+            {
+                io.write('          [PosKennZ]A[end]'); 
+                totalEle++;
+            }
+            else
+            {
+                io.write('          [PosKennZ]N[end]'); 
+                totalEle++;
+            }
+            io.write(strFmt('           [OZ]%1[end]', lineOZ));
+            totalEle++;
+            if (custQuotationTrans.KCS_QLInternalPosition)
+            {
+                io.write(strFmt('           [UnterPosNr]%1[end]', custQuotationTrans.KCS_QLInternalPosition));
+                totalEle++;
+            }
+            io.write(strFmt('           [EAN]%1[end]', InventItemBarcode::findItemId(custQuotationTrans.itemid,false,false).itemBarCode));
+            totalEle++;
+            io.write(strFmt('           [ArtNr]%1[end]', lineArtNr));
+            totalEle++;
+            io.write(strFmt('           [ArtMenge]%1[end]', num2str(custQuotationTrans.Qty, 0, 2, 2, 0)));
+            totalEle++;
+            io.write(strFmt('           [ME]%1[end]', lineME));
+            totalEle++;
+            io.write(strFmt('           [ArtKurztext]%1 %2 %3[end]', custQuotationTrans.KCS_ModelNumber, custQuotationTrans.NDXProductName1, custQuotationTrans.NDXProductName2));
+            totalEle++;
+            if (custQuotationTrans.Name)
+            {
+                io.write(strFmt('           [ArtLangtext]%1[end]', custQuotationTrans.Name));
+                totalEle++;
+            }
+            else
+            {
+                io.write(strFmt('           [ArtLangtext]%1 %2[end]', custQuotationTrans.NDXProductName1, custQuotationTrans.NDXProductName2));
+                totalEle++;
+            }
+
+            docuRef = null;
+            select firstOnly docuRef where docuRef.RefTableId   == tableNum(CustQuotationTrans) &&
+                                       docuRef.RefRecId     == custQuotationTrans.RecId;
+            if(docuRef)
+            {
+                docuRef = null;
+                doCR = false;
+                io.write('          [ArtKomm]');
+                totalEle++;
+                while select docuRef order by docuRef.RecId desc
+                         where docuRef.RefTableId   == tableNum(CustQuotationTrans) &&
+                               docuRef.RefRecId     == custQuotationTrans.RecId
+                {
+                    if(doCR)
+                    {
+                        io.write(' ');
+                    }
+                    io.write(strFmt('%1',docuRef.Notes));
+                    doCR = true;
+                }
+                io.write('[end]');
+            }
+            io.write(strFmt('           [PrNetto]%1[end]', linePrNetto));
+            totalEle++;
+            io.write(strFmt('           [PrBasis]%1[end]', real2int(custQuotationTrans.PriceUnit)));
+            totalEle++;
+            io.write('      #end[BestPosition]');
+        }
+        io.write('  #end[Bestellung]');
+        io.write(strFmt('#end[GAEB]%1|%2', totalObj, totalEle));
+        //conData = conIns(conData, i, '#end[GAEB]' + strfmt('%1', totalObj) + '|' + strfmt('%1', totalEle));
+
+        //stream.outFieldDelimiter(#delimiterCRLF); 
+        //stream.writeExp(conData);
+
+        addDocuRef.initValue();
+        addDocuRef.RefCompanyId = curext();
+        addDocuRef.RefTableId = custQuotationJour.TableId;
+        addDocuRef.RefRecId = custQuotationJour.RecId;
+        //addDocuRef.TypeId   = DocuType::findGroup(DocuTypeGroup::File).TypeId;
+        addDocuRef.TypeId   = smmParametersTable::find().KCS_DocuTypeIdForGAEB;
+           
+        addDocuRef.insert();
+        addDocuValue.initFromDocuRef(addDocuRef);
+        addDocuValue.insert();
+            
+        //file::SendFileToUser(stream.getStream(), strFmt('%1%2', custQuotationJour.QuotationId, '.d94'));
+
+        FileExtension = this.findFileExtension();
+        //strFileName = custQuotationJour.QuotationId + FileExtension;
+        strFileName = custQuotationJour.KCS_QuotationId + FileExtension;
+        //FileUploadTemporaryStorageResult fileUploadResult = File::SendFileToTempStore_GetResult(stream.getStream(), strFileName);
+        FileUploadTemporaryStorageResult fileUploadResult = File::SendFileToTempStore_GetResult(io.getStream(), strFileName);
+        str                         fileUrl;
+        fileUrl     = fileUploadResult.getDownloadUrl();
+        addStream   = CommaTextStreamIo::constructForAppend(File::UseFileFromURL(fileUrl));
+
+        DocumentManagement::attachFileForDocuRefRecord(addDocuRef.RecId, addstream.getStream(), strfileName, custQuotationJour.QuotationId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findFileExtension</Name>
+				<Source><![CDATA[
+    private str findFileExtension()
+    {
+        DocuRef     docuRef;
+        DocuValue   DocuValue;
+        SalesQuotationTable sqt = custQuotationJour.salesQuotationTable();
+        str         ret = '.d94';
+
+        if (sqt.KCS_GAEBImportID)
+        {
+            select firstOnly1 docuRef join docuValue where docuRef.RefTableId     == sqt.TableId                &&
+                                                               docuRef.RefRecId       == sqt.RecId                  &&
+                                                               docuValue.RecId        == docuRef.ValueRecId                     &&
+                                                               (docuValue.FileType == 'd93' || docuValue.FileType == 'p93')     &&
+                                                               docuRef.KCS_GAEBImport == NoYes::Yes                             &&
+                                                               docuRef.typeid         == smmParametersTable::find().KCS_DocuTypeIdForGAEB;
+            if(!docuRef)
+            {
+                select firstOnly1 docuRef join docuValue order by docuRef.createdDateTime desc
+                                                             where docuRef.RefTableId     == sqt.TableId &&
+                                                                   docuRef.RefRecId       == sqt.RecId   &&
+                                                                   docuValue.RecId        == docuRef.ValueRecId      &&
+                                                                   (docuValue.FileType == 'd93' || docuValue.FileType == 'p93') &&
+                                                                   docuRef.typeid         == smmParametersTable::find().KCS_DocuTypeIdForGAEB;
+            } 
+            if (DocuValue.FileType == 'p93')
+            {
+                ret = '.p94';
+            }
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

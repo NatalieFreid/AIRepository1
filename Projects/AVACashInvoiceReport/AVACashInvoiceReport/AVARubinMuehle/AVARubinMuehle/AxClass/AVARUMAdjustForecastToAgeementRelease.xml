@@ -1,0 +1,711 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVARUMAdjustForecastToAgeementRelease</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Class AVARUMAdjustForecastToAgeementRelease adjusts open quantities in planning acc to purch/sales 
+ /// to futurue plannng records
+/// </summary>
+public class AVARUMAdjustForecastToAgeementRelease extends RunBaseBatch implements BatchRetryable
+{
+    ForecastModelHeadId     modelId;
+    Range                   agreementId;
+    ItemId                  itemid;
+    
+    DialogField             dfModelId, dfAgreementId, dfItemid;
+    
+    ForecastPurch           mForecastPurchBefore;
+    UnitOfMeasureSymbol     kgSymbolCache;
+
+    #define.CurrentVersion(1)
+    #localmacro.CurrentList
+        modelId,
+        agreementId,
+        itemid
+    #endmacro
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>canGoBatchJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Job is batchable
+    /// </summary>
+    /// <returns>Yes</returns>
+    public boolean canGoBatchJournal()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Create dialog fields
+    /// </summary>
+    /// <returns>The dialog</returns>
+    public Object dialog()
+    {
+        DialogRunbase       dialog = super();
+
+        dfModelId=dialog.addFieldValue(extendedtypestr(ForecastModelHeadId), modelId);
+        dfAgreementId=dialog.addFieldValue(extendedtypestr(Range), agreementId);
+        dfItemid=dialog.addFieldValue(extendedtypestr(ItemId), itemid);
+
+        return dialog;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFromDialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the dialog values
+    /// </summary>
+    /// <returns>true if sucessfully</returns>
+    public boolean getFromDialog()
+    {
+        modelId=dfModelId.value();
+        agreementId=dfAgreementId.value();
+        itemid=dfItemid.value();
+
+        return super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Packs class data
+    /// </summary>
+    /// <returns>packed container</returns>
+    public container pack()
+    {
+        return [#CurrentVersion,#CurrentList];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Runs the process
+    /// </summary>
+    public void run()
+    {
+        if (modelId && agreementId && itemid)
+        {
+            this.doGroup(modelId, agreementId, itemid);
+        }
+        else
+        {
+            this.doAll(modelId);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runsImpersonated</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Enable runsImpersonated
+    /// </summary>
+    /// <returns>Yes</returns>
+    public boolean runsImpersonated()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Unpack the object data
+    /// </summary>
+    /// <param name = "packedClass">Packed container</param>
+    /// <returns>true if unpacking wass successfully</returns>
+    public boolean unpack(container packedClass)
+    {
+        Version version = RunBase::getVersion(packedClass);
+        ;
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version,#CurrentList] = packedClass;
+                break;
+            default:
+                return false;
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Validates dialog data
+    /// </summary>
+    /// <param name = "_calledFrom">Caller dialog</param>
+    /// <returns>true if validation was successfully</returns>
+    public boolean validate(Object _calledFrom = null)
+    {
+        if (!dfModelId.value())
+        {
+            return checkFailed(strFmt("@SYS26332", fieldpname(ForecastPurch, ModelId)));
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Class description
+    /// </summary>
+    /// <returns>Class description</returns>
+    static ClassDescription description()
+    {
+        return "@AVARUM:AVARUMAdjustForecastToAgeementReleaseLbl";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isRetryable</Name>
+				<Source><![CDATA[
+    [Hookable(false)]
+    public final boolean isRetryable()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Enable canRunInNewSession
+    /// </summary>
+    /// <returns>no</returns>
+    protected boolean canRunInNewSession()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>doGroup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Run process for a goup
+    /// </summary>
+    /// <param name = "_modelId">The model</param>
+    /// <param name = "_agreementId">AgreementId to run for</param>
+    /// <param name = "_itemid">Itemid to run for</param>
+    public void doGroup(ForecastModelHeadId _modelId, Range _agreementId, ItemId _itemid)
+    {
+        TransDate startDate, endDate, dateNow=DateTimeUtil::getSystemDate(DateTimeUtil::getCompanyTimeZone());
+        TransDate  calcdate= mkDate(1, mthOfYr(dateNow), year(dateNow)) -1; // letzter Tag vormonat
+
+        [startDate, endDate]=this.subGetGroupStartEndDate(_modelId, _agreementId, _itemid, calcdate);
+        if (startDate==datenull())
+        {
+            return;
+        }
+
+        this.doOne(_modelId, _agreementId, _itemid, startDate, endDate, calcdate);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getReleasedQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calculates the released quantity for released agreements
+    /// </summary>
+    /// <param name = "_agreementId">Agreement Id</param>
+    /// <param name = "_itemid">The itemid </param>
+    /// <param name = "_fromDate"> Date from</param>
+    /// <param name = "_toDate">Date to</param>
+    /// <returns>Calculated released quantitiy</returns>
+    protected Qty getReleasedQty(Range _agreementId, ItemId _itemid, TransDate _fromDate, TransDate _toDate)
+    {
+        Qty rc=0;
+        Recid agreementHeaderRecid=this.subGetAgreementHeaderRecid(_agreementId);
+        if (agreementHeaderRecid)
+        {
+            AgreementLineQuantityCommitment aline;
+            select firstonly aline
+                where aline.Agreement==agreementHeaderRecid
+                   && aline.ItemId==_itemid
+                   && aline.ItemDataAreaId==curExt();
+            if (aline)
+            {
+                // Buchungen aller Freigabeauftragspositionen summieren, wo DatePhyiscal zwischen von/bis Datum
+                InventTrans                 locInventTrans;
+                InventTransOrigin           locInventTransOrigin;
+
+                Common salesPurchLine=this.subStartInventoryQuery(aline);
+                while (salesPurchLine)
+                {
+                    SalesPurchLine splMap=salesPurchLine;
+                    SalesPurchLineInterface salesPurchLineInterface=SalesPurchLineInterface::createInstance(splMap);
+                    InventTransId rangeInventTransId=salesPurchLineInterface.parmInventTransId();
+                    select sum(Qty) from locInventTrans
+                        join locInventTransOrigin
+                        where locInventTransOrigin.InventTransId==rangeInventTransId
+                          && locInventTrans.inventTransOrigin==locInventTransOrigin.RecId
+                          && locInventTrans.DatePhysical>=_fromDate
+                        && locInventTrans.DatePhysical<=_toDate;
+                    rc+=locInventTrans.Qty;
+
+                    next salesPurchLine;
+                }
+            }
+        }
+        
+        return rc;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unitIdKg</Name>
+				<Source><![CDATA[
+    protected UnitOfMeasureSymbol unitIdKg()
+    {
+        if (!kgSymbolCache)
+        {
+            kgSymbolCache=AVARUMTransferAgreement2Forecast::evalKgSymbol();
+        }
+        return kgSymbolCache;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>doOne</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Run for one element
+    /// </summary>
+    /// <param name = "_modelId">The model Id</param>
+    /// <param name = "_agreementId">The agreement Id</param>
+    /// <param name = "_itemid">The itemid</param>
+    /// <param name = "_fromDate">The form date</param>
+    /// <param name = "_toDate">The to date</param>
+    /// <param name = "_calcDate">Date to calc for</param>
+    public void doOne(ForecastModelHeadId _modelId, Range _agreementId, ItemId _itemid, TransDate _fromDate, TransDate _toDate,
+            TransDate _calcDate)
+    {
+        Counter       numLines;
+        UnitOfMeasureSymbol unitSalesPurch, unitInvent;
+        
+        unitInvent=InventTableModule::find(_itemid, ModuleInventPurchSales::Invent).UnitId;
+        [unitSalesPurch, numLines]=this.subGetLinesAndUnit(_modelId, _agreementId, _itemid, _fromDate, _toDate);
+        unitSalesPurch=this.unitIdKg();  // always kg
+        this.subInitGetForecastBefore();
+
+        Qty lastLineDiff=0, nextDiff=0;
+
+        BudgetMap locBugetMap=this.subStartCalcForcastQuery(_modelId, _agreementId, _itemid, _fromDate, _toDate);
+        while (locBugetMap)
+        {
+            TransDate qtyDateFrom, qtyDateTo;
+            qtyDateFrom=this.subGetForecastBeforeStartDate(_modelId, _agreementId, _itemid, locBugetMap);
+
+            Qty lastNextDiff=nextDiff;
+            Qty qty=0;
+            qtyDateTo=locBugetMap.StartDate;
+            if (_calcDate>qtyDateTo)
+            {
+                // Werte nur bis _calcDate berechnen, aber auch auf die zukuenftigen Planung verteilen
+                qty=this.getReleasedQty(_agreementId, _itemid, qtyDateFrom, qtyDateTo);                
+                //not: qty=InventTable::unitConvert(_itemid, unitInvent,unitSalesPurch, unitInvent, qty);  inventQty ok
+                Qty qtyDiff=locBugetMap.Qty-qty;
+                if (qtyDiff)
+                {
+                    Qty wkQty=(qtyDiff/numLines);
+                    wkQty= roundDownDec(wkQty, UnitOfMeasure::findBySymbol(unitSalesPurch).DecimalPrecision);
+                    Qty lastQty=qtyDiff-(wkQty*(numLines-1));
+                    lastLineDiff+=lastQty;
+                    nextDiff+=wkQty;
+                }
+            }
+            
+            this.subUpdate(locBugetMap.recid, lastNextDiff, qty);
+
+            numLines--;
+            this.subNextGetForecastBefore(locBugetMap);
+            
+            next locBugetMap;
+        }
+
+        int x=1;  // for debuggin purposes
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>doAll</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Do all for a model
+    /// </summary>
+    /// <param name = "_modelId">Model to run for</param>    
+    public void doAll(ForecastModelHeadId _modelId)
+    {
+        this.subDoAll(_modelId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>subDoAll</Name>
+				<Source><![CDATA[
+    //Purch related methods - overwrite for sales
+
+    /// <summary>
+    /// Method to overwrite to do All
+    /// </summary>
+    /// <param name = "_modelId"></param>
+    protected void subDoAll(ForecastModelHeadId _modelId)
+    {
+        ForecastPurch  locForecastPurch;
+
+        while select locForecastPurch
+            group by AVARUMAgreementId, ItemId
+            where locForecastPurch.ModelId==_modelId
+             && locForecastPurch.AVARUMProcessed==false
+        {
+            this.doGroup(_modelId, locForecastPurch.AVARUMAgreementId, locForecastPurch.ItemId);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>subGetGroupStartEndDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Method to overwrite to get start end date informations
+    /// </summary>
+    /// <param name = "_modelId">The modelId</param>
+    /// <param name = "_agreementId">The AgeementId</param>
+    /// <param name = "_itemid">The item id</param>
+    /// <param name = "_calcDate">The date to calc for</param>
+    /// <returns>Start and end date</returns>
+    protected Container subGetGroupStartEndDate(ForecastModelHeadId _modelId, Range _agreementId, ItemId _itemid, TransDate _calcDate)
+    {
+        TransDate startDate, endDate;
+
+        ForecastPurch  locForecastPurch;
+        select minof(StartDate) from locForecastPurch
+            where locForecastPurch.ItemId==_itemid
+              &&locForecastPurch.AVARUMAgreementId==_agreementId
+            && locForecastPurch.ModelId==_modelId
+            && locForecastPurch.AVARUMProcessed==false;
+
+        if (locForecastPurch.StartDate==dateNull()
+            || locForecastPurch.StartDate >= _calcdate)
+        {
+            return [startDate, endDate]; //Datenull()
+        }
+        startDate=locForecastPurch.StartDate;
+
+        select firstonly * from locForecastPurch
+            order by endDate desc
+            where locForecastPurch.ItemId==_itemid
+              &&locForecastPurch.AVARUMAgreementId==_agreementId
+            && locForecastPurch.ModelId==_modelId;
+        endDate=locForecastPurch.endDate;
+
+        return [startDate, endDate];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>subGetAgreementHeaderRecid</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Method to overwrite to get the agreement header information
+    /// </summary>
+    /// <param name = "_agreementId">AgreementId</param>
+    /// <returns>Recid for Agreement Header</returns>
+    protected Recid subGetAgreementHeaderRecid(Range _agreementId)
+    {
+        PurchAgreementHeader locPurchAgreementHeader;
+        locPurchAgreementHeader=PurchAgreementHeader::findByAgreementId(_agreementId);
+
+        return locPurchAgreementHeader.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>subStartInventoryQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Method to overwrite to start the invent quantitiy query 
+    /// </summary>
+    /// <param name = "_aline">The agreement line</param>
+    /// <returns>Startet buffer </returns>
+    protected Common subStartInventoryQuery(AgreementLineQuantityCommitment _aline)
+    {
+        PurchLine                   locPurchLine;
+        AgreementLineReleasedLine   agreementLineReleasedLine;
+
+        //@ala AgreementLineQuantityCommitment::calculateAgreementRemansOnServer
+        select RecId, InventTransId, PurchId from locPurchLine
+        //where locPurchLine.LineDeliveryType                        != LineDeliveryType::OrderLineWithMultipleDeliveries
+        //&& locPurchLine.PurchStatus                             != PurchStatus::Invoiced
+        exists join agreementLineReleasedLine
+            where agreementLineReleasedLine.AgreementLine           == _aline.RecId
+                && agreementLineReleasedLine.ReferenceRelationType   == locPurchLine.TableId
+                && agreementLineReleasedLine.PurchLineDataAreaId     == locPurchLine.DataAreaId
+                && agreementLineReleasedLine.PurchLineInventTransId  == locPurchLine.InventTransId
+            //?   && !agreementLineReleasedLine.IsDeleted
+            ;
+
+        return locPurchLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>subStartCalcForcastQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Method to overwrite for start the overall calc query
+    /// </summary>
+    /// <param name = "_modelId">The modelId</param>
+    /// <param name = "_agreementId">The agreementId</param>
+    /// <param name = "_itemid">The itemid</param>
+    /// <param name = "_fromDate">From date</param>
+    /// <param name = "_toDate">To date</param>
+    /// <returns>Started buffer</returns>
+    public BudgetMap subStartCalcForcastQuery(ForecastModelHeadId _modelId, Range _agreementId, ItemId _itemid, TransDate _fromDate, TransDate _toDate)
+    {
+        ForecastPurch locForecastPurch;
+        
+        select * from locForecastPurch
+            order by StartDate
+            where locForecastPurch.ItemId==_itemid
+            && locForecastPurch.AVARUMAgreementId==_agreementId
+            && locForecastPurch.ModelId==_modelId
+            && locForecastPurch.StartDate>=_fromDate
+            && locForecastPurch.StartDate<=_toDate;
+
+        return locForecastPurch;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>subGetLinesAndUnit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Method to overwrite for get num of lines and unitid of element
+    /// </summary>
+    /// <param name = "_modelId">The modelid</param>
+    /// <param name = "_agreementId">The agreementId</param>
+    /// <param name = "_itemid">The itemid</param>
+    /// <param name = "_fromDate">From date</param>
+    /// <param name = "_toDate">To date</param>
+    /// <returns>Container with Unitid and number of lines</returns>
+    public Container subGetLinesAndUnit(ForecastModelHeadId _modelId, Range _agreementId, ItemId _itemid, TransDate _fromDate, TransDate _toDate)
+    {
+        UnitOfMeasureSymbol unitPurch;
+        ForecastPurch locForecastPurch;
+        Counter       numLines;
+
+        unitPurch=InventTableModule::find(_itemid, ModuleInventPurchSales::Purch).UnitId;
+        
+        select count(RecId) from locForecastPurch
+            where locForecastPurch.ItemId==_itemid
+            &&locForecastPurch.AVARUMAgreementId==_agreementId
+            && locForecastPurch.ModelId==_modelId
+            && locForecastPurch.StartDate>=_fromDate
+            && locForecastPurch.StartDate<=_toDate;
+        numLines=any2Int(locForecastPurch.Recid);
+
+        return [unitPurch, numLines];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>subUpdate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Method to update the Forecast record
+    /// </summary>
+    /// <param name = "_recid">The recid</param>
+    /// <param name = "_lastNextDiff">Last diff quantity</param>
+    /// <param name = "_realQty">Real quantity</param>
+    protected void subUpdate(RecId _recid, Qty _lastNextDiff, Qty _realQty)
+    {
+        ForecastPurch updForecastPurch;
+        select forupdate firstonly updForecastPurch
+            where updForecastPurch.RecId==_recid;
+        if (updForecastPurch)
+        {
+            updForecastPurch.PurchQty+=_lastNextDiff;
+            updForecastPurch.modifiedField(fieldNum(ForecastPurch, PurchQty));
+            updForecastPurch.AVARUMRealQty=_realQty;
+            updForecastPurch.AVARUMProcessed=true;
+            updForecastPurch.Amount=updForecastPurch.calcLineAmount();
+            updForecastPurch.update();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>subInitGetForecastBefore</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Method to overwrite to initialise mForecastxxBefore buffer
+    /// </summary>
+    protected void subInitGetForecastBefore()
+    {
+        mForecastPurchBefore.clear();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>subGetForecastBeforeStartDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Method to overwrite to geht the start date of record before
+    /// </summary>
+    /// <param name = "_modelId">The modelId</param>
+    /// <param name = "_agreementId">The agreementId</param>
+    /// <param name = "_itemid">The itemid</param>
+    /// <param name = "_currentBudgetMap">The current buffer</param>
+    /// <returns>The start date calculated</returns>
+    protected TransDate subGetForecastBeforeStartDate(ForecastModelHeadId _modelId, Range _agreementId, ItemId _itemid, BudgetMap _currentBudgetMap)
+    {
+        TransDate qtyDateFrom;
+
+        if (!mForecastPurchBefore)
+        {
+            select firstonly * from mForecastPurchBefore     // voausgehenden Datensatz suchen
+            order by StartDate desc
+            where mForecastPurchBefore.ItemId==_itemid
+            && mForecastPurchBefore.AVARUMAgreementId==_agreementId
+            && mForecastPurchBefore.ModelId==_modelId
+            && mForecastPurchBefore.StartDate<_currentBudgetMap.StartDate;
+
+            if (mForecastPurchBefore)
+            {
+                qtyDateFrom=mForecastPurchBefore.StartDate+1;
+            }
+            else
+            {
+                qtyDateFrom=1\1\2000; // use some date, but not datenull(): sonst kommen InventTranse mit Phyischem Datum null mit in die Berechnung!
+            }
+        }
+        else
+        {
+            qtyDateFrom=mForecastPurchBefore.StartDate;
+        }
+        
+        return qtyDateFrom;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>subNextGetForecastBefore</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Method to overwrite to set the forcast buffer of this iteration
+    /// </summary>
+    /// <param name = "_data">curren tbuffer</param>
+    protected void subNextGetForecastBefore(BudgetMap _data)
+    {
+        mForecastPurchBefore.data(_data);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Constructs an instance 
+    /// </summary>
+    /// <param name = "_args">Object arguments</param>
+    /// <returns>The object</returns>
+    static public AVARUMAdjustForecastToAgeementRelease construct(Args _args)
+    {
+        AVARUMAdjustForecastToAgeementRelease rc;
+        ModuleSalesPurch moduleSalesPurch=_args.parmEnum();
+        if (moduleSalesPurch==ModuleSalesPurch::Sales)
+        {   //Sales
+            rc=AVARUMAdjustForecastToAgeementReleaseSales::construct();
+        }
+        else
+        {   //Purch
+            rc=new AVARUMAdjustForecastToAgeementRelease();
+        }        
+
+        return rc;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// The main method
+    /// </summary>
+    /// <param name = "_args">Main args</param>
+    static public void main(Args _args)
+    {
+        AVARUMAdjustForecastToAgeementRelease obj=AVARUMAdjustForecastToAgeementRelease::construct(_args);
+
+        if (obj.prompt())
+        {
+            obj.runOperation();
+        }        
+        
+        if (0)
+        {
+            //TST
+            obj.doOne('CurrentF', '000001', '1000', 1\7\2025, 31\12\2025,
+                31\8\2025);
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

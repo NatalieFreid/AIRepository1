@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAUpdateInventSumCurrentValuesService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN/2025/09/08  AVA_013109_InventSum
+/// </summary>
+final class AVAUpdateInventSumCurrentValuesService extends SysOperationServiceBase
+{
+    InventLocationId    inventLocationId;
+    InventSiteId        inventSiteId;
+    AVAInventSumType    sumType;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>startOperation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/09/08  AVA_013109_InventSum
+    /// </summary>
+    /// <param name = "_dataContract">AVAUpdateInventSumCurrentValuesContract</param>
+    public void startOperation(AVAUpdateInventSumCurrentValuesContract _dataContract)
+    {
+
+        System.Exception ex;
+        #OCCRetryCount
+
+        inventLocationId    = _dataContract.parmInventLocationId();
+        inventSiteId        = _dataContract.parmInventSiteId();
+        sumType             = _dataContract.parmSumType();
+
+        try
+        {
+            this.processOperation();
+        }
+
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+
+        catch (Exception::Error)
+        {
+            error("@NDX:NXAErrorOccured");
+            retry;
+        }
+
+        catch (Exception::CLRError)
+        {
+            ex = ClrInterop::getLastException();
+
+            if (ex != null)
+            {
+                ex = ex.get_InnerException();
+                if (ex != null)
+                {
+                    error("@NDX:NXAErrorOccured");
+                }
+            }
+
+            retry;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processOperation</Name>
+				<Source><![CDATA[
+    private void processOperation()
+    {
+        AVAInventSumDateTrans   inventSumTrans;
+        InventDim               inventDim;
+        InventSum               inventSum;
+        InventDimParm           inventDimParm;
+
+        while select forupdate inventSumTrans where inventSumTrans.Type == sumType
+                                                    && inventSumTrans.InventSiteId == inventSiteId
+                                                    && inventSumTrans.InventLocationId == inventLocationId
+        {
+            inventDim.InventSiteId = inventSumTrans.InventSiteId;
+            inventDim.InventLocationId = inventSumtrans.InventLocationId;
+            inventDim.wMSLocationId = inventSumTrans.WMSLocationId;
+            inventDim.InventColorId = inventSumTrans.InventColorId;
+            inventDim = inventDim::findOrCreate(inventDim);
+            inventDimParm.initFromInventDim(inventDim);
+
+            inventSum = inventSum::findSum(inventSumTrans.ItemId, inventDim, inventDimParm);
+            ttsbegin;
+            inventSumTrans.D365Value = InventSum.PostedValue;
+            inventSumTrans.update();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

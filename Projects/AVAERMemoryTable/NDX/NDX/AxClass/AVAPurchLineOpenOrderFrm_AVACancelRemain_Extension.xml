@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPurchLineOpenOrderFrm_AVACancelRemain_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of formControl AVACancelRemain for form PurchLineOpenOrder
+/// </summary>
+[ExtensionOf(formControlStr(PurchLineOpenOrder, AVACancelRemain))]
+final class AVAPurchLineOpenOrderFrm_AVACancelRemain_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>clicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// clicked method that zeros remaining quantities
+    /// </summary>
+    public void clicked()
+    {
+        next clicked();
+
+        if(this.avaCancelRemainDialog() == DialogButton::Yes)
+        {
+            this.avaCancelRemainQty();
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCancelRemainDialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Dialog box for canceling remaining quanitity in open purch orders
+    /// </summary>
+    /// <returns>DialogButton result</returns>
+    public DialogButton avaCancelRemainDialog()
+    {
+        return Box::yesNo("@NDX:NXACancelRemainDialog",DialogButton::No);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCancelRemainQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Cancels all remaning Quantity for for marked purchLines
+    /// </summary>
+    public void avaCancelRemainQty()
+    {
+        FormDataSource avaPurchLine_fds = element.dataSource('PurchLine');
+        PurchLine purchLineLoc = avaPurchLine_fds.getFirst(true);
+
+        try
+        {
+            while(purchLineLoc)
+            {
+                ttsbegin;
+
+                PurchQty RemainPurchPhys = purchLineLoc.RemainPurchPhysical;
+
+                purchLineLoc.selectForUpdate(true);
+                purchLineLoc.RemainPurchPhysical  = 0;
+                purchLineLoc.RemainInventPhysical = 0;
+
+                if (purchLineLoc.RemainInventPhysical)
+                {
+                    if (!purchLineLoc.RemainPurchPhysical)
+                    {
+                        throw error("@SCM:InventoryQuantityCannotBe0WhenOrderQuantityIs0");
+                    }
+                    if (sign(purchLineLoc.RemainInventPhysical) != sign(purchLineLoc.RemainPurchPhysical))
+                    {
+                        throw error("@SCM:InventoryQuantityMustHaveSameSignAsOrderQuantity");
+                    }
+                }
+
+                if (purchLineLoc.validateWrite() && purchLineLoc.purchTable().checkUpdate())
+                {
+                    this.avaUpdateRemainPhysical(purchLineLoc);
+
+                    // Update project commitments when deliver remainder is updated.
+                    if (purchLineLoc.RemainPurchPhysical && RemainPurchPhys != purchLineLoc.RemainPurchPhysical)
+                    {
+                        SourceDocumentLine sourceDocumentLine = SourceDocumentLine::find(purchLineLoc.SourceDocumentLine);
+                        sourceDocumentLineItem sourceDocumentLineItem = sourceDocumentLineItem::newFromSourceDocumentLine(sourceDocumentLine);
+                        ProjectCommitmentFacade::updateProjectCommitments(sourceDocumentLineItem);
+                    }
+                
+                    if (purchLineLoc.PurchStatus  == PurchStatus::Canceled &&
+                        purchLineLoc.PurchaseType == PurchaseType::ReturnItem &&
+                        purchLineLoc.isInterCompanyOrder())
+                    {
+                        if (purchLineLoc.InterCompanyInventTransId)
+                        {
+                            changecompany(purchLineLoc.purchTable().InterCompanyCompanyId)
+                            {
+                                var interCompanySalesLine = SalesLine::findInventTransId(purchLineLoc.InterCompanyInventTransId);
+                                var interCompanySalesTable = SalesTable::find(interCompanySalesLine.SalesId);
+    
+                                if (interCompanySalesTable.ReturnStatus == ReturnStatusHeader::Created &&
+                                    !interCompanySalesTable.existRegisteredReceivedInvoicedLines())
+                                {
+                                    interCompanySalesLine.SalesStatus = SalesStatus::Canceled;
+                                    interCompanySalesLine.ReturnStatus = ReturnStatusLine::Canceled;
+                                    interCompanySalesLine.doUpdate();
+                                }
+                            
+                                interCompanySalesTable.SalesStatus = SalesTableType::construct(interCompanySalesTable).lowestSalesStatus();
+                                if (interCompanySalesTable.SalesStatus == SalesStatus::Canceled)
+                                {
+                                    interCompanySalesTable.ReturnStatus = ReturnStatusHeader::Canceled;
+                                    interCompanySalesTable.doUpdate();
+                                }
+                            }
+                        }
+                    }
+
+                    if (purchLineLoc.purchTable().PurchStatus == PurchStatus::Canceled)
+                    {
+                        PurchPrepayRemove::reversePrepaymentInvoice(purchLineLoc.PurchId);
+                    }
+
+                }
+
+                ttscommit;
+
+                purchLineLoc = avaPurchLine_fds.getNext();
+            }
+
+            avaPurchLine_fds.executeQuery();
+        }
+        catch
+        {
+            throw Error("@NDX:NXACancelRemainError");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaUpdateRemainPhysical</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the remaining physical quantities in the <c>PurchLine</c> record.
+    /// </summary>
+    /// <param name = "_callerPurchLine">The caller <c>PurchLine</c> record to update the remaining physical quantities for.</param>
+    public void avaUpdateRemainPhysical(PurchLine _callerPurchLine)
+    {
+        PurchLine       purchLineLocal = PurchLine::findRecId(_callerPurchLine.RecId);
+
+        InventQty       diffRemainPurchPhysical       = purchLineLocal.RemainPurchPhysical;
+        InventQty       diffRemainInventPhysical      = purchLineLocal.RemainInventPhysical;
+        PdsCWInventQty  diffPdsCWRemainInventPhysical = purchLineLocal.PdsCWRemainInventPhysical;
+        MCRSalesOrderCancellation mcrSalesOrderCancellation;
+        PurchSalesOrderCancellation purchSalesOrderCancellation = new PurchSalesOrderCancellation();
+        mcrSalesOrderCancellation = purchSalesOrderCancellation.mcrSalesOrderCancelInit(mcrSalesOrderCancellation, purchLineLocal.InventRefTransId);
+
+        InterCompanyUpdateRemPhys::synchronize(_callerPurchLine,
+                                                diffRemainInventPhysical,
+                                                diffRemainPurchPhysical,
+                                                InterCompanySkipUpdate::No,
+                                                diffPdsCWRemainInventPhysical);
+
+        if (_callerPurchLine.ItemRefType  == InventRefType::Sales
+                    && _callerPurchLine.InventRefTransId
+                    && _callerPurchLine.isDropShipment())
+        {
+            _callerPurchLine.reread();
+            _callerPurchLine.RemainPurchPhysical         = 0;
+            _callerPurchLine.RemainInventPhysical        = 0;
+            _callerPurchLine.PdsCWRemainInventPhysical   = 0;
+        }
+        _callerPurchLine.write();
+
+        purchSalesOrderCancellation.mcrSalesOrderCancel(mcrSalesOrderCancellation, purchLineLocal.InventRefTransId);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

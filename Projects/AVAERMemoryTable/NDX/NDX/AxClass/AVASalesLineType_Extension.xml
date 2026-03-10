@@ -1,0 +1,428 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesLineType_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed from AVA
+/// </summary>
+[ExtensionOf(classStr(SalesLineType))]
+final class AVASalesLineType_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initFromSalesTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesTable">_salesTable</param>
+    /// <param name = "_ignoreInventDim">_ignoreInventDim</param>
+    void  initFromSalesTable(SalesTable _salesTable, boolean _ignoreInventDim)
+    {
+        SalesCalcAvailableDlvDates  locSalesCalcAvailableDlvDates;
+        date                        locToday;
+        boolean                     locCalcDatesRequested;
+        
+        next initFromSalesTable(_salesTable,_ignoreInventDim);
+
+        salesLine.AVAOrigQuotationId = _salesTable.AVAQuotationId;
+
+        salesLine.initShippingDateFromSalesTable();
+
+        locToday = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        if(     salesLine.ShippingDateRequested != dateNull()
+            &&  salesLine.ShippingDateRequested < locToday   )
+        {
+            locCalcDatesRequested = true;
+        }
+        if(     salesLine.ReceiptDateRequested != dateNull()
+            &&  salesLine.ReceiptDateRequested < locToday    )
+        {
+            locCalcDatesRequested = true;
+        }
+        if(locCalcDatesRequested)
+        {
+            locSalesCalcAvailableDlvDates = SalesCalcAvailableDlvDates::newCommonSalesDlvDateType(salesLine);
+            [   salesLine.ShippingDateRequested,
+                salesLine.ReceiptDateRequested      ] = locSalesCalcAvailableDlvDates.calcEarliestShipReceiptDates();
+        }
+
+        //salesLine.clearConfirmedDates();
+        salesLine.ShippingDateConfirmed     = dateNull();
+        salesLine.ReceiptDateConfirmed      = dateNull();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_fieldId">_fieldId</param>
+    /// <returns>boolean</returns>
+    public boolean  validateField(FieldId  _fieldId)
+    {
+        boolean         ok = next validateField(_fieldId);
+        boolean         isReturnItem; 
+
+        switch (_fieldId)
+        {
+            case fieldNum(SalesLine,AVAQuotationId) :
+                if ( salesLine.AVAQuotationId)
+                {
+                    isReturnItem = salesLine.returnItem();
+                    SalesQuotationTable     salesQuotationTable;
+                    select firstonly QuotationId, QuotationStatus, QuotationExpiryDate, AVANoExpiryOverrun from salesQuotationTable
+                        where salesQuotationTable.QuotationId == salesLine.AVAQuotationId;
+
+                    if ( !salesQuotationTable.QuotationId)
+                    {
+                        ok = checkFailed("@NDX:NXAQuotationNotFound");
+                    }
+                    if (ok && salesQuotationTable.QuotationStatus == SalesQuotationStatus::Lost)
+                    {
+                        warning("@NDX:NXAQuotationStatusLost");
+                    }
+
+                    if (ok) 
+                    {
+                        if (!isReturnItem)
+                        {
+                            AVASalesParameters      avaSalesParameters = AVASalesParameters::find();
+                            int   maxNumOfDays;
+                            SalesTable locSalesTable = salesLine.salesTable();
+
+                            TransDate                   checkBasicDate = locSalesTable.KCS_PurchRefDate != dateNull() ? locSalesTable.KCS_PurchRefDate  :  DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                            maxNumOfDays = !salesQuotationTable.AVANoExpiryOverrun ? avaSalesParameters.SalesQuotationNumOfDays : 0;
+                        
+                            if (salesQuotationTable.QuotationExpiryDate  < checkBasicDate - maxNumOfDays)
+                            {
+                                //Error("@NDX:NXAExpiredQuotation");
+                                //ok = checkFailed();
+                                warning(strFmt("@NDX:NXAExpiredQuotation", salesQuotationTable.QuotationId, salesQuotationTable.QuotationExpiryDate));
+                                salesLine.AVAQuotationId = '';
+                                salesLine.AVAEDIQuotationStatus = AVAEDIQuotationStatus::Error;
+                            }
+                            else if (salesQuotationTable.QuotationExpiryDate  < checkBasicDate)
+                            {
+                                warning(strFmt( "@NDX:NXAExpiredQuotInDays",checkBasicDate - salesQuotationTable.QuotationExpiryDate));
+                            }
+                        }
+
+                    }
+                  /*  if (ok) 
+                    {
+                        SalesQuotationLine          salesQuotationLine;
+
+                        select firstonly QuotationId from salesQuotationLine
+                            where salesQuotationLine.QuotationId == salesLine.AVAQuotationId
+                               && salesQuotationLine.ItemId      == salesLine.ItemId;
+                        if (!salesQuotationLine.QuotationId)
+                        {
+                            //ok =checkFailed("@NDX:NXAQuotationLineNotFound");
+                            error("@NDX:NXAQuotationLineNotFound");
+                            salesLine.AVAQuotationId = '';
+                        }
+                    }*/
+                   
+                }
+                break;
+            case fieldNum(SalesLine, AVADispositionCodeId) :
+                if (salesLine.AVADispositionCodeId)
+                {
+                    AVAReturnDispositionCodeView    returnDispositionCodeView;
+
+                    returnDispositionCodeView =  AVAReturnDispositionCodeView::find(salesLine.AVADispositionCodeId);
+
+                    if (!returnDispositionCodeView)
+                    {
+                        ok = checkFailed("@NDX:DispositionCodeWrong");
+                    }
+                }
+                break;
+
+            default : 
+                break;
+        }
+
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>inserting</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>inserting</c> method.
+    ///     Handles logic before a sales order line record is inserted.
+    /// </summary>
+    public void inserting()
+    {
+        next inserting();
+
+        if (salesTable.salesType == SalesType::Sales)
+        {
+            if(!salesLine.revRecBundle && !salesLine.revRecBundleParent)
+            {
+                salesLine.LineNum = real2int(salesLine::lastLineNum(salesLine.salesid)) + 1;
+            }
+        }
+
+        this.avaCheckMaxAgeCalcDays();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcDimensionsSpecificSalesQty</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_inventTable">_inventTable</param>
+    /// <returns>SalesQty</returns>
+    protected SalesQty calcDimensionsSpecificSalesQty(InventTable _inventTable)
+    {
+        SalesQty    origSalesQty;
+        SalesQty    salesQty;
+
+        origSalesQty    = salesLine.SalesQty;
+
+        salesQty        = next calcDimensionsSpecificSalesQty(_inventTable);
+
+        if (origSalesQty == 0 && _inventTable.salesStandardQty(salesLine.InventDimId))
+        {
+            salesLine.salesQty = 0;
+        }
+
+        salesQty = salesLine.salesQty;
+
+        return salesQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>syncPurchLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>syncPurchLine</c> method.
+    /// </summary>
+    /// <param name="_salesLine">
+    ///    <c>SalesLine</c> as type
+    /// </param>
+    /// <param name="_purchLine">
+    ///    <c>PurchLine</c> as type
+    /// </param>
+    /// <param name="_create">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>AxPurchLine</c> as return value
+    /// </returns>
+    AxPurchLine syncPurchLine(SalesLine _salesLine, PurchLine _purchLine, boolean _create)
+    {
+        AxPurchLine  axPurchLine = next  syncPurchLine(_salesLine,_purchLine,_create);
+        PurchLine    purchLine   = axPurchLine.purchLine(); 
+        if(purchLine.purchTable().interCompanyEndpointActionPolicy().AVA_SalesICDiscount == NoYes::Yes)
+        {
+            axPurchLine.parmLinePercent(_salesLine.salesTable().KCS_IC_Reduction);
+            axPurchLine.parmPurchPrice(this.avaCalcICPurchPrice(_salesLine));
+            axPurchLine.parmLineAmount(purchLine.calcLineAmount());
+            axPurchLine.parmPriceUnit(_salesLine.PriceUnit);
+        }
+        return axPurchLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcICPurchPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesLine">_salesLine</param>
+    /// <returns>PurchPrice</returns>
+    protected PurchPrice  avaCalcICPurchPrice(SalesLine     _salesLine)
+    {
+        PurchPrice  purchPrice = _salesLine.SalesPrice;
+       
+        purchPrice = purchPrice * ((100 - _salesLine.LinePercent)/100);
+
+        AVASpecialDiscSalesLine     specialDiscSalesLine = AVASpecialDiscSalesLine::find(_salesLine.InventTransId);
+
+        if (specialDiscSalesLine.RecId)
+        {
+            if (specialDiscSalesLine.SpecialDiscountPct1 > 0)
+            {
+                purchPrice = purchPrice * ((100 - specialDiscSalesLine.SpecialDiscountPct1)/100);
+            }
+            if (specialDiscSalesLine.SpecialDiscountPct2 > 0)
+            {
+                purchPrice = purchPrice * ((100 - specialDiscSalesLine.SpecialDiscountPct2)/100);
+            }
+            if (specialDiscSalesLine.SpecialDiscountPct3 > 0)
+            {
+                purchPrice = purchPrice * ((100 - specialDiscSalesLine.SpecialDiscountPct3)/100);
+            }
+            if (specialDiscSalesLine.SpecialDiscountPct4 > 0)
+            {
+                purchPrice = purchPrice * ((100 - specialDiscSalesLine.SpecialDiscountPct4)/100);
+            }
+            if (specialDiscSalesLine.SpecialDiscountPct5 > 0)
+            {
+                purchPrice = purchPrice * ((100 - specialDiscSalesLine.SpecialDiscountPct5)/100);
+            }
+            if (specialDiscSalesLine.SpecialDiscountPct6 > 0)
+            {
+                purchPrice = purchPrice * ((100 - specialDiscSalesLine.SpecialDiscountPct6)/100);
+            }
+            if (specialDiscSalesLine.SpecialDiscountPct7 > 0)
+            {
+                purchPrice = purchPrice * ((100 - specialDiscSalesLine.SpecialDiscountPct7)/100);
+            }
+
+            if (_salesLine.AVAPriceSurchargePercentage != 0)
+            {
+                purchPrice = purchPrice * ((100 + _salesLine.AVAPriceSurchargePercentage)/100);
+            }
+        }
+
+        return round(purchPrice,0.01);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>inserted</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+  /*  public void avaUpdateInventTransDateExpected()
+    {
+        InventTrans         inventTrans;
+        InventTransOrigin   inventTransOrigin;
+    
+
+      
+        while select inventTrans
+            join inventTransOrigin
+            where inventTransOrigin.InventTransId == salesLine.InventTransId
+        {
+            if (salesLine.ShippingDateConfirmed != dateNull())
+            {
+                inventTrans.DateExpected = salesLine.ShippingDateConfirmed;
+            }
+            else if (salesLine.AVAProdSchedDate != dateNull())
+            {
+                inventTrans.DateExpected = salesLine.AVAProdSchedDate;
+            }
+            else if (salesLine.AVADispoDate != dateNull())
+            {
+                inventTrans.DateExpected = salesLine.AVADispoDate;
+            }
+            else
+            {
+                inventTrans.DateExpected =salesLine.ShippingDateRequested;
+            }
+
+            inventTrans.selectForUpdate(true);
+            inventTrans.doUpdate();
+        }
+
+    }
+
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_salesLineOrig">_salesLineOrig</param>
+    public void updated(SalesLine _salesLineOrig)
+    {
+        next updated(_salesLineOrig);
+
+        if (_salesLineOrig.ShippingDateConfirmed != salesLine.ShippingDateConfirmed
+        ||  _salesLineOrig.AVAProdSchedDate      != salesLine.AVAProdSchedDate
+        ||  _salesLineOrig.AVADispoDate          != salesLine.AVADispoDate
+        ||  _salesLineOrig.ShippingDateRequested != salesLine.ShippingDateRequested)
+        {
+            this.avaUpdateInventTransDateExpected();
+        }
+    }
+
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    public void inserted()
+    {
+        next inserted();
+        this.avaUpdateInventTransDateExpected();
+    }*/
+
+
+    /// <summary>
+    ///    AVA <c>inserted</c> method.
+    ///     Handles logic after a sales order line record has been inserted.
+    /// </summary>
+    public void inserted()
+    {
+        next inserted();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckMaxAgeCalcDays</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaCheckMaxAgeCalcDays</c> method.
+    /// </summary>
+    void avaCheckMaxAgeCalcDays()
+    {
+        AVASalesParameters  locAVASalesParameters;
+        InventTable         locInventTable;
+        TransDate           locHK2Date;
+        TransDate           locSystemDate;
+
+        locAVASalesParameters   = AVASalesParameters::find();
+        locInventTable          = salesLine.inventTable(salesLine.ItemId);
+
+        if (!salesLine.AVAItemSetComponent)
+        {
+            if (KCS_ItemUsageIDs::find(locInventTable.KCS_ItemUsageID).KCS_ItemNonStd)      // is featured item?
+            {
+                locHK2Date          = salesLine.KCS_PriceDate;
+                locHK2Date          = locInventTable.avaGetHK2Date();                       // 2009:locHK2Date = locInventTable.KCS_GetHK2Date();
+
+                locSystemDate       = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+
+                if ((locSystemDate - locHK2Date) > locAVASalesParameters.MaxAgeFeaturedItemCalculation)
+                {
+                    if (!locHK2Date)
+                    {
+                        warning(strfmt( "@NDX:NXAFeaturedItemCalculationP1MissingPrice",
+                                    salesLine.ItemId                                )   );
+                    }
+                    else
+                    {
+                        warning(strfmt("@NDX:NXAFeaturedItemCalculationP1PriceOlderThanP2",
+                                    salesLine.ItemId,
+                                    locAVASalesParameters.MaxAgeFeaturedItemCalculation )   );
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,830 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXSalesQuotationLine_tbl_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// SalesQuotation Extension class
+/// WolfA 06.08.21
+/// </summary>
+[ExtensionOf(tableStr(SalesQuotationLine))]
+final class NDXSalesQuotationLine_tbl_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Event modified field
+    /// </summary>
+    /// <param name = "_fieldId">field id</param>
+    /// <param name = "_kcs_forceKCS_CalcUse">force ca</param>
+    public void modifiedField(fieldId _fieldId, boolean _kcs_forceKCS_CalcUse)
+    {
+        next modifiedField(_fieldId, _kcs_forceKCS_CalcUse);
+
+        switch(_fieldId)
+        {
+            case fieldNum(SalesQuotationLine, KCS_CalcPDPPrice):
+                this.KCS_RecalcAfterCalcPDPriceChanged();
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    boolean validateWrite()
+    {
+        boolean ret = true;
+
+        SalesQuotationLine      lQoutLine;
+        KCS_QLLVPosition        lVPosBeforeMatrix;
+        KCS_KBVSalesTenderLink  salesTenderLink;
+
+        ret = next validateWrite();
+
+        if (ret)
+        {
+            lVPosBeforeMatrix   = this.KCS_QLLVPosition;
+            if (this.KCS_QLLVPositionModified())
+            {
+                if (SalesQuotationLine::KCS_existLVInternalPosition(this.QuotationId,this.KCS_QLLVPosition,this.KCS_QLInternalPosition,this.RecId))
+                {
+                    if (box::yesNo(SysLabel::labelId2String(literalStr("@NDX:NXAAdjustLV")),DialogButton::Yes) == dialogButton::Yes)
+                    {
+                        if (this.KCS_QLInternalPosition)        //interne Positionen vorschieben
+                        {
+                            SalesQuotationLine::KCS_AdjustFollowingLVPositions(this.QuotationId,this.KCS_QLLVPosition,1,this.KCS_QLInternalPosition,this.RecId);
+                        }
+                        else                                    //LV-Positionen vorschieben
+                        {
+                            SalesQuotationLine::KCS_AdjustFollowingLVPositions(this.QuotationId,this.KCS_QLLVPosition,1);
+                        }
+                        salesTenderLink = KCS_KBVSalesTenderLink::find(this.QuotationId);
+                        salesTenderLink.KCS_KBVTenderMatrixModified(this.KCS_QLLVPosition);
+                        this.KCS_QLLVPosition   = KCS_KBVTenderIdUtility::fillMatrix(this.KCS_QLLVPosition,salesTenderLink.TenderMatrix);
+                        this.LineNum    = this.buildLineNumFromLVPos();
+                        SysGlobalCache globalCache = ClassFactory.globalCache();
+                        globalCache.set(strFmt("@NDX:NXAP1P2",curUserId(), classStr(SalesQuotationLineType)), 2, this.KCS_QLLVPosition );
+                        this.reread();
+                    }
+                    else
+                    {
+                        this.KCS_QLLVPosition   = lVPosBeforeMatrix;
+                        return false;
+                    }
+
+                }
+                if (!this.KCS_QLInternalPosition)
+                {
+                    this.KCS_QLLVAmount = 0;
+                    this.KCS_QLLVPrice  = 0;
+                    this.KCS_Span       = 0;
+                }
+                else if (this.KCS_QLInternalPosition == 1)
+                {
+                    this.KCS_Span   = 0;
+                }
+                else if (this.KCS_QLInternalPosition > 1
+                      && SalesQuotationLine::KCS_existLVInternalPosition(this.QuotationId,this.KCS_QLLVPosition,0,this.RecId)
+                      && !SalesQuotationLine::KCS_existLVInternalPosition(this.QuotationId,this.KCS_QLLVPosition,1,this.RecId))
+                {
+                    ttsbegin;
+                    select firstonly forUpdate lQoutLine where lQoutLine.QuotationId == this.QuotationId
+                        && lQoutLine.KCS_QLLVPosition == this.KCS_QLLVPosition
+                        && lQoutLine.KCS_QLInternalPosition == 0;
+
+                    lQoutLine.KCS_QLInternalPosition = 1;
+                    lQoutLine.LineNum   = lQoutLine.buildLineNumFromLVPos();
+                    lQoutLine.doUpdate();
+                    if (this.KCS_Span && !this.SalesQty)
+                    {
+                        this.SalesQty = lQoutLine.SalesQty / this.KCS_Span;
+                    }
+                    else if (this.SalesQty && !this.KCS_Span)
+                    {
+                        this.KCS_Span = lQoutLine.SalesQty / this.SalesQty;
+                    }
+                    ttscommit;
+                    lQoutLine.clear();
+                }
+            }
+            else
+            {
+                ret = false;
+            }
+        }
+        if(this.LineAmount == 0 && this.SalesQty != 0 && this.KCS_CalcPDPPrice != 0)
+        {
+            info("@NDX:NDXNoNetAmount");
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initialize SalesQuotation record 
+    /// </summary>
+    /// <param name = "_inventTable">invent table record</param>
+    /// <param name = "_salesCategory">sales category</param>
+    public void initName(InventTable _inventTable,
+              SalesCategory _salesCategory)
+    {
+        next initName(_inventTable, _salesCategory);
+        this.ndx_initName(_inventTable, this.salesQuotationTable());
+        this.KCS_ModelNumber = _inventTable.NDXModelNumber;
+	}
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ndx_initName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initialize NDXProductName1 and NDXProductName2
+    /// </summary>
+    /// <param name = "_inventTable">inventtable record</param>
+    /// <param name = "_salesQuotationTable">SalesquotationTable record</param>
+    private void ndx_initName(InventTable _inventTable = this.inventTable(),
+				SalesQuotationTable   _salesQuotationTable = this.salesQuotationTable())
+    {
+        EcoResProductTranslation ecoResProductTranslation;
+        ;
+
+        ecoResProductTranslation = EcoResProductTranslation::findByProductLanguage(_inventTable.Product, _salesQuotationTable.LanguageId);
+		
+        this.NDXProductName1 = ecoResProductTranslation.NDXProductName1;
+        this.NDXProductName2 = ecoResProductTranslation.NDXProductName2;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_AdjustFollowingLVPositions</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Adjusts following LV position
+    /// </summary>
+    /// <param name = "_quotationId">Quotation id</param>
+    /// <param name = "_prevLVPos">previous LVPosition</param>
+    /// <param name = "_numberOfPositions">Amount of positions</param>
+    /// <param name = "_internalPos">internal position</param>
+    /// <param name = "_prevRecId">previous RecId</param>
+    /// <param name = "_copy">copy</param>
+    [SuppressBPWarning('BPParameterNotUsed', 'False positive')]
+    public static void KCS_AdjustFollowingLVPositions(QuotationId _quotationId, KCS_QLLVPosition _prevLVPos, int _numberOfPositions, 
+        KCS_QLInternalPosition _internalPos = 0, recId _prevRecId = 0, boolean _copy = false)
+    {
+        SalesQuotationLine          lsalesQutationLine;
+        str                         newLVPos;
+        int                         lastPartLength;
+        KCS_QLLVPosition            compLV;
+        KCS_KBVSalesTenderLink      salesTenderLink;
+        KCS_QLLVPosition            prevLVPos;
+        KCS_QLStdStepSize           stdStepSize;
+        RecordSortedList            recordSortedList;
+
+        ;
+        stdStepSize = SalesQuotationTable::find(_quotationId).KCS_QLStdStepSize;
+        if (!stdStepSize)
+        {
+            stdStepSize = 1;
+        }
+        compLV = substr(_prevLVPos,1,strlen(_prevLVPos) - strlen(SalesQuotationLine::KCS_lastPartOfTypicalLV(_prevLVPos))) + '*';
+
+        if (!SalesQuotationLine::KCS_isTypicalLV(_prevLVPos))
+        {
+            //prevLVPos   = int2str(str2int(_prevLVPos));
+            prevLVPos = int642Str(str2Int64(_prevLVPos));
+        }
+        if (!_copy)
+        {
+            salesTenderLink     = KCS_KBVSalesTenderLink::find(_quotationId,true);
+            recordSortedList    = new RecordSortedList(tablenum(SalesQuotationLine));
+            recordSortedList.sortOrder(fieldnum(SalesQuotationLine, KCS_QLLVPosition), 
+                fieldnum(SalesQuotationLine, KCS_QLInternalPosition), fieldnum(SalesQuotationLine, RecId));
+
+            while select lsalesQutationLine where lsalesQutationLine.QuotationId == _quotationId
+                && lsalesQutationLine.KCS_QLLVPosition like compLV
+                && ((!prevLVPos && lsalesQutationLine.KCS_QLLVPosition >= _prevLVPos) || (prevLVPos && (lsalesQutationLine.KCS_QLLVPosition >= _prevLVPos || lsalesQutationLine.KCS_QLLVPosition >= prevLVPos)))
+            {
+                recordSortedList.ins(lsalesQutationLine);
+            }
+            while (recordSortedList.next(lsalesQutationLine))
+            {
+                ttsbegin;
+                lsalesQutationLine.selectForUpdate(true);
+                newLVPos    = SalesQuotationLine::KCS_lastPartOfTypicalLV(lsalesQutationLine.KCS_QLLVPosition);
+                lastPartLength  = strlen(newLVPos);
+                newLVPos    = num2str((str2num(newLVPos) + stdStepSize * _numberOfPositions),0,0,0,0);
+                while (strlen(newLVPos) < lastPartLength)
+                {
+                    newLVPos = '0' + newLVPos;
+                }
+                lsalesQutationLine.KCS_QLLVPosition = substr(lsalesQutationLine.KCS_QLLVPosition,1,strlen(lsalesQutationLine.KCS_QLLVPosition)-lastPartLength) + newLVPos;
+
+                if (!KCS_KBVTenderIdUtility::KCS_CanBeInsertedInMatrix(lsalesQutationLine.KCS_QLLVPosition,salesTenderLink.TenderMatrix))
+                {
+                    salesTenderLink.TenderMatrix    = KCS_KBVTenderIdUtility::CreateNewTenderMatrix(lsalesQutationLine.KCS_QLLVPosition,salesTenderLink.TenderMatrix);
+                    salesTenderLink.update();
+                }
+                lsalesQutationLine.LineNum = lsalesQutationLine.buildLineNumFromLVPos();
+                lsalesQutationLine.doUpdate();
+                recordSortedList.del(lsalesQutationLine);
+                ttscommit;
+            }
+
+        }
+        else
+        {
+            salesTenderLink     = KCS_KBVSalesTenderLink::find(_quotationId,true);
+            recordSortedList    = new RecordSortedList(tablenum(salesQuotationLine));
+            recordSortedList.sortOrder(fieldnum(SalesQuotationLine, KCS_QLLVPosition), fieldnum(SalesQuotationLine, KCS_QLInternalPosition), fieldnum(SalesQuotationLine, RecId));
+
+            while select lsalesQutationLine where lsalesQutationLine.QuotationId == _quotationId
+                && lsalesQutationLine.KCS_QLLVPosition like compLV
+                && ((!prevLVPos && lsalesQutationLine.KCS_QLLVPosition > _prevLVPos) || (prevLVPos && (lsalesQutationLine.KCS_QLLVPosition > _prevLVPos || lsalesQutationLine.KCS_QLLVPosition > prevLVPos)))
+                && lsalesQutationLine.RecId != _prevRecId
+            {
+                recordSortedList.ins(lsalesQutationLine);
+            }
+
+            while (recordSortedList.next(lsalesQutationLine))
+            {
+                ttsbegin;
+                lsalesQutationLine.selectForUpdate(true);
+                newLVPos    = SalesQuotationLine::KCS_lastPartOfTypicalLV(lsalesQutationLine.KCS_QLLVPosition);
+                lastPartLength  = strlen(newLVPos);
+                newLVPos    = num2str((str2num(newLVPos) + stdStepSize * _numberOfPositions),0,0,0,0);
+                while (strlen(newLVPos) < lastPartLength)
+                {
+                    newLVPos = '0' + newLVPos;
+                }
+                lsalesQutationLine.KCS_QLLVPosition = substr(lsalesQutationLine.KCS_QLLVPosition,1,strlen(lsalesQutationLine.KCS_QLLVPosition)-lastPartLength) + newLVPos;
+
+                if (!KCS_KBVTenderIdUtility::KCS_CanBeInsertedInMatrix(lsalesQutationLine.KCS_QLLVPosition,salesTenderLink.TenderMatrix))
+                {
+                    salesTenderLink.TenderMatrix    = KCS_KBVTenderIdUtility::CreateNewTenderMatrix(lsalesQutationLine.KCS_QLLVPosition,salesTenderLink.TenderMatrix);
+                    salesTenderLink.update();
+                }
+                lsalesQutationLine.LineNum = lsalesQutationLine.buildLineNumFromLVPos();
+                lsalesQutationLine.doUpdate();
+                recordSortedList.del(lsalesQutationLine);
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_existLVInternalPosition</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if internal position exists
+    /// </summary>
+    /// <param name = "_quotationId">Qoutation id</param>
+    /// <param name = "_lVPosition">LV Position</param>
+    /// <param name = "_internalPosition">Internal position</param>
+    /// <param name = "_recId">current rec id</param>
+    /// <returns>true or false</returns>
+    server static boolean KCS_existLVInternalPosition(QuotationIdBase _quotationId, KCS_QLLVPosition _lVPosition, KCS_QLInternalPosition _internalPosition, recId _recId)
+    {
+        KCS_QLLVPosition    lvPosition;
+        ;
+        if (!_quotationId || !_lVPosition)
+        {
+            return false;
+        }
+
+        if (!SalesQuotationLine::KCS_isTypicalLV(_lVPosition))
+        {
+            //lvPosition  = int2str(str2int(_lVPosition));
+            lvPosition = int642Str(str2Int64(_lVPosition));
+        }
+
+        return (select firstonly RecId from salesQuotationLine where salesQuotationLine.QuotationId  == _quotationId 
+                    && (salesQuotationLine.KCS_QLLVPosition == _lVPosition || salesQuotationLine.KCS_QLLVPosition == lvPosition)
+                    && salesQuotationLine.KCS_QLInternalPosition == _internalPosition 
+                    && salesQuotationLine.RecId != _recId).RecId != 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_existLVPosition</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_quotationId">QuotationIdBase</param>
+    /// <param name = "_lVPosition">KCS_QLLVPosition</param>
+    /// <returns>boolean</returns>
+    server static boolean  KCS_existLVPosition(QuotationIdBase _quotationId, KCS_QLLVPosition _lVPosition)
+    {
+        if (!_quotationId || !_lVPosition)
+        {
+            return false;
+        }
+
+        return (select firstonly RecId from salesQuotationLine
+                   where salesQuotationLine.QuotationId  == _quotationId      &&
+                         salesQuotationLine.KCS_QLLVPosition == _lVPosition).RecId != 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_existOtherInternalPosition</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if other internal position exists
+    /// </summary>
+    /// <param name = "_quotationId">Quotation id</param>
+    /// <param name = "_lVPosition">LV position</param>
+    /// <param name = "_recId">current rec id</param>
+    /// <returns>true or false</returns>
+    server static boolean KCS_existOtherInternalPosition(QuotationIdBase _quotationId, KCS_QLLVPosition _lVPosition,recId _recId)
+    {
+        if (!_quotationId || !_lVPosition)
+        {
+            return false;
+        }
+
+        return (select firstonly RecId from salesQuotationLine where salesQuotationLine.QuotationId  == _quotationId
+                    && salesQuotationLine.KCS_QLLVPosition == _lVPosition
+                    && salesQuotationLine.KCS_QLInternalPosition > 0
+                    && salesQuotationLine.RecId != _recId).RecId != 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_getLastInternalPosition</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_quotationId">QuotationIdBase</param>
+    /// <param name = "_lVPosition">KCS_QLLVPosition</param>
+    /// <returns>KCS_QLInternalPosition</returns>
+    static KCS_QLInternalPosition  KCS_getLastInternalPosition(QuotationIdBase _quotationId, KCS_QLLVPosition  _lVPosition)
+    {
+        return (select firstonly SalesQuotationLine order by KCS_QLInternalPosition desc 
+            where SalesQuotationLine.QuotationId == _quotationId && SalesQuotationLine.KCS_QLLVPosition == _lVPosition).KCS_QLInternalPosition;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_getLastLVPosition</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_quotationId">QuotationIdBase</param>
+    /// <param name = "_fromLVPosition">KCS_QLLVPosition</param>
+    /// <returns>KCS_QLLVPosition</returns>
+    static KCS_QLLVPosition  KCS_getLastLVPosition(QuotationIdBase   _quotationId, KCS_QLLVPosition    _fromLVPosition = '')
+    {
+        str 20    compStr = '';
+        ;
+        if (_fromLVPosition)
+        {
+            compStr = substr(_fromLVPosition,1,strlen(_fromLVPosition) - strlen(SalesQuotationLine::KCS_lastPartOfTypicalLV(_fromLVPosition))) + '*';
+            return (select firstonly SalesQuotationLine order by KCS_QLLVPosition desc 
+                where SalesQuotationLine.QuotationId == _quotationId && SalesQuotationLine.KCS_QLLVPosition like compStr).KCS_QLLVPosition;
+        }
+        else
+        {
+            return (select firstonly SalesQuotationLine order by KCS_QLLVPosition desc 
+                where SalesQuotationLine.QuotationId == _quotationId).KCS_QLLVPosition;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_getNewLVPos</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_quotationId">QuotationIdBase</param>
+    /// <param name = "_prevLVPos">KCS_QLLVPosition</param>
+    /// <param name = "_quickCopy">boolean</param>
+    /// <returns>KCS_QLLVPosition</returns>
+    static KCS_QLLVPosition KCS_getNewLVPos(QuotationIdBase  _quotationId, KCS_QLLVPosition    _prevLVPos, boolean _quickCopy = false)
+    {
+        #define.Null('0')
+
+        KCS_QLStdStepSize       stdStepSize;
+        KCS_QLLVPosition        newLVPos;
+        int                     partLength;
+        boolean                 changedMatrix = false;
+
+        stdStepSize = SalesQuotationTable::find(_quotationId).KCS_QLStdStepSize;
+        stdStepSize = stdStepSize ? stdStepSize : 1;
+
+        if (SalesQuotationLine::KCS_isTypicalLV(_prevLVPos))
+        {
+            newLVPos    = SalesQuotationLine::KCS_lastPartOfTypicalLV(_prevLVPos);
+            partLength  = strlen(newLVPos);
+            
+            if (_quickCopy)
+            {
+                newLVPos    = salesQuotationLine::KCS_getLastLVPosition(_quotationId ,_prevLVPos);
+                newLVPos    = SalesQuotationLine::KCS_lastPartOfTypicalLV(newLVPos);
+                newLVPos    = num2str(str2num(newLVPos) + stdStepSize,0,0,0,0);
+            }
+            else
+            {
+                newLVPos    = num2str(str2num(newLVPos) + stdStepSize,0,0,0,0);
+            }
+            if (partLength < strlen(newLVPos))
+            {
+                changedMatrix = true;
+            }
+            else if (partLength > strlen(newLVPos))
+            {
+                while (partLength > strlen(newLVPos))
+                {
+                    newLVPos = #Null + newLVPos;
+                }
+            }
+
+            newLVPos    = substr(_prevLVPos,1,strlen(_prevLVPos) - partLength) + newLVPos;
+
+            if (SalesQuotationLine::KCS_existLVPosition(_quotationId,newLVPos))
+            {
+                newLVPos    = salesQuotationLine::KCS_getLastLVPosition(_quotationId ,_prevLVPos);
+                newLVPos    = SalesQuotationLine::KCS_lastPartOfTypicalLV(newLVPos);
+                partLength  = strlen(newLVPos);
+                newLVPos    = num2str(str2num(newLVPos) + stdStepSize,0,0,0,0);
+                
+                if (partLength < strlen(newLVPos))
+                {
+                    changedMatrix = true;
+                }
+                else if (partLength > strlen(newLVPos))
+                {
+                    while (partLength > strlen(newLVPos))
+                    {
+                        newLVPos = #Null + newLVPos;
+                    }
+                }
+                newLVPos    = substr(_prevLVPos,1,strlen(_prevLVPos) - partLength) + newLVPos;
+            }
+        }
+        else
+        {
+            partLength  = strlen(_prevLVPos);
+
+            if (_quickCopy)
+            {
+                newLVPos    = SalesQuotationLine::KCS_getLastLVPosition(_quotationId);
+                newLVPos    = num2str(str2num(newLVPos) + stdStepSize,0,0,0,0);
+            }
+            else
+            {
+                newLVPos    = num2str(str2num(_prevLVPos) + stdStepSize,0,0,0,0);
+            }
+
+            if (partLength < strlen(newLVPos))
+            {
+                changedMatrix = true;
+            }
+            else if (partLength > strlen(newLVPos))
+            {
+                while (partLength > strlen(newLVPos))
+                {
+                    newLVPos = #Null + newLVPos;
+                }
+            }
+
+            /*if (SalesQuotationLine::KCS_existLVPosition(_quotationId,newLVPos))
+            {
+                newLVPos    = SalesQuotationLine::KCS_getLastLVPosition(_quotationId);
+                partLength  = strlen(newLVPos);
+                newLVPos    = num2str(str2num(newLVPos) + stdStepSize,0,0,0,0);
+                
+                if (partLength < strlen(newLVPos))
+                {
+                    changedMatrix = true;
+                }
+                else if (partLength > strlen(newLVPos))
+                {
+                    while (partLength > strlen(newLVPos))
+                    {
+                        newLVPos = #Null + newLVPos;
+                    }
+                }
+            }*/
+        }
+        return newLVPos;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_isTypicalLV</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if it is a typical LV position
+    /// </summary>
+    /// <param name = "_lVPosition">LV position</param>
+    /// <returns>true or false</returns>
+    server static boolean KCS_isTypicalLV(KCS_QLLVPosition _lVPosition)
+    {
+        if (strscan(_lVPosition,'.',1,strlen(_lVPosition)))
+        {
+            return true;
+        }
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_lastPartOfTypicalLV</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the last pasrt of LV Typical postion
+    /// </summary>
+    /// <param name = "_lVPosition">LV position</param>
+    /// <returns>position</returns>
+    server static KCS_QLLVPosition KCS_lastPartOfTypicalLV(KCS_QLLVPosition _lVPosition)
+    {
+        return substr(_lVPosition,strscan(_lVPosition,'.',strlen(_lVPosition),-strlen(_lVPosition)) + 1,strlen(_lVPosition));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_QLLVPositionModified</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Modifies KCS_KBVSalesTenderLink record
+    /// </summary>
+    /// <returns>true or false</returns>
+    boolean KCS_QLLVPositionModified()
+    {
+        KCS_QLLVPosition    oldLVPos;
+        str                 newLVPos;
+        str                 LVBeforeMatrix;
+        SalesQuotationLine  lsalesQuotationLine;
+        KCS_KBVSalesTenderLink  salesTenderLink;
+        boolean                 changedMatrix = false;
+        ;
+        oldLVPos    = this.orig().KCS_QLLVPosition;
+        newLVPos    = this.KCS_QLLVPosition;
+        LVBeforeMatrix  = newLVPos;
+
+        salesTenderLink = KCS_KBVSalesTenderLink::find(this.QuotationId,true);
+        if (!KCS_KBVTenderIdUtility::CanBeInsertedInBiggerMatrix(newLVPos,salesTenderLink.TenderMatrix))
+        {
+            if (salesTenderLink.RecId)
+            {
+                If (Box::okCancel("@NDX:NXAAdjustLVWidth",DialogButton::Ok,"@NDX:NXAExpandMatrix") == DialogButton::Ok)
+                {
+                    ttsbegin;
+                    salesTenderLink.selectForUpdate();
+                    salesTenderLink.TenderMatrix = KCS_KBVTenderIdUtility::CreateNewTenderMatrix(newLVPos,salesTenderLink.TenderMatrix);
+                    salesTenderLink.update();
+                    ttscommit;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                salesTenderLink.QuotationId = this.QuotationId;
+                salesTenderLink.TenderMatrix = KCS_KBVTenderIdUtility::CreateNewTenderMatrix(newLVPos,salesTenderLink.TenderMatrix);
+                salesTenderLink.insert();
+            }
+            changedMatrix   = true;
+        }
+
+        newLVPos    = KCS_KBVTenderIdUtility::fillMatrix(newLVPos,salesTenderLink.TenderMatrix);
+
+        if (this.KCS_QLLVPosition != this.orig().KCS_QLLVPosition)
+        {
+            if (SalesQuotationLine::KCS_existOtherInternalPosition(this.QuotationId, oldLVPos, this.RecId))
+            {
+                if (this.RecId)
+                {
+                    if (Box::yesNo("@NDX:NXAAdjustLV2",DialogButton::No) == DialogButton::Yes)
+                    {
+                        while select forupdate lsalesQuotationLine where lsalesQuotationLine.QuotationId      == this.QuotationId
+                                                                      && lsalesQuotationLine.KCS_QLLVPosition == oldLVPos
+                                                                      && lSalesQuotationLine.RecId
+                                                                      && lsalesQuotationLine.RecId != this.RecId
+                        {
+                            ttsbegin;
+                            lsalesQuotationLine.KCS_QLLVPosition = newLVPos;
+                            lsalesQuotationLine.LineNum = lsalesQuotationLine.buildLineNumFromLVPos();
+                            lsalesQuotationLine.doUpdate();
+                            ttscommit;
+                        }
+                        this.KCS_QLLVPosition   = newLVPos;
+                        this.LineNum = this.buildLineNumFromLVPos();
+                        this.doUpdate();
+                        if (FormDataUtil::getFormDataSource(this))
+                        {
+                            FormDataUtil::getFormDataSource(this).research(true);
+                        }
+                    }
+                    else
+                    {
+                        newLVPos        = LVBeforeMatrix;
+                        if (this.RecId)
+                        {
+                            this.doUpdate();
+                        }
+                    }
+                }
+            }
+            else
+            {
+                if (this.RecId && this.orig().KCS_QLLVPosition && this.KCS_QLLVPosition != this.orig().KCS_QLLVPosition)
+                {
+                    this.KCS_QLLVPosition   = newLVPos;
+                    this.LineNum = this.buildLineNumFromLVPos();
+                    this.doUpdate();
+                }
+            }
+        }
+        if (changedMatrix)
+        {
+            salesTenderLink.KCS_KBVTenderMatrixModified(newLVPos);
+            if (!this.RecId)
+            {
+                this.KCS_QLLVPosition   = newLVPos;
+                this.LineNum = this.buildLineNumFromLVPos();
+            }
+            if (FormDataUtil::getFormDataSource(this))
+            {
+                FormDataUtil::getFormDataSource(this).research(true);
+            }
+        }
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_RecalcAfterCalcPDPriceChanged</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Recalculates values after PDP price change
+    /// </summary>
+    void KCS_RecalcAfterCalcPDPriceChanged()
+    {
+        ;
+        this.KCS_CalcSalesPrice = this.KCS_CalcPDPPrice;
+        this.KCS_CalcUseLineDisc = false;
+        this.KCS_calcUseMultiLineDisc = false;
+        this.KCS_calcUseEndDisc = false;
+        this.KCS_calcLinePercent = 0;
+        this.KCS_calcMultiLnPercent = 0;
+
+        this.modifiedField(fieldnum(SalesQuotationLine,KCS_CalcSalesPrice), true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>KCS_setNewLVInternalPos</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed from AVA
+    /// </summary>
+    /// <param name = "_prevLVPos">_prevLVPos</param>
+    /// <param name = "_prevInternalPos">_prevInternalPos</param>
+    /// <param name = "_prevLineNum">_prevLineNum</param>
+    /// <param name = "_addGroup">_addGroup</param>
+    /// <param name = "_addNewLVpos">_addNewLVpos</param>
+    public void KCS_setNewLVInternalPos(KCS_QLLVPosition _prevLVPos, KCS_QLInternalPosition _prevInternalPos, LineNum _prevLineNum, boolean _addGroup = false, boolean  _addNewLVpos = false)
+    {
+        if (_prevLVPos)
+        {
+            if (_prevInternalPos && !_addGroup && !_addNewLVpos)
+            {
+                this.KCS_QLLVPosition         = _prevLVPos;
+                this.KCS_QLInternalPosition   = SalesQuotationLine::KCS_getLastInternalPosition(this.QuotationId,this.KCS_QLLVPosition) + 1;
+                this.KCS_GAEBOZ = SalesQuotationLine::AVALvGaebOz(this.QuotationId, this.KCS_QLLVPosition, this.KCS_QLInternalPosition);
+            }
+            else if ((!_prevInternalPos && !_addGroup)   || _addNewLVpos)
+            {
+                if (_prevLineNum != this.LineNum || !this.RecId)
+                {
+                    this.KCS_QLLVPosition         = SalesQuotationLine::KCS_getNewLVPos(this.QuotationId,_prevLVPos);
+                    this.KCS_QLInternalPosition   = 0;
+                    this.KCS_QLLVPosition = KCS_KBVTenderIdUtility::fillMatrix(this.KCS_QLLVPosition, KCS_KBVSalesTenderLink::find(this.QuotationId).TenderMatrix);
+                }
+            }
+            else if (_addGroup)
+            {
+                if (_prevLineNum != this.LineNum || !this.RecId)
+                {
+                    this.KCS_QLLVPosition         = SalesQuotationLine::KCS_getNewLVPos(this.QuotationId,_prevLVPos);
+                    this.KCS_QLInternalPosition   = 1;
+                    this.KCS_QLLVPosition = KCS_KBVTenderIdUtility::fillMatrix(this.KCS_QLLVPosition, KCS_KBVSalesTenderLink::find(this.QuotationId).TenderMatrix);
+                }
+
+            }
+        }
+        else
+        {
+            this.KCS_QLLVPosition = KCS_KBVTenderIdUtility::fillMatrix(this.KCS_QLLVPosition, KCS_KBVSalesTenderLink::find(this.QuotationId).TenderMatrix);
+        }
+        this.LineNum = this.buildLineNumFromLVPos();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVALvGaebOz</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA
+    /// </summary>
+    /// <param name = "_quotationId">QuotationIdBase</param>
+    /// <param name = "_lvPos">KCS_QLLVPosition</param>
+    /// <param name = "_internalPos">KCS_QLInternalPosition</param>
+    /// <returns>KCS_GAEBOZ</returns>
+    public static KCS_GAEBOZ AVALvGaebOz(QuotationIdBase _quotationId, KCS_QLLVPosition _lvPos, KCS_QLInternalPosition _internalPos)
+    {
+        SalesQuotationLine  sql;
+
+        if (_internalPos)
+        {
+            select firstonly KCS_GAEBOZ from sql where sql.QuotationId == _quotationId
+                                                    && sql.KCS_QLLVPosition == _lvPos;
+            return sql.KCS_GAEBOZ;
+        }
+        else
+        {
+            return '';
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateField</Name>
+				<Source><![CDATA[
+    public boolean  validateField(FieldId  _fieldId)
+    {
+        boolean         ok = true;
+        container       conErrorMessage;
+
+        boolean recordsCreated;
+        EcoResProductRecId productRecId;
+
+
+        if (ok && (_fieldId == fieldnum(SalesQuotationLine, ItemId)))
+        {
+            [productRecId, recordsCreated] = MCRInventSearch::searchProduct(this, this.itemId);
+
+            // DataSource ItemId.modified() is called on the MCRSalesQuickQuoteForm, if a product is returned then
+            //  it means the line was not updated there, so set ItemId and update product dimensions based on returned product.
+            if (productRecId)
+            {
+                InventDistinctProduct distinctProduct = InventDistinctProduct::findByProduct(productRecId);
+                ItemId newItemId = distinctProduct ? distinctProduct.ItemId : InventTable::findByProduct(productRecId).ItemId;
+                this.ItemId = newItemId;
+            }
+        }
+
+        ok = next validateField(_fieldId);
+
+        if (ok && (_fieldId == fieldnum(SalesQuotationLine, ItemId)))
+        {
+            [ok, conErrorMessage] = NDX_ItemValidity::checkValidityQuotation(this.ItemId, this.QuotationId);
+            
+            if (!ok)
+            {
+                Warning(NDX_ItemValidity::conErrorMessage2ValidityMessage(conErrorMessage));
+            }
+        }
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

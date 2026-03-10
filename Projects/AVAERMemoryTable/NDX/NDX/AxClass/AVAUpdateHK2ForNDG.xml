@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAUpdateHK2ForNDG</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Batch class that updates AVAHK2NDG table records for all NDG item ids with NDX related data
+/// </summary>
+public class AVAUpdateHK2ForNDG extends RunBaseBatch
+{
+    CompanyId   allowedCompanyId    = 'NDX';
+    CompanyId   targetCompanyId     = 'NDG';
+
+    #define.CurrentVersion(1)
+    #define.Version1(1)
+    #localmacro.CurrentList
+        allowedCompanyId,
+        targetCompanyId
+    #endmacro
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        AVAUpdateHK2ForNDG  updateHK2ForNDG;
+
+        updateHK2ForNDG = AVAUpdateHK2ForNDG::construct();
+
+        if(updateHK2ForNDG.prompt())
+        {
+            updateHK2ForNDG.runOperation();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    server static AVAUpdateHK2ForNDG construct()
+    {
+        return new AVAUpdateHK2ForNDG();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <returns>description</returns>
+    public static ClassDescription description()
+    {
+        return "@NDX:NXAUpdateHK2ForNDG";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialog</Name>
+				<Source><![CDATA[
+        /// <summary>
+    ///    Returns a class that contains the methods that are described by the <c>RunBaseDialogable</c>
+    ///    interface.
+    /// </summary>
+    /// <returns>
+    ///    A class that contains the methods that are described by the <c>RunBaseDialogable</c> interface.
+    /// </returns>
+    /// <remarks>
+    ///    A dialog box can be either built by using the <c>Dialog</c> class or by using a class that is
+    ///    created in the Application Object Tree (AOT).
+    /// </remarks>
+    public Object dialog()
+    {
+        DialogRunbase       dialog = super();
+        ;
+
+        return dialog;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialogPostRun</Name>
+				<Source><![CDATA[
+    public void dialogPostRun(DialogRunbase dialog)
+    {
+        ;
+        super(dialog);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canGoBatchJournal</Name>
+				<Source><![CDATA[
+    protected boolean canGoBatchJournal()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// canRunInBewSession
+    /// </summary>
+    /// <returns>true</returns>
+    protected boolean canRunInNewSession()
+    {
+        boolean ret;
+        ret = true;
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// runs class logic
+    /// </summary>
+    public void run()
+    {
+        if(curExt() != allowedCompanyId)
+        {
+            throw error(strFmt("@NDX:NXAUpdateHK2WrongCompany", allowedCompanyId));
+        }
+        
+        info("@NDX:NXAUpdateHK2StartInfo");
+            
+        this.selectItems();
+
+        info("@NDX:NXAUpdateHK2FinishInfo");
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectItems</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// loops through all NDG items and compares NDX values for information updating
+    /// </summary>
+    public void selectItems()
+    {
+        InventTable inventTable_target, inventTable_allowed;
+
+        // kernel adds a DataAreaId condition to simple table field joins (A.ItemId == B.ItemId), as a workaround A.ItemId == B.ItemId+'' is needed
+        while select crosscompany: [targetCompanyId, allowedCompanyId] inventTable_target
+            join inventTable_allowed
+            where inventTable_target.ItemId == inventTable_allowed.ItemId+''
+            && inventTable_target.DataAreaId == targetCompanyId
+            && inventTable_allowed.DataAreaId == allowedCompanyId
+        {
+            Price hk2Value = 0;
+
+            if(inventTable_allowed.inventItemSetupSupplyType().DefaultOrderType == ReqPOType::Production)
+            {
+                hk2Value = inventTable_allowed.inventTableModuleInvent().NDX_showHK2current();
+            }
+            else if(inventTable_allowed.inventItemSetupSupplyType().DefaultOrderType == ReqPOType::Purch)
+            {
+                hk2Value = inventTable_allowed.inventTableModulePurch().NDX_showHK2PriceDisc();
+            }
+
+            this.updateHK2NDGTable(inventTable_target.ItemId, hk2Value);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateHK2NDGTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// updates a AVAHK2NDG record or creates a new one for provided item id
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_hk2Value">Price</param>
+    public void updateHK2NDGTable(ItemId _itemId, Price _hk2Value = 0)
+    {
+        AVAHK2NDG hk2Ndg = AVAHK2NDG::findItemId(_itemId, true);
+
+        ttsbegin;
+
+        if(hk2Ndg)
+        {
+            hk2Ndg.HK2p1000 = _hk2Value;
+            hk2Ndg.update();
+        }
+        else
+        {
+            hk2Ndg.ItemId   = _itemId;
+            hk2Ndg.HK2p1000 = _hk2Value;
+            hk2Ndg.insert();
+        }
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// pack
+    /// </summary>
+    /// <returns>container</returns>
+    public container pack()
+    {
+        return [#CurrentVersion,#CurrentList];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// unpack
+    /// </summary>
+    /// <param name = "packedClass">packedClass</param>
+    /// <returns>boolean</returns>
+    public boolean unpack(container packedClass)
+    {
+        Version version = RunBase::getVersion(packedClass);
+        ;
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version,#CurrentList] = packedClass;
+                break;
+            default:
+                return false;
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

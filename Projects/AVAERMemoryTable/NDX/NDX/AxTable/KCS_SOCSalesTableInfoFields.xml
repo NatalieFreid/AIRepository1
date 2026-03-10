@@ -1,0 +1,531 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>KCS_SOCSalesTableInfoFields</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class KCS_SOCSalesTableInfoFields extends common
+{
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// find()
+    /// </summary>
+    /// <param name = "_salesId">SalesId</param>
+    /// <param name = "_forupdate">boolean</param>
+    /// <returns>KCS_SOCSalesTableInfoFields</returns>
+    public static KCS_SOCSalesTableInfoFields find(AVATableInfoFieldTypes   _infoType,
+                                                   Salesid                  _salesId, 
+                                                   boolean                  _forupdate = false)
+    {
+        KCS_SOCSalesTableInfoFields   salesTableInfoFields;
+
+        salesTableInfoFields.selectForUpdate(_forupdate);
+
+        select firstonly salesTableInfoFields 
+            where salesTableInfoFields.InfoType == _infoType
+               && salesTableInfoFields.SalesId  == _salesId;
+
+        return salesTableInfoFields;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>exist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// exist
+    /// </summary>
+    /// <param name = "_salesId">SalesId</param>
+    /// <returns>boolean</returns>
+    static boolean exist(AVATableInfoFieldTypes _infoType,
+                         Salesid                _salesId)
+    {
+        KCS_SOCSalesTableInfoFields   salesTableInfoFields;
+
+        select firstonly salesTableInfoFields 
+            where salesTableInfoFields.InfoType == _infoType
+               && salesTableInfoFields.SalesId == _salesId;
+
+        return salesTableInfoFields.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initInfoFields</Name>
+				<Source><![CDATA[
+    public void initInfoFields(Common _record)
+    {
+        switch (_record.TableId)
+        {
+            case tableNum(SalesTable):
+                this.initInfoFieldsFromSalesTable(_record);
+                break;
+            case tableNum(InventTransferTable):
+                this.initInfoFieldsFromInventTransferTable(_record);
+                break;
+            default:
+                throw error(Error::wrongUseOfFunction(funcName()));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initInfoFieldsFromSalesTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// copied from AX2009 KCS_SOCSalesTableInfoFields void NDX_SOCCreateInfoFields(SalesTable  salesTable)
+    /// </summary>
+    /// <param name = "_salesTable">SalesTable</param>
+    public void initInfoFieldsFromSalesTable(SalesTable _salesTable)
+    {
+        AVASalesInfoFields          salesInfoFields;
+        KCS_SOCSalesTableInfoFields salesTableInfoFields;
+        KCS_ChainGroupInfoFields    chainGroupInfoFields;
+        /*DialogButton    diagBut;
+        str             diagTxt;*/
+        //Dialog          dialog;
+        /*DialogField     salesInfo;
+        DialogField     chainInfo;*/
+        //FormBuildDesign formBuildDesign;
+        //FormBuildStringControl  SalesInfoTxt, chainInfoTxt, Info1Txt;
+
+        salesInfoFields                         = AVASalesInfoFields::find(_salesTable.custTable_CustAccount().Party);
+        salesTableInfoFields                    = KCS_SOCSalesTableInfoFields::find(AVATableInfoFieldTypes::Sales, _salesTable.SalesId);
+        if(_salesTable.kcs_chainId)
+        {
+            chainGroupInfoFields                    = KCS_ChainGroupInfoFields::find(_salesTable.KCS_ChainId);
+        }
+
+
+        if (!salesTableInfoFields)
+        {
+            ttsBegin;
+            this.clear();
+            this.SalesId    = _salesTable.SalesId;
+            this.InfoType   = AVATableInfoFieldTypes::Sales;
+
+            if (salesInfoFields)
+            {
+                this.InfoField1  = salesInfoFields.InfoField1;
+                this.InfoField2  = salesInfoFields.InfoField2;
+                this.InfoField3  = salesInfoFields.InfoField3;
+            }
+            if(chainGroupInfoFields)
+            {
+                if (chainGroupInfoFields.InfoField1)
+                {
+                    this.InfoField1 += '\n' + "@SYS81347" + ' ' + _salestable.KCS_ChainId + ':\n';
+                    this.InfoField1 += chainGroupInfoFields.InfoField1;
+                }
+                if (chainGroupInfoFields.InfoField2)
+                {
+                    this.InfoField2 += '\n' + "@SYS81347" + ' ' + _salestable.KCS_ChainId + ':\n';
+                    this.InfoField2 += chainGroupInfoFields.InfoField2;
+                }
+                if (chainGroupInfoFields.InfoField3)
+                {
+                    this.InfoField3 += '\n' + "@SYS81347" + ' ' + _salestable.KCS_ChainId + ':\n';
+                    this.InfoField3 += chainGroupInfoFields.InfoField3;
+                }
+            }
+            this.insert();
+            ttsCommit;
+
+            /*if (this.InfoField2)
+            {
+
+                //diagTxt = this.InfoField2 + '\n\n' + SysLabel::labelId2String(literalStr("@NDX:NDAConfirmInfo"));
+                //diagBut = Box::yesNoAxaptaForm(diagTxt, DialogButton::No, SysLabel::labelId2String(literalStr("@NDX:NDAInfo2Query")));
+                dialog = new Dialog("@NDX:NDAConfirmInfo");
+                formBuildDesign = dialog.formBuildDesign();
+                //formBuildDesign.columns(2, ColumnsMode::Fixed);
+                //salesInfo = dialog.addField(extendedTypeStr(String255), "@NDX:NXACustomerInfo");
+                salesInfotxt = formBuildDesign.addControl(FormControlType::String, "@NDX:NXACustomerInfo");
+                SalesInfoTxt.text(salesInfoFields.InfoField2);
+                SalesInfoTxt.label("@NDX:NXACustomerInfo");
+                SalesInfoTxt.displayHeight(10);
+                SalesInfoTxt.width(-1, 1);
+                SalesInfoTxt.allowEdit(false);
+                chainInfoTxt = formBuildDesign.addControl(FormControlType::String, "@NDX:NXAChainInfo");
+                chainInfoTxt.label("@NDX:NXAChainInfo");
+                chainInfoTxt.text(chainGroupInfoFields.InfoField2);
+                chainInfoTxt.width(-1, 1);
+                chainInfoTxt.displayHeight(10);
+                chainInfoTxt.allowEdit(false);
+                Info1Txt = formBuildDesign.addControl(FormControlType::String, "@NDX:NXACustInfo1");
+                Info1Txt.label("@NDX:NXACustInfo1");
+                Info1Txt.text(salesInfoFields.InfoField1);
+                Info1Txt.width(-1, 1);
+                Info1Txt.displayHeight(10);
+                Info1Txt.allowEdit(false);
+                /*salesInfo.value(salesInfoFields.InfoField2);
+                salesInfo.active(false);
+                salesInfo.displayHeight(100);*/
+                //DialogField chainInfo = dialog.addField(extendedTypeStr(String255), "@NDX:NXAChainInfo");
+                //chainInfo = dialog.addField(extendedTypeStr(String255), " ");
+                /*chainInfo.value(chainGroupInfoFields.InfoField2);
+                chainInfo.active(false);
+                chainInfo.displayHeight(100);*/
+                dialog.run();
+                if (dialog.closedOk())
+                //if(diagBut == DialogButton::Yes)
+                {
+                    ttsBegin;
+                    this.InfoField2Finished         = NoYes::Yes;
+                    this.InfoField2FinishedUser     = curuserid();
+                    this.InfoField2FinishedDateTime = DateTimeUtil::getSystemDateTime();
+                    this.update();
+                    ttscommit;
+                }
+            }*/
+
+            /*if (this.InfoField1)
+            {
+                info(strFmt("@NDX:NXAInfoAboutInfo1",_salesTable.SalesId, this.InfoField1));
+            }*/
+        }
+        else if (_salesTable.RecId)
+        {
+            ttsBegin;
+            this.selectForUpdate();
+            if (salesInfoFields)
+            {
+                this.InfoField1                 = salesInfoFields.InfoField1;
+                this.InfoField2                 = salesInfoFields.InfoField2;
+                this.InfoField3                 = salesInfoFields.InfoField3;
+                this.InfoField2Finished         = NoYes::No;
+                this.InfoField2FinishedUser     = '';
+                this.InfoField2FinishedDateTime = DateTimeUtil::minValue();
+
+            }
+            if(chainGroupInfoFields)
+            {
+                if (chainGroupInfoFields.InfoField1)
+                {
+                    this.InfoField1 += '\n' + "@SYS81347" + ' ' + _salestable.KCS_ChainId + ':\n';
+                    this.InfoField1 += chainGroupInfoFields.InfoField1;
+                }
+                if (chainGroupInfoFields.InfoField2)
+                {
+                    this.InfoField2 += '\n' + "@SYS81347" + ' ' + _salestable.KCS_ChainId + ':\n';
+                    this.InfoField2 += chainGroupInfoFields.InfoField2;
+                }
+                if (chainGroupInfoFields.InfoField3)
+                {
+                    this.InfoField3 += '\n' + "@SYS81347" + ' ' + _salestable.KCS_ChainId + ':\n';
+                    this.InfoField3 += chainGroupInfoFields.InfoField3;
+                }
+            }
+            this.update();
+            ttsCommit;
+
+            if (this.InfoField1)
+            {
+                info(strFmt("@NDX:NXAInfoAboutInfo1",_salesTable.SalesId, this.InfoField1));
+            }
+            if (this.InfoField2)
+            {
+                info(SysLabel::labelId2String(literalStr("@NDX:NDAInfo2ConfNeeded")));
+            }
+
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initInfoFieldsFromInventTransferTable</Name>
+				<Source><![CDATA[
+    public void initInfoFieldsFromInventTransferTable(InventTransferTable _inventTransferTable)
+    {
+        KCS_SOCSalesTableInfoFields salesTableInfoFields;
+       
+        salesTableInfoFields = KCS_SOCSalesTableInfoFields::find(AVATableInfoFieldTypes::Sales, _inventTransferTable.TransferId);
+
+        if (!salesTableInfoFields)
+        {
+            ttsBegin;
+            this.clear();
+            this.SalesId    = _inventTransferTable.TransferId;
+            this.InfoType   = AVATableInfoFieldTypes::TransferOrderShip;
+            this.insert();
+            ttsCommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///modifiedField
+    /// </summary>
+    /// <param name = "_fieldId">FieldId</param>
+    public void modifiedField(FieldId _fieldId)
+    {
+        super(_fieldId);
+
+        switch (_fieldId)
+        {
+            case fieldNum(KCS_HDMSalesQuotationTableInfoFields, InfoField2Finished):
+                this.InfoField2FinishedUser         = curUserId();
+                this.InfoField2FinishedDateTime     = DateTimeUtil::getSystemDateTime();
+                break;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NDACustInfoFields</DeveloperDocumentation>
+	<FormRef>AVASalesTableInfoFields</FormRef>
+	<Label>@NDX:NDACustInfoFields</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>SalesId</TitleField1>
+	<TitleField2>DataAreaId</TitleField2>
+	<CacheLookup>Found</CacheLookup>
+	<ClusteredIndex>SalesIdx</ClusteredIndex>
+	<CreateRecIdIndex>No</CreateRecIdIndex>
+	<PrimaryIndex>SalesIdx</PrimaryIndex>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>InfoType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InfoField1</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InfoField2</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InfoField3</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AllFields</Name>
+			<Label>@NDX:NDASalesInfoFields</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>InfoType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SalesId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InfoField1</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InfoField2</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InfoField3</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InfoField2Finished</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InfoField2FinishedUser</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InfoField2FinishedDateTime</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Info2</Name>
+			<Label>@NDX:NDACustomerInfo</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>InfoField2</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InfoField2Finished</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InfoField2FinishedUser</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InfoField2FinishedDateTime</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SalesId</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>SalesId</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>InfoField1</Name>
+			<ExtendedDataType>Notes</ExtendedDataType>
+			<HelpText>@NDX:NDASalesInfoField1HT</HelpText>
+			<Label>@NDX:NDASalesInfoField1</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>InfoField2</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>Notes</ExtendedDataType>
+			<HelpText>@NDX:NDASalesInfoField2HT</HelpText>
+			<Label>@NDX:NDASalesInfoField2</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>InfoField3</Name>
+			<ExtendedDataType>Notes</ExtendedDataType>
+			<HelpText>@NDX:NDASalesInfoField3HT</HelpText>
+			<Label>@NDX:AVAShipPackNote</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>InfoField2Finished</Name>
+			<ExtendedDataType>noyesid</ExtendedDataType>
+			<HelpText>@NDX:NDAInfoFieldFinishedHT</HelpText>
+			<Label>@NDX:NDAInfoFieldFinished</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>InfoField2FinishedUser</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>UserId</ExtendedDataType>
+			<HelpText>@NDX:NDAInfoFieldFinishedUserHT</HelpText>
+			<Label>@NDX:NDXUser</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>InfoField2FinishedDateTime</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>StartDateTime</ExtendedDataType>
+			<HelpText>@NDX:NDAInfoFieldFinishedHT</HelpText>
+			<Label>@NDX:NDXDate</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>InfoField4</Name>
+			<ExtendedDataType>Notes</ExtendedDataType>
+			<HelpText>@NDX:AVAWHSMDEInfoLong</HelpText>
+			<Label>@NDX:AVAWHSMDEInfo</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>InfoType</Name>
+			<EnumType>AVATableInfoFieldTypes</EnumType>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>SalesIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>InfoType</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>SalesId</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>SalesTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>SalesTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>SalesTable</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Role>SalesTable</Role>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>SalesId</Name>
+					<Field>SalesId</Field>
+					<RelatedField>SalesId</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintFixed">
+					<Name>InfoType</Name>
+					<Field>InfoType</Field>
+					<ValueStr>AVATableInfoFieldTypes::Sales</ValueStr>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>InventTransferTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>InventTransferTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>InventTransferTable</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Role>InventTransferTable</Role>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>SalesId</Name>
+					<Field>SalesId</Field>
+					<RelatedField>TransferId</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintFixed">
+					<Name>InfoType</Name>
+					<Field>InfoType</Field>
+					<ValueStr>AVATableInfoFieldTypes::TransferOrderShip</ValueStr>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

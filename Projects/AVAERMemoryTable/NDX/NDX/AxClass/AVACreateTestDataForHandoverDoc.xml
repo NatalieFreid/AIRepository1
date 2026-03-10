@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVACreateTestDataForHandoverDoc</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+internal final class AVACreateTestDataForHandoverDoc
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Class entry point. The system will call this method when a designated menu 
+    /// is selected or when execution starts and this class is set as the startup class.
+    /// </summary>
+    /// <param name = "_args">The specified arguments.</param>
+    public static void main(Args _args)
+    {
+        WHSWorkTable                workTable;
+        WHSWorkLine                 workLine;
+        WHSWorkLine                 workLineCheck;
+        WHSPackingWorkLocationSetup packingWorkLocationSetup;
+        WHSPackingWorkLocationSetup packingWorkLocationSetupCheck;
+        WHSLoadLine                 loadLine;
+        Set                         shipments;
+        SetEnumerator               setEnumerator;
+
+        AVAHandoverDocTable         handoverDocTable;
+        AVAHandoverDocLine          handoverDocLine;
+
+
+        shipments = new Set(Types::String);
+
+
+
+        while select workTable
+            where workTable.WorkTransType == WhsWorkTransType::Sales
+               && workTable.WorkStatus == WHSWorkStatus::Closed
+               && workTable.ShipmentId
+            exists join workLineCheck
+                where workLineCheck.WorkId == workTable.WorkId
+                join packingWorkLocationSetupCheck
+                    where packingWorkLocationSetupCheck.wMSLocationId == workLineCheck.WMSLocationId
+                       && packingWorkLocationSetupCheck.InventLocationId == workTable.InventLocationId
+        {
+            shipments.add(workTable.ShipmentId);
+
+            if (shipments.elements() >= 20)
+            {
+                break;
+            }
+        }
+
+        setEnumerator = shipments.getEnumerator();
+
+        while (setEnumerator.moveNext())
+        {
+            while select workTable
+                where workTable.ShipmentId == setEnumerator.current()
+            {
+                ttsbegin;
+
+                select firstonly workLine
+                    where workLine.WorkId == workTable.WorkId
+                    join packingWorkLocationSetup
+                        where packingWorkLocationSetup.wMSLocationId == workLine.WMSLocationId
+                           && packingWorkLocationSetup.InventLocationId == workTable.InventLocationId;
+
+                if (workLine)
+                {
+
+                    handoverDocTable =  AVAHandoverDocTable::find(workTable.ShipmentId, workTable.InventLocationId, workLine.WMSLocationId, true);
+
+                    handoverDocTable.ShipmentId         =  workTable.ShipmentId;
+                    handoverDocTable.InventLocationId   = workTable.InventLocationId;
+                    handoverDocTable.WMSLocationId      = workLine.WMSLocationId;
+                    handoverDocTable.OrderNum           = workTable.OrderNum;
+                    handoverDocTable.write();
+
+                    while select workLine
+                    order by LineNum asc
+                    where workLine.WorkId == workTable.WorkId
+                    {
+                        if (workLine.WorkType == WHSWorkType::Put)
+                        {
+                            break;
+                        }
+
+                        loadLine = WHSLoadLine::findbyRecId(workLine.LoadLineRefRecId);
+
+                        handoverDocLine.HandoverDocId = handoverDocTable.RecId;
+                        handoverDocLine.WorkId          = workLine.WorkId;
+                        handoverDocLine.LineNum         = workLine.LineNum;
+                        handoverDocLine.InventTransId   = loadLine.InventTransId;
+                        handoverDocLine.InventQty       = loadLine.InventQty;
+                        handoverDocLine.PickedQty       = workLine.InventQtyWork;
+                        handoverDocLine.ItemId          = loadLine.ItemId;
+                        handoverDocLine.LoadLineRefRecId = workLine.LoadLineRefRecId;
+                        handoverDocLine.TargetLicensePlateId = workTable.TargetLicensePlateId;
+
+                        if (handoverDocLine.InventQty == handoverDocLine.PickedQty)
+                        {
+                            handoverDocLine.DataType = AVAHandoverDocDataType::Picked;
+                        }
+                        else
+                        {
+                            handoverDocLine.DataType = AVAHandoverDocDataType::Partly;
+                        }
+                        handoverDocLine.insert();
+                    }
+
+                    ttscommit;
+                }
+            }
+        }
+        
+
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

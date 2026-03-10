@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAProdRouteDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA_008462_ProdRouteWrkCtr
+/// AVA_008465_UpdateProdPool
+/// </summary>
+[ExtensionOf(tableStr(ProdRoute))]
+final class AVAProdRouteDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initFromWrkCtrId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_008462_ProdRouteWrkCtr
+    /// </summary>
+    /// <param name = "_wrkCtrId">WrkCtrId</param>
+    public void initFromWrkCtrId(WrkCtrId  _wrkCtrId)
+    {
+        RouteOprTimeProcess         processTime;
+        RouteOprQtyTransferBatch    transferBatch;
+        WrkCtrTable                 wrkCtrTable = WrkCtrTable::find(_wrkCtrId);
+        ProdPool                    prodPool;
+        ProdTable                   prodTable;
+
+        if (this.RecId)
+        {
+            processTime     = this.ProcessTime;
+            transferBatch   = this.TransferBatch;
+        }
+
+        next initFromWrkCtrId(_wrkCtrId);
+        if (_wrkCtrId)
+        {
+            wrkCtrTable = WrkCtrTable::find(_wrkCtrId);
+
+            if (wrkCtrTable)
+            {
+                if (!wrkCtrTable.IsIndividualResource)
+                {
+                    this.QueueTimeBefore        = wrkCtrTable.QueueTimeBefore;
+                    this.SetupTime              = wrkCtrTable.SetupTime;
+                    this.ProcessTime            = wrkCtrTable.ProcessTime;
+                    this.ProcessPerQty          = wrkCtrTable.ProcessPerQty;
+                    this.TranspTime             = wrkCtrTable.TranspTime;
+                    this.QueueTimeAfter         = wrkCtrTable.QueueTimeAfter;
+                    this.ToHours                = wrkCtrTable.ToHours;
+                    this.TransferBatch          = wrkCtrTable.TransferBatch;
+                }
+            }
+        }
+
+        if (this.RecId)
+        {
+            this.ProcessTime    = processTime;
+            this.TransferBatch  = transferBatch;
+            this.ErrorPct = wrkCtrTable.ErrorPct;
+            
+            if (wrkCtrTable.AVAprodPoolId && ProdRoute::findFirst(this.ProdId).RecId == this.RecId)
+            {
+                ttsbegin;
+                prodTable   = ProdTable::find(this.ProdId,true);
+                prodTable.ProdPoolId    = wrkCtrTable.AVAProdPoolId;
+                prodPool    = ProdPool::find(prodTable.ProdPoolId);
+                prodTable.NDX_MasterInCharge        = prodPool.NDX_MasterInCharge;
+                prodTable.NDX_ProductionScheduler   = prodPool.NDX_ProductionScheduler;
+                prodTable.doUpdate();
+                ttscommit;
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of method initValue
+    /// </summary>
+    public void initValue()
+    {
+        next initValue();
+
+        this.RouteGroupId = ProdParameters::find().AVARouteGroupId;
+        if(isConfigurationkeyEnabled(configurationKeyNum(AVAPTM)))
+        {
+            this.AVACavity  = 1.0;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayToolReleaseStatusOK</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN 2024/06/03   AVA_012012_ProdRouteDisplToolReleaseStatusOK
+    /// </summary>
+    /// <returns>ImageInt</returns>
+    [SysClientCacheDataMethodAttribute(true)] 
+    display container avaDisplayToolReleaseStatusOK()
+    {
+        container       retVal;
+        //#define.Image_noRouteTool(1036)
+        const str emptyStr = '';
+
+        KCS_PTMProdRouteTool    kCS_PTMProdRouteTool;
+
+        Query                   q;
+        QueryRun                qr;
+        QueryBuildDataSource    qbds, qbds2, qbds3;
+        boolean                 lNotOK;
+        boolean                 lFound;
+        ;
+        q = new Query();
+        // Existieren zugeordnete Betriebsmittel?
+        qbds = q.addDataSource(tablenum(KCS_PTMProdRouteTool));
+        qbds.addRange(fieldnum(KCS_PTMProdRouteTool, ProdId)).value(this.ProdId);
+        qbds.addRange(fieldnum(KCS_PTMProdRouteTool, OprNum)).value(QueryValue(this.OprNum));
+        qbds.addRange(fieldnum(KCS_PTMProdRouteTool, OprPriority)).value(QueryValue(this.OprPriority));
+        qbds2 = qbds.addDataSource(tablenum(KCS_PTMToolTable));
+        qbds2.joinMode(JoinMode::InnerJoin);
+        qbds2.fetchMode(QueryFetchMode::One2One);
+        qbds2.relations(true);
+        qbds3 = qbds2.addDataSource(tablenum(KCS_PTMReleaseStatusTable));
+        qbds3.joinMode(JoinMode::InnerJoin);
+        qbds3.fetchMode(QueryFetchMode::One2One);
+        qbds3.relations(true);
+        qr = new QueryRun(q);
+        qr.next();
+        kCS_PTMProdRouteTool = qr.get(tablenum(KCS_PTMProdRouteTool));
+        lFound = (kCS_PTMProdRouteTool.ProdId != emptyStr);
+
+        if (lFound)
+        {
+            // sind alle zugeordneten Betriebsmittel 'freigegeben'?
+            qbds3.addRange(fieldnum(KCS_PTMReleaseStatusTable, ReleaseCode)).value(SysQuery::valueNot(AVAPTMReleaseCode::Released));
+            qr = new QueryRun(q);
+            qr.next();
+            kCS_PTMProdRouteTool = qr.get(tablenum(KCS_PTMProdRouteTool));
+            lNotOK = (kCS_PTMProdRouteTool.ProdId != emptyStr);
+        }
+        //return (lFound) ? ((lNotOK) ? #Image_NotAtAllOK : #Image_OK) : #Image_noRouteTool ;
+        if (lfound)
+        {
+            if (lNotOK)
+            {
+                retval = ImageReference::constructForSymbol(ImageReferenceSymbol::RedDiamond).pack();
+            }
+            else
+            {
+                retval = ImageReference::constructForSymbol(ImageReferenceSymbol::GreenCheck).pack();
+            }
+        }
+        else
+        {
+            retval = ImageReference::constructForSymbol(ImageReferenceSymbol::YellowExclamationPoint).pack();        
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedFieldValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/08/01     AVA_12288_DecimalsCavity
+    /// </summary>
+    /// <param name = "_fieldName">Fieldname</param>
+    /// <param name = "_arrayIndex">int</param>
+    public void modifiedFieldValue(
+        FieldName _fieldName,
+        int       _arrayIndex)
+    {
+        next modifiedFieldValue(_fieldName, _arrayIndex);
+
+        if(isConfigurationkeyEnabled(configurationKeyNum(AVAPTM)))
+        {
+            switch (_fieldName)
+            {
+                case fieldStr(ProdRoute, AVACavity):
+                case fieldStr(ProdRoute, ProcessTime):
+                case fieldStr(ProdRoute, ToHours):
+                    if (this.KCS_PTMCycleTime > 0)
+                    {
+                        this.AVARouteOprCavityMap::KCS_PTMcalcProcessPerQty();
+                    }
+                    break;
+    
+                case fieldStr(ProdRoute, KCS_PTMCycleTime):
+                    if (this.ProcessTime == 0)
+                    {
+                        this.ProcessTime = 1;
+                    }
+                    if (this.KCS_PTMCycleTime > 0)
+                    {
+                        this.AVARouteOprCavityMap::KCS_PTMcalcProcessPerQty();
+                    }
+                    if(this.KCS_PTMCycleTime == 0)
+                    {
+                        this.ProcessPerQty =1;
+                    }
+                    break;
+    
+                case fieldStr(ProdRoute, ProcessPerQty):
+                    if (this.KCS_PTMCycleTime > 0)
+                    {
+                        this.AVARouteOprCavityMap::KCS_PTMcalcCycleTime();
+                    }
+                    break;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

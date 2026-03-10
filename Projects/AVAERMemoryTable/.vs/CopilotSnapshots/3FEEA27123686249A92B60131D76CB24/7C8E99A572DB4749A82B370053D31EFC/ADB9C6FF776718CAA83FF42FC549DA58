@@ -1,0 +1,323 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAERReportCleanupService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Service class for AVAER Report Memory Cleanup batch job
+/// Cleans up Report field content in AVAERReportToMemory table for specified date ranges
+/// </summary>
+internal final class AVAERReportCleanupService extends SysOperationServiceBase
+{
+    /// <summary>
+    /// Main cleanup method that processes the report data cleanup
+    /// </summary>
+    /// <param name = "_contract">The data contract containing query parameters</param>
+    [SysEntryPointAttribute(true)]
+    public void cleanupReportData(AVAERReportCleanupContract _contract)
+    {
+        QueryRun                queryRun;
+        CustQuotationTable      custQuotationTable;
+        AVAERReportToMemory     avaerReportToMemory;
+        SysOperationProgress    progress;
+        int                     recordsProcessed = 0;
+        int                     recordsCleaned = 0;
+        int                     totalRecords = 0;
+        Query                   query;
+        
+        try
+        {
+            // Validate parameters
+            if (!this.validateParameters(_contract))
+            {
+                return;
+            }
+
+            // Initialize progress indicator
+            progress = new SysOperationProgress();
+            progress.setCaption("@NDX:AVAERReportCleanupProgress");
+            
+            // Get the query from contract
+            query = _contract.parmQuery();
+            
+            if (!query)
+            {
+                throw error("@SYS18447"); // Query not specified
+            }
+            
+            // Create QueryRun from Query
+            queryRun = new QueryRun(query);
+            
+            // Count total records for progress tracking
+            while (queryRun.next())
+            {
+                totalRecords++;
+            }
+            
+            // Reset query for actual processing
+            queryRun.reset();
+            progress.setTotal(totalRecords);
+            
+            info(strFmt("@NDX:AVAERReportCleanupStarted", totalRecords));
+            
+            // Process each CustQuotationTable record
+            while (queryRun.next())
+            {
+                custQuotationTable = queryRun.getNo(1);
+                
+                if (custQuotationTable.RecId)
+                {
+                    recordsProcessed++;
+                    progress.setText(strFmt("@NDX:AVAERReportCleanupProcessing", custQuotationTable.QuotationId));
+                    progress.setCount(recordsProcessed, 1);
+                    
+                    // Find and clean related AVAERReportToMemory records
+                    recordsCleaned += this.cleanupMemoryTableRecords(custQuotationTable);
+                }
+            }
+            
+            // Final status message
+            info(strFmt("@NDX:AVAERReportCleanupCompleted", recordsProcessed, recordsCleaned));
+        }
+        catch (Exception::Error)
+        {
+            error("@NDX:AVAERReportCleanupError");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Cleans up AVAERReportToMemory records for a specific CustQuotationTable record
+    /// </summary>
+    /// <param name = "_custQuotationTable">The CustQuotationTable record to process</param>
+    /// <returns>Number of records cleaned</returns>
+    private int cleanupMemoryTableRecords(CustQuotationTable _custQuotationTable)
+    {
+        AVAERReportToMemory     avaerReportToMemory;
+        int                     cleanedCount = 0;
+        
+        try
+        {
+            ttsbegin;
+            
+            // Find all AVAERReportToMemory records related to this quotation
+            while select forupdate avaerReportToMemory
+                where avaerReportToMemory.RefTableId == tableNum(CustQuotationTable) &&
+                      avaerReportToMemory.RefRecId == _custQuotationTable.RecId &&
+                      avaerReportToMemory.Report != conNull()
+            {
+                // Clear the Report field content
+                avaerReportToMemory.Report = conNull();
+                avaerReportToMemory.update();
+                cleanedCount++;
+            }
+            
+            ttscommit;
+            
+            if (cleanedCount > 0)
+            {
+                info(strFmt("@NDX:AVAERReportMemoryRecordsCleaned", cleanedCount, _custQuotationTable.QuotationId));
+            }
+        }
+        catch (Exception::Error)
+        {
+            ttsabort;
+            error(strFmt("@NDX:AVAERReportMemoryCleanupError", _custQuotationTable.QuotationId));
+            throw;
+        }
+        
+        return cleanedCount;
+    }
+
+    /// <summary>
+    /// Validates the parameters before processing
+    /// </summary>
+    /// <param name = "_contract">The data contract to validate</param>
+    /// <returns>True if parameters are valid</returns>
+    private boolean validateParameters(AVAERReportCleanupContract _contract)
+    {
+        Query query;
+        
+        if (!_contract)
+        {
+            error("@NDX:AVAERReportCleanupNoContract");
+            return false;
+        }
+        
+        query = _contract.parmQuery();
+        
+        if (!query)
+        {
+            error("@NDX:AVAERReportCleanupNoQuery");
+            return false;
+        }
+        
+        return true;
+    }
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>cleanupReportData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Main cleanup method that processes the report data cleanup
+    /// </summary>
+    /// <param name = "_contract">The data contract containing query parameters</param>
+    [SysEntryPointAttribute(true)]
+    public void cleanupReportData(AVAERReportCleanupContract _contract)
+    {
+        QueryRun                queryRun;
+        CustQuotationTable      custQuotationTable;
+        AVAERReportToMemory     avaerReportToMemory;
+        SysOperationProgress    progress;
+        int                     recordsProcessed = 0;
+        int                     recordsCleaned = 0;
+        int                     totalRecords = 0;
+        Query                   query;
+        
+        try
+        {
+            // Validate parameters
+            if (!this.validateParameters(_contract))
+            {
+                return;
+            }
+
+            // Initialize progress indicator
+            progress = new SysOperationProgress();
+            progress.setCaption("@NDX:AVAERReportCleanupProgress");
+            
+            // Get the query from contract
+            query = _contract.parmQuery();
+            
+            if (!query)
+            {
+                throw error("@SYS18447"); // Query not specified
+            }
+            
+            // Create QueryRun from Query
+            queryRun = new QueryRun(query);
+            
+            // Count total records for progress tracking
+            while (queryRun.next())
+            {
+                totalRecords++;
+            }
+            
+            // Reset query for actual processing
+            queryRun.reset();
+            progress.setTotal(totalRecords);
+            
+            info(strFmt("@NDX:AVAERReportCleanupStarted", totalRecords));
+            
+            // Process each CustQuotationTable record
+            while (queryRun.next())
+            {
+                custQuotationTable = queryRun.getNo(1);
+                
+                if (custQuotationTable.RecId)
+                {
+                    recordsProcessed++;
+                    progress.setText(strFmt("@NDX:AVAERReportCleanupProcessing", custQuotationTable.QuotationId));
+                    progress.setCount(recordsProcessed, 1);
+                    
+                    // Find and clean related AVAERReportToMemory records
+                    recordsCleaned += this.cleanupMemoryTableRecords(custQuotationTable);
+                }
+            }
+            
+            // Final status message
+            info(strFmt("@NDX:AVAERReportCleanupCompleted", recordsProcessed, recordsCleaned));
+        }
+        catch (Exception::Error)
+        {
+            error("@NDX:AVAERReportCleanupError");
+            throw;
+        }
+    }
+]]></Source>
+			</Method>
+			<Method>
+				<Name>cleanupMemoryTableRecords</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Cleans up AVAERReportToMemory records for a specific CustQuotationTable record
+    /// </summary>
+    /// <param name = "_custQuotationTable">The CustQuotationTable record to process</param>
+    /// <returns>Number of records cleaned</returns>
+    private int cleanupMemoryTableRecords(CustQuotationTable _custQuotationTable)
+    {
+        AVAERReportToMemory     avaerReportToMemory;
+        int                     cleanedCount = 0;
+        
+        try
+        {
+            ttsbegin;
+            
+            // Find all AVAERReportToMemory records related to this quotation
+            while select forupdate avaerReportToMemory
+                where avaerReportToMemory.RefTableId == tableNum(CustQuotationTable) &&
+                      avaerReportToMemory.RefRecId == _custQuotationTable.RecId &&
+                      avaerReportToMemory.Report != conNull()
+            {
+                // Clear the Report field content
+                avaerReportToMemory.Report = conNull();
+                avaerReportToMemory.update();
+                cleanedCount++;
+            }
+            
+            ttscommit;
+            
+            if (cleanedCount > 0)
+            {
+                info(strFmt("@NDX:AVAERReportMemoryRecordsCleaned", cleanedCount, _custQuotationTable.QuotationId));
+            }
+        }
+        catch (Exception::Error)
+        {
+            ttsabort;
+            error(strFmt("@NDX:AVAERReportMemoryCleanupError", _custQuotationTable.QuotationId));
+            throw;
+        }
+        
+        return cleanedCount;
+    }
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateParameters</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Validates the parameters before processing
+    /// </summary>
+    /// <param name = "_contract">The data contract to validate</param>
+    /// <returns>True if parameters are valid</returns>
+    private boolean validateParameters(AVAERReportCleanupContract _contract)
+    {
+        Query query;
+        
+        if (!_contract)
+        {
+            error("@NDX:AVAERReportCleanupNoContract");
+            return false;
+        }
+        
+        query = _contract.parmQuery();
+        
+        if (!query)
+        {
+            error("@NDX:AVAERReportCleanupNoQuery");
+            return false;
+        }
+        
+        return true;
+    }
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<Label>@NDX:AVAERReportCleanupService</Label>
+	<HelpText>@NDX:AVAERReportCleanupServiceHelp</HelpText>
+	<RunOn>Server</RunOn>
+</AxClass>

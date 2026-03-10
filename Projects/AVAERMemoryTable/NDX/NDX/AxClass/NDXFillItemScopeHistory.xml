@@ -1,0 +1,576 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXFillItemScopeHistory</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// DebuC 16.06.23
+/// </summary>
+class NDXFillItemScopeHistory extends RunBaseBatch
+{
+    KCS_HistoryCalcType     calcType;
+    TransDate               otherDate;
+
+    dialogField             dlgCalcType;
+    dialogField             dlgOtherMonth;
+
+    #define.CurrentVersion(1)
+    #define.Version1(1)
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>canGoBatchJournal</Name>
+				<Source><![CDATA[
+    public boolean canGoBatchJournal()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    /// <returns>Object</returns>
+    public Object dialog()
+    {
+        DialogRunbase       dialog = super();
+        ;
+        dlgCalcType    = dialog.addFieldValue(identifierStr(KCS_HistoryCalcType),0);
+        dlgOtherMonth  = dialog.addFieldValue(identifierStr(TransDate),DateNull());
+
+        dialog.allowUpdateOnSelectCtrl(true);
+
+        this.dialogSelectCtrl();
+        
+        return dialog;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialogSelectCtrl</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    public void dialogSelectCtrl()
+    {
+        super();
+
+        if (dlgCalcType.value() == KCS_HistoryCalcType::Standard)
+        {
+            dlgOtherMonth.enabled(false);
+            dlgOtherMonth.value(DateNull());
+        }
+        else
+        {
+            dlgOtherMonth.enabled(true);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillItemScopeHistory</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    /// <param name = "_year">Yr</param>
+    /// <param name = "_month">monthOfYearId</param>
+    void fillItemScopeHistory(Yr    _year, monthOfYearId    _month)
+    {
+        InventTable                 inventTable;
+        KCS_KAOItemStateTable       itemStateTable;
+        NDXItemStateTable           itemStateTableNDX;
+        InventTrans                 inventTrans;
+        InventTransOrigin           inventTransOrigin;
+        InventTransOriginSalesLine  inventTransOriginSalesline;
+        InventTransOriginProdBOM  inventTransOriginProdBOM;
+        KCS_ItemScopeHistory        history;
+        monthOfYearId               prevMonth;
+        yr                          prevYear;
+        qty                         consumpSales, consumpProd;
+        int                         n,i;
+        InventDim                   inventDim;                                      
+        NDX_ItemScopeHistoryInventSite    itemScopeHistoryInventSite;               
+        ;
+        prevMonth   = _month - 1;
+        if (prevMonth > 0)
+        {
+            prevYear    = _year;
+        }
+        else
+        {
+            prevMonth   = MonthsOfYear::December;
+            prevYear    = _year - 1;
+        }
+
+        while select inventTable where inventTable.ItemType == ItemType::Item 
+            join itemStateTable where itemStateTable.ItemState == inventTable.KCS_KAOItemState
+            join itemStateTableNDX where itemStateTableNDX.RefRecId_KCS_KAO_ItemStateTable == itemStateTable.RecId
+                                   && itemStateTableNDX.CalcItemScopeHistory
+        {
+            select sum(qty) from inventTrans 
+                where inventTrans.ItemId       == inventTable.ItemId
+                    && (inventTrans.StatusIssue == StatusIssue::Sold || inventTrans.StatusIssue == StatusIssue::Deducted)
+                    && inventTrans.DatePhysical >= mkdate(1,_month,_year)
+                    && inventTrans.DatePhysical <= mkdate(31,_month,_year)
+            join inventTransOrigin where inventTransOrigin.RecId == inventTrans.inventTransOrigin
+            join inventTransOriginSalesline where inventTransOriginSalesline.InventTransOrigin == inventTransOrigin.RecId;
+                                  
+            consumpSales    = inventTrans.Qty;
+
+            select sum(qty) from inventTrans 
+                where inventTrans.ItemId       == inventTable.ItemId               
+                && (inventTrans.StatusIssue == StatusIssue::Sold || inventTrans.StatusIssue == StatusIssue::Deducted)
+                && inventTrans.DatePhysical >= mkdate(1,_month,_year)
+                && inventTrans.DatePhysical <= mkdate(31,_month,_year)
+            join inventTransOrigin where inventTransOrigin.RecId == inventTrans.inventTransOrigin
+            join inventTransOriginSalesline where inventTransOriginProdBOM.InventTransOrigin == inventTransOrigin.RecId;
+
+            consumpProd     = inventTrans.Qty;
+
+            history     = KCS_ItemScopeHistory::find(inventTable.ItemId, prevYear, prevMonth);
+
+            if (history.RecId || (consumpProd + consumpSales) != 0)
+            {
+                history.clear();
+                history = KCS_ItemScopeHistory::find(inventTable.ItemId, _year, _month, true);
+                history.ItemId              = inventTable.ItemId;
+                history.Year                = _year;
+                history.MonthOfYear         = _month;
+                history.HistoryDate         = mkdate(31, _month, _year);
+                history.StartQty            = this.ItemQtyPerDate(history.ItemId, mkdate(31, prevMonth, prevYear));
+                history.EndQTy              = this.ItemQtyPerDate(history.ItemId, history.HistoryDate);
+                history.ConsumpSales        = consumpSales;
+                history.ConsumpProd         = consumpProd;
+                history.ConsumpSum          = consumpSales + consumpProd;
+                history.ConsumpAverage      = this.ItemQtyAveragePerDate(history.ItemId, history.HistoryDate);
+                if (history.RecId)
+                {
+                    history.update();
+                    i++;
+                }
+                else
+                {
+                    history.insert();
+                    n++;
+                }
+
+                while select sum(qty) from inventTrans
+                    join inventTransOrigin where inventTransOrigin.RecId == inventTrans.inventTransOrigin
+                    join inventTransOriginSalesline where inventTransOriginSalesline.InventTransOrigin == inventTransOrigin.RecId
+                    join  inventDim
+                    group by InventSiteId
+                    where inventDim.inventDimId == inventTrans.inventDimId
+                    && inventTrans.ItemId       == inventTable.ItemId
+                    && (inventTrans.StatusIssue == StatusIssue::Sold || inventTrans.StatusIssue == StatusIssue::Deducted)
+                    && inventTrans.DatePhysical >= mkdate(1,_month,_year)
+                    && inventTrans.DatePhysical <= mkdate(31,_month,_year)
+                {
+                    itemScopeHistoryInventSite = NDX_ItemScopeHistoryInventSite::findOrCreate(history.RecId, inventDim.InventSiteId, true);
+                    itemScopeHistoryInventSite.ConsumpSales = inventTrans.Qty;
+                    itemScopeHistoryInventSite.ConsumpSum = itemScopeHistoryInventSite.ConsumpSales + itemScopeHistoryInventSite.ConsumpProd;
+                    if(itemScopeHistoryInventSite)
+                    {
+                        itemScopeHistoryInventSite.update();
+                    }
+                }
+
+                while select sum(qty) from inventTrans
+                    join inventTransOrigin where inventTransOrigin.RecId == inventTrans.inventTransOrigin
+                    join inventTransOriginSalesline where inventTransOriginProdBOM.InventTransOrigin == inventTransOrigin.RecId
+                    join  inventDim
+                    group by InventSiteId
+                    where inventDim.inventDimId == inventTrans.inventDimId
+                    && inventTrans.ItemId       == inventTable.ItemId
+                    && (inventTrans.StatusIssue == StatusIssue::Sold || inventTrans.StatusIssue == StatusIssue::Deducted)
+                    && inventTrans.DatePhysical >= mkdate(1,_month,_year)
+                    && inventTrans.DatePhysical <= mkdate(31,_month,_year)
+                {
+                    itemScopeHistoryInventSite = NDX_ItemScopeHistoryInventSite::findOrCreate(history.RecId, inventDim.InventSiteId, true);
+                    itemScopeHistoryInventSite.ConsumpProd = inventTrans.Qty;
+                    itemScopeHistoryInventSite.ConsumpSum = itemScopeHistoryInventSite.ConsumpSales + itemScopeHistoryInventSite.ConsumpProd;
+                    if(itemScopeHistoryInventSite)
+                    {
+                        itemScopeHistoryInventSite.update();
+                    }
+                }
+            }
+        }
+        info(strfmt("@NDX:NDXItemScopeCalculatedRecordsInserted", _month,_year, n, i));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFromDialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean getFromDialog()
+    {
+        boolean ret;
+        ;
+        calcType   = dlgCalcType.value();
+        otherDate  = dlgOtherMonth.value();
+
+        if (calcType == KCS_HistoryCalcType::User && otherDate == DateNull())
+        {
+            ret = CheckFailed("@NDX:NDXNotAValidEntry");
+        }
+        else
+        {
+            ret = true;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ItemQtyAveragePerDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_date">TransDate</param>
+    /// <returns>QtyAverage</returns>
+    private QtyAverage ItemQtyAveragePerDate(ItemId _itemId, TransDate _date)
+    {
+        KCS_ItemScopeHistory        scopeHistory;
+        QtyAverage                  qty;
+        TransDate                           minDate;                                
+        ;
+        
+        minDate = Global::dateMthFwd(_date,-13);
+
+        while select scopeHistory order by HistoryDate desc
+                              where scopeHistory.ItemId == _itemId
+                                 && scopeHistory.HistoryDate <= _date
+                                 && scopeHistory.HistoryDate >= minDate
+    
+        {
+            qty += scopeHistory.ConsumpSum;
+        }
+
+        qty = qty ? qty / 12.5 : qty;
+
+        return qty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ItemQtyAveragePerDateInventSite</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_inventSiteId">InventSiteId</param>
+    /// <param name = "_date">TransDate</param>
+    /// <returns>QtyAverage</returns>
+    private QtyAverage ItemQtyAveragePerDateInventSite(ItemId _itemId, InventSiteId _inventSiteId, TransDate _date)
+    {
+        KCS_ItemScopeHistory                scopeHistory;
+        NDX_ItemScopeHistoryInventSite      scopeHistoryInventSite;
+        QtyAverage                          qty;
+        TransDate                           minDate;
+        ;
+        minDate = Global::dateMthFwd(_date,-13);
+        while select scopeHistory order by HistoryDate desc
+            join scopeHistoryInventSite
+                              where scopeHistoryInventSite.RefRecId == scopeHistory.RecId
+                                 && scopeHistoryInventSite.InventSiteId == _inventSiteId
+                                 && scopeHistory.ItemId == _itemId
+                                 && scopeHistory.HistoryDate <= _date
+                                 && scopeHistory.HistoryDate >= minDate
+        {
+            qty += scopeHistoryInventSite.ConsumpSum;
+        }
+
+        qty = qty ? qty / 12.5 : qty;
+
+        return qty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ItemQtyPerDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_date">TransDate</param>
+    /// <returns>qty</returns>
+    private qty ItemQtyPerDate(ItemId _itemId, TransDate _date)
+    {
+        InventSumDatePhysical       inventSumDate;
+        ;
+        inventSumDate   = new InventSumDatePhysical();
+        inventSumDate.parmItemId(_itemId);
+        inventSumDate.parmPerDate(_date);
+        inventSumDate.init();
+        return inventSumDate.physicalQuantity();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDX_setCalcMonth</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    /// <param name = "_calcType">KCS_HistoryCalcType</param>
+    /// <param name = "_otherDate">TransDate</param>
+    void NDX_setCalcMonth(KCS_HistoryCalcType _calcType, TransDate _otherDate)
+    {
+        ;
+        calcType   = _calcType;
+        otherDate  = _otherDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    /// <returns>container</returns>
+    public container pack()
+    {
+        return [#CurrentVersion];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCalcType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    /// <param name = "_calcType">KCS_HistoryCalcType</param>
+    /// <returns>KCS_HistoryCalcType</returns>
+    public KCS_HistoryCalcType parmCalcType(KCS_HistoryCalcType _calcType = calcType)
+    {
+        ;
+        calcType = _calcType;
+
+        return calcType;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    public void run()
+    {
+        TransDate       historyDate, datePrevMonth;
+        ;
+        #OCCRetryCount
+        if (! this.validate())
+        {
+            throw error('');
+        }
+
+        try
+        {
+            ttsbegin;
+            if (calcType == KCS_HistoryCalcType::Standard)
+            {
+                historyDate = DateTimeUtil::date(DateTimeUtil::getSystemDateTime());
+
+            }
+            else
+            {
+                historyDate = otherDate;
+            }
+            datePrevMonth = Global::dateMthFwd(historyDate,-1);
+            
+            if(datePrevMonth >= CompanyInfo::findDataArea(curExt()).NDXGoLiveDate)
+            {
+                this.fillItemScopeHistory(year(datePrevMonth), mthofyr(datePrevMonth));
+            }
+            if(historyDate >= CompanyInfo::findDataArea(curExt()).NDXGoLiveDate)
+            {
+                this.fillItemScopeHistory(year(historyDate), mthofyr(historyDate));
+            }
+            ttscommit;  
+        }
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runsImpersonated</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DbeuC 16.06.23
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean runsImpersonated()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    /// <param name = "packedClass">container</param>
+    /// <returns>boolean</returns>
+    public boolean unpack(container packedClass)
+    {
+        Version version = RunBase::getVersion(packedClass);
+        ;
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version] = packedClass;
+                break;
+            default:
+                return false;
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    /// <returns>ClassDescription</returns>
+    static ClassDescription description()
+    {
+        return "@NDX:NDXItemScopeCalculation";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>caption</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 18.04.24
+    /// </summary>
+    /// <returns>ClassDescription</returns>
+    public ClassDescription caption()
+    {
+        return "@NDX:NDXItemScopeCalculation";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    /// <param name = "args">Args</param>
+    static void main(Args args)
+    {
+        NDXFillItemScopeHistory    fillItemScopeHistory;
+        ;
+        fillItemScopeHistory = new NDXFillItemScopeHistory();
+
+        if (fillItemScopeHistory.prompt())
+        {
+            fillItemScopeHistory.runOperation();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateItemScopeHistory</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    static void updateItemScopeHistory()
+    {
+        NDXFillItemScopeHistory    fillItemScopeHistory;
+
+        fillItemScopeHistory = new NDXFillItemScopeHistory();
+
+        fillItemScopeHistory.parmCalcType(KCS_HistoryCalcType::Standard);
+
+        fillItemScopeHistory.runOperation();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.06.23
+    /// </summary>
+    /// <returns>boolean</returns>
+    protected boolean canRunInNewSession()
+    {
+        boolean ret;
+    
+        ret = super();
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

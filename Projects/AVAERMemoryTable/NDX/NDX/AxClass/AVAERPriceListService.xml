@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAERPriceListService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using Microsoft.Dynamics365.LocalizationFramework;
+
+/// <summary>
+/// service class for ER price list report
+/// </summary>
+public class AVAERPriceListService extends SysOperationServiceBase
+{
+    public str DefaultExportedFileName = "@NDX:NXAPriceList";
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>generateReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Generates report by using Electronic reporting framework
+    /// </summary>
+    /// <param name = "_contract">The object quotation report contract</param>
+    public void generateReport(AVAERPriceListContract _contract)
+    {
+        ERFormatMappingId formatMappingId;
+        ERFormatMappingTable eRFormatMappingTable;
+        QueryBuildDataSource qbds = _contract.getQuery().dataSourceNo(1);
+
+        AVAERReportToMemory     reportToMemory;
+
+        select firstonly RecId from eRFormatMappingTable where eRFormatMappingTable.Name == AVASalesParameters::find().ERPriceListFormat;
+        formatMappingId = eRFormatMappingTable.RecId;
+        if (formatMappingId)
+        {
+            try
+            {
+                ERIModelDefinitionParamsAction parameters = new ERModelDefinitionParamsUIActionComposite().add(new ERModelDefinitionDatabaseContext().addQuery(qbds.file(), _contract.getQuery()));
+                
+                // Call ER to generate the report.
+                ERIFormatMappingRun formatMappingRun = ERObjectsFactory::createFormatMappingRunByFormatMappingId(formatMappingId, DefaultExportedFileName);
+                formatMappingRun.parmShowPromptDialog(true);
+                formatMappingRun.withParameter(parameters);
+                PriceDiscGroup  locPriceDiscGroup;
+                str             ERreportName; 
+                Map             reportMap = new Map(Types::String,Types::Class);
+                reportMap.insert('', new System.IO.MemoryStream());
+
+                if (_contract.parmPrintToMemory() == NoYes::Yes)
+                {
+                    Query       locQuery = new Query(_contract.getQuery());
+                    QueryRun    locQueryRun = new QueryRun(locQuery);
+                    ERreportName = AVASalesParameters::find().ERPriceListFormat;
+
+                    while (locQueryRun.next())
+                    {
+                        locPriceDiscGroup.data(locQueryRun.get(tableNum(PriceDiscGroup)));
+                    }
+
+                    delete_from  reportToMemory
+                    where reportToMemory.refRecId == locPriceDiscGroup.RecId
+                       && reportToMemory.RefTableId == tableNum(PriceDiscGroup)
+                       && reportToMemory.ReportName == ERreportName;
+
+                    
+                    reportToMemory.RefRecId   = locPriceDiscGroup.RecId;
+                    reportToMemory.RefTableId = tableNum(PriceDiscGroup);
+                    reportToMemory.ReportName = ERreportName;
+                    reportToMemory.insert();
+                    
+                 
+
+                    ERIFileDestinationFactoryHost factoryHost = ERCast::asObject(formatMappingRun) as ERIFileDestinationFactoryHost;
+                    if (factoryHost)
+                    {
+                        ERIFileDestinationFactory fileDestinationFactory = factoryHost.getFileDestinationFactory();
+                        factoryHost.setFileDestinationFactory(AVAERMemoryDestinationFactory::construct(fileDestinationFactory,reportToMemory ));
+                    }
+
+                    formatMappingRun.parmShowPromptDialog(false);
+              
+                }
+
+                formatMappingRun.run();
+
+                if (_contract.parmPrintToMemory() == NoYes::Yes)
+                {
+                    AVAERPriceListToAzureBlob       priceListToAzureBlob = AVAERPriceListToAzureBlob::construct(locPriceDiscGroup,ERreportName);
+                    priceListToAzureBlob.run();
+                }
+
+            }
+            catch
+            {
+                // An error occurred while exporting data.
+                error("@SYP4861341");
+            }
+        }
+        else
+        {
+            // There is no data available.
+            info("@SYS300117");
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,407 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAInventTransferTable_tbl_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     Extension class for InventTransferTable
+/// </summary>
+[ExtensionOf(tableStr(InventTransferTable))]
+final class AVAInventTransferTable_tbl_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaInventLocationFromName</Name>
+				<Source><![CDATA[
+        /// <summary>
+    ///    AVA <c>avaInventLocationFromName</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>InventLocationId</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public display InventLocationName avaInventLocationFromName()
+    {
+        return InventLocation::find(this.InventLocationIdFrom).Name;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInventLocationToName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaInventLocationToName</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>InventLocationId</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public display InventLocationName avaInventLocationToName()
+    {
+        return InventLocation::find(this.InventLocationIdTo).Name;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCalcKCS_PickingReleaseIndicator</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaCalcKCS_PickingReleaseIndicator</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>KCS_PickingReleaseIndicator</c> as return value
+    /// </returns>
+    public KCS_PickingReleaseIndicator avaCalcKCS_PickingReleaseIndicator()
+    {
+        KCS_PickingReleaseIndicator retVal;
+
+        KCS_PickingReleaseIndicator locKCS_PickingReleaseIndicator;
+
+        InventTransferTable         locInventTransferTable;
+        InventTransferLine          locInventTransferLine;
+
+        int                         noOfSalesLinesReleaseForShipment;
+        int                         noOfSalesLinesNoReleaseForShipmentWithRemainQty;
+
+        locInventTransferTable          = this;
+
+        retVal                          = locInventTransferTable.KCS_PickingReleaseIndicator;
+        locKCS_PickingReleaseIndicator  = locInventTransferTable.KCS_PickingReleaseIndicator;
+
+        select firstonly locInventTransferLine
+        where   locInventTransferLine.TransferId                        == this.TransferId
+            &&  locInventTransferLine.KCS_SOCPickingReleaseIndicator    == NoYes::Yes;
+        if(!locInventTransferLine.RecId)
+        {
+            retVal = KCS_PickingReleaseIndicator::NotReleased;
+        }
+        else
+        {
+            while select locInventTransferLine
+            where   locInventTransferLine.TransferId == this.TransferId
+            {
+                if(locInventTransferLine.KCS_SOCPickingReleaseIndicator == NoYes::Yes)
+                {
+                    noOfSalesLinesReleaseForShipment++;
+                }
+                else
+                {
+                    if(locInventTransferLine.QtyRemainShip > 0)
+                    {
+                        noOfSalesLinesNoReleaseForShipmentWithRemainQty++;
+                    }
+                }
+            }
+
+            if(noOfSalesLinesReleaseForShipment > 0)
+            {
+                if(noOfSalesLinesNoReleaseForShipmentWithRemainQty == 0)
+                {
+                    retVal = KCS_PickingReleaseIndicator::CompleteReleased;
+                }
+                else
+                {
+                    retVal = KCS_PickingReleaseIndicator::PartReleased;
+                }
+            }
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaExistsProdIdOrder</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if an InventTransterTable record exists with the specified ProdId reference
+    /// </summary>
+    /// <param name = "_prodId">ProdId</param>
+    /// <returns>boolean</returns>
+    public static boolean avaExistsProdIdOrder(ProdId _prodId)
+    {
+        InventTransferTable transferTable;
+
+        select firstonly RecId from transferTable
+            where transferTable.AVAPOReference == _prodId;
+
+        return _prodId
+            && transferTable.RecId != 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaFindProdId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns an InventTransterTable record with the specified ProdId reference
+    /// </summary>
+    /// <param name = "_prodId">ProdId</param>
+    /// <param name = "_selectForUpdate">boolean</param>
+    /// <returns>boolean</returns>
+    public static InventTransferTable avaFindProdId(ProdId _prodId, boolean _selectForUpdate = false)
+    {
+        InventTransferTable transferTable;
+
+        if(_selectForUpdate)
+        {
+            transferTable.selectForUpdate(_selectForUpdate);
+        }
+
+        select firstonly transferTable
+            where transferTable.AVAPOReference == _prodId;
+
+        return transferTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetGrossWeightRemaining</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaGetGrossWeightRemaining</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>ItemGrossWeight</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display ItemGrossWeight avaGetGrossWeightRemaining()
+    {
+        ItemGrossWeight retVal;
+
+        InventTransferLine locInventTransferLine;
+
+        while select locInventTransferLine
+        where   locInventTransferLine.TransferId == this.TransferId
+        {
+            retVal += locInventTransferLine.QtyRemainShip * locInventTransferLine.avaGetItemGrossWeightFromInventUnit(); // ToDo: check remainInventPhysical
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaGetNetWeightRemaining</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaGetNetWeightRemaining</c> method.
+    /// </summary>
+    /// <returns>
+    ///     <c>ItemNetWeight</c> as type
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display ItemNetWeight avaGetNetWeightRemaining()
+    {
+        ItemNetWeight retVal;
+
+        InventTransferLine locInventTransferLine;
+
+        while select locInventTransferLine
+        where   locInventTransferLine.TransferId == this.TransferId
+        {
+            retVal += locInventTransferLine.QtyRemainShip * locInventTransferLine.avaGetItemNetWeightFromInventUnit(); // ToDo: check remainInventPhysical
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Called by the kernel when a field on the table has its value modified.
+    /// </summary>
+    /// <param name="_fieldId">
+    ///    The field ID of the changed field.
+    /// </param>
+    /// <remarks>
+    ///    This method calls methods that should be called when a field value changes.
+    /// </remarks>
+    public void modifiedField(FieldId _fieldId)
+    {
+        
+        next modifiedField(_fieldId);
+        
+        switch (_fieldId)
+        {
+            case fieldNum(InventTransferTable, InventLocationIdFrom):
+                if(this.InventLocationIdFrom)
+                {
+                    this.KCS_InventSiteIdFrom = InventLocation::find(this.InventLocationIdFrom).InventSiteId;
+                }
+                else
+                {
+                    this.KCS_InventSiteIdFrom = '';
+                }
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaHasItemSetPositionExpandable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>avaHasItemSetPositionExpandable</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaHasItemSetPositionExpandable()
+    {
+        boolean retVal;
+
+        InventTransferLine  locInventTransferLine;
+
+        select firstonly locInventTransferLine
+        where   locInventTransferLine.TransferId == this.TransferId
+            &&  locInventTransferLine.AVAItemSet
+            &&  !locInventTransferLine.AVAItemSetExpanded;
+
+        if(locInventTransferLine.RecId)
+        {
+            retVal = true;
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaItemSetExpandPossiblePositions</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaItemSetExpandPossiblePositions</c> method.
+    /// </summary>
+    /// <param name="_args">
+    ///     <c>Args</c> as type
+    /// </param>
+    /// <param name="_inventTransferId">
+    ///     <c>InventTransferId</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>boolean</c> as return value
+    /// </returns>
+    public static boolean avaItemSetExpandPossiblePositions(Args                _args,
+                                                            InventTransferId    _inventTransferId   )
+    {
+        boolean                                 retVal;
+
+        Args                                    locArgs;
+        InventTransferTable                     locInventTransferTable;
+        InventTransferLine                      locInventTransferLine;
+        AVAItemSetInventTransferLineExplodeBOM  locClassInstance;
+
+        retVal  = true;
+        locArgs = new Args();
+
+        locInventTransferTable  = InventTransferTable::find(_inventTransferId);
+        if(locInventTransferTable.RecId)
+        {
+            while select locInventTransferLine
+            where   locInventTransferLine.TransferId == _inventTransferId
+                &&  locInventTransferLine.AVAItemSet
+                &&  !locInventTransferLine.AVAItemSetExpanded
+            {
+                locArgs.caller(_args.caller());
+                locArgs.record(InventTransferLine::findTransIdShip(locInventTransferLine.InventTransId)); // get actual InventTransferLine again because of reorganization of LinNum
+            
+                locClassInstance = AVAItemSetInventTransferLineExplodeBOM::newFromArgs(locArgs);
+                locClassInstance.init();
+                locClassInstance.run();
+            }
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setInventTransferStatus</Name>
+				<Source><![CDATA[
+    public void setInventTransferStatus()
+    {
+        next setInventTransferStatus();
+
+        InventTransferLine  inventTransferLine;
+
+        select maxof(RemainStatus) from inventTransferLine
+            where inventTransferLine.TransferId == this.TransferId
+               && (inventTransferLine.AVAItemSet == NoYes::No
+               || (inventTransferLine.AVAItemSet == NoYes::Yes && inventTransferLine.AVAItemSetExpanded == NoYes::No));
+
+        if (!inventTransferLine)
+        {
+            this.TransferStatus = InventTransferStatus::Created;
+            return;
+        }
+
+        switch (inventTransferLine.RemainStatus)
+        {
+            case InventTransferRemainStatus::None:
+                this.TransferStatus = InventTransferStatus::Received;
+                break;
+
+            case InventTransferRemainStatus::Receiving:
+                this.TransferStatus = InventTransferStatus::Shipped;
+                break;
+
+            case InventTransferRemainStatus::Shipping:
+                this.TransferStatus = InventTransferStatus::Created;
+                break;
+
+            default:
+                this.TransferStatus = InventTransferStatus::Created;
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaInitPOTransfer</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// sets init values based on ProdTable and ProdBOM
+    /// </summary>
+    /// <param name = "_prodTable">ProdTable</param>
+    /// <param name = "_prodBOM">ProdBOM</param>
+    public void avaInitPOTransfer(
+        ProdTable _prodTable, 
+        ProdBOM _prodBOM)
+    {
+        this.InventLocationIdTo          = _prodBom.inventDim().InventLocationId;
+        this.modifiedField(fieldNum(InventTransferTable, InventLocationIdTo));
+        
+        this.InventLocationIdFrom        = _prodTable.inventDim().InventLocationId;
+        this.modifiedField(fieldNum(InventTransferTable, InventLocationIdFrom));
+        
+        this.AVAPOReference              = _prodTable.ProdId;
+        this.AVAProdItemId               = _prodTable.ItemId;
+        this.TransferStatus              = InventTransferStatus::Created;
+        this.AutoReservation             = NoYes::No;
+        this.KCS_PickingReleaseIndicator = KCS_PickingReleaseIndicator::NotReleased;
+        this.KCS_TransferType            = KCS_TransferType::ExternalProduction;
+        this.KCS_InventSiteIdFrom        = InventLocation::find(this.InventLocationIdFrom).InventSiteId;
+        this.InventLocationIdTransit     = InventLocation::find(this.InventLocationIdFrom).InventLocationIdTransit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

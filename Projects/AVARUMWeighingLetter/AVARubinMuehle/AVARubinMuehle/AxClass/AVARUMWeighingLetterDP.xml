@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVARUMWeighingLetterDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Data provider for the AVARUMWeighingLetter SSRS report.
+/// </summary>
+[SRSReportParameterAttribute(classStr(AVARUMWeighingLetterContract))]
+public class AVARUMWeighingLetterDP extends SrsReportDataProviderPreProcessTempDB
+{
+    AVARUMWeighingLetterTmp weighingLetterTmp;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getAVARUMWeighingLetterTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the temporary table for the report dataset.
+    /// </summary>
+    /// <returns>The temporary table.</returns>
+    [SRSReportDataSetAttribute(tableStr(AVARUMWeighingLetterTmp))]
+    public AVARUMWeighingLetterTmp getAVARUMWeighingLetterTmp()
+    {
+        select weighingLetterTmp;
+        return weighingLetterTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Processes the report and populates the temporary table.
+    /// </summary>
+    public void processReport()
+    {
+        AVARUMWeighingLetterContract    contract = this.parmDataContract() as AVARUMWeighingLetterContract;
+        boolean                         secondWeghing = true;
+        TableId                         callerTableId;
+        RecId                           callerRecId;
+        AVARUMWeightInParameters           weighingParameters;
+        CompanyInfo                     companyInfo;
+        
+        callerTableId   = contract.parmCallerTableId();
+        callerRecId     = contract.parmCallerRecId();
+        
+       
+        
+        weighingParameters = AVARUMWeightInParameters::find();
+        companyInfo = CompanyInfo::find();
+
+        DirPartyTable dirPartyTable =  DirPartyTable::find(companyInfo.PartyNumber);
+
+        LogisticsLocation logisticsLocation;
+        LogisticsPostalAddress postalAddress;
+
+        // Get primary postal address
+        logisticsLocation = LogisticsLocation::find(dirPartyTable.PrimaryAddressLocation);
+        
+        if (logisticsLocation.RecId)
+        {
+            postalAddress = LogisticsPostalAddress::findByLocation(logisticsLocation.RecId);
+        }
+
+        LogisticsElectronicAddress electronicAddressPhone = LogisticsElectronicAddress::findRecId(dirPartyTable.PrimaryContactPhone);
+        LogisticsElectronicAddress electronicAddressEmail = LogisticsElectronicAddress::findRecId(dirPartyTable.PrimaryContactEmail);
+        LogisticsElectronicAddress electronicAddressWebSite = LogisticsElectronicAddress::findRecId(dirPartyTable.PrimaryContactWebSite);
+
+        // Populate company information (common to all branches)
+        weighingLetterTmp.CompanyLogo    = FormLetter::companyLogo();
+        weighingLetterTmp.CompanyName    = companyInfo.Name;
+        weighingLetterTmp.CompanyZipCode = postalAddress.ZipCode;
+        weighingLetterTmp.CompanyCity    = postalAddress.City;
+        weighingLetterTmp.CompanyPhone   = electronicAddressPhone.Locator;
+        weighingLetterTmp.CompanyTax     = companyInfo.CoRegNum;
+        weighingLetterTmp.CompanyEmail   = electronicAddressEmail.Locator;
+        weighingLetterTmp.CompanyWebSite = electronicAddressWebSite.Locator;
+        
+        // Branch on caller table
+     /*   switch (callerTableId)
+        {
+            case tableNum(RUMSalesWeighingResult):
+                this.processSalesWeighing(callerRecId, weighingType, weighingParameters);
+                break;
+                
+            case tableNum(RUMPurchWeighingResult):
+                this.processPurchWeighing(callerRecId, weighingType, weighingParameters);
+                break;
+                
+            default:
+                throw error(Error::wrongUseOfFunction(funcName()));
+        }
+        
+        weighingLetterTmp.insert();
+    }
+
+    /// <summary>
+    /// Processes sales weighing result.
+    /// </summary>
+    /// <param name="_recId">The record ID.</param>
+    /// <param name="_weighingType">The weighing type.</param>
+    /// <param name="_weighingParameters">The weighing parameters.</param>
+    private void processSalesWeighing(RecId _recId, RUMWeighingType _weighingType, RUMWeighingParameters _weighingParameters)
+    {
+        RUMSalesWeighingResult  salesWeighingResult;
+        SalesLine               salesLine;
+        SalesTable              salesTable;
+        
+        salesWeighingResult = RUMSalesWeighingResult::findRecId(_recId);
+        
+        if (!salesWeighingResult)
+        {
+            throw error(strFmt("@SYS19358", _recId)); // Record not found
+        }
+        
+        select firstJoin salesLine
+            where salesLine.InventTransId == salesWeighingResult.InventTransId
+            join salesTable
+            where salesTable.SalesId == salesLine.SalesId;
+        
+        weighingLetterTmp.AlnPurchSalesId       = salesWeighingResult.SalesId;
+        weighingLetterTmp.AlnPurchSalesIdCaption = "@AVARUMWeighingLetter:SalesIdCaption";
+        
+        // FirstWeighing or BlankPaper layout
+        if (_weighingType == RUMWeighingType::FirstWeighing || _weighingParameters.WeighingLetterBlank)
+        {
+            weighingLetterTmp.Name              = salesTable.customerName();
+            weighingLetterTmp.VoucherStr1       = int2Str(salesWeighingResult.VoucherFirstWeigh);
+            weighingLetterTmp.Time1Stamp        = this.timeStamp2Str(salesWeighingResult.StampFirstWeigh);
+            weighingLetterTmp.Identification1   = strFmt("Identifikation : %1", salesWeighingResult.Identification);
+            weighingLetterTmp.DeliveryLocation  = salesWeighingResult.DeliveryLocation;
+            weighingLetterTmp.StreetNameNum     = salesTable.DeliveryStreet;
+        }
+        
+        // SecondWeighing
+        if (_weighingType == RUMWeighingType::SecondWeighing)
+        {
+            weighingLetterTmp.SecondWeighing = NoYes::Yes;
+            // Additional second-weigh fields would be populated here
+            // (extend temp table as needed for voucher2, timestamp2, etc.)
+        }
+    }
+
+    /// <summary>
+    /// Processes purchase weighing result.
+    /// </summary>
+    /// <param name="_recId">The record ID.</param>
+    /// <param name="_weighingType">The weighing type.</param>
+    /// <param name="_weighingParameters">The weighing parameters.</param>
+    private void processPurchWeighing(RecId _recId, RUMWeighingType _weighingType, RUMWeighingParameters _weighingParameters)
+    {
+        RUMPurchWeighingResult  purchWeighingResult;
+        PurchLine               purchLine;
+        PurchTable              purchTable;
+        
+        purchWeighingResult = RUMPurchWeighingResult::findRecId(_recId);
+        
+        if (!purchWeighingResult)
+        {
+            throw error(strFmt("@SYS19358", _recId)); // Record not found
+        }
+        
+        select firstJoin purchLine
+            where purchLine.InventTransId == purchWeighingResult.InventTransId
+            join purchTable
+            where purchTable.PurchId == purchLine.PurchId;
+        
+        weighingLetterTmp.AlnPurchSalesId       = purchWeighingResult.PurchId;
+        weighingLetterTmp.AlnPurchSalesIdCaption = "@AVARUMWeighingLetter:PurchIdCaption";
+        
+        // FirstWeighing or BlankPaper layout
+        if (_weighingType == RUMWeighingType::FirstWeighing || _weighingParameters.WeighingLetterBlank)
+        {
+            weighingLetterTmp.Name              = purchTable.vendorName();
+            weighingLetterTmp.VoucherStr1       = int2Str(purchWeighingResult.VoucherFirstWeigh);
+            weighingLetterTmp.Time1Stamp        = this.timeStamp2Str(purchWeighingResult.StampFirstWeigh);
+            weighingLetterTmp.Identification1   = strFmt("Identifikation : %1", purchWeighingResult.Identification);
+            weighingLetterTmp.DeliveryLocation  = purchWeighingResult.DeliveryLocation;
+            weighingLetterTmp.StreetNameNum     = purchTable.DeliveryStreet;
+        }
+        
+        // SecondWeighing
+        if (_weighingType == RUMWeighingType::SecondWeighing)
+        {
+            weighingLetterTmp.SecondWeighing = NoYes::Yes;
+            // Additional second-weigh fields would be populated here
+        }      */
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>timeStamp2Str</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Converts a UTC datetime timestamp to a formatted string.
+    /// </summary>
+    /// <param name="_stamp">The UTC datetime stamp.</param>
+    /// <returns>Formatted timestamp string.</returns>
+    private str timeStamp2Str(UtcDateTime _stamp)
+    {
+        str ret;
+        
+        if (_stamp)
+        {
+            ret = strFmt("%1 %2", 
+                DateTimeUtil::date(DateTimeUtil::applyTimeZoneOffset(_stamp, DateTimeUtil::getUserPreferredTimeZone())),
+                DateTimeUtil::time(DateTimeUtil::applyTimeZoneOffset(_stamp, DateTimeUtil::getUserPreferredTimeZone())));
+        }
+        
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

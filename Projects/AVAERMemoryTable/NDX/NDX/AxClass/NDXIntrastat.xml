@@ -1,0 +1,1061 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXIntrastat</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// DebuC 30.03.23
+/// </summary>
+final class NDXIntrastat
+{
+    date     filterFromDate;
+    date     filterToDate;
+    NDXMonat   filterMonat;
+    NDXJahr    filterJahr;
+    TaxCode    taxCode;
+    TaxCode    taxCode2;                                                        
+
+    PurchId purchId;
+    ItemId itemId;
+    InventTransId inventTransId;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>checkDiff</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    void checkDiff()
+    {
+        NDXIntrastatDiff           nDXIntrastatDiff;
+        NDXIntrastatDiffLine       nDXIntrastatDiffLine;
+        NDXVendPackingSlipTrans    nDXVendPackingSlipTrans;
+        NDXVendInvoiceTrans        nDXVendInvoiceTrans;
+        VendInvoiceTrans            vendInvoiceTrans;
+        VendPackingSlipTrans        vendPackingSlipTrans;
+        VendPackingSlipJour         vendPackingSlipJour;
+        InventTable                 inventTable;
+        MarkupTrans                 markupTrans;
+        TaxTrans    taxTrans, taxTrans2;
+        Intrastat   intraStat;
+        boolean     lWithMarkupValue;
+        int         x;
+        boolean     lVendInvoiceTrans;
+        boolean     lInvoiceBase;
+        NDXIntrastat   nDXIntrastat = new NDXIntrastat();
+        str         qValue;
+
+        Query                   q, q2;
+        QueryRun                qr, qr2;
+        QueryBuildDataSource    qbds, qbds2, qbds4, qbds5;
+        ;
+        select firstonly forUpdate nDXIntrastatDiff
+        where   nDXIntrastatDiff.Monat == filterMonat
+            &&  nDXIntrastatDiff.Jahr == filterJahr;
+        if (!nDXIntrastatDiff)
+        {
+            nDXIntrastatDiff.Jahr  = filterJahr;
+            nDXIntrastatDiff.Monat = filterMonat;
+        }
+
+        delete_from nDXIntrastatDiffLine
+        where   nDXIntrastatDiffLine.Monat == filterMonat
+            &&  nDXIntrastatDiffLine.Jahr  == filterJahr;
+
+        // Ermittlung der Werte gemäß: taxTrans
+        q = new Query();
+        q.allowCrossCompany(true);
+        qbds = q.addDataSource(tablenum(TaxTrans));
+        qbds.addRange(fieldnum(TaxTrans, TransDate)).value(SysQuery::range(filterFromDate, filterToDate));
+        qbds.addRange(fieldnum(TaxTrans, InventTransId)).value(SysQuery::valueNotEmptyString());
+
+        if (taxCode && taxCode2)
+        {
+            qValue = strfmt('((%1 == "%2") || (%1 == "%3"))', fieldid2name(tablenum(TaxTrans), fieldnum(TaxTrans, TaxCode)),taxCode, taxCode2);
+        }
+        else if (taxCode2)
+        {
+            qValue = QueryValue(taxCode2);
+        }
+        else
+        {
+            qValue = QueryValue(taxCode);
+        }
+        qbds.addRange(fieldnum(TaxTrans, TaxCode)).value(qValue);
+
+        qr = new QueryRun(q);
+        while (qr.next())
+        {
+            taxTrans = qr.get(tablenum(TaxTrans));
+
+            changecompany(taxTrans.dataAreaId)
+            {
+
+                vendInvoiceTrans = null;
+                markupTrans = null;
+                taxTrans2 = null;
+                inventTable = null;
+                intraStat = null;
+
+                while select vendInvoiceTrans
+                where   vendInvoiceTrans.InventTransId == taxTrans.InventTransId
+                {
+                    lWithMarkupValue = true;
+                    select sum(Value) from markupTrans
+                    where markupTrans.TransTableId == tablenum(VendInvoiceTrans)
+                        && markupTrans.dataAreaId == vendInvoiceTrans.dataAreaId
+                        && markupTrans.TransRecId == vendInvoiceTrans.RecId;
+                    if (markupTrans.Value)
+                    {
+                        // Falls der Zuschlags-Wert bereits als TaxTrans-DS vorhanden ist, diesen nicht mit einbeziehen
+                        select firstonly taxTrans2
+                        where   taxTrans2.InventTransId == taxTrans.InventTransId
+                            &&  taxTrans2.SourceBaseAmountCur == markupTrans.Value;
+                        lWithMarkupValue = false;
+                    }
+                    if ((vendInvoiceTrans.LineAmount + (lWithMarkupValue ? markupTrans.Value : 0)) == taxtrans.SourceBaseAmountCur)
+                    {
+                        break;
+                    }
+                }
+                if (!vendInvoiceTrans)
+                {
+                    x = 1;
+                    continue;
+                }
+
+                select firstonly inventTable
+                where   inventTable.ItemId == vendInvoiceTrans.ItemId;
+
+                // Rechnungs-Lieferschein-Positions-Zuordnung ermitteln
+                {
+                    nDXIntrastat.initialize(vendInvoiceTrans.OrigPurchId, vendInvoiceTrans.ItemId, vendInvoiceTrans.InventTransId);
+                    nDXIntrastat.VendPackingSlipTrans4PurchLineItem();
+                    nDXIntrastat.VendInvoiceTrans4PurchLineItem();
+                    nDXIntrastat.VendPackingSlip2VendInvoice();
+                }
+
+                // wurde Intrastat-Buchung gem. Rechnungsposition ermittelt?
+                select firstonly intraStat
+                where   intraStat.dataAreaId == taxTrans.dataAreaId
+                    &&  intraStat.InventTransId == taxTrans.InventTransId
+                    &&  intraStat.TransTableId == tablenum(vendInvoiceTrans)
+                    &&  intraStat.TransRecId == vendInvoiceTrans.RecId
+                    &&  intraStat.TransDate == vendInvoiceTrans.InvoiceDate;
+                lInvoiceBase = intraStat != null;
+
+
+                q2 = new Query();
+                if (lInvoiceBase)
+                {
+                    qbds5 = q2.addDataSource(tablenum(NDXVendInvoiceTrans));
+                    qbds5.addRange(fieldnum(NDXVendInvoiceTrans, dataAreaId)).value(vendInvoiceTrans.dataAreaId);
+                    qbds5.addRange(fieldnum(NDXVendInvoiceTrans, OrigPurchid)).value(vendInvoiceTrans.OrigPurchId);
+                    qbds5.addRange(fieldnum(NDXVendInvoiceTrans, ItemId)).value(vendInvoiceTrans.ItemId);
+                    qbds5.addRange(fieldnum(NDXVendInvoiceTrans, InventTransId)).value(vendInvoiceTrans.InventTransId);
+                    qbds5.addRange(fieldnum(NDXVendInvoiceTrans, InvoiceDate)).value(SysQuery::range(filterFromDate, filterToDate));
+                    qbds5.addRange(fieldnum(NDXVendInvoiceTrans, RefRecIdVendInvoiceTrans)).value(QueryValue(vendInvoiceTrans.RecId));
+                }
+                else
+                {
+                    qbds5 = q2.addDataSource(tablenum(NDXVendPackingSlipTrans));
+                    qbds5.addRange(fieldnum(NDXVendPackingSlipTrans, dataAreaId)).value(vendInvoiceTrans.dataAreaId);
+                    qbds5.addRange(fieldnum(NDXVendPackingSlipTrans, OrigPurchid)).value(vendInvoiceTrans.OrigPurchId);
+                    qbds5.addRange(fieldnum(NDXVendPackingSlipTrans, ItemId)).value(vendInvoiceTrans.ItemId);
+                    qbds5.addRange(fieldnum(NDXVendPackingSlipTrans, InventTransId)).value(vendInvoiceTrans.InventTransId);
+                    qbds5.addRange(fieldnum(NDXVendPackingSlipTrans, DeliveryDate)).value(SysQuery::range(filterFromDate, filterToDate));
+                    qbds5.addRange(fieldnum(NDXVendPackingSlipTrans, RefRecIdVendInvoiceTrans)).value(QueryValue(vendInvoiceTrans.RecId));
+                }
+                qr2 = new QueryRun(q2);
+                while (qr2.next())
+                {
+                    if (lInvoiceBase)
+                    {
+                        nDXVendInvoiceTrans = qr2.get(tablenum(NDXVendInvoiceTrans));
+                        select firstonly forUpdate nDXIntrastatDiffLine
+                        where   nDXIntrastatDiffLine.Jahr == filterJahr
+                            &&  nDXIntrastatDiffLine.Monat == filterMonat
+                            &&  nDXIntrastatDiffLine.RefCompanyId == taxTrans.dataAreaId
+                            &&  nDXIntrastatDiffLine.RefRecIdTaxTrans == taxTrans.RecId
+                            &&  nDXIntrastatDiffLine.RefRecIdVendInvoiceTrans == NDXVendInvoiceTrans.RefRecIdVendInvoiceTrans;
+                    }
+                    else
+                    {
+                        nDXVendPackingSlipTrans = qr2.get(tablenum(NDXVendPackingSlipTrans));
+                        select firstonly forUpdate nDXIntrastatDiffLine
+                        where   nDXIntrastatDiffLine.Jahr == filterJahr
+                            &&  nDXIntrastatDiffLine.Monat == filterMonat
+                            &&  nDXIntrastatDiffLine.RefCompanyId == taxTrans.dataAreaId
+                            &&  nDXIntrastatDiffLine.RefRecIdTaxTrans == taxTrans.RecId
+                            &&  nDXIntrastatDiffLine.RefRecIdVendPackingSlipTrans == nDXVendPackingSlipTrans.RefRecIdVendPackingSlipTrans;
+                    }
+
+                    if (!nDXIntrastatDiffLine)
+                    {
+                        nDXIntrastatDiffLine.RefCompanyId      = taxTrans.dataAreaId;
+                        nDXIntrastatDiffLine.RefRecIdTaxTrans  = taxTrans.RecId;
+                        nDXIntrastatDiffLine.RefRecIdVendInvoiceTrans  = vendInvoiceTrans.RecId;
+                        if (lInvoiceBase)
+                        {
+                            nDXIntrastatDiffLine.RefRecIdVendInvoiceTrans = nDXVendInvoiceTrans.RefRecIdVendInvoiceTrans;
+                            nDXIntrastatDiffLine.AccountNum               = nDXVendInvoiceTrans.AccountNum;
+                            nDXIntrastatDiffLine.CountryRegionIdVendPackingSlipTrans = nDXVendInvoiceTrans.CountryRegionIdVendInvoiceTrans;
+                        }
+                        else
+                        {
+                            nDXIntrastatDiffLine.RefRecIdVendPackingSlipTrans = nDXVendPackingSlipTrans.RefRecIdVendPackingSlipTrans;
+                            nDXIntrastatDiffLine.AccountNum        = nDXVendPackingSlipTrans.AccountNum;
+                            nDXIntrastatDiffLine.CountryRegionIdVendPackingSlipTrans = nDXVendPackingSlipTrans.CountryRegionIdVendPackingSlipTrans;
+                        }
+                        nDXIntrastatDiffLine.ItemId            = vendInvoiceTrans.ItemId;
+                        nDXIntrastatDiffLine.Jahr              = filterJahr;
+                        nDXIntrastatDiffLine.Monat             = filterMonat;
+                        nDXIntrastatDiffLine.PurchIdOrig       = vendInvoiceTrans.PurchID;
+                        nDXIntrastatDiffLine.InvoiceId         = vendInvoiceTrans.InvoiceId;
+                        nDXIntrastatDiffLine.Voucher           = taxTrans.Voucher;
+                        nDXIntrastatDiffLine.DestCountryRegionId = vendInvoiceTrans.DestCountryRegionId;
+                        nDXIntrastatDiffLine.ItemType          = inventTable.ItemType;
+                        nDXIntrastatDiffLine.Intracode         = inventTable.Intracode;
+                        nDXIntrastatDiffLine.IntraUnit         = EcoResCategoryIntrastat::findByCategoryId(EcoResCategory::find(inventTable.IntrastatCommodity).RecId).AdditionalUnits;
+                        nDXIntrastatDiffLine.NetWeight         = inventTable.NetWeight;
+                    }
+
+                    nDXIntrastatDiffLine.AmountMST_TaxTrans    = vendInvoiceTrans.LineAmountMST;
+                    if (lInvoiceBase)
+                    {
+                        nDXIntrastatDiffLine.Qty_TaxTrans          = vendInvoiceTrans.Qty;
+                    }
+                    else
+                    {
+                        if (vendInvoiceTrans.Qty && (vendInvoiceTrans.Qty != nDXVendPackingSlipTrans.Qty))
+                        {
+                            nDXIntrastatDiffLine.AmountMST_TaxTrans    = (vendInvoiceTrans.LineAmountMST / vendInvoiceTrans.Qty) * nDXVendPackingSlipTrans.Qty  ;
+                        }
+                        nDXIntrastatDiffLine.Qty_TaxTrans          = nDXVendPackingSlipTrans.Qty;
+                    }
+                    nDXIntrastatDiffLine.InventTransId         = vendInvoiceTrans.InventTransId;
+                    ttsbegin;
+                    nDXIntrastatDiffLine.write();
+                    ttscommit;
+                }
+            }
+        }
+
+        // Ermittlung der Werte gemäß: taxTrans (die nicht in nDXIntrastatDiffLine ref. sind)
+        q = new Query();
+        q.allowCrossCompany(true);
+        qbds = q.addDataSource(tablenum(TaxTrans));
+        qbds.addRange(fieldnum(TaxTrans, TransDate)).value(SysQuery::range(filterFromDate, filterToDate));
+        qbds.addRange(fieldnum(TaxTrans, InventTransId)).value(SysQuery::valueNotEmptyString());
+        qbds.addRange(fieldnum(TaxTrans, TaxCode)).value(taxCode);
+
+        qbds2 = qbds.addDataSource(tablenum(nDXIntrastatDiffLine));
+        qbds2.joinMode(JoinMode::NoExistsJoin);
+        qbds2.fetchMode(QueryFetchMode::One2One);
+        qbds2.addLink(fieldnum(taxTrans, RecId), fieldnum(nDXIntrastatDiffLine, RefRecIdTaxTrans));
+
+        qr = new QueryRun(q);
+        while (qr.next())
+        {
+            taxTrans = qr.get(tablenum(TaxTrans));
+
+            nDXIntrastatDiffLine.clear();
+            nDXIntrastatDiffLine.RefCompanyId      = taxTrans.dataAreaId;
+            nDXIntrastatDiffLine.RefRecIdTaxTrans  = taxTrans.RecId;
+            nDXIntrastatDiffLine.Jahr              = filterJahr;
+            nDXIntrastatDiffLine.Monat             = filterMonat;
+            nDXIntrastatDiffLine.Voucher           = taxTrans.Voucher;
+            nDXIntrastatDiffLine.AmountMST_TaxTrans    = taxTrans.TaxBaseAmount;
+            ttsbegin;
+            nDXIntrastatDiffLine.write();
+            ttscommit;
+        }
+
+
+        // Ermittlung der Werte gemäß: IntraStat
+        q = new Query();
+        q.allowCrossCompany(true);
+        qbds = q.addDataSource(tablenum(IntraStat));
+        qbds.addRange(fieldnum(IntraStat, TransDate)).value(SysQuery::range(filterFromDate, filterToDate));
+        qbds.addRange(fieldnum(IntraStat, DebCredType)).value(QueryValue(ModuleInventCustVend::Vend));
+
+        qbds4 = qbds.addDataSource(tablenum(inventTable));
+        qbds4.relations(true);
+        qbds4.joinMode(JoinMode::InnerJoin);
+        qbds4.fetchMode(QueryFetchMode::One2One);
+        qr = new QueryRun(q);
+        while (qr.next())
+        {
+            vendPackingSlipTrans = null;
+            vendInvoiceTrans = null;
+            intraStat = qr.get(tablenum(Intrastat));
+            inventTable = qr.get(tablenum(InventTable));
+            lVendInvoiceTrans = false;
+
+            switch (intraStat.TransTableId)
+            {
+                case tablenum(VendInvoiceTrans)     :
+                    lVendInvoiceTrans = true;
+                    select firstonly crosscompany vendInvoiceTrans where vendInvoiceTrans.RecId == intraStat.TransRecId;
+                    select firstonly crosscompany nDXVendInvoiceTrans where nDXVendInvoiceTrans.RefRecIdVendInvoiceTrans == vendInvoiceTrans.RecId;
+
+                    break;
+                case tablenum(VendPackingSlipTrans) :
+                    select firstonly crosscompany vendPackingSlipTrans where vendPackingSlipTrans.RecId == intraStat.TransRecId
+                    && vendPackingSlipTrans.dataAreaId == intraStat.dataAreaId;
+                    select firstonly crosscompany vendInvoiceTrans where vendInvoiceTrans.InvoiceId == intraStat.InvoiceId
+                    && vendInvoiceTrans.InventTransId == intraStat.InventTransId;
+
+                    select crosscompany count(recid) from nDXVendPackingSlipTrans where nDXVendPackingSlipTrans.RefRecIdVendPackingSlipTrans == vendPackingSlipTrans.RecId;
+                    if (nDXVendPackingSlipTrans.RecId > 1)
+                    {
+                        Warning(strfmt("@NDX:NDXIntrastatWarningInvoiceRef", nDXVendPackingSlipTrans.RecId, vendInvoiceTrans.PurchID, vendInvoiceTrans.ItemId, vendInvoiceTrans.InventTransId));
+                    }
+                    select firstonly crosscompany nDXVendPackingSlipTrans where nDXVendPackingSlipTrans.RefRecIdVendPackingSlipTrans == vendPackingSlipTrans.RecId;
+
+                    break;
+            }
+
+            if((lVendInvoiceTrans && vendInvoiceTrans) || (!lVendInvoiceTrans && vendPackingSlipJour))
+            {
+                if (lVendInvoiceTrans)
+                {
+                    select firstonly forUpdate nDXIntrastatDiffLine
+                    where   nDXIntrastatDiffLine.Jahr == filterJahr
+                        &&  nDXIntrastatDiffLine.Monat == filterMonat
+                        &&  nDXIntrastatDiffLine.RefRecIdVendInvoiceTrans == vendInvoiceTrans.RecId;
+                }
+                else
+                {
+                    select firstonly forUpdate nDXIntrastatDiffLine
+                    where   nDXIntrastatDiffLine.Jahr == filterJahr
+                        &&  nDXIntrastatDiffLine.Monat == filterMonat
+                        &&  nDXIntrastatDiffLine.RefRecIdVendPackingSlipTrans == vendPackingSlipTrans.RecId;
+                }
+                if (!nDXIntrastatDiffLine)
+                {
+                    nDXIntrastatDiffLine.RefCompanyId              = intraStat.dataAreaId;
+                    if (lVendInvoiceTrans)
+                    {
+                        nDXIntrastatDiffLine.RefRecIdVendInvoiceTrans  = vendInvoiceTrans.RecId;
+                        nDXIntrastatDiffLine.CountryRegionIdVendPackingSlipTrans = vendInvoiceTrans.DestCountryRegionId;
+                    }
+                    else
+                    {
+                        nDXIntrastatDiffLine.RefRecIdVendPackingSlipTrans = vendPackingSlipTrans.RecId;
+                        nDXIntrastatDiffLine.CountryRegionIdVendPackingSlipTrans = vendPackingSlipTrans.DestCountryRegionId;
+                    }
+                    nDXIntrastatDiffLine.ItemId                    = intraStat.ItemId;
+                    nDXIntrastatDiffLine.Jahr                      = filterJahr;
+                    nDXIntrastatDiffLine.Monat                     = filterMonat;
+                    nDXIntrastatDiffLine.InventTransId             = intraStat.InventTransId;
+                    nDXIntrastatDiffLine.InvoiceId                 = intraStat.InvoiceId;
+                    select firstonly crosscompany vendPackingSlipJour
+                    where   vendPackingSlipJour.dataAreaId == intraStat.dataAreaId
+                        &&  vendPackingSlipJour.PackingSlipId == intraStat.PackingSlipId;
+                    if (vendPackingSlipJour)
+                    {
+                        nDXIntrastatDiffLine.PurchIdOrig               = vendPackingSlipJour.PurchId;
+                    }
+                }
+                if (nDXIntrastatDiffLine.RefRecIdIntrastat)
+                {
+                    Info(strFmt("@NDX:NDXIntrastatWarningExistingReference", nDXIntrastatDiffLine.RecId));
+                }
+                nDXIntrastatDiffLine.AmountMST_Intrastat   = intraStat.AmountMST * (intraStat.Direction == IntrastatDirection::Import ? 1 : -1);
+                nDXIntrastatDiffLine.Qty_Intrastat         = intraStat.Qty * (intraStat.Direction == IntrastatDirection::Import ? 1 : -1);
+                nDXIntrastatDiffLine.RefRecIdIntrastat     = intraStat.RecId;
+
+                nDXIntrastatDiffLine.AccountNum            = intraStat.AccountNum;
+                nDXIntrastatDiffLine.DestCountryRegionId   = intraStat.OrigCountryRegionId ? intraStat.OrigCountryRegionId : LogisticsPostalAddress::findByLocation(CompanyInfo::find().PrimaryAddressLocation).CountryRegionId;
+                ttsbegin;
+                nDXIntrastatDiffLine.write();
+                ttscommit;
+            }
+            else
+            {
+                Warning(strFmt("@NDX:NDXIntrastatWarningVendInvoiceTransLocation", intraStat.RecId));
+            }
+        }
+
+        // Differenzen prüfen
+        while select forUpdate nDXIntrastatDiffLine
+        where   nDXIntrastatDiffLine.Jahr == filterJahr
+            &&  nDXIntrastatDiffLine.Monat == filterMonat
+        {
+            if ((decround(nDXIntrastatDiffLine.AmountMST_Intrastat,2) != decround(nDXIntrastatDiffLine.AmountMST_TaxTrans,2)) ||
+            (decround(nDXIntrastatDiffLine.Qty_Intrastat,2) != decround(nDXIntrastatDiffLine.Qty_TaxTrans,2)))
+            {
+                nDXIntrastatDiffLine.IsDifference = true;
+                ttsbegin;
+                nDXIntrastatDiffLine.update();
+                ttscommit;
+            }
+
+        }
+
+
+        ttsbegin;
+        nDXIntrastatDiff.write();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initialize</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    /// <param name = "_purchId">PurchId</param>
+    /// <param name = "_itemId">ItemId</param>
+    /// <param name = "_inventTransId">InventTransId</param>
+    void initialize(PurchId _purchId = '', ItemId _itemId = '', InventTransId _inventTransId = '')
+    {
+        NDXVendPackingSlipTrans    nDXVendPackingSlipTrans;
+        NDXVendInvoiceTrans        nDXVendInvoiceTrans;
+        ;
+        if (!prmisdefault(_purchId))
+        {
+            purchId = _purchId;
+        }
+        if (!prmisdefault(_itemId))
+        {
+            itemId = _itemId;
+        }
+        if (!prmisdefault(_inventTransId))
+        {
+            inventTransId = _inventTransId;
+        }
+
+        delete_from nDXVendInvoiceTrans
+        where nDXVendInvoiceTrans.OrigPurchId == purchId
+            &&  nDXVendInvoiceTrans.ItemId == itemId
+            &&  nDXVendInvoiceTrans.InventTransId == inventTransId;
+        delete_from nDXVendPackingSlipTrans
+        where nDXVendPackingSlipTrans.OrigPurchId == purchId
+            &&  nDXVendPackingSlipTrans.ItemId == itemId
+            &&  nDXVendPackingSlipTrans.InventTransId == inventTransId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmFilterFromDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC
+    /// </summary>
+    /// <param name = "_filterFromDate">Date</param>
+    /// <returns>Date</returns>
+    public Date parmFilterFromDate(Date _filterFromDate = filterFromDate)
+    {
+        ;
+        filterFromDate = _filterFromDate;
+
+        return filterFromDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmFilterToDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    /// <param name = "_filterToDate">Date</param>
+    /// <returns>Date</returns>
+    public Date parmFilterToDate(Date _filterToDate = filterToDate)
+    {
+        ;
+        filterToDate = _filterToDate;
+
+        return filterToDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmInventTransId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    /// <param name = "_inventTransId">InventTransId</param>
+    /// <returns>InventTransId</returns>
+    public InventTransId parmInventTransId(InventTransId _inventTransId = inventTransId)
+    {
+        ;
+        inventTransId = _inventTransId;
+
+        return inventTransId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmItemId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    /// <param name = "_itemId">ItemId</param>
+    /// <returns>ItemId</returns>
+    public ItemId parmItemId(ItemId _itemId = itemId)
+    {
+        ;
+        itemId = _itemId;
+
+        return itemId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmPurchId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    /// <param name = "_purchId">PurchId</param>
+    /// <returns>PurchId</returns>
+    public PurchId parmPurchId(PurchId _purchId = purchId)
+    {
+        ;
+        purchId = _purchId;
+
+        return purchId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmTaxCode</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    /// <param name = "_taxCode">TaxCode</param>
+    /// <returns>TaxCode</returns>
+    public TaxCode parmTaxCode(TaxCode _taxCode = taxCode)
+    {
+        ;
+        taxCode = _taxCode;
+
+        return taxCode;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmTaxCode2</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    /// <param name = "_taxCode">TaxCode</param>
+    /// <returns>TaxCode</returns>
+    public TaxCode parmTaxCode2(TaxCode _taxCode = taxCode2)
+    {
+        ;
+        taxCode2 = _taxCode;
+
+        return taxCode2;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setDateRange2qbr</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    /// <param name = "qbr">QueryBuildRange</param>
+    void setDateRange2qbr(QueryBuildRange qbr)
+    {
+        qbr.value(SysQuery::range(filterFromDate, filterToDate));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setFilterDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    /// <param name = "iMonth">int</param>
+    /// <param name = "iYear">int</param>
+    void setFilterDate(int iMonth, int iYear)
+    {
+        ;
+        filterMonat = iMonth;
+        filterJahr  = iYear;
+        [filterFromDate,
+     filterToDate] = NDXHelperDate::firstAndLastDayOfMonth(iMonth, iYear);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setTaxCodeQbr</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    /// <param name = "qbr">QueryBuildRange</param>
+    void setTaxCodeQbr(QueryBuildRange qbr)
+    {
+        ;
+        if (taxCode && taxCode2)
+        {
+            qbr.value(strfmt('((%1 == "%2") || (%1 == "%3"))', fieldid2name(tablenum(TaxTrans), fieldnum(TaxTrans, TaxCode)),taxCode, taxCode2));
+        }
+        else
+        {
+            qbr.value(taxCode);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>VendInvoiceTrans4PurchLineItem</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    void VendInvoiceTrans4PurchLineItem()
+    {
+        VendInvoiceTrans        vendInvoiceTrans;
+        PurchLine               purchLine;
+        VendInvoiceJour         vendInvoiceJour;
+        NDXVendInvoiceTrans    nDXVendInvoiceTrans;
+
+        Query       q = new Query();
+        QueryRun    qr;
+        QueryBuildDataSource    qbds1, qbds2, qbds3, qbds4, qbds5, qbds6;
+        QueryBuildFieldList     fields1, fields2, fields5, fields6;
+
+        ;
+        qbds1 = q.addDataSource(tablenum(PurchTable));
+        qbds1.addRange(fieldnum(PurchTable, PurchId)).value(purchId);
+        fields1 = qbds1.fields();
+        fields1.addField(fieldnum(PurchTable, PurchId));
+
+        qbds2 = qbds1.addDataSource(tablenum(PurchLine));
+        qbds2.joinMode(JoinMode::InnerJoin);
+        qbds2.relations(true);
+        qbds2.fetchMode(QueryFetchMode::One2One);
+        qbds2.addRange(fieldnum(PurchLine, ItemId)).value(itemId);
+        qbds2.addRange(fieldnum(PurchLine, InventTransId)).value(inventTransId);
+        fields2 = qbds2.fields();
+        fields2.addField(fieldnum(PurchLine, ItemId));
+
+        qbds3 = qbds1.addDataSource(tablenum(VendInvoicePurchLink));
+        qbds3.joinMode(JoinMode::ExistsJoin);
+        qbds3.relations(true);
+        qbds3.fetchMode(QueryFetchMode::One2One);
+
+        qbds4 = qbds3.addDataSource(tablenum(VendInvoiceJour));
+        qbds4.joinMode(JoinMode::ExistsJoin);
+        qbds4.relations(true);
+        qbds4.fetchMode(QueryFetchMode::One2One);
+
+        qbds5 = qbds4.addDataSource(tablenum(VendInvoiceTrans));
+        qbds5.joinMode(JoinMode::InnerJoin);
+        qbds5.relations(true);
+        qbds5.fetchMode(QueryFetchMode::One2One);
+        fields5 = qbds5.fields();
+        fields5.addField(fieldnum(VendInvoiceTrans, Qty));
+
+        qbds6 = qbds2.addDataSource(tablenum(VendInvoiceTrans));
+        qbds6.joinMode(JoinMode::InnerJoin);
+        qbds6.addLink(fieldnum(PurchLine, ItemId), fieldnum(VendInvoiceTrans, ItemId));
+        qbds6.addLink(fieldnum(PurchLine, InventTransId), fieldnum(VendInvoiceTrans, InventTransId));
+        qbds6.fetchMode(QueryFetchMode::One2One);
+        fields6 = qbds6.fields();
+        fields6.addField(fieldnum(VendInvoiceTrans, Qty));
+        fields6.addField(fieldnum(VendInvoiceTrans, OrigPurchId));
+        fields6.addField(fieldnum(VendInvoiceTrans, InvoiceDate));
+        fields6.addField(fieldnum(VendInvoiceTrans, InternalInvoiceId));
+        fields6.addField(fieldnum(VendInvoiceTrans, ItemId));
+        fields6.addField(fieldnum(VendInvoiceTrans, InventTransId));
+        fields6.addField(fieldnum(VendInvoiceTrans, InvoiceId));
+        fields6.addField(fieldnum(VendInvoiceTrans, DestCountryRegionId));
+
+        qr = new QueryRun(q);
+        RecordInsertList ndxVendInvoiceTransIL = new RecordInsertList(tableNum(NDXVendInvoiceTrans));
+        while (qr.next())
+        {
+            if (qr.changed(tablenum(VendInvoiceTrans), 1))
+            {
+                vendInvoiceTrans = qr.get(tablenum(VendInvoiceTrans), 1);
+            }
+            if (qr.changed(tablenum(PurchLine)))
+            {
+                purchLine = qr.get(tablenum(PurchLine));
+            }
+
+            vendInvoiceJour = VendInvoiceJour::findFromVendInvoiceTrans(vendInvoiceTrans.OrigPurchId, vendInvoiceTrans.InvoiceId, vendInvoiceTrans.InvoiceDate, vendInvoiceTrans.numberSequenceGroup, vendInvoiceTrans.InternalInvoiceId);
+
+            nDXVendInvoiceTrans.clear();
+            nDXVendInvoiceTrans.OrigPurchId        = vendInvoiceTrans.OrigPurchId;
+            nDXVendInvoiceTrans.InvoiceDate        = vendInvoiceTrans.InvoiceDate;
+            nDXVendInvoiceTrans.InternalInvoiceId  = vendInvoiceTrans.InternalInvoiceId;
+            nDXVendInvoiceTrans.ItemId             = vendInvoiceTrans.ItemId;
+            nDXVendInvoiceTrans.InventTransId      = vendInvoiceTrans.InventTransId;
+            nDXVendInvoiceTrans.Qty                = vendInvoiceTrans.Qty;
+            nDXVendInvoiceTrans.CountryRegionIdVendInvoiceTrans = vendInvoiceTrans.DestCountryRegionId;
+            nDXVendInvoiceTrans.RefRecIdVendInvoiceTrans   = vendInvoiceTrans.RecId;
+            nDXVendInvoiceTrans.AccountNum         = vendInvoiceJour.InvoiceAccount;
+            ndxVendInvoiceTransIL.add(NDXVendInvoiceTrans);
+        }
+        ndxVendInvoiceTransIL.insertDatabase();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>VendPackingSlip2VendInvoice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    void VendPackingSlip2VendInvoice()
+    {
+        NDXVendPackingSlipTrans        nDXVendPackingSlipTrans;
+        NDXVendInvoiceTrans            nDXVendInvoiceTrans;
+        Qty                             qty;
+        container                       conRec, conCheckRec;
+        container                       conCheckPossible;
+        int                             i, j;
+        recId                           recId, recIdCheck;
+        boolean                         lOK;
+
+        int     value;
+        ;
+        ttsbegin;
+        // alle Rechnungspositionen durchlaufen
+        while select forUpdate nDXVendInvoiceTrans
+        where        nDXVendInvoiceTrans.OrigPurchId == purchId
+            &&       nDXVendInvoiceTrans.ItemId  == itemId
+            &&       nDXVendInvoiceTrans.InventTransId == inventTransId
+        {
+            conRec = connull();
+            conCheckRec = connull();
+            qty     = 0;
+            lOK     = false;
+            // alle Lieferscheinpositionen durchlaufen
+            while select forUpdate nDXVendPackingSlipTrans
+            order by nDXVendPackingSlipTrans.Qty desc
+            where       nDXVendPackingSlipTrans.OrigPurchId == purchId
+                &&      nDXVendPackingSlipTrans.ItemId  == itemId
+                &&      nDXVendPackingSlipTrans.InventTransId == inventTransId
+                &&      nDXVendPackingSlipTrans.Assigned == NoYes::No
+            {
+                conCheckRec += nDXVendPackingSlipTrans.RecId;
+            }
+            conCheckPossible = nDXIntrastat::getPossibleLSCombinations(conlen(conCheckRec));   // Ermittlung der möglichen LS-Kombinationen
+            for (i=1; i<=conlen(conCheckPossible); i++)         // Iteration über alle möglichen LS-Kombinationen
+            {
+                conRec  = connull();
+                qty     = 0;
+                lOK     = false;
+                value   = conpeek(conCheckPossible, i);
+                for (j=1; j<=conlen(conCheckRec); j++)   // Durchlauf der LS-Positionen
+                {
+                    if (value & (1 << j))   // in Prüfung einbeziehen
+                    {
+                        recIdCheck = conpeek(conCheckRec, j);
+                        select firstonly nDXVendPackingSlipTrans where nDXVendPackingSlipTrans.RecId == recIdCheck;
+                        qty += nDXVendPackingSlipTrans.Qty;
+                        lOK = (qty == nDXVendInvoiceTrans.Qty);
+                        conRec += nDXVendPackingSlipTrans.RecId;
+                        if (lOK)
+                        {
+                            break;
+                        }
+                    }
+                }
+                if (lOK)
+                {
+                    break;
+                }
+
+            }
+
+            if (lOK)    // alle LS-Positionen konnten der Rechnungsposition zugeordnet werden
+            {
+                for (i=1; i<=conlen(conRec); i++)
+                {
+                    recId = conpeek(conRec, i);
+                    select firstonly forUpdate nDXVendPackingSlipTrans where nDXVendPackingSlipTrans.RecId == recId;
+                    nDXVendPackingSlipTrans.RefRecIdVendInvoiceTrans = nDXVendInvoiceTrans.RefRecIdVendInvoiceTrans;
+                    nDXVendPackingSlipTrans.Assigned = NoYes::Yes;
+                    nDXVendPackingSlipTrans.update();
+                }
+                nDXVendInvoiceTrans.QtyPackingSlipTrans = qty;
+                nDXVendInvoiceTrans.update();
+            }
+        }
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>VendPackingSlipTrans4PurchLineItem</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    void VendPackingSlipTrans4PurchLineItem()
+    {
+        VendPackingSlipTrans        vendPackingSlipTrans;
+        VendPackingSlipJour         vendPackingSlipJour;
+        PurchLine                   purchLine;
+        NDXVendPackingSlipTrans    nDXVendPackingSlipTrans;
+
+        Query       q = new Query();
+        QueryRun    qr;
+        QueryBuildDataSource    qbds1, qbds2, qbds3, qbds4, qbds5, qbds6;
+        QueryBuildFieldList     fields1, fields2, fields5, fields6;
+
+        ;
+        qbds1 = q.addDataSource(tablenum(PurchTable));
+        qbds1.addRange(fieldnum(PurchTable, PurchId)).value(purchId);
+        fields1 = qbds1.fields();
+        fields1.addField(fieldnum(PurchTable, PurchId));
+
+        qbds2 = qbds1.addDataSource(tablenum(PurchLine));
+        qbds2.joinMode(JoinMode::InnerJoin);
+        qbds2.relations(true);
+        qbds2.fetchMode(QueryFetchMode::One2One);
+        qbds2.addRange(fieldnum(PurchLine, ItemId)).value(itemId);
+        qbds2.addRange(fieldnum(PurchLine, InventTransId)).value(inventTransId);
+        fields2 = qbds2.fields();
+        fields2.addField(fieldnum(PurchLine, ItemId));
+
+        qbds3 = qbds1.addDataSource(tablenum(VendPackingSlipPurchLink));
+        qbds3.joinMode(JoinMode::ExistsJoin);
+        qbds3.relations(true);
+        qbds3.fetchMode(QueryFetchMode::One2One);
+
+        qbds4 = qbds3.addDataSource(tablenum(VendPackingSlipJour));
+        qbds4.joinMode(JoinMode::ExistsJoin);
+        qbds4.relations(true);
+        qbds4.fetchMode(QueryFetchMode::One2One);
+
+        qbds5 = qbds4.addDataSource(tablenum(VendPackingSlipTrans));
+        qbds5.joinMode(JoinMode::InnerJoin);
+        qbds5.relations(true);
+        qbds5.fetchMode(QueryFetchMode::One2One);
+        fields5 = qbds5.fields();
+        fields5.addField(fieldnum(VendPackingSlipTrans, Qty));
+        fields5.addField(fieldNum(VendPackingSlipJour, PurchId));
+
+        qbds6 = qbds2.addDataSource(tablenum(VendPackingSlipTrans));
+        qbds6.joinMode(JoinMode::InnerJoin);
+        qbds6.addLink(fieldnum(PurchLine, ItemId), fieldnum(VendPackingSlipTrans, ItemId));
+        qbds6.addLink(fieldnum(PurchLine, InventTransId), fieldnum(VendPackingSlipTrans, InventTransId));
+        qbds6.fetchMode(QueryFetchMode::One2One);
+        fields6 = qbds6.fields();
+        fields6.addField(fieldnum(VendPackingSlipTrans, Qty));
+        fields6.addField(fieldnum(VendPackingSlipTrans, ItemId));
+        fields6.addField(fieldnum(VendPackingSlipTrans, InventTransId));
+        fields6.addField(fieldnum(VendPackingSlipTrans, DeliveryDate));
+        fields6.addField(fieldnum(VendPackingSlipTrans, OrigPurchid));
+        fields6.addField(fieldnum(VendPackingSlipTrans, Qty));
+        fields6.addField(fieldnum(VendPackingSlipTrans, DestCountryRegionId));
+        fields6.addField(fieldnum(VendPackingSlipTrans, PackingSlipId));
+
+        qr = new QueryRun(q);
+        RecordInsertList nDXVendPackingSlipTransIL = new RecordInsertList(tableNum(NDXVendPackingSlipTrans));
+        while (qr.next())
+        {
+            if (qr.changed(tablenum(VendPackingSlipTrans), 1))
+            {
+                vendPackingSlipTrans = qr.get(tablenum(VendPackingSlipTrans), 1);
+            }
+
+            if (qr.changed(tablenum(PurchLine)))
+            {
+                purchLine = qr.get(tablenum(PurchLine));
+            }
+
+            vendPackingSlipJour = vendPackingSlipJour::findRecId(vendPackingSlipTrans.vendPackingslipJour);
+
+            nDXVendPackingSlipTrans.clear();
+            nDXVendPackingSlipTrans.InventTransId          = vendPackingSlipTrans.InventTransId;
+            nDXVendPackingSlipTrans.ItemId                 = vendPackingSlipTrans.ItemId;
+            nDXVendPackingSlipTrans.DeliveryDate           = vendPackingSlipTrans.DeliveryDate;
+            nDXVendPackingSlipTrans.OrigPurchid            = vendPackingSlipTrans.OrigPurchid;
+            nDXVendPackingSlipTrans.Qty                    = vendPackingSlipTrans.Qty;
+            nDXVendPackingSlipTrans.RefRecIdVendPackingSlipTrans   = vendPackingSlipTrans.RecId;
+            nDXVendPackingSlipTrans.CountryRegionIdVendPackingSlipTrans   = vendPackingSlipTrans.DestCountryRegionId;
+            nDXVendPackingSlipTrans.AccountNum             = vendPackingSlipJour.InvoiceAccount;
+            nDXVendPackingSlipTransIL.add(nDXVendPackingSlipTrans);
+        }
+        nDXVendPackingSlipTransIL.insertDatabase();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPossibleLSCombinations</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    /// <param name = "level">int</param>
+    /// <returns>container</returns>
+    static container getPossibleLSCombinations(int level)
+    {
+        container conCheck = connull();
+        container conC1;
+        container conChecked = connull();
+        int i, j, k, l, iCheck, iNotCheck;
+        int checkV, checkV1, checkV2, checkV3, checkV4;
+        int checkVNot;
+        int conLen1;
+        ;
+        for (i=1; i<=level; i++)
+        {
+            conCheck += 1 << i;
+        }
+
+        conLen1 = conlen(conCheck);
+
+        for (l=1; l <= conLen1; l++)
+        {
+            iCheck    = l + 1;
+            iNotCheck = l + 2;
+            conc1 = connull();
+            checkV2 = 0;
+            checkVNot = 0;
+            while (true)
+            {
+                checkV1 = conpeek(conCheck,l);
+                for (j=l+1; j<=conlen(conCheck); j++)
+                {
+                    checkV = checkV1;
+                    checkV += checkV2;
+                    checkV3 = conpeek(conCheck,j);
+                    for (k=j; k<= conLen1; k++)
+                    {
+                        checkV4 = conpeek(conCheck,k);
+                        if (checkV4 == checkV2)
+                        {
+                            continue;
+                        }
+                        if (confind(conc1, checkV4))
+                        {                    
+                            continue;
+                        }
+                        checkV += checkV4;
+                    }
+                    if (!confind(conChecked, checkV))
+                    {
+                        conChecked += checkV;
+                    }
+                }
+                if (iNotCheck >= conLen1)
+                {
+                    break;
+                }
+                checkV2       = conpeek(conCheck, iCheck);
+                checkVNot     = conpeek(conCheck, iNotCheck);
+                conc1 += checkV2;
+                ++iCheck;
+                ++iNotCheck;
+            }
+        }
+        conChecked += conpeek(conCheck, conLen1);
+        return conChecked;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setCountryRegionIdVendTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    /// <param name = "vendInvoiceJour">VendInvoiceJour</param>
+    /// <returns>boolean</returns>
+    static boolean setCountryRegionIdVendTrans(VendInvoiceJour vendInvoiceJour)
+    {
+        //TODO: DebuC Issue 7784
+        //FormDataSource  fds;
+        //Dialog          dialog = new Dialog("Land der Lieferung");
+        //DialogField     dialogCountryRegionVendTrans;
+        //DialogField     dialogOrderAccount;
+        //DialogField     dialogInvoiceAccount;
+        //DialogField     dialogCountryRegionId;
+        //;
+        //if (vendInvoiceJour.isFormDataSource())
+        //fds = vendInvoiceJour.dataSource();
+
+        //dialogOrderAccount = dialog.addFieldValue(identifierStr(VendAccount), vendInvoiceJour.OrderAccount);
+        //dialogOrderAccount.enabled(false);
+        //dialogInvoiceAccount = dialog.addFieldValue(identifierStr(VendInvoiceAccount), vendInvoiceJour.InvoiceAccount);
+        //dialogInvoiceAccount.enabled(false);
+        //dialogCountryRegionId  = dialog.addFieldValue(identifierStr(AddressCountryRegionId), vendInvoiceJour.CountryRegionId);
+        //dialogCountryRegionId.enabled(false);
+
+        //dialogCountryRegionVendTrans = dialog.addFieldValue(identifierStr(NDX_CountryRegionIdVendTrans), vendInvoiceJour.NDXCountryRegionIdVendTrans, "Land aus dem die Lieferung erfolgte");
+
+        //if (!dialog.run())
+        //return false;
+
+        //vendInvoiceJour.NDXCountryRegionIdVendTrans = dialogCountryRegionVendTrans.value();
+
+        //if (fds)
+        //{
+        //    fds.write();
+        //    fds.reread();
+        //}
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>vendInvoiceJourFromRecIdVendInvoiceTrans</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 30.03.23
+    /// </summary>
+    /// <param name = "recId">recId</param>
+    /// <returns>VendInvoiceJour</returns>
+    static VendInvoiceJour vendInvoiceJourFromRecIdVendInvoiceTrans(recId recId)
+    {
+        VendInvoiceJour vendInvoiceJour;
+        VendInvoiceTrans    vendInvoiceTrans;
+        ;
+        if (recId)
+        {
+            select firstonly vendInvoiceTrans where vendInvoiceTrans.RecId == recId;
+        }
+        if (vendInvoiceTrans.RecId)
+        {
+            select firstonly vendInvoiceJour
+                where vendInvoiceJour.PurchId == VendInvoiceTrans.PurchID;
+        }
+
+        return vendInvoiceJour;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

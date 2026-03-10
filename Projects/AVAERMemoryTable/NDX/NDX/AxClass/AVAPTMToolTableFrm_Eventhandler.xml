@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAPTMToolTableFrm_Eventhandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// NS Zelinka 29.02.24
+/// </summary>
+internal final class AVAPTMToolTableFrm_Eventhandler
+{
+        
+
+
+    
+    
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>PTMToolTable_OnActivated</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 29.02.24
+    /// </summary>
+    /// <param name="sender">FormDataSource</param>
+    /// <param name="e">Not used</param>
+    [FormDataSourceEventHandler(    formDataSourceStr(  AVAPTMToolTable, PTMToolTable), 
+                                                        FormDataSourceEventType::Activated  ),
+                                    SuppressBPWarning(  'BPParameterNotUsed', 
+                                                        'False positive'        )               ]
+    public static void PTMToolTable_OnActivated(FormDataSource sender, FormDataSourceEventArgs e)
+    {
+        KCS_PTMToolTable    kcs_PTMToolTable;
+        FormRun             formRun;
+        WrkCtrTable         wrkCtrTable;
+
+        boolean             locProjProductionExist;
+        boolean             locProjMaintenanceExist;
+        
+        kcs_PTMToolTable        = sender.cursor();
+        formRun                 = sender.formRun();
+        wrkCtrTable             = wrkCtrTable::find(kcs_PTMToolTable.ToolId);
+        
+        if(kcs_PTMToolTable.RecId)
+        {
+            locProjProductionExist  = kcs_PTMToolTable.avaICProjProductionExist();
+            locProjMaintenanceExist = kcs_PTMToolTable.avaICProjMaintenanceExist();
+        }
+
+        /*
+        formRun.design().controlName(formControlStr(AVAPTMToolTable, AVAProjectCreationPP)).enabled(!kcs_PTMToolTable.AVAICProjProd);
+        formRun.design().controlName(formControlStr(AVAPTMToolTable, AVAProjectCreationSP)).enabled(!kcs_PTMToolTable.AVAICProjMaintenance);
+        formRun.design().controlName(formControlStr(AVAPTMToolTable, AVAProductionProject)).enabled(kcs_PTMToolTable.AVAICProjProd != '');
+        formRun.design().controlName(formControlStr(AVAPTMToolTable, AVAServiceProject)).enabled(kcs_PTMToolTable.AVAICProjMaintenance != '');
+        */
+        formRun.design().controlName(formControlStr(AVAPTMToolTable, AVAProjectCreationPP)).enabled(!locProjProductionExist);
+        formRun.design().controlName(formControlStr(AVAPTMToolTable, AVAProjectCreationSP)).enabled(!locProjMaintenanceExist);
+        formRun.design().controlName(formControlStr(AVAPTMToolTable, AVAProductionProject)).enabled(locProjProductionExist);
+        formRun.design().controlName(formControlStr(AVAPTMToolTable, AVAServiceProject)).enabled(locProjMaintenanceExist);
+
+        formRun.design().controlName(formControlStr(AVAPTMToolTable, AVAWrkCtrDateCalendar)).enabled(wrkCtrTable.RecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAICProjProd_AVAICProjProd_OnLookup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 19.03.24
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(AVAPTMToolTable, AVAICProjProd_AVAICProjProd), FormControlEventType::Lookup)]
+    public static void AVAICProjProd_AVAICProjProd_OnLookup(FormControl sender, FormControlEventArgs e)
+    {
+        KCS_PTMToolTable toolTable = sender.formRun().dataSource(formDataSourceStr(AVAPTMToolTable, PTMToolTable)).cursor();
+
+        if (toolTable.KCS_ProducerUK == '' ||
+            toolTable.KCS_ProducerUK == curExt())
+        {
+            AVAPTMToolTableFrm_Eventhandler::lookUpToProjTable(sender,e);
+        }
+        else
+        {
+            changecompany(toolTable.KCS_ProducerUK)
+            {
+                AVAPTMToolTableFrm_Eventhandler::lookUpToProjTable(sender,e);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAICProjMaintenance_AVAICProjMaintenance_OnLookup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 19.03.24
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(AVAPTMToolTable, AVAICProjMaintenance_AVAICProjMaintenance), FormControlEventType::Lookup)]
+    public static void AVAICProjMaintenance_AVAICProjMaintenance_OnLookup(FormControl sender, FormControlEventArgs e)
+    {
+        KCS_PTMToolTable toolTable = sender.formRun().dataSource(formDataSourceStr(AVAPTMToolTable, PTMToolTable)).cursor();
+
+        if (toolTable.KCS_MaintenanceUK == '' ||
+            toolTable.KCS_MaintenanceUK == curExt())
+        {
+            AVAPTMToolTableFrm_Eventhandler::lookUpToProjTable(sender,e);
+        }
+        else
+        {
+            changecompany(toolTable.KCS_MaintenanceUK)
+            {
+                AVAPTMToolTableFrm_Eventhandler::lookUpToProjTable(sender,e);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>lookUpToProjTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 19.03.24
+    /// </summary>
+    /// <param name = "sender">FormControl</param>
+    /// <param name = "e">FormControlEventArgs</param>
+    public static void lookUpToProjTable(   FormControl             sender,
+                                            FormControlEventArgs    e)
+    {
+        SysTableLookup          sysTableLookup          = SysTableLookup::newParameters(tableNum(ProjTable), sender);
+        Query                   query                   = new Query();
+        QueryBuildDataSource    queryBuildDataSource;
+
+        queryBuildDataSource    = query.addDataSource(tableNum(ProjTable));
+
+        sysTableLookup.addLookupfield(fieldNum(ProjTable, ProjId));
+        sysTableLookup.addLookupfield(fieldNum(ProjTable, Name));
+        sysTableLookup.addLookupfield(fieldNum(ProjTable, Type));
+        sysTableLookup.addLookupfield(fieldNum(ProjTable, CustAccount));
+
+        sysTableLookup.parmQuery(query);
+        sysTableLookup.performFormLookup();
+
+        FormControlCancelableSuperEventArgs cancelableSuperEventArgs = e as FormControlCancelableSuperEventArgs;
+        cancelableSuperEventArgs.CancelSuperCall();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAProductionProject_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/10/08    AVA_011503_CreateProject
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [    SuppressBPWarning('BPParameterNotUsed', 'False positive'),
+        FormControlEventHandler(formControlStr(AVAPTMToolTable, AVAProductionProject), FormControlEventType::Clicked)]
+    public static void AVAProductionProject_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        KCS_PTMToolTable toolTable = sender.formRun().dataSource(formDataSourceStr(AVAPTMToolTable, PTMToolTable)).cursor();
+        if (toolTable.KCS_ProducerUK != curExt())
+        {
+            appl.setDefaultCompany(toolTable.KCS_ProducerUK);
+            SysSecurity::reload(false);
+            SysDataAreaSelectExtension::fireDataAreaChanged();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAServiceProject_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/10/08    AVA_011503_CreateProject
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [    SuppressBPWarning('BPParameterNotUsed', 'False positive'),
+        FormControlEventHandler(formControlStr(AVAPTMToolTable, AVAServiceProject), FormControlEventType::Clicked)]
+    public static void AVAServiceProject_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        KCS_PTMToolTable toolTable = sender.formRun().dataSource(formDataSourceStr(AVAPTMToolTable, PTMToolTable)).cursor();
+        if (toolTable.KCS_MaintenanceUK != curExt())
+        {
+            appl.setDefaultCompany(toolTable.KCS_MaintenanceUK);
+            SysSecurity::reload(false);
+            SysDataAreaSelectExtension::fireDataAreaChanged();
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAWrkCtrDateCalendar_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  AVA/WEN/2025/05/14     AVA_013002
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [   SuppressBPWarning('BPParameterNotUsed', 'False positive'),
+        FormControlEventHandler(formControlStr(AVAPTMToolTable, AVAWrkCtrDateCalendar), FormControlEventType::Clicked)]
+    public static void AVAWrkCtrDateCalendar_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        KCS_PTMToolTable toolTable = sender.formRun().dataSource(formDataSourceStr(AVAPTMToolTable, PTMToolTable)).cursor();
+        WrkCtrTable wrkCtrTable = wrkCtrTable::find(toolTable.ToolId);
+        
+        Args args = new Args();
+        args.record(wrkCtrTable);
+        MenuFunction menuFunction = new MenuFunction(menuItemDisplayStr(WrkCtrDateCalendar), MenuItemType::Display);
+        menuFunction.run(args);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

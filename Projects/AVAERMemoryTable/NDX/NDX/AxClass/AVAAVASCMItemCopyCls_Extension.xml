@@ -1,0 +1,326 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAAVASCMItemCopyCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of class AVASCMItemCopy
+/// </summary>
+[ExtensionOf(classStr(AVASCMItemCopy))]
+final class AVAAVASCMItemCopyCls_Extension
+{
+    public DialogField      avaDlgProductName1, avaDlgProductName2;
+    private DialogField             avaDlgSearchName;
+    private EcoResProductSearchName avaSearchName;
+    public NDXProductName1  avaProductName1, avaProductName2;
+    public Args             avaArgs;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of run method
+    /// </summary>
+    public void run()
+    {
+        FormRun formRun;
+        List dsList;
+        ListEnumerator dsListEnumerator;
+        FormDataSource formDS;
+
+        next run();
+
+        // Get an instance of the calling form.
+        formRun = this.avaParmArgs().caller();
+
+        // If the caller is a form, find and refresh the specified root data source.
+        if(formRun)
+        {
+            dsList = formRun.rootFormDataSources();
+
+            if(dsList && dsList.elements() > 0)
+            {
+                dsListEnumerator = dsList.getEnumerator();
+
+                while(dsListEnumerator.moveNext())
+                {
+                    formDS = dsListEnumerator.current();
+
+                    switch(formDS.table())
+                    {
+                        case tableNum(EcoResProduct):
+                            EcoResProduct locProduct = EcoResProduct::findByProductNumber(productIdTo);
+                            formDS.executeQuery();
+                            formDS.positionToRecord(locProduct);
+                            break;
+
+                        case tableNum(InventTable):
+                            InventTable locInventTable = InventTable::find(itemIdTo);
+                            formDS.executeQuery();
+                            formDS.positionToRecord(locInventTable);
+                            break;
+                    }
+                }
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromArgs</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// extension of initFromArgs method
+    /// </summary>
+    /// <param name = "_args">Args</param>
+    public void initFromArgs(Args _args)
+    {
+        next initFromArgs(_args);
+
+        this.avaParmArgs(_args);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaParmArgs</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// parm method for Args object
+    /// </summary>
+    /// <param name = "_args">Args</param>
+    /// <returns>Args</returns>
+    public Args avaParmArgs(Args _args = avaArgs)
+    {
+        avaArgs = _args;
+
+        return avaArgs;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of dialog method
+    /// </summary>
+    /// <returns>Object</returns>
+    public Object dialog()
+    {
+        Dialog ret = next dialog();
+
+        ret.addGroup("@NDX:NDXDescription");
+        avaDlgProductName1  = dlg.addFieldValue(extendedTypeStr(NDXProductName1), avaProductName1);
+        avaDlgProductName2  = dlg.addFieldValue(extendedTypeStr(NDXProductName2), avaProductName2);
+
+        ret.addGroup("@SYS27054");
+        avaDlgSearchName = dlg.addFieldValue(extendedTypeStr(EcoResProductSearchName), avaSearchName);
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFromDialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Save values entered in dialog.
+    /// </summary>
+    /// <returns>
+    /// Value of super.
+    /// </returns>
+    public boolean getFromDialog()
+    {
+        avaProductName1 = avaDlgProductName1.value();
+        avaProductName2 = avaDlgProductName2.value();
+
+        avaSearchName = avaDlgSearchName.value();
+
+        return next getFromDialog();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fld3_1_modified</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of fld3_1_modified method
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean fld3_1_modified()
+    {
+        boolean ret = next fld3_1_modified();
+
+        if(ret)
+        {
+            EcoResProductNumber productNumber = dlgProductIdTo.value();
+            EcoResProduct FromProduct = EcoResProduct::findByProductNumber(dlgProductIdFrom.value());
+            EcoResProductTranslation productTranslation = EcoResProductTranslation::findByProductLanguage(FromProduct.RecId, CompanyInfo::languageId());
+
+            productNumber = NDXItemIdHandler::constructFromDataAreaId().checkItemId(productNumber, "@NDX:NDXCheckItemIdAttachedMessage1");
+            dlgItemIdTo.value(productNumber);
+            avaDlgProductName1.value(productTranslation.NDXProductName1);
+            avaDlgProductName2.value(productTranslation.NDXProductName2);
+            avaDlgSearchName.value(name2Alias(dlgProductIdTo.value()));
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createNewProduct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// copy a product
+    /// </summary>
+    /// <param name="_oldInventTable">
+    /// product to copie
+    /// </param>
+    /// <param name="_newProduct">
+    /// new product
+    /// </param>
+    /// <returns>
+    /// new created record
+    /// </returns>
+    [HookableAttribute(true)]
+    public EcoResProduct createNewProduct(InventTable _oldInventTable, EcoResProduct _newProduct)
+    {
+        EcoResProduct   avaProduct_new = next createNewProduct(_oldInventTable, _newProduct);
+
+        this.updateInventTable(avaProduct_new);
+        this.replaceTranslationText(avaProduct_new.RecId);
+        this.updateSearchName(avaProduct_new.RecId);
+
+        return avaProduct_new;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateSearchName</Name>
+				<Source><![CDATA[
+    private void updateSearchName(RefRecId _productRecId)
+    {
+        EcoResProduct  locEcoResProduct = EcoResProduct::find(_productRecId, true);
+        locEcoResProduct.SearchName = avaSearchName;
+        locEcoResProduct.update();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateInventTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the new inventTable record with new values
+    /// </summary>
+    /// <param name = "_product">EcoResProduct</param>
+    public void updateInventTable(EcoResProduct _product)
+    {
+        InventTable     avaInventTable_new = InventTable::findByProduct(_product.RecId, true);
+
+        ttsbegin;
+
+        avaInventTable_new.NDXModelNumber = _product.DisplayProductNumber;
+        avaInventTable_new.update();
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateEcoResProductTranslation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// extension for method updateEcoResProductTranslation
+    /// fields in system language get set to specified values, other language fields get emptied
+    /// </summary>
+    /// <param name = "_productVariantRecIdTo">RefRecId</param>
+    /// <param name = "_productVariantRecIdFrom">RefRecId</param>
+    protected void updateEcoResProductTranslation(RefRecId _productVariantRecIdTo, RefRecId _productVariantRecIdFrom)
+    {
+        EcoResProductTranslation    ecoResProductTranslationTo;
+
+        next updateEcoResProductTranslation(_productVariantRecIdTo, _productVariantRecIdFrom);
+
+        ttsbegin;
+
+        ecoResProductTranslationTo.skipDataMethods(true);
+        update_recordset ecoResProductTranslationTo
+            setting
+                Name            = avaProductName1,
+                NDXProductName1 = avaProductName1,
+                NDXProductName2 = avaProductName2,
+                Description     = ''
+            where ecoResProductTranslationTo.Product == _productVariantRecIdTo
+            && ecoResProductTranslationTo.LanguageId == CompanyInfo::languageId();
+        ;       
+
+        update_recordset ecoResProductTranslationTo
+            setting
+                Name            = '',
+                NDXProductName1 = '',
+                NDXProductName2 = '',
+                Description     = ''
+            where ecoResProductTranslationTo.Product == _productVariantRecIdTo
+            && ecoResProductTranslationTo.LanguageId != CompanyInfo::languageId();
+        ;       
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>replaceTranslationText</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// replace translation texts for a product
+    /// </summary>
+    /// <param name = "_productRecId">RefRecId</param>
+    public void replaceTranslationText(RefRecId _productRecId)
+    {
+        EcoResProductTranslation    ecoResProductTranslationTo;
+
+        ttsbegin;
+
+        ecoResProductTranslationTo.skipDataMethods(true);
+        update_recordset ecoResProductTranslationTo
+            setting
+                Name            = avaProductName1,
+                NDXProductName1 = avaProductName1,
+                NDXProductName2 = avaProductName2,
+                Description     = ''
+            where ecoResProductTranslationTo.Product == _productRecId
+            && ecoResProductTranslationTo.LanguageId == CompanyInfo::languageId();
+        ;
+
+        update_recordset ecoResProductTranslationTo
+            setting
+                Name            = '',
+                NDXProductName1 = '',
+                NDXProductName2 = '',
+                Description     = ''
+            where ecoResProductTranslationTo.Product == _productRecId
+            && ecoResProductTranslationTo.LanguageId != CompanyInfo::languageId();
+        ;
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

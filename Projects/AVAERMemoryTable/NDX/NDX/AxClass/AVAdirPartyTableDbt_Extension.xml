@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAdirPartyTableDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>AVAdirPartyTableDbt_Extension</c> class is the extension for <c>DirPartyTable</c>
+/// </summary>
+[ExtensionOf(tableStr(DirPartyTable))]
+final class AVAdirPartyTableDbt_Extension
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaPrimaryPhoneExtension</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the primary telephone number extension for the selected address book record.
+    /// </summary>
+    /// <returns>
+    /// The primary telephone number extension for the address book record.
+    /// </returns>
+    //BP deviation documented
+    [SysClientCacheDataMethodAttribute(true)]
+    public PhoneLocal avaPrimaryPhoneExtension()
+    {
+        LogisticsElectronicAddress electronicAddress;
+        select firstonly Locator from electronicAddress where electronicAddress.RecId == this.PrimaryContactPhone;
+        return electronicAddress.LocatorExtension;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAgetLogisticsElectronicAddress</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>AVAgetLogisticsElectronicAddress</c> method.
+    /// </summary>
+    /// <param name="_logisticsElectronicAddressMethodType">
+    ///    <c>LogisticsElectronicAddressMethodType</c> as type
+    /// </param>
+    /// <param name="_isPrivate">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <param name="_isPrimary">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <param name="_isMobilePhone">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>LogisticsElectronicAddress</c> as return value
+    /// </returns>
+    public LogisticsElectronicAddress AVAgetLogisticsElectronicAddress( LogisticsElectronicAddressMethodType    _logisticsElectronicAddressMethodType   = LogisticsElectronicAddressMethodType::Phone,
+                                                                        boolean                                 _isPrivate                              = false,
+                                                                        boolean                                 _isPrimary                              = true,
+                                                                        boolean                                 _isMobilePhone                          = false
+                                                                        )
+    {
+        LogisticsElectronicAddress  locLogisticsElectronicAddress;
+        DirPartyLocation            locDirPartyLocation;
+
+        select firstOnly *
+        from    locLogisticsElectronicAddress
+        where   locLogisticsElectronicAddress.Type              == _logisticsElectronicAddressMethodType
+            &&  locLogisticsElectronicAddress.IsPrivate         == _isPrivate
+            &&  locLogisticsElectronicAddress.IsPrimary         == _isPrimary
+            &&  locLogisticsElectronicAddress.IsMobilePhone     == _isMobilePhone
+            exists join locDirPartyLocation
+            where   locDirPartyLocation.Location          == locLogisticsElectronicAddress.Location
+                && locDirPartyLocation.Party              == this.RecId
+                && locDirPartyLocation.IsPostalAddress    == NoYes::No;
+
+        return locLogisticsElectronicAddress;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AVAgetAvailableLogisticsElectronicAddressLocator</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>AVAgetAvailableLogisticsElectronicAddressLocator</c> method.
+    /// </summary>
+    /// <param name="_logisticsElectronicAddressMethodType">
+    ///    <c>LogisticsElectronicAddressMethodType</c> as type
+    /// </param>
+    /// <param name="_isMobilePhone">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>LogisticsElectronicAddressLocator</c> as return value
+    /// </returns>
+    public LogisticsElectronicAddressLocator AVAgetAvailableLogisticsElectronicAddressLocator(  LogisticsElectronicAddressMethodType    _logisticsElectronicAddressMethodType   = LogisticsElectronicAddressMethodType::Phone,
+                                                                                                boolean                                 _isMobilePhone                          = false
+                                                                                                )
+    {
+        LogisticsElectronicAddressLocator   retVal;
+        boolean                             isMobilePhone;
+
+        isMobilePhone = _isMobilePhone;
+        if(_logisticsElectronicAddressMethodType != LogisticsElectronicAddressMethodType::Phone)
+        {
+            isMobilePhone = false;
+        }
+
+        retVal = this.AVAgetLogisticsElectronicAddress( _logisticsElectronicAddressMethodType,
+                                                        false,
+                                                        true,
+                                                        isMobilePhone
+                                                        ).Locator;
+        if (!retVal)
+        {
+            retVal = this.AVAgetLogisticsElectronicAddress( _logisticsElectronicAddressMethodType,
+                                                            false,
+                                                            false,
+                                                            isMobilePhone
+                                                            ).Locator;
+        }
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>availableMobile</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the non primary mobile number for the selected address book record.
+    /// </summary>
+    /// <returns>
+    /// The non primary mobile number for the address book record.
+    /// </returns>
+    //BP deviation documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display Phone availableMobile()
+    {
+        /* replaced by following
+        LogisticsElectronicAddress  electronicAddress;
+        DirPartyLocation            partyLocation;
+
+        select firstOnly Locator
+        from    electronicAddress
+        where   electronicAddress.Type              == LogisticsElectronicAddressMethodType::Phone
+            &&  electronicAddress.IsPrivate         == false
+            &&  electronicAddress.IsPrimary         == true
+            &&  electronicAddress.IsMobilePhone     == true
+            exists join partyLocation
+            where   partyLocation.Location          == electronicAddress.Location
+                && partyLocation.Party              == this.RecId
+                && partyLocation.IsPostalAddress    == NoYes::No;
+
+        if (!electronicAddress.Locator)
+        {
+            select firstOnly Locator
+            from    electronicAddress
+            where   electronicAddress.Type              == LogisticsElectronicAddressMethodType::Phone
+                &&  electronicAddress.IsPrivate         == false
+                &&  electronicAddress.IsPrimary         == false
+                &&  electronicAddress.IsMobilePhone     == true
+                exists join partyLocation
+                where   partyLocation.Location          == electronicAddress.Location
+                    && partyLocation.Party              == this.RecId
+                    && partyLocation.IsPostalAddress    == NoYes::No;
+        }
+
+        return electronicAddress.Locator;
+        */
+        return this.AVAgetAvailableLogisticsElectronicAddressLocator(LogisticsElectronicAddressMethodType::Phone, true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>availablEmail</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the non primary mobile number for the selected address book record.
+    /// </summary>
+    /// <returns>
+    /// The non primary mobile number for the address book record.
+    /// </returns>
+    //BP deviation documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display Phone availablEmail()
+    {
+        /* replaced by following
+        LogisticsElectronicAddress  electronicAddress;
+        DirPartyLocation            partyLocation;
+
+        select firstOnly Locator
+        from    electronicAddress
+            where   electronicAddress.Type              == LogisticsElectronicAddressMethodType::Email
+            &&  electronicAddress.IsPrimary         == true
+            exists join partyLocation
+            where   partyLocation.Location          == electronicAddress.Location
+                && partyLocation.Party              == this.RecId
+                && partyLocation.IsPostalAddress    == NoYes::No;
+
+        if (!electronicAddress.Locator)
+        {
+            select firstOnly Locator
+            from    electronicAddress
+                where   electronicAddress.Type              == LogisticsElectronicAddressMethodType::Email
+                &&  electronicAddress.IsPrimary         == false
+                exists join partyLocation
+                where   partyLocation.Location          == electronicAddress.Location
+                    && partyLocation.Party              == this.RecId
+                    && partyLocation.IsPostalAddress    == NoYes::No;
+        }
+
+        return electronicAddress.Locator;
+        */
+        return this.AVAgetAvailableLogisticsElectronicAddressLocator(LogisticsElectronicAddressMethodType::Email);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>availablePhone</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// display method for available phone
+    /// </summary>
+    /// <returns>Phone</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display Phone availablePhone()
+    {
+        /* replaced by following
+        LogisticsElectronicAddress  electronicAddress;
+        DirPartyLocation            partyLocation;
+
+        select firstOnly Locator
+        from    electronicAddress
+        where   electronicAddress.Type              == LogisticsElectronicAddressMethodType::Phone
+            &&  electronicAddress.IsPrimary         == true
+             &&  electronicAddress.IsMobilePhone     == false
+            exists join partyLocation
+            where   partyLocation.Location          == electronicAddress.Location
+                && partyLocation.Party              == this.RecId
+                && partyLocation.IsPostalAddress    == NoYes::No;
+
+        if (!electronicAddress.Locator)
+        {
+            select firstOnly Locator
+            from    electronicAddress
+            where   electronicAddress.Type              == LogisticsElectronicAddressMethodType::Phone
+                &&  electronicAddress.IsPrivate         == false
+                &&  electronicAddress.IsPrimary         == false
+                &&  electronicAddress.IsMobilePhone     == false
+                exists join partyLocation
+                where   partyLocation.Location          == electronicAddress.Location
+                    && partyLocation.Party              == this.RecId
+                    && partyLocation.IsPostalAddress    == NoYes::No;
+        }
+
+        return electronicAddress.Locator;
+        */
+        return this.AVAgetAvailableLogisticsElectronicAddressLocator(LogisticsElectronicAddressMethodType::Phone);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>availablePhoneNotMobile</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/10/21   AVA_012578_SQTPhone
+    /// </summary>
+    /// <returns>Phone</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display Phone availablePhoneNotMobile()
+    {
+        return this.AVAgetAvailableLogisticsElectronicAddressLocator(LogisticsElectronicAddressMethodType::Phone, false);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

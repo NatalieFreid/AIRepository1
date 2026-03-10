@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAProdParmStatusDecreaseCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of form ProdParmStatusDecrease
+/// </summary>
+[ExtensionOf(formStr(ProdParmStatusDecrease))]
+final class AVAProdParmStatusDecreaseCls_Extension
+{
+    public ProdId avaProdId;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of method closeOk
+    /// </summary>
+    public void closeOk()
+    {
+        next closeOk();
+
+        this.avaCycleProdIdInventTransferOrders();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCycleProdIdInventTransferOrders</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if selected Prod orders have invent transfer orders and deletes them
+    /// </summary>
+    public void avaCycleProdIdInventTransferOrders()
+    {
+        ProdParmStatusDecrease avaProdParmStatusDecrease = ProdParmStatusDecrease_ds.getFirst();
+
+        if(avaProdParmStatusDecrease)
+        {
+            while(avaProdParmStatusDecrease)
+            {
+                avaProdId = avaProdParmStatusDecrease.ProdId;
+                this.avaCheckWantedStatus(avaProdParmStatusDecrease);
+                avaProdParmStatusDecrease = ProdParmStatusDecrease_ds.getNext();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckWantedStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks the wanted status for a ProdTable record to see if TransferOrder need to be deleted
+    /// </summary>
+    /// <param name = "_avaProdParmStatusDecrease">ProdParmStatusDecrease</param>
+    public void avaCheckWantedStatus(ProdParmStatusDecrease _avaProdParmStatusDecrease)
+    {
+        if(_avaProdParmStatusDecrease.WantedStatus == ProdStatus::Completed
+                    || _avaProdParmStatusDecrease.WantedStatus == ProdStatus::CostEstimated
+                    || _avaProdParmStatusDecrease.WantedStatus == ProdStatus::Scheduled
+                    || _avaProdParmStatusDecrease.WantedStatus == ProdStatus::Created)
+        {
+            this.avaDeleteTransferOrder();
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDeleteTransferOrder</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if TransferOrder exists and can be deleted, if yes, deletes it
+    /// </summary>
+    public void avaDeleteTransferOrder()
+    {
+        InventTransferTable avaTransferTable = InventTransferTable::avaFindProdId(avaProdId, true);
+
+        if(InventTransferTable::avaExistsProdIdOrder(avaProdId)
+            && avaTransferTable.validateDelete())
+        {
+            ttsbegin;
+
+            avaTransferTable.delete();
+
+            ttscommit;
+
+            Info(strFmt("@NDX:NXAPOTransferOrderDeleteInfo", avaTransferTable.TransferId));
+        }
+        else if(InventTransferTable::avaExistsProdIdOrder(avaProdId)
+            && !avaTransferTable.validateDelete())
+        {
+            warning(strFmt("@NDX:NXAPOTransferOrderDeleteWarning", avaTransferTable.TransferId));
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

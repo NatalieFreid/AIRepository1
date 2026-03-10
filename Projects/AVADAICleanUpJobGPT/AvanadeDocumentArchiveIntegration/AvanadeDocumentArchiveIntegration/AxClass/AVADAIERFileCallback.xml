@@ -1,0 +1,384 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVADAIERFileCallback</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using Microsoft.Dynamics365.LocalizationFramework;
+using SL = Microsoft.Dynamics365.LocalizationFramework.XppSupportLayer;
+using Microsoft.Dynamics365.LocalizationFramework.Format.FileGeneration;
+using BCS = Microsoft.Dynamics365.LocalizationFramework.ExternalApi.BCS;
+using System.Reflection;
+
+final class AVADAIERFileCallback implements IDestinationFileCallback
+{
+    protected ERFormatMappingTable          formatMappingTable;
+    protected ERFormatMapping               formatMapping;
+    protected ERIModelDefinitionParameters  parameters;
+    private   Counter                       fileCount;
+    protected Filename                      fileExtension;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    public void new(ERFormatMappingTable _formatMappingTable)
+    {
+        formatMappingTable  = _formatMappingTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setParameters</Name>
+				<Source><![CDATA[
+    public void setParameters(ERIModelDefinitionParameters _parameters)
+    {
+        parameters = _parameters;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setFormatMapping</Name>
+				<Source><![CDATA[
+    public void setFormatMapping(ERFormatMapping _formatMapping)
+    {
+        formatMapping = _formatMapping;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>IsApplicableTo</Name>
+				<Source><![CDATA[
+    public boolean IsApplicableTo(str _filePath, str _fileComponentId, ERTextFormatIFileComponent _fileComponent)
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFileName</Name>
+				<Source><![CDATA[
+    private str getFileName(str _fileName)
+    {
+        System.DateTime now = DateTimeUtil::utcNow();
+        return strFmt('%1_%2%3', System.IO.Path::GetFileNameWithoutExtension(_fileName), now.ToString('yyyyMMddHHmmss'), System.IO.Path::GetExtension(_fileName));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>skipReportProtocolEntry</Name>
+				<Source><![CDATA[
+    public boolean skipReportProtocolEntry(ERTextFormatIDataContext _context, str _fileComponentId,ERTextFormatIFileComponent _fileComponent)
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getReportDesignName</Name>
+				<Source><![CDATA[
+    public ReportDesignName  getReportDesignName(str _fileComponentId, str _xml)
+    {
+        XmlDocument                     xmlDoc = new XmlDocument();
+        XMLNode                         xmlNode;
+        XmlNodeList                     nodeList;
+        XmlNodeListIterator             nodeIterator;
+        ReportDesignName                designName = 'Report';
+
+        xmlDoc.loadXML(_xml);
+
+        try
+        {
+            designName = this.getReportDesignNameByTag(xmlDoc, _fileComponentId,'ERTextFormatFileComponent');
+
+            if(!designName)
+            {
+                designName = this.getReportDesignNameByTag(xmlDoc, _fileComponentId,'ERTextFormatFolderComponent');
+            }
+
+            if(!designName)
+            {
+                designName = this.getReportDesignNameByTag(xmlDoc, _fileComponentId,'ERTextFormatExcelFileComponent');
+            }
+
+            if(!designName)
+            {
+                designName = this.getReportDesignNameByTag(xmlDoc, _fileComponentId,'ERTextFormatPDFFileComponent');
+            }
+        }
+        catch{
+                designName = 'Report';
+        }
+
+        return designName;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getReportDesignNameByTag</Name>
+				<Source><![CDATA[
+    public ReportDesignName  getReportDesignNameByTag(XmlDocument   _xmlDoc,str _fileComponentId, Name    _tagName)
+    {
+        XMLNode                         xmlNode;
+        XmlNodeList                     nodeList;
+        XmlNodeListIterator             nodeIterator;
+        ReportDesignName                designName;
+
+        nodeList = _xmlDoc.getElementsByTagName(_tagName);
+        nodeIterator= new XmlNodeListIterator(nodeList);
+            
+        while (nodeIterator.moreValues())
+        {
+            xmlNode = nodeIterator.value();
+            var idAttr = xmlNode.attributes().getNamedItem('ID.');
+
+            if(idAttr && idAttr.text() == _fileComponentId)
+            {
+                var nameAttr = xmlNode.attributes().getNamedItem('Name');
+
+                if(nameAttr)
+                {
+                    designName = nameAttr.text();
+                }
+                break;
+            }
+            nodeIterator.nextValue();
+        }
+
+        return designName;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>OnFileWritten</Name>
+				<Source><![CDATA[
+    // Here you get access to stream and data context together with some extra objects.
+    public void OnFileWritten(System.IO.Stream _stream, str _filePath, ERTextFormatIDataContext _context, str _fileComponentId, ERTextFormatIFileComponent _fileComponent)
+    {
+        if(isConfigurationkeyEnabled(configurationKeyNum(AVADAI)))
+        {
+            ERFormatMappingVersionTable     formatMappingVersion    = ERFormatMappingVersionTable::find(formatMappingTable.Base);
+            ERSolutionTable                 solutionTable           = ERSolutionTable::find(formatMappingTable.Solution);
+            Name                            reportName              = solutionTable.Name;            
+            ERModelDefinition               modelDefinition         = formatMappingTable.getDatasourceDefinition(ERTextFormatTable::find(formatMappingTable.Format));
+            AVADAIReport                    reportSetup;
+            System.IO.Stream                reportStream;
+            System.Byte[]                   bytes;
+            UserConnection                  userConnection;
+            AVADAIReportExportTable         exportTable;
+            AVADAIReportExportWork          reportExportWork;
+            AVADAIReportFileName            ReportFileName;
+            ERTextFormatTable               textFormatTable = ERTextFormatTable::findBySolution(solutionTable.RecId);
+            ReportDesignName                designName;
+
+            if(this.skipReportProtocolEntry(_context,_fileComponentId,_fileComponent))
+            {
+                return;
+            }
+
+            fileExtension = _fileComponent.getFileExtension().ToString();
+            designName = this.getReportDesignName(_fileComponentId, textFormatTable.XML);
+
+            select firstonly1 reportSetup
+                where reportSetup.Report     == reportName
+                    && (reportSetup.Design    == designName)
+                    && reportSetup.ReportType == AVADAIReportType::BusinessDocuments;  
+
+            if(reportSetup.ExportReport && reportSetup.Active)
+            {
+                userConnection = new UserConnection();
+                userConnection.ttsBegin();
+                
+                //Fetch the FileName of the ER report
+                Filename fileName = System.IO.Path::GetFileNameWithoutExtension(_filePath);
+
+                fileCount++;
+                //File name with actual file extention.
+                ReportFileName   = reportSetup.ReportFilePrefix + "@AVADAI:Underscore" + fileName + "@AVADAI:Underscore" +  int2str(fileCount) +  fileExtension;
+                reportStream     = this.avaConvertToPdf(_stream, ReportFileName, reportSetup);
+
+                //File name with export file extension.
+                ReportFileName   = this.getFileName(reportSetup.ReportFilePrefix + "@AVADAI:Underscore" + fileName + "@AVADAI:Underscore" +  int2str(fileCount) +  fileExtension);
+                bytes            = this.avaStream2ByteArray(reportStream);
+
+
+                exportTable      = AVADAIReportExportTable::findOrCreate(reportSetup, guid2StrWithoutBraces(newGuid()) , true, userConnection);
+                reportExportWork = AVADAIReportExportWork::findOrCreate(exportTable, true, userConnection);
+                reportExportWork.ReportData = AVAMSQFileHandling::uploadBufferToContainer(bytes);
+                reportExportWork.update();
+                userConnection.ttsCommit();
+
+                this.extractMetadata(_context,reportSetup,exportTable);
+
+                userConnection.ttsBegin();
+                exportTable.ProcessStatus   = AVADAIReportExportTable::getProcessStatusMetadataExported(); 
+                exportTable.ReportExported  = NoYes::Yes;
+                exportTable.ReportFileName  = ReportFileName;
+                exportTable.MetaDataExported  = NoYes::Yes;
+                exportTable.update();
+
+                userConnection.ttsCommit();
+            }
+
+
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>extractMetadata</Name>
+				<Source><![CDATA[
+    public void extractMetadata(ERTextFormatIDataContext _context, AVADAIReport     _reportSetup,AVADAIReportExportTable    _exportTable)
+    {
+        ERDataContext                   dataContext  = _context as ERDataContext;
+        ERDataFetchSharedDataStorage    sharedData   = dataContext.getSharedData();
+        var                             dataSource   = formatMapping.get_Datasource();
+        var                             formatMappingDataContainer = dataSource.getCombinedDataContainer(sharedData, parameters);
+        var                             enumerator   = dataSource.getEnumerator();
+        AVADAIReportMetadata            metaData = AVADAIReportMetadata::find(_reportSetup.MetaDataId);
+        AVADAIReportMetadataField       metaDataTable;
+        AVADAIReportMetadataField       metaDataField;
+        AVADAIReportExportLine          exportLine;  
+
+        if(!metaData.RecId)
+        {
+            return;
+        }
+
+        while (enumerator.moveNext())
+        {
+            ERModelItemDefinition itemDefinition  = enumerator.current();
+            var valueDefinition = itemDefinition.parmValueDefinition();
+            ERModelDataSourceHandler dsHandler = valueDefinition.parmValueSource() as ERModelDataSourceHandler;
+            if (dsHandler)
+            {
+                ERIModelMapping firstModelMapping = dsHandler.GetModelMapping();
+                if (firstModelMapping != null)
+                {
+                    ERModelDefinition mappingDataSource = firstModelMapping.get_Datasource();
+                    ERIDataContainer modelMappingDataContainer = mappingDataSource.getCombinedDataContainer(sharedData, parameters.Get(itemDefinition.Path()));
+                    ERDataContext mmDataContext = ERDataContext::Construct(modelMappingDataContainer);
+                    
+                    while select Table from metaDataTable
+                        group by metaDataTable.Table
+                        where metaDataTable.MetaDataId == metaData.MetaDataId
+                    {
+                        ERIDataContainerList  tmpTableList = mmDataContext.getValueByPath(metaDataTable.table, null) as ERIDataContainerList ;
+                        var tmpTableEnumerator = tmpTableList.get_Enumerator();
+
+                        while (tmpTableEnumerator.moveNext())
+                        {
+                            ERIDataContainer current = tmpTableEnumerator.get_Current();
+
+                            while select FieldMethod from metaDataField
+                                where metaDataField.MetaDataId  == metaData.MetaDataId
+                                    && metaDataField.Table      == metaDataTable.Table
+                            {
+                                var fieldValue = current.get_Item(metaDataField.FieldMethod);
+
+                                try
+                                {
+                                    ttsbegin;
+                                    exportLine.clear();
+                                    exportLine.ExportId     = _exportTable.ExportId;
+                                    exportLine.Table        = metaDataTable.Table;
+                                    exportLine.RefRecId     = current.get_Item('RecId');
+                                    exportLine.FieldMethod  = metaDataField.FieldMethod;
+                                    exportLine.Value        = any2Str(fieldValue);
+                                    exportLine.insert();
+                                    ttscommit;
+                                }
+                                catch
+                                {
+                                    warning(strFmt("@AVADAI:MetadataFetchError", metaDataField.FieldMethod,  metaDataTable.Table));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaConvertToPdf</Name>
+				<Source><![CDATA[
+    public System.IO.Stream avaConvertToPdf(
+        System.IO.Stream _stream,
+        Filepath _filePath,
+        AVADAIReport    _reportSetup,
+        Object _pdfConversionSettings = null,
+        str _culture = 'en-US')
+    {
+        var fileStream = _stream;
+        var filePath = _filePath;
+        const str pdfExtension = '.pdf';
+
+        var fileExtensionLoc = System.IO.Path::GetExtension(_filePath);
+            
+        if (_reportSetup.ReportFileExt == 'pdf' && FileExtensionUtils::CanBeConvertedToPDF(fileExtensionLoc))
+        {
+            if (fileExtensionLoc != pdfExtension)
+            {
+                SysDictClass dc = SysDictClass::newName(classStr(ERPdfConversionService));
+
+                BCS.ConvertToPdfResponse conversionResult = dc.callStatic(staticmethodStr(ERPdfConversionService, convertFileToPdf), fileStream, fileExtension);
+                
+                filePath = System.IO.Path::ChangeExtension(filePath, pdfExtension);
+                if (conversionResult.IsValidResponse)
+                {
+                    fileStream = conversionResult.ResultStream;
+                    fileExtension = '.pdf';
+                }
+            }
+        }
+
+        return fileStream;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaStream2ByteArray</Name>
+				<Source><![CDATA[
+    public System.Byte[] avaStream2ByteArray(System.IO.Stream _stream)
+    {
+        System.Byte[] bytes;
+
+        _stream.Seek(0, System.IO.SeekOrigin::Begin);
+
+        using (var memStream = new System.IO.MemoryStream())
+        {
+            _stream.CopyTo(memStream);
+            bytes = memStream.ToArray();
+        }
+
+        return bytes;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>FinalizeProcessing</Name>
+				<Source><![CDATA[
+    public void FinalizeProcessing()
+    {
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

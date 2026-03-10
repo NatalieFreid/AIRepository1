@@ -1,0 +1,496 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAGAEBImportD93Service</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// designed by AVANADE
+/// </summary>
+class AVAGAEBImportD93Service extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// designed by AVANADE
+    /// </summary>
+    /// <param name = "_contract">AVAGAEBImportD93Contract</param>
+    public void process(AVAGAEBImportD93Contract _contract)
+    {
+   #File;
+        DialogGroup                 dlgUploadGroup;
+        FileUploadBuild             fileUploadBuild;
+        FormBuildControl            formBuildControl;
+
+        SalesQuotationTable         salesQuotationTable, sqtUpd;
+        KCS_KBVRequestTable         kbvRequestTable;
+        DocuRef                     docuRef;
+        DocuRef                     addDocuRef;
+        DocuValue                   docuValue;
+        docuValue                   addDocuValue;
+        boolean                     chkFormat, chkPos, chkEndBest, chkFinal, chkKdNr, openFile = true, insidePos = false, insideShortText = false, insideLongText = false, insideProjInfo = false, insideProjDescr = false, insideCustomer = false;
+        str                         workStr, anfrNr, artShort, artLong, projDescr;
+        Str60                       version, projName;
+        String255                   projLabel;
+        TransDate                   GAEBDate, subDate;
+        AVADP                       DP;
+        CurrencyCode                currencyCode;
+        CustName                    custName;
+        StreetName                  custStreet;
+        AddressCity                 custCity;
+        Phone                       custPhone;
+        TeleFax                     custFax;
+        Email                       custEmail;
+        int                         lfdCount = 1, countLf, globCount = 0, globMiss = 0, readCount = 1;
+        KCS_GAEBImport              gaebImport;
+        KCS_GAEBPos                 gaebPos;
+        Num                         importNum;
+        str                         fileUrl; 
+        CommaTextStreamIo           textStream, addStream;
+        System.IO.Stream            ioStream;
+        Filename                    fileName;
+        NumberSequenceTable         numberSequenceTable = AVASalesParameters::numRefID().numberSequenceTable();
+
+
+        if (_contract.parmSalesQuotationTable().TableId == tableNum(SalesQuotationTable))
+        {
+            salesQuotationTable = _contract.parmSalesQuotationTable();
+        }
+        else
+        {
+            throw error("@SYS59121");
+        }
+        
+        
+        if(salesQuotationTable.KCS_KBVRequestID)
+        {
+            kbvRequestTable = KCS_KBVRequestTable::find(salesQuotationTable.KCS_KBVRequestID);
+
+            select count(RecId) from docuRef join docuValue where docuRef.RefTableId == kbvRequestTable.TableId                &&
+                                                              docuRef.RefRecId   == kbvRequestTable.RecId                  &&
+                                                              docuValue.RecId    == docuRef.ValueRecId                     &&
+                                                              (docuValue.FileType == 'd93' || docuValue.FileType == 'p93') &&
+                                                              docuRef.typeid     == smmParametersTable::find().KCS_DocuTypeIdForGAEB;
+            if(docuRef.RecId > 1)
+            {
+                select firstOnly1 docuRef join docuValue where docuRef.RefTableId     == kbvRequestTable.TableId                &&
+                                                           docuRef.RefRecId       == kbvRequestTable.RecId                  &&
+                                                           docuValue.RecId        == docuRef.ValueRecId                     &&
+                                                           (docuValue.FileType == 'd93' || docuValue.FileType == 'p93')     &&
+                                                           docuRef.KCS_GAEBImport == NoYes::Yes                             &&
+                                                           docuRef.typeid         == smmParametersTable::find().KCS_DocuTypeIdForGAEB;
+                if(!docuRef)
+                {
+                    select firstOnly1 docuRef join docuValue order by docuRef.createdDateTime desc
+                                                         where docuRef.RefTableId     == kbvRequestTable.TableId &&
+                                                               docuRef.RefRecId       == kbvRequestTable.RecId   &&
+                                                               docuValue.RecId        == docuRef.ValueRecId      &&
+                                                               (docuValue.FileType == 'd93' || docuValue.FileType == 'p93') &&
+                                                               docuRef.typeid         == smmParametersTable::find().KCS_DocuTypeIdForGAEB;
+                }
+                if(docuRef)
+                {
+                    ioStream = DocumentManagement::getAttachmentStream(docuRef);
+                    textStream = CommaTextStreamIo::constructForRead(ioStream);
+                    //addStream = CommaTextStreamIo::constructForAppend(textStream.getStream());
+                    openFile = false;
+                    fileUrl = DocumentManagement::getAttachmentPublicUrl(docuRef);
+                    fileName  = docuValue.fileName;
+                }
+            }
+            else if(docuRef.RecId == 1)
+            {
+                select firstOnly docuRef join docuValue order by docuRef.createdDateTime desc where docuRef.RefTableId == kbvRequestTable.TableId &&
+                                docuRef.RefRecId == kbvRequestTable.RecId &&
+                                docuValue.RecId == docuRef.ValueRecId &&
+                                (docuValue.FileType == 'd93' || docuValue.FileType == 'p93') &&
+                                docuRef.typeid == smmParametersTable::find().KCS_DocuTypeIdForGAEB;
+                if(docuRef)
+                {
+                    ioStream = DocumentManagement::getAttachmentStream(docuRef);
+                    textStream = CommaTextStreamIo::constructForRead(ioStream);
+                    //addStream = CommaTextStreamIo::constructForAppend(textStream.getStream());
+                    openFile = false;
+                    fileUrl = DocumentManagement::getAttachmentPublicUrl(docuRef);
+                    fileName  = docuValue.fileName;
+                }
+            }
+        }
+        
+        if (openFile)
+        {
+            Dialog                      dialog = new Dialog("@NDX:NXAGEABFileDialog");
+
+            dlgUploadGroup          = dialog.addGroup("@SYS54759");
+            formBuildControl        = dialog.formBuildDesign().control(dlgUploadGroup.name());
+            fileUploadBuild         = formBuildControl.addControlEx(classstr(FileUpload), 'Upload');
+            fileUploadBuild.style(FileUploadStyle::MinimalWithFilename);
+            fileUploadBuild.fileTypesAccepted('.d93, .p93');
+
+            if (dialog.run() && dialog.closedOk())
+            {
+                FileUpload fileUploadControl     = dialog.formRun().control(dialog.formRun().controlId('Upload'));
+                FileUploadTemporaryStorageResult fileUploadResult = fileUploadControl.getFileUploadResult();
+
+                if (fileUploadResult && fileUploadResult.getUploadStatus())
+                {
+                    fileUrl     = fileUploadResult.getDownloadUrl();
+                    textStream  = CommaTextStreamIo::constructForRead(File::UseFileFromURL(fileUrl));
+                    addStream   = CommaTextStreamIo::constructForAppend(File::UseFileFromURL(fileUrl));
+                    fileName    = fileUploadResult.getFileName();
+                }
+            }
+        }
+
+        importNum = NumberSeq::newGetNumFromId(numberSequenceTable.RecId).num();
+        
+        textStream.inFieldDelimiter('~');
+        textStream.inRecordDelimiter(#delimiterCRLF);
+        
+        // First line might have header information
+        container currentLine = textStream.read();
+
+        //while(currentLine)
+        while(!textStream.status())
+        {
+            workStr = conPeek(currentLine, 1);
+            workStr = strrtrim(strltrim(workStr));
+
+            if(workStr == '[DP]93[end]')
+            {
+                chkFormat = true;
+                workStr = substr(workStr, 5, strlen(workStr) - 4);
+                workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                DP   = workStr;
+            }
+
+            if(substr(workStr, 0 , 13) == '[AnfrNrKunde]')
+            {
+                chkKdNr = true;
+                workStr = substr(workStr, 14, strlen(workStr) - 13);
+                workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                anfrNr = workStr;
+            }
+            if(substr(workStr, 0 , 9) == '[Version]')
+            {
+                workStr = substr(workStr, 10, strlen(workStr) - 9);
+                workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                version = workStr;
+            }
+            if(substr(workStr, 0 , 7) == '[Datum]')
+            {
+                workStr = substr(workStr, 8, strlen(workStr) - 7);
+                workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                GAEBDate = str2Date(workStr, 123);
+            }
+            if(substr(workStr, 0 , 13) == '[AbgabeDatum]')
+            {
+                workStr = substr(workStr, 14, strlen(workStr) - 13);
+                workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                subDate = str2Date(workStr, 123);
+            }
+            if (workStr == '#begin[PrjInfo]')
+            {
+                insideProjInfo = true;
+            }
+            if (workStr == '#end[PrjInfo]')
+            {
+                insideProjInfo = false;
+            }
+            if (insideProjInfo && subStr(workStr, 0, 6) == '[Name]')
+            {
+                workStr = substr(workStr, 7, strlen(workStr) - 6);
+                workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                projName    = workStr;
+            }
+            if (insideProjInfo && subStr(workStr, 0, 5) == '[Bez]')
+            {
+                workStr = substr(workStr, 6, strlen(workStr) - 5);
+                workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                projLabel    = workStr;
+            }
+            if (insideProjInfo)
+            {
+                if (subStr(workStr, 0, 6) == '[Text]')
+                {
+                    workStr = substr(workStr, 7, strlen(workStr) - 6);
+                    projDescr    = workStr;
+                    insideProjDescr = true;
+                }
+                else if (subStr(workStr, 0, 5) == '[end]')
+                {
+                    insideProjDescr = false;
+                }
+                else if (insideProjDescr == true)
+                {
+                    projDescr += workStr;
+                }
+            }
+            if (subStr(workStr, 0, 5) == '[Wae]')
+            {
+                workStr = subStr(workStr, 6, strLen(workStr) - 5);
+                workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                currencyCode = workStr;
+            }
+
+            if (workStr == '#begin[BestKunde]')
+            {
+                insideCustomer = true;
+            }
+            if (workStr == '#end[BestKunde]')
+            {
+                insideCustomer = false;
+            }
+            if (insideCustomer && subStr(workStr, 0, 7) == '[Name1]')
+            {
+                workStr = subStr(workStr, 8, strLen(workStr) - 7);
+                workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                custName = workStr;
+            }
+            if (insideCustomer && subStr(workStr, 0, 9) == '[Strasse]')
+            {
+                workStr = subStr(workStr, 10, strLen(workStr) - 9);
+                workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                custStreet = workStr;
+            }
+            if (insideCustomer && subStr(workStr, 0, 5) == '[Ort]')
+            {
+                workStr = subStr(workStr, 6, strLen(workStr) - 5);
+                workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                custCity = workStr;
+            }
+            if (insideCustomer && subStr(workStr, 0, 9) == '[Telefon]')
+            {
+                workStr = subStr(workStr, 10, strLen(workStr) - 9);
+                workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                custPhone = workStr;
+            }
+            if (insideCustomer && subStr(workStr, 0, 5) == '[Fax]')
+            {
+                workStr = subStr(workStr, 6, strLen(workStr) - 5);
+                workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                custFax = workStr;
+            }
+            if (insideCustomer && subStr(workStr, 0, 7) == '[Email]')
+            {
+                workStr = subStr(workStr, 8, strLen(workStr) - 7);
+                workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                custEmail = workStr;
+            }
+
+
+
+            if(workStr == '#begin[BestPosition]')
+            {
+                chkPos = true;
+
+                gaebPos = KCS_GAEBPos::find(importNum, '');
+                gaebPos.ImportID = importNum;
+                insidePos = true;
+                readCount++;
+            }
+
+            if (workStr == '#end[BestPosition]')
+            {
+                insidePos = false;
+                gaebPos.insert();
+            }
+
+            if(insidePos)
+            {
+                if(substr(workStr, 0 , 7) == '[LfdNr]')
+                {
+                    workStr = substr(workStr, 8, strlen(workStr) - 7);
+                    workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                    workStr = strrtrim(strltrim(workStr));
+                    gaebPos.LfdNr = workStr;
+                    for(countLf = lfdCount; countLf < str2Int(gaebPos.LfdNr); countLf++)
+                    {
+                        Warning(strfmt("@NDX:NXAGAEBRow", countLf, readCount));
+                        globMiss++;
+                    }
+                    lfdCount = str2Int(gaebPos.LfdNr) + 1;
+                    globCount = str2Int(gaebPos.LfdNr);
+                }
+
+                if(substr(workStr, 0 , 10) == '[PosKennZ]')
+                {
+                    workStr = substr(workStr, 11, strlen(workStr) - 10);
+                    workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                    gaebPos.PoskennZ = workStr;
+                }
+
+                if(substr(workStr, 0 , 10) == '[ArtMenge]')
+                {
+                    workStr = substr(workStr, 11, strlen(workStr) - 10);
+                    workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                    if (strScan(workStr, ',', 1, strLen(workStr)))
+                    {
+                        gaebPos.ArtQty = str2Num(strReplace(workStr, ',', '.'));
+                    }
+                    else
+                    {
+                        gaebPos.ArtQty = str2num(workStr);
+                    }
+                }
+
+                if(substr(workStr, 0 , 4) == '[OZ]')
+                {
+                    workStr = substr(workStr, 5, strlen(workStr) - 4);
+                    workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                    gaebPos.OZ = workStr;
+                }
+
+                if(substr(workStr, 0 , 4) == '[ME]')
+                {
+                    workStr = substr(workStr, 5, strlen(workStr) - 4);
+                    workStr = substr(workStr, strlen(workStr) - 5, (strlen(workStr) - 5) * -1);
+                    gaebPos.ME = workStr;
+                }
+
+                if(substr(workStr, 0 , 13) == '[ArtKurztext]')
+                {
+                    artShort = '';
+                    insideShortText = true;
+                    workStr = substr(workStr, 14, strlen(workStr) - 13);
+                    if (subStr(workStr,strLen(workStr) - 4, 5) == '[end]')
+                    {
+                        workStr = subStr(workStr, strLen(workStr) - 5, (strLen(workStr) - 5) * -1);
+                        gaebPos.ShortTxt = workStr;
+                        insideShortText = false;
+                    }
+                }
+
+                if (insideShortText)
+                {
+                    if (subStr(workStr,strLen(workStr) - 4, 5) == '[end]')
+                    {
+                        workStr = subStr(workStr, strLen(workStr) - 5, (strLen(workStr) - 5) * -1);
+                        artShort += workStr;
+                        gaebPos.ShortTxt = artShort;
+                        insideShortText = false;
+                    }
+                    else
+                    {
+                        artShort += workStr;
+                    }
+                }
+
+                if(substr(workStr, 0 , 13) == '[ArtLangtext]')
+                {
+                    artLong = '';
+                    insideLongText = true;
+                    workStr = substr(workStr, 14, strlen(workStr) - 13);
+                    if (subStr(workStr,strLen(workStr) - 4, 5) == '[end]')
+                    {
+                        workStr = subStr(workStr, strLen(workStr) - 5, (strLen(workStr) - 5) * -1);
+                        gaebPos.LongTxt = workStr;
+                        insideLongText = false;
+                    }
+                }
+
+                if (insideLongText)
+                {
+                    if (subStr(workStr,strLen(workStr) - 4, 5) == '[end]')
+                    {
+                        workStr = subStr(workStr, strLen(workStr) - 5, (strLen(workStr) - 5) * -1);
+                        artLong += workStr;
+                        gaebPos.LongTxt = artLong;
+                        insideLongText = false;
+                    }
+                    else
+                    {
+                        artLong += workStr;
+                    }
+                }
+            }
+
+            if(workStr == '#end[Bestellung]')
+            {
+                chkEndBest = true;
+            }
+            if(substr(workStr, 0 , 10) == '#end[GAEB]')
+            {
+                chkFinal = true;
+            }
+                    
+                    
+            currentLine = textStream.read();
+            workStr     = '';
+        }
+        if(!chkFormat || !chkPos || !chkEndBest || !chkFinal)
+        {
+            if(!chkFormat)
+            {
+                error("@NDX:NXANotGAEBFile");
+            }
+            if(!chkPos)
+            {
+                error("@NDX:NXAGAEBNoPos");
+            }
+            if(!chkEndBest || !chkFinal)
+            {
+                error("@NDX:NXAGAEBCorruptedFile");
+            }
+        }
+        else
+        {
+            ttsbegin;
+            gaebImport.KCS_GAEBImportID     = importNum;
+            gaebImport.KCS_GAEBInquiry      = anfrNr;
+            gaebImport.Version              = version;
+            gaebImport.GAEBDate             = GAEBDate;
+            gaebImport.ProjName             = ProjName;
+            gaebImport.ProjLabel            = projLabel;
+            gaebImport.ProjDescr            = projDescr;
+            gaebImport.DP                   = DP;
+            gaebImport.CurrencyCode         = currencyCode;
+            gaebImport.SubmissionDate       = subDate;
+            gaebImport.CustName             = custName;
+            gaebImport.CustStreet           = custStreet;
+            gaebImport.CustCity             = custCity;
+            gaebImport.CustPhone            = custPhone;
+            gaebImport.CustFax              = custFax;
+            gaebImport.CustEmail            = custEmail;
+            gaebImport.insert();
+            if(!chkKdNr)
+            {
+                warning("@NDX:NXAGEABMissingInq");
+            }
+
+            if (!openFile && kbvRequestTable)
+            {
+                Docu::copy(kbvRequestTable, salesQuotationTable, smmParametersTable::find().KCS_DocuTypeIdForGAEB);
+            }
+            else
+            {
+                addDocuRef.initValue();
+                addDocuRef.RefCompanyId = curext();
+                addDocuRef.RefTableId = salesQuotationTable.TableId;
+                addDocuRef.RefRecId = salesQuotationTable.RecId;
+                addDocuRef.TypeId   = smmParametersTable::find().KCS_DocuTypeIdForGAEB;
+           
+                addDocuRef.insert();
+                addDocuValue.initFromDocuRef(addDocuRef);
+                addDocuValue.insert();
+            
+                DocumentManagement::attachFileForDocuRefRecord(addDocuRef.RecId, addStream.getStream(), fileName, importNum);
+            }
+            sqtUpd = SalesQuotationTable::findRec(salesQuotationTable.RecId, true);
+            sqtUpd.KCS_GAEBImportID = importNum;
+            sqtUpd.KCS_GAEBInquiry = anfrNr;
+            sqtUpd.update();
+            ttscommit;
+            info(strfmt("@NDX:NXAGAEBImportedPos", (globCount - globMiss), globCount));
+        }
+            
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

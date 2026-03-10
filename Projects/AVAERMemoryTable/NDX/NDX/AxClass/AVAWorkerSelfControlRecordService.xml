@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAWorkerSelfControlRecordService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA/WEN/2025/05/21      AVA_013218_ProdSetupRelease
+/// </summary>
+internal final class AVAWorkerSelfControlRecordService  extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/05/21      AVA_013218_ProdSetupRelease
+    /// </summary>
+    /// <param name = "_contract">AVAWorkerSelfControlRecordContract</param>
+    public void process(AVAWorkerSelfControlRecordContract _contract)
+    {
+        AVAProdSetupReleaseProtocol protocol, protocolProdSetup;
+        ProdId ProdId = _contract.parmProdId();
+        const Name checkAttr = "@NDX:NXAOK";
+
+        select firstonly protocolProdSetup where protocolProdSetup.ProdId == ProdId && (protocolProdSetup.ProdCheckProcess == AVAProdCheckProcess::ProdItemRelease || protocolProdSetup.ProdCheckProcess == AVAProdCheckProcess::SetupRelease);
+        if (!protocolProdSetup)
+        {
+            throw Error("@NDX:NXAProdSetupReleaseRequired");
+        }
+
+        if (ProdId)
+        {
+            ttsbegin;
+            protocol.selectForUpdate();
+            protocol.ProdId = ProdId;
+            protocol.Qty = ProdTable::find(ProdId).QtySched;
+            protocol.Responsible = HcmWorkerLookup::currentWorker();
+            protocol.ProdCheckProcess = AVAProdCheckProcess::WorkerSelfControl;
+            protocol.DateTimeExecuted = DateTimeUtil::getSystemDateTime();
+            protocol.CheckAttribute = checkAttr;
+            protocol.insert();
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

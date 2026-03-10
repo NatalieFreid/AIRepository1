@@ -1,0 +1,651 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXProdIdentControlPanel_frm_EventHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using Niedax.AzureServiceBus.ServiceBusClient;
+using Niedax.AzureServiceBus.Models.PALabel;
+using Niedax.AzureServiceBus.PALabel;
+
+/// <summary>
+/// PaffH 03.02.22
+/// event handler for form NDXProdIdentControlPanel
+/// </summary>
+class NDXProdIdentControlPanel_frm_EventHandler
+{
+    
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>FormButtonDetermineOZItems_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 24.10.23
+    /// check OZ-items
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, FormButtonDetermineOZItems), FormControlEventType::Clicked),
+        SuppressBPWarning('BPParameterNotUsed','Parameter "e"')]
+    public static void FormButtonDetermineOZItems_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        NDXProdIdentControlPanelForm formhandler;
+        FormRun thisFormRun = sender.formRun();
+        formhandler = thisFormRun.parmFormhandler();
+        formhandler.checkOZMappingProdIdentControlPanel();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>FormButtonControl1_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 03.02.22
+    /// get data from SB queue and populate it to the ds
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, btnGetQueueData), FormControlEventType::Clicked), SuppressBPWarning('BPParameterNotUsed','Parameter "e"')]
+    public static void FormButtonControl1_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        FormRun thisFormRun = sender.formRun();
+        NDXAzureServiceBusQueueInfo queueInfo;
+
+        FormDataSource QueueInfoPAStatusChanged_ds = thisFormRun.dataHelper().FindDataSource(formDataSourceStr(NDXProdIdentControlPanel, QueueInfoPAStatusChanged));
+        FormDataSource QueueInfoResponseLabelSaved_ds = thisFormRun.dataHelper().FindDataSource(formDataSourceStr(NDXProdIdentControlPanel, QueueInfoResponseLabelSaved));
+        FormDataSource NDXPAWithLabelInfo_ds = thisFormRun.dataHelper().FindDataSource(formDataSourceStr(NDXProdIdentControlPanel, NDXPAWithLabelInfo));
+        NDXAzureServiceBusQueueInfo queueInfoPAStatusChanged = QueueInfoPAStatusChanged_ds.cursor();
+        NDXAzureServiceBusQueueInfo queueInfoResponseLabelSaved = QueueInfoResponseLabelSaved_ds.cursor();
+
+        //queueInfo = NDXServiceBusQueueReaderSavePALabel2NDXDatabase::GetQueueInfoStatic('palabelsaved2ndxdatabase');
+        queueInfo = NDXServiceBusQueueReaderSavePALabel2NDXDatabase::GetQueueInfoStatic(NDXProdIdentControlPanelParameters::find().AzureServiceBusQueueNameLabelInfoHandshake);
+        queueInfoResponseLabelSaved.setTmpData(queueInfo);
+
+        //queueInfo = NDXServiceBusQueueReaderSavePALabel2NDXDatabase::GetQueueInfoStatic('savepalabel2ndxdatabase');
+        queueInfo = NDXServiceBusQueueReaderSavePALabel2NDXDatabase::GetQueueInfoStatic(NDXProdIdentControlPanelParameters::find().AzureServiceBusQueueNameSavePALabel2NDXDatabase);
+        queueInfoPAStatusChanged.setTmpData(queueInfo);
+
+        QueueInfoPAStatusChanged_ds.executeQuery();
+        QueueInfoResponseLabelSaved_ds.executeQuery();
+        NDXPAWithLabelInfo_ds.executeQuery();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>btnShowBatch_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 03.02.22
+    /// show batch job details (PAWithLabelInfo)
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, btnShowBatch), FormControlEventType::Clicked), SuppressBPWarning('BPParameterNotUsed','Parameter "e"')]
+    public static void btnShowBatch_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        NDXProdIdentControlPanelForm formhandler;
+        FormRun thisFormRun = sender.formRun();
+        formhandler = thisFormRun.parmFormhandler();
+        formhandler.showBatchJob(formhandler.parmNDXPAWithLabelInfo().BatchHeaderRefRecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>FormButtonCreateNewBatchJobLabelSaved2NDXDatabase_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 11.05.22
+    /// create new BatchJob (LabelSaved2NDXDatabase)
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, FormButtonCreateNewBatchJobLabelSaved2NDXDatabase), FormControlEventType::Clicked), SuppressBPWarning('BPParameterNotUsed','Parameter "e"')]
+    public static void FormButtonCreateNewBatchJobLabelSaved2NDXDatabase_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        NDXProdIdentControlPanelParameters nDXProdIdentControlPanelParameters = NDXProdIdentControlPanelParameters::find(true);
+        if (nDXProdIdentControlPanelParameters.BatchHeaderRefRecIdPALabelSaved &&
+            Box::yesNo("@NDX:NDXBatchJobAssignementExistsIgnore", DialogButton::No) == DialogButton::No)
+        {
+            return;
+        }
+
+        Args args = new Args();
+        NDXBatchJobPALabelSaved2NDXDatabase nDXBatchJobPALabelSaved2NDXDatabase = NDXBatchJobPALabelSaved2NDXDatabase::construct();
+        RefRecId refRecId = nDXBatchJobPALabelSaved2NDXDatabase.addTask(args);
+        ttsbegin;
+        nDXProdIdentControlPanelParameters.BatchHeaderRefRecIdPALabelSaved = refRecId;
+        nDXProdIdentControlPanelParameters.update();
+        ttscommit;
+
+        NDXProdIdentControlPanelForm formhandler;
+        FormRun thisFormRun = sender.formRun();
+        formhandler = thisFormRun.parmFormhandler();
+        //formhandler.parmNDXProdIdentControlPanelParameters_ds().executeQuery();
+        formhandler.parmNDXProdIdentControlPanelParameters_ds().refresh();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>FormButtonCreateNewBatchJobLabelAdministrated_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 19.07.23
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, FormButtonCreateNewBatchJobLabelAdministrated), FormControlEventType::Clicked), SuppressBPWarning('BPParameterNotUsed','Parameter "e"')
+        ,SuppressBPWarning('BPParameterNotUsed', '"e" is not used')]
+    public static void FormButtonCreateNewBatchJobLabelAdministrated_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        NDXProdIdentControlPanelParameters nDXProdIdentControlPanelParameters = NDXProdIdentControlPanelParameters::find(true);
+        if (nDXProdIdentControlPanelParameters.BatchHeaderRefRecIdPALabelAdministrated &&
+            Box::yesNo("@NDX:NDXBatchJobAssignementExistsIgnore", DialogButton::No) == DialogButton::No)
+        {
+            return;
+        }
+
+        Args args = new Args();
+        NDXBatchJobPALabelAdministrated nDXBatchJobPALabelAdministrated = NDXBatchJobPALabelAdministrated::construct();
+        RefRecId refRecId = nDXBatchJobPALabelAdministrated.addTask(args);
+        ttsbegin;
+        nDXProdIdentControlPanelParameters.BatchHeaderRefRecIdPALabelAdministrated = refRecId;
+        nDXProdIdentControlPanelParameters.update();
+        ttscommit;
+
+        NDXProdIdentControlPanelForm formhandler;
+        FormRun thisFormRun = sender.formRun();
+        formhandler = thisFormRun.parmFormhandler();
+        formhandler.parmNDXProdIdentControlPanelParameters_ds().refresh();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>btnReadReturnMessageFromQueue_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 11.05.22
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, btnReadReturnMessageFromQueue), FormControlEventType::Clicked)
+        ,SuppressBPWarning('BPParameterNotUsed','Parameter "e"')
+        ,SuppressBPWarning('BPParameterNotUsed','Parameter "sender"')]
+    public static void btnReadReturnMessageFromQueue_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        str conStr, queue;
+        ResponseLabelSaved2DatabaseContract contractResponse;
+        System.Exception ex;
+
+        [conStr, queue] = NDXServiceBusQueueReaderSavePALabel2NDXDatabase::getConnectionParam();
+        try
+        {
+            ServiceBusMessagingPALabelSaved serviceBusMessagingPALabelSaved = new ServiceBusMessagingPALabelSaved(conStr, NDXProdIdentControlPanelParameters::find().AzureServiceBusQueueNameLabelInfoHandshake);
+            ServiceBusReceivedMessageValuesServiceBusMessagingPALabelSaved serviceBusReceivedMessageValuesServiceBusMessagingPALabelSaved
+                = serviceBusMessagingPALabelSaved.Receive1MessageValuesD365FO(true);
+            contractResponse = serviceBusReceivedMessageValuesServiceBusMessagingPALabelSaved.Contract;
+            Azure.Messaging.ServiceBus.ServiceBusReceivedMessage receivedMessage = serviceBusReceivedMessageValuesServiceBusMessagingPALabelSaved.ServiceBusReceivedMessage;
+            if (false)
+            {
+                serviceBusMessagingPALabelSaved.SendReceivedMessageToQueue(receivedMessage, queue);
+            }
+            //contractResponse = serviceBusMessagingPALabelSaved.Receive1MessageAsContract2(true).Contract;
+            if (contractResponse != null && contractResponse.NDXProdStatusChangedGenerateTransportLabelEventContract.ProdId)
+            {
+                NDXPAWithLabelInfo::processFromResponseLabelSaved2DatabaseContract(contractResponse);
+                NDXProdIdentControlPanel::processFromResponseLabelSaved2DatabaseContract(contractResponse);
+            }
+        }
+        catch (ex)
+        {
+            error(ex.Message);
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>FormButtonMaintain_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 14.07.23 
+    /// delete Bartender records onPrem (not longer valid)
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, FormButtonMaintain), FormControlEventType::Clicked)
+        ,SuppressBPWarning('BPParameterNotUsed', '"e" is not used')]
+    public static void FormButtonMaintain_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        if (BusinessEventsConfigurationReader::isBusinessEventEnabled(classStr(NDXPALabelMaintainEvent)))
+        {
+            NDXPALabelMaintainEvent::construct().send();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>FormButtonDeleteInvalidBartenderRecords_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 13.11.24
+    /// delete invalid records from Bartender onPrem
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, FormButtonDeleteInvalidBartenderRecords), FormControlEventType::Clicked)
+        ,SuppressBPWarning('BPParameterNotUsed', '"e" is not used')
+        ,SuppressBPWarning('BPLocalVariableNotUsed','local variable "configReader"')]
+    public static void FormButtonDeleteInvalidBartenderRecords_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        Niedax.AzureServiceBus.Models.PALabel.NDXPALabelMaintainDetailsContract detailsContract;
+        System.Diagnostics.Stopwatch stopWatch = new System.Diagnostics.Stopwatch();
+        stopWatch.Start();
+        FormRun thisFormRun = sender.formRun();
+        FormDataSource NDXProdIdentControlPanelOnPrem_ds = thisFormRun.dataHelper().FindDataSource(formDataSourceStr(NDXProdIdentControlPanel, NDXProdIdentControlPanelOnPrem));
+
+        NDXAzureRelayTransferPALabel nDXAzureRelayTransferPALabel = NDXAzureRelayTransferPALabel::construct();
+        Niedax.AzureServiceBus.Models.PALabel.Relay.PALabelMaintainRelayContract contract = nDXAzureRelayTransferPALabel.parmMaintainRelayContract();
+        contract.MaintainMode = true;
+        contract.DeleteNotValidInDatabase = true;
+        contract.GetDataFromDatabase = true;
+    
+        // get PA's to delete
+        NDXPAWithLabelInfo nDXPAWithLabelInfo;
+        NDXProdIdentControlPanel nDXProdIdentControlPanel;
+        ProdTable prodTable;
+        NDXProdIdentParameters nDXProdIdentParameters = NDXProdIdentParameters::find();
+        container conRecId = conNull();
+        while select * from nDXPAWithLabelInfo
+            join prodTable where prodtable.ProdId == nDXPAWithLabelInfo.ProdId
+        {
+            if (prodTable.status().isAfterOrEqualTo(nDXProdIdentParameters.ProdStatusLabelErase))
+            {
+                while select nDXProdIdentControlPanel
+                    where nDXProdIdentControlPanel.ProdId == prodTable.ProdId
+                {
+                    detailsContract = new Niedax.AzureServiceBus.Models.PALabel.NDXPALabelMaintainDetailsContract();
+                    detailsContract.ProdId = nDXProdIdentControlPanel.ProdId;
+                    detailsContract.ProdLabelId = nDXProdIdentControlPanel.ProdLabelId;
+                    detailsContract.DeleteLabelRecord = true;
+
+                    Niedax.AzureServiceBus.Models.PALabel.NDXProdIdentControlPanelContract prodIdentControlPanel = new Niedax.AzureServiceBus.Models.PALabel.NDXProdIdentControlPanelContract();
+                    prodIdentControlPanel.RecIdNDXProdIdentControlPanel = nDXProdIdentControlPanel.RecId;
+                    detailsContract.ProdIdentControlPanel = prodIdentControlPanel;
+
+                    contract.AddMaintainContractToList(detailsContract);
+                    conRecId += (nDXProdIdentControlPanel.RecId);
+                }
+            }
+        }
+
+        // get records to delete from NDXProdIdentControlPanel
+        while select nDXProdIdentControlPanel
+            where nDXProdIdentControlPanel.BTAction == NDXProdIdentBTAction::delete
+        {
+            if (conFind(conRecId, nDXProdIdentControlPanel.RecId))
+            {
+                continue;
+            }
+            detailsContract = new Niedax.AzureServiceBus.Models.PALabel.NDXPALabelMaintainDetailsContract();
+            detailsContract.ProdLabelId = nDXProdIdentControlPanel.ProdLabelId;
+            detailsContract.DeleteLabelRecord = true;
+
+            Niedax.AzureServiceBus.Models.PALabel.NDXProdIdentControlPanelContract prodIdentControlPanel = new Niedax.AzureServiceBus.Models.PALabel.NDXProdIdentControlPanelContract();
+            prodIdentControlPanel.RecIdNDXProdIdentControlPanel = nDXProdIdentControlPanel.RecId;
+            detailsContract.ProdIdentControlPanel = prodIdentControlPanel;
+
+            contract.AddMaintainContractToList(detailsContract);
+        }
+
+        nDXAzureRelayTransferPALabel.initializeAzureRelay(contract);
+        nDXAzureRelayTransferPALabel.getResponseFromRelay();
+        Counter counterElements = NDXPALabelAdministratedProcessing::maintainFromResponseLabelMaintainedContract(nDXAzureRelayTransferPALabel.parmResponseContract());
+    
+        stopWatch.Stop();
+        System.TimeSpan timeTaken = stopWatch.Elapsed;
+        Info(strFmt("@NDXBase:NDXNumberOfDataRecordsDeleted", counterElements, timeTaken.Milliseconds));
+        NDXProdIdentControlPanelOnPrem_ds.executeQuery();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>FormButtonGetDataFromBartenderDB_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 14.07.23
+    /// receive Bartender Data from onPrem
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, FormButtonGetDataFromBartenderDB), FormControlEventType::Clicked)
+        ,SuppressBPWarning('BPParameterNotUsed', '"e" is not used')
+        ,SuppressBPWarning('BPLocalVariableNotUsed','local variable "configReader"')]
+    public static void FormButtonGetDataFromBartenderDB_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        boolean getFromRelay = true;
+        if (getFromRelay)
+        {
+            // Relay
+            System.Diagnostics.Stopwatch stopWatch = new System.Diagnostics.Stopwatch();
+            stopWatch.Start();
+            FormRun thisFormRun = sender.formRun();
+            FormDataSource NDXProdIdentControlPanelOnPrem_ds = thisFormRun.dataHelper().FindDataSource(formDataSourceStr(NDXProdIdentControlPanel, NDXProdIdentControlPanelOnPrem));
+
+            NDXAzureRelayTransferPALabel nDXAzureRelayTransferPALabel = NDXAzureRelayTransferPALabel::construct();
+            Niedax.AzureServiceBus.Models.PALabel.Relay.PALabelMaintainRelayContract contract = nDXAzureRelayTransferPALabel.parmMaintainRelayContract();
+            contract.MaintainMode = true;
+            contract.DeleteNotValidInDatabase = true;
+            contract.GetDataFromDatabase = true;
+            Niedax.AzureServiceBus.Models.PALabel.NDXPALabelMaintainDetailsContract detailsContract = new Niedax.AzureServiceBus.Models.PALabel.NDXPALabelMaintainDetailsContract();
+            contract.AddMaintainContractToList(detailsContract);
+            nDXAzureRelayTransferPALabel.initializeAzureRelay(contract);
+            nDXAzureRelayTransferPALabel.getResponseFromRelay();
+            int counterElements = NDXPALabelAdministratedProcessing::fillNDXProdIdentControlPanelOnPremFromResponseLabelMaintainedContract(nDXAzureRelayTransferPALabel.parmResponseContract());
+            stopWatch.Stop();
+            System.TimeSpan timeTaken = stopWatch.Elapsed;
+            Info(strFmt("@NDXBase:NDXNumberOfDataRecordsTransferred", counterElements, timeTaken.Milliseconds));
+            NDXProdIdentControlPanelOnPrem_ds.executeQuery();
+        }
+        else
+        {
+            // Servicebus Queue
+            NDXHistoryMessage message = strFmt("@NDX:NDXButtonPressed", "@NDX:NDXBTGetDataFromDB");
+            NDXStepCurrent stepCurrent = 1;
+            NDXHistoryLogProdIdentMaintainContract contract = NDXHistoryLogProdIdentMaintainContract::construct(stepCurrent);
+            if (BusinessEventsConfigurationReader::isBusinessEventEnabled(classStr(NDXPALabelMaintainEvent)))
+            {
+                IBusinessEventsConfigurationReader configReader = BusinessEventsConfigurationReader::getConfigurationReaderInstance();
+                message += ' ' + "@NDXBase:NDXBusinessEventTriggered";
+                contract.saveAsSuccess(message);
+
+                NDXPALabelMaintainEvent nDXPALabelMaintainEvent = NDXPALabelMaintainEvent::construct();
+                nDXPALabelMaintainEvent.parmDataFromNDXPAWithLabelInfo(false);
+                nDXPALabelMaintainEvent.send();
+            }
+            else
+            {
+                message += ' ' + "@NDXBase:NDXBusinessEventNotActive";
+                contract.saveAsError(message);
+                Error(strFmt("@NDXBase:NDXBusinessEventNotActive2", classStr(NDXPALabelMaintainEvent)));
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>btnSendLabelDataAgain_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 03.06.23
+    /// send label data again zu Azure queue
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, btnSendLabelDataAgain), FormControlEventType::Clicked)
+        ,SuppressBPWarning('BPParameterNotUsed', '"e" is not used')]
+    public static void btnSendLabelDataAgain_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        FormRun thisFormRun = sender.formRun();
+        FormDataSource NDXPAWithLabelInfo_DS = thisFormRun.dataHelper().FindDataSource(formDataSourceStr(NDXProdIdentControlPanel, NDXPAWithLabelInfo));
+        NDXPAWithLabelInfo nDXPAWithLabelInfo = NDXPAWithLabelInfo_DS.cursor();
+
+        if (BusinessEventsConfigurationReader::isBusinessEventEnabled(classStr(NDXProdStatusChangedGenerateTransportLabelEvent)))
+        {
+            NDXProdStatusChangedGenerateTransportLabelEvent::newFromProdId(nDXPAWithLabelInfo.ProdId).send();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>btnSendLabelDataAgain2_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 29.08.24
+    /// send labelinfo again to bartender database onPrem
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, btnSendLabelDataAgain2), FormControlEventType::Clicked)
+        ,SuppressBPWarning('BPParameterNotUsed', '"e" is not used')]
+    public static void btnSendLabelDataAgain2_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        FormButtonControl button = sender as FormButtonControl;
+        button.enabled(false);
+        FormRun thisFormRun = sender.formRun();
+        FormDataSource NDXProdIdentLabelFromProdTableView_6_DS = thisFormRun.dataHelper().FindDataSource(formDataSourceStr(NDXProdIdentControlPanel, NDXProdIdentLabelFromProdTableView_6));
+        NDXProdIdentLabelFromProdTableView nDXProdIdentLabelFromProdTableView = NDXProdIdentLabelFromProdTableView_6_DS.cursor();
+
+        if (BusinessEventsConfigurationReader::isBusinessEventEnabled(classStr(NDXProdStatusChangedGenerateTransportLabelEvent)))
+        {
+            NDXProdStatusChangedGenerateTransportLabelEvent::newFromProdId(nDXProdIdentLabelFromProdTableView.ProdId).send();
+        }
+        button.enabled(true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>FormButtonCheckBTLabelForProductionOrder_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    /// <param name="sender"></param>
+    /// <param name="e"></param>
+    //[FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, BatchJob_NDXProdIdentControlPanelParameters_RecId), FormControlEventType::Lookup)]
+    //public static void BatchJob_NDXProdIdentControlPanelParameters_RecId_OnLookup(FormControl sender, FormControlEventArgs e)
+    //{
+    //    SysTableLookup sysTableLookup = SysTableLookup::newParameters(tableNum(BatchJob), sender);
+
+    //}
+    /// <summary>
+    /// PaffH 05.08.24
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, FormButtonCheckBTLabelForProductionOrder), FormControlEventType::Clicked)
+        ,SuppressBPWarning('BPParameterNotUsed', '"e" is not used')]
+    public static void FormButtonCheckBTLabelForProductionOrder_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        FormButtonControl button = sender as FormButtonControl;
+        button.enabled(false);
+        FormRun thisFormRun = sender.formRun();
+        FormDataSource ProdTable_DS = thisFormRun.dataHelper().FindDataSource(formDataSourceStr(NDXProdIdentControlPanel, ProdTable_4));
+        int recordsToProcess = max(1, ProdTable_DS.recordsMarked().lastIndex());
+        if (Box::yesNo(strFmt("@NDX:NDXCheckBTLabelForProductionOrderDoCheck", recordsToProcess), DialogButton::Yes) == DialogButton::Yes)
+        {
+            MultiSelectionHelper helper = MultiSelectionHelper::construct();
+            helper.parmDatasource(ProdTable_DS);
+            ProdTable prodTableLocal = helper.getFirst();
+
+            Dynamics.AX.Application.NDXProdStatusChangedGenerateTransportLabelEventContract contract = new Dynamics.AX.Application.NDXProdStatusChangedGenerateTransportLabelEventContract();
+            new NDXBusinessEventContractInteraction().initializeContract(contract);
+            while (prodTableLocal.RecId != 0)
+            {
+                Info(strFmt("@NDX:NDXCheckProductionLabelForProductionOrder", NDXHelperCommon::seconds2Str(), prodTableLocal.ProdId));
+                NDXProdIdent::fillControlPanelFromProdTable(prodTableLocal, contract, true);
+                prodTableLocal = helper.getNext();
+            }
+            ProdTable_DS.research(true);
+        }
+        button.enabled(true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>FormButtonTransferToBartender_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 28.08.24
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, FormButtonTransferToBartender), FormControlEventType::Clicked)
+        ,SuppressBPWarning('BPParameterNotUsed', '"e" is not used')]
+    public static void FormButtonTransferToBartender_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        FormButtonControl button = sender as FormButtonControl;
+        button.enabled(false);
+        FormRun thisFormRun = sender.formRun();
+        FormDataSource NDXProdIdentLabelFromProdTableView_DS = thisFormRun.dataHelper().FindDataSource(formDataSourceStr(NDXProdIdentControlPanel, NDXProdIdentLabelFromProdTableView_6));
+        NDXProdIdentLabelFromProdTableView nDXProdIdentLabelFromProdTableView = NDXProdIdentLabelFromProdTableView_DS.cursor();
+        ProdTable prodTable = ProdTable::findRecId(nDXProdIdentLabelFromProdTableView.RecId_ProdTable);
+        Dynamics.AX.Application.NDXProdStatusChangedGenerateTransportLabelEventContract contract = new Dynamics.AX.Application.NDXProdStatusChangedGenerateTransportLabelEventContract();
+        new NDXBusinessEventContractInteraction().initializeContract(contract);
+        NDXProdIdent::fillControlPanelFromProdTable(prodTable, contract, true);
+        button.enabled(true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>LogButton_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 06.08.24
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, LogButton), FormControlEventType::Clicked)
+        ,SuppressBPWarning('BPParameterNotUsed', '"e" is not used')]
+    public static void LogButton_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        FormRun thisFormRun = sender.formRun();
+        FormDataSource BatchJobHistory_DS = thisFormRun.dataHelper().FindDataSource(formDataSourceStr(NDXProdIdentControlPanel, BatchJobHistory_5));
+        BatchJobHistory BatchJobHistory = BatchJobHistory_DS.cursor();
+
+        NDXBatchJob::showLog(BatchJobHistory);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXProdIdentControlPanelDetail2_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 29.08.24
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, NDXProdIdentControlPanelDetail2), FormControlEventType::Clicked)
+        ,SuppressBPWarning('BPParameterNotUsed', '"e" is not used')]
+    public static void NDXProdIdentControlPanelDetail2_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        FormRun thisFormRun = sender.formRun();
+        FormDataSource NDXProdIdentLabelFromProdTableView_DS = thisFormRun.dataHelper().FindDataSource(formDataSourceStr(NDXProdIdentControlPanel, NDXProdIdentLabelFromProdTableView_6));
+        NDXProdIdentLabelFromProdTableView nDXProdIdentLabelFromProdTableView = NDXProdIdentLabelFromProdTableView_DS.cursor();
+        NDXProdIdentControlPanel nDXProdIdentControlPanel = NDXProdIdentControlPanel::findProcedureLine2(nDXProdIdentLabelFromProdTableView.ProdId, nDXProdIdentLabelFromProdTableView.RecId_NDXProdIdentProcedureLine2);
+
+        Args args = new Args();
+        args.openMode(OpenMode::View);
+        args.record(nDXProdIdentControlPanel);
+        MenuFunction menuFunction = new MenuFunction(menuitemDisplayStr(NDXProdIdentControlPanelDetail), MenuItemType::Display);
+        menuFunction.run(args);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ProdTableDetails2_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 29.08.24
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, ProdTableDetails2), FormControlEventType::Clicked)
+        ,SuppressBPWarning('BPParameterNotUsed', '"e" is not used')]
+    public static void ProdTableDetails2_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        FormRun thisFormRun = sender.formRun();
+        FormDataSource NDXProdIdentLabelFromProdTableView_DS = thisFormRun.dataHelper().FindDataSource(formDataSourceStr(NDXProdIdentControlPanel, NDXProdIdentLabelFromProdTableView_6));
+        NDXProdIdentLabelFromProdTableView nDXProdIdentLabelFromProdTableView = NDXProdIdentLabelFromProdTableView_DS.cursor();
+        ProdTable prodTable = ProdTable::findRecId(nDXProdIdentLabelFromProdTableView.RecId_ProdTable);
+
+        Args args = new Args();
+        args.openMode(OpenMode::View);
+        args.record(prodTable);
+        MenuFunction menuFunction = new MenuFunction(menuitemDisplayStr(ProdTableDetails), MenuItemType::Display);
+        menuFunction.run(args);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXProdIdent2_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 29.08.24
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, NDXProdIdent2), FormControlEventType::Clicked)
+        ,SuppressBPWarning('BPParameterNotUsed', '"e" is not used')]
+    public static void NDXProdIdent2_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        FormRun thisFormRun = sender.formRun();
+        FormDataSource NDXProdIdentLabelFromProdTableView_DS = thisFormRun.dataHelper().FindDataSource(formDataSourceStr(NDXProdIdentControlPanel, NDXProdIdentLabelFromProdTableView_6));
+        NDXProdIdentLabelFromProdTableView nDXProdIdentLabelFromProdTableView = NDXProdIdentLabelFromProdTableView_DS.cursor();
+        InventTable inventTable = InventTable::find(nDXProdIdentLabelFromProdTableView.ItemId);
+
+        Args args = new Args();
+        args.openMode(OpenMode::View);
+        args.record(inventTable);
+        MenuFunction menuFunction = new MenuFunction(menuitemDisplayStr(NDXProdIdent), MenuItemType::Display);
+        menuFunction.run(args);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>FormButtoncheckProdIdentControlPanelIdAll_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 29.08.24
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, FormButtoncheckProdIdentControlPanelIdAll), FormControlEventType::Clicked)
+        ,SuppressBPWarning('BPParameterNotUsed', '"e" is not used')]
+    public static void FormButtoncheckProdIdentControlPanelIdAll_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        info(strFmt("@NDX:NDXChangedIDs", NDXProdIdentControlPanel::checkProdIdentControlPanelIdAll()));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>NDXProdTableProdIdentProdPool_12_ProdPoolId_OnModified</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 17.12.24
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(NDXProdIdentControlPanel, NDXProdTableProdIdentProdPool_12_ProdPoolId), FormControlEventType::Modified)
+        ,SuppressBPWarning('BPParameterNotUsed', '"e" is not used')]
+    public static void NDXProdTableProdIdentProdPool_12_ProdPoolId_OnModified(FormControl sender, FormControlEventArgs e)
+    {
+        FormRun thisFormRun = sender.formRun();
+        FormDataSource NDXProdTableProdIdentProdPool_12_DS = thisFormRun.dataHelper().FindDataSource(formDataSourceStr(NDXProdIdentControlPanel, NDXProdTableProdIdentProdPool_12));
+        NDXProdTableProdIdentProdPool_12_DS.research(true);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

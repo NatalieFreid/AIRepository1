@@ -1,0 +1,1183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXTmpCSAlliance</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class NDXTmpCSAlliance extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 05.10.23
+    /// </summary>
+    /// <param name = "umsSignature">NDXUmsSignature</param>
+    /// <param name = "monthYearSignature">NDXMonthYearSignature</param>
+    /// <param name = "excl">NoYes</param>
+    /// <param name = "company">CompanyId</param>
+    /// <param name = "alliance">CustAccount</param>
+    /// <param name = "custAccount">CustAccount</param>
+    /// <param name = "centralStoreId">NDXCentralStoreId</param>
+    /// <param name = "l_forUpdate">boolean</param>
+    /// <returns>NDXTmpCSAlliance</returns>
+    client server static public NDXTmpCSAlliance find(NDXUmsSignature         umsSignature,
+                                                   NDXMonthYearSignature   monthYearSignature,
+                                                   NoYes                    excl,
+                                                   CompanyId                company,
+                                                   CustAccount              alliance,
+                                                   CustAccount              custAccount,
+                                                   NDXCentralStoreId       centralStoreId,
+                                                   boolean                  l_forUpdate = false)
+    {
+        NDXTmpCSAlliance      record;
+        ;
+        if (l_forUpdate)
+        {
+            record.selectForUpdate(l_forUpdate);
+        }
+
+        select firstOnly record
+        where        record.UmsSignature        == umsSignature    &&
+                     record.MonthYearSignature  == monthYearSignature   &&
+                     record.Exclude             == excl            &&
+                     record.Company             == company         &&
+                     record.Alliance            == alliance        &&
+                     record.CustAccount         == custAccount     &&
+                     record.CentralStoreId      == centralStoreId;
+
+        return record;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteRecords</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 05.10.23
+    /// </summary>
+    /// <param name = "_umsSignature">NDXUmsSignature</param>
+    /// <param name = "_alliance">CustAccount</param>
+    static void deleteRecords(NDXUmsSignature _umsSignature, CustAccount _alliance)
+    {
+        NDXTmpCSAlliance          table;
+        ;
+
+        table.skipDataMethods(true);
+        table.skipAosValidation(true);
+        table.skipDatabaseLog(true);
+        table.skipEvents(true);
+        table.skipDeleteActions(true);
+        
+        if (_alliance)
+        {
+            delete_from     table
+                    where       table.UmsSignature == _umsSignature &&
+                                table.Alliance     == _alliance;
+        }
+        else
+        {
+            delete_from     table
+                    where       table.UmsSignature == _umsSignature;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateRecords</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// DebuC 16.10.23
+    /// </summary>
+    /// <param name = "_copyTo">NDXUmsSignature</param>
+    /// <param name = "_copyToOld">NDXUmsSignature</param>
+    /// <param name = "_sic">boolean</param>
+    /// <param name = "_copyFromSic">NDXUmsSignature</param>
+    /// <param name = "_only4Alliance">CustAccount</param>
+    static void updateRecords(NDXUmsSignature _copyTo,NDXUmsSignature _copyToOld,boolean _sic, NDXUmsSignature _copyFromSic, CustAccount _only4Alliance)
+    {
+        
+        // bestehende Daten sichern
+        NDXTmpCSAlliance      table;
+        Common                      commonCopySic;
+        int64                       anzBefore, anzAfter;
+        DictTable                   dictTable;
+
+        NDXUmsSignature         l_copyFrom2 = _copyTo;
+        NDXUmsSignature         l_copyTo2   = _copyToOld;        
+        boolean                 l_lSic      = _sic;
+
+        //--> 1.2: NDX/PAFFH/NDX_TASK1235003370/09.10.2012
+        //BP deviation documented
+        table.skipDataMethods(true);
+        table.skipAosValidation(true);
+        table.skipDatabaseLog(true);
+        table.skipEvents(true);
+        table.skipDeleteActions(true);
+        //<-- NDX/PAFFH/NDX_TASK1235003370/09.10.2012
+
+        // Sicherung der CopyFrom-Daten
+        if (l_lSic)
+        {
+            dictTable       = new DictTable(table.TableId);
+            commonCopySic   = dictTable.makeRecord();
+            ttsbegin;
+
+            // alte Sicherung löschen
+            if (_only4Alliance)
+            {
+                delete_from     table
+                    where       table.UmsSignature == _copyFromSic &&
+                                table.Alliance     == _only4Alliance;
+            }
+            else
+            {
+                delete_from     table
+                    where       table.UmsSignature == _copyFromSic;
+            }
+
+            // aktuelle Daten sichern
+            if (_only4Alliance)
+            {
+                while select table
+                    where    table.UmsSignature    == l_copyFrom2      &&
+                                table.Alliance        == _only4Alliance
+                {
+                    buf2Buf(table, commonCopySic);
+                    commonCopySic.(dictTable.fieldname2id(identifierstr(UmsSignature))) = _copyFromSic;
+                    commonCopySic.doInsert();
+                }
+            }
+            else
+            {
+                while select table
+                    where    table.UmsSignature == l_copyFrom2
+                {
+                    buf2Buf(table, commonCopySic);
+                    commonCopySic.(dictTable.fieldname2id(identifierstr(UmsSignature))) = _copyFromSic;
+                    commonCopySic.doInsert();
+                }
+            }
+            ttscommit;
+        }
+
+        if (_only4Alliance)
+        {
+            anzBefore = (select     count(recid)
+                            from    NDXTmpCSAlliance
+                            where   NDXTmpCSAlliance.UmsSignature == l_copyTo2 &&
+                                    NDXTmpCSAlliance.Alliance     == _only4Alliance).recid;
+
+            update_recordset        table
+                setting             UmsSignature = l_copyTo2
+                where               table.UmsSignature == l_copyFrom2 &&
+                                    table.Alliance     == _only4Alliance;
+
+            anzAfter  = (select     count(recid)
+                            from    NDXTmpCSAlliance
+                            where   NDXTmpCSAlliance.UmsSignature == l_copyTo2 &&
+                                    NDXTmpCSAlliance.Alliance     == _only4Alliance).recid;
+        }
+        else
+        {
+            anzBefore = (select     count(recid)
+                            from    NDXTmpCSAlliance
+                            where   NDXTmpCSAlliance.UmsSignature == l_copyTo2).recid;
+
+            update_recordset        table
+                setting             UmsSignature = l_copyTo2
+                where               table.UmsSignature == l_copyFrom2;
+
+            anzAfter  = (select     count(recid)
+                            from    NDXTmpCSAlliance
+                            where   NDXTmpCSAlliance.UmsSignature == l_copyTo2).recid;
+        }
+        if (_copyToOld)
+        {
+            info(strfmt("@NDX:NDXRecordsSavedIn", NDXHelperCommon::seconds2Str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone())), anzAfter - anzBefore, tableId2Name(table.TableId), l_copyTo2));       // [%1] [%2] Records in [%3] unter [%4] gesichert
+        }
+        else
+        {
+            info(strfmt("@NDX:NDXRecordsTransferedTo", NDXHelperCommon::seconds2Str(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone())), anzAfter - anzBefore, tableId2Name(table.TableId), l_copyTo2));       // [%1] [%2] Records in [%3] unter [%4] übertragen
+        }
+
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>UJahr</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 19.03.25
+    /// </summary>
+    /// <returns>NDXUmsatzIntAktJahr</returns>
+    [SysClientCacheDataMethod(true)]
+    display NDXUmsatzIntAktJahr UJahr()
+    {
+        return this.U01 + this.U02 + this.U03 + this.U04 + this.U05 + this.U06
+            + this.U07 + this.U08 + this.U09 + this.U10 + this.U11 + this.U12;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>VUJahr</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 19.03.25
+    /// </summary>
+    /// <returns>NDXUmsatzIntVorJahr</returns>
+    [SysClientCacheDataMethod(true)]
+    display NDXUmsatzIntVorJahr VUJahr()
+    {
+        return this.VU01 + this.VU02 + this.VU03 + this.VU04 + this.VU05 + this.VU06
+            + this.VU07 + this.VU08 + this.VU09 + this.VU10 + this.VU11 + this.VU12;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>C</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 19.03.25
+    /// </summary>
+    /// <returns>C</returns>
+    [SysClientCacheDataMethod(true)]
+    display AmountCur C()
+    {
+        return this.C01 + this.C02 + this.C03 + this.C04 + this.C05 + this.C06
+            + this.C07 + this.C08 + this.C09 + this.C10 + this.C11 + this.C12;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>VC</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 19.03.25
+    /// </summary>
+    /// <returns>VC</returns>
+    [SysClientCacheDataMethod(true)]
+    display AmountCur VC()
+    {
+        return this.VC01 + this.VC02 + this.VC03 + this.VC04 + this.VC05 + this.VC06
+            + this.VC07 + this.VC08 + this.VC09 + this.VC10 + this.VC11 + this.VC12;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NDXTmpCSAllianceDev</DeveloperDocumentation>
+	<Label>@NDX:NDXTmpCSAlliance</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>Alliance</TitleField1>
+	<CacheLookup>Found</CacheLookup>
+	<ClusteredIndex>CustAccountIdx</ClusteredIndex>
+	<ModifiedBy>Yes</ModifiedBy>
+	<ModifiedDateTime>Yes</ModifiedDateTime>
+	<PrimaryIndex>CustAccountIdx</PrimaryIndex>
+	<SaveDataPerCompany>No</SaveDataPerCompany>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>B01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>B12</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VB12</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CustAccount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CentralStoreId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>UmsSignature</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CSDPctLfdJ</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CSDPctVJ</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Alliance</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Company</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Exclude</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>MonthYearSignature</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>GridView</Name>
+			<Label>@NDXBase:NDXGridView</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>Alliance</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CentralStoreId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CustAccount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CSDPctLfdJ</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CSDPctVJ</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>UJahr</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VUJahr</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Company</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ModifiedBy</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>UmsSignature</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Exclude</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>C</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>C01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>C12</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>VC</Name>
+			<Label>@NDX:NDXVC</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>VC01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VC12</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>U</Name>
+			<Label>@NDXBase:NDXUmsatzIntAktJahr</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>U01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>U12</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>VU</Name>
+			<Label>@NDXBase:NDXUmsatzIntVorJahr</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>VU01</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU02</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU03</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU04</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU05</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU06</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU07</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU08</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU09</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU10</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU11</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VU12</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U01</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NXAU01</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U02</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXU02</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U03</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NXAU03</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U04</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NXAU04</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U05</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NXAU05</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U06</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NXAU06</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U07</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NXAU07</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U08</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NXAU08</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U09</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NXAU09</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U10</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NXAU10</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U11</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NXAU11</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>U12</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NXAU12</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU01</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVU01</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU02</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVU02</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU03</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVU03</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU04</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVU04</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU05</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVU05</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU06</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVU06</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU07</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVU07</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU08</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVU08</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU09</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVU09</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU10</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVU10</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU11</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVU11</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VU12</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVU12</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B01</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B02</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B03</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B04</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B05</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B06</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B07</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B08</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B09</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B10</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B11</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>B12</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB01</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB02</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB03</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB04</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB05</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB06</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB07</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB08</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB09</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB10</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB11</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VB12</Name>
+			<ExtendedDataType>NDXUmsatzInt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C01</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXC01</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C02</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXC02</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C03</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXC03</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C04</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXC04</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C05</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXC05</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C06</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXC06</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C07</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXC07</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C08</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXC08</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C09</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXC09</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C10</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXC10</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C11</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXC11</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>C12</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXC12</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC01</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVC01</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC02</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVC02</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC03</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVC03</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC04</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVC04</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC05</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVC05</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC06</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVC06</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC07</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVC07</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC08</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVC08</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC09</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVC09</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC10</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVC10</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC11</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVC11</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>VC12</Name>
+			<ExtendedDataType>AmountCur</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+			<Label>@NDX:NDXVC12</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CustAccount</Name>
+			<ExtendedDataType>CustAccount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CentralStoreId</Name>
+			<ExtendedDataType>NDXCentralStoreId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>UmsSignature</Name>
+			<ExtendedDataType>NDXUmsSignature</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>CSDPctLfdJ</Name>
+			<ExtendedDataType>NDXCSDPct</ExtendedDataType>
+			<HelpText>@NDXBase:NDXCSDPct</HelpText>
+			<Label>@NDXBase:NDXCSDPctLJ</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>CSDPctVJ</Name>
+			<ExtendedDataType>NDXCSDPct</ExtendedDataType>
+			<HelpText>@NDXBase:NDXCSDPct</HelpText>
+			<Label>@NDXBase:NDXCSDPctVJ</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Alliance</Name>
+			<ExtendedDataType>NDXAlliance</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Company</Name>
+			<ExtendedDataType>CompanyId</ExtendedDataType>
+			<Label>@NDXBase:NDXUks</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Exclude</Name>
+			<ExtendedDataType>NoYesId</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>MonthYearSignature</Name>
+			<ExtendedDataType>NDXMonthYearSignature</ExtendedDataType>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>CustAccountIdx</Name>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>UmsSignature</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>MonthYearSignature</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Exclude</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Company</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Alliance</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>CustAccount</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>CentralStoreId</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>CustTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<RelatedTable>CustTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>CustAccount</Name>
+					<SourceEDT>CustAccount</SourceEDT>
+					<Field>CustAccount</Field>
+					<RelatedField>AccountNum</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

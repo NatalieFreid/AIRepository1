@@ -1,0 +1,100 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVARUMDSDFeeReportDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Data provider class for AVARUMDSDFeeReport
+/// Filters AVARUMDSDFeeTable records based on posted status and date range
+/// Only includes fees whose Code has a validity period that overlaps the dialog period
+/// </summary>
+[SRSReportParameterAttribute(classStr(AVARUMDSDFeeReportContract))]
+internal final class AVARUMDSDFeeReportDP extends SrsReportDataProviderBase
+{
+    AVARUMDSDFeeReportTmp      feeReportTmp;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getTmpTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the fee report temp table dataset for SSRS report
+    /// </summary>
+    /// <returns>Fee report temp table</returns>
+    [SRSReportDataSetAttribute(tableStr(AVARUMDSDFeeReportTmp))]
+    public AVARUMDSDFeeReportTmp getTmpTable()
+    {
+        select * from feeReportTmp;
+        return feeReportTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Processes the report by populating temp table with filtered fee data
+    /// Applies Posted/Open filter and date range filter based on AVARUMDSDCodeTable validity period
+    /// </summary>
+    [SysEntryPointAttribute(false)]
+    public void processReport()
+    {
+        AVARUMDSDFeeReportContract contract;
+        AVARUMDSDFeePostedFilter  postedFilter;
+        FromDate                  fromDate;
+        ToDate                    toDate;
+        AVARUMDSDFeeTable         feeTable;
+        AVARUMDSDCodeTable        codeTable;
+
+        contract     = this.parmDataContract() as AVARUMDSDFeeReportContract;
+        postedFilter = contract.parmPostedFilter();
+        fromDate     = contract.parmFromDate();
+        toDate       = contract.parmToDate();
+
+        // Only include fees whose Code has a validity period in AVARUMDSDCodeTable
+        // that OVERLAPS the dialog period [fromDate, toDate].
+        // Overlap condition:
+        //   codeTable.FromDate <= toDate  AND  codeTable.ToDate >= fromDate
+        // dateNull() on either side means open-ended (no restriction on that bound).
+
+        while select feeTable
+            exists join codeTable
+                where codeTable.Code == feeTable.Code
+                   && (fromDate == dateNull() || codeTable.ToDate   == dateNull() || codeTable.ToDate   >= fromDate)
+                   && (toDate   == dateNull() || codeTable.FromDate == dateNull() || codeTable.FromDate <= toDate)
+        {
+            // Posted / Open filter
+            if (postedFilter == AVARUMDSDFeePostedFilter::Posted && !feeTable.Entered)
+            {
+                continue;
+            }
+            if (postedFilter == AVARUMDSDFeePostedFilter::Open && feeTable.Entered)
+            {
+                continue;
+            }
+            // AVARUMDSDFeePostedFilter::All — no filter applied
+
+            feeReportTmp.clear();
+            feeReportTmp.Code            = feeTable.Code;
+            feeReportTmp.CodeClass       = feeTable.CodeClass;
+            feeReportTmp.Entered         = feeTable.Entered;
+            feeReportTmp.ItemId          = feeTable.ItemId;
+            feeReportTmp.InvoiceDate     = feeTable.InvoiceDate;
+            feeReportTmp.InvoiceId       = feeTable.InvoiceId;
+            feeReportTmp.SalesId         = feeTable.SalesId;
+            feeReportTmp.Qty             = feeTable.Qty;
+            feeReportTmp.Fee             = feeTable.Fee;
+            feeReportTmp.FeeWithOutTaxes = feeTable.FeeWithOutTaxes;
+            feeReportTmp.ExactFee        = feeTable.ExactFee;
+            feeReportTmp.BaseUnit        = feeTable.BaseUnit;
+            feeReportTmp.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

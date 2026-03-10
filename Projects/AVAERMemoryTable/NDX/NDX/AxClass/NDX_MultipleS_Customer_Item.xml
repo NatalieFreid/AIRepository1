@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDX_MultipleS_Customer_Item</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// NDX_MultipleS_Customer_Item
+/// </summary>
+class NDX_MultipleS_Customer_Item extends NDX_MultipleSelect_Customer
+{
+    InventTable inventTable;
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    protected void new(InventTable _inventTable, CustTable _custTable = null)
+    {
+        NDXMultipleS_CustTable   nDX_MultipleS_Customer;
+        ;
+        super();
+
+        inventTable      = _inventTable;
+
+        if(_custTable)
+        {
+            custTable = _custTable;
+            accountNum  = _custTable.AccountNum;
+        }
+
+        itemValidityErrors.ValidityCheckType = NDXValidityCheckType::Customer;
+        itemValidityErrors.checkMessage      = strfmt("@NDX:NDXItemValidityCustomerTest", accountNum);
+
+        while select  nDX_MultipleS_Customer
+            where     nDX_MultipleS_Customer.RefRecId_InventTable == inventTable.RecId
+        {
+            nDX_SelectionTmp.RefRecId_CustTable = nDX_MultipleS_Customer.RefRecId_CustTable;
+            nDX_SelectionTmp.doInsert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    static public NDX_MultipleS_Customer_Item construct(InventTable _inventTable, CustTable _custTable = null)
+    {
+        return new NDX_MultipleS_Customer_Item(_inventTable, _custTable);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new_FromNDX_ItemValidity</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Constructor
+    /// </summary>
+    /// <param name = "obj">NDX_ItemValidity</param>
+    /// <param name = "_custTable">CustTable</param>
+    /// <returns>NDX_MultipleS_Customer_Item object</returns>
+    static NDX_MultipleS_Customer_Item new_FromNDX_ItemValidity(NDX_ItemValidity obj, CustTable _custTable)
+    {
+        NDX_MultipleS_Customer_Item      nDX_MultipleS_Customer_Item;
+        ;
+        nDX_MultipleS_Customer_Item = new NDX_MultipleS_Customer_Item(obj.parmInventTable(), _custTable);
+        nDX_MultipleS_Customer_Item.parmOItemValidity(obj);
+        return nDX_MultipleS_Customer_Item;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isValid</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks if item is valid for customer
+    /// </summary>
+    /// <returns>container</returns>
+    public container isValid()
+    {
+        NDXValidityMessage validityMessage = '';
+        boolean lIsValid = true;
+        ;
+
+        oItemValidity.parmChecked_Debitor(accountNum);
+
+        // keine Gültigkeitsprüfung hinterlegt
+        if (nDX_SelectionTmp.RecId == 0)
+        {
+            return [lIsValid, validityMessage];
+        }
+
+        select firstonly nDX_SelectionTmp where nDX_SelectionTmp.RefRecId_CustTable == custTable.RecId;
+        
+        if (nDX_SelectionTmp)
+        {
+            return [lIsValid, validityMessage];
+        }
+
+        lIsValid        = false;
+
+        // Der Artikel [%3] darf nur an die Debitoren [%1] %2 werden!\nDer Artikel muss von der Abteilung Anwendungstechnik geprüft und freigegeben werden!
+        validityMessage = strFmtLB(strfmt("@NDX:NDXItemValidityCustomer", NDXMultipleS_CustTable::range2String(inventTable.RecId),
+             oItemValidity.parmCheckType() == NDXValidityCheckType::SalesNumber ? "@NDX:NDXItemValidityToSold" : "@NDX:NDXItemValidityToOffered",
+                                                  oItemValidity.parmInventTable().ItemId));
+        
+        itemValidityErrors.ErrorMessage = validityMessage;
+        oItemValidity.addErrorMessage(itemValidityErrors);
+
+        return [lIsValid, validityMessage];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closedSelectForm</Name>
+				<Source><![CDATA[
+    void closedSelectForm()
+    {
+        //NDXMultipleS_CustTable   nDX_MultipleS_Customer;
+        // Selektion speichern
+        //nDX_MultipleS_Customer.NDX_MultipleS::saveNewData(itemId, nDX_SelectionTmp, NDX_ValidityCheckType::Debitor);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    static void main(Args args = new Args())
+    {
+        InventTable                     inventTable;
+        NDX_MultipleS_Customer_Item     multipleSelectClass;
+        ;
+        if (args.dataset() == tablenum(InventTable))
+        {
+            inventTable = args.record();
+            multipleSelectClass = new NDX_MultipleS_Customer_Item(inventTable);
+            multipleSelectClass.openSelectForm();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

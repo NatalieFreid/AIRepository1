@@ -1,0 +1,450 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>KCS_KBVResponsibilitiesTable</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>KCS_KBVResponsibilitiesTable</c> class is the extension of table <c>common</c>
+/// </summary>
+public class KCS_KBVResponsibilitiesTable extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>find</c> method.
+    /// </summary>
+    /// <param name="_kcs_KBVBuildingProjectID">
+    ///    <c>KCS_KBVBuildingProjectID</c> as type
+    /// </param>
+    /// <param name="_smmResponsibilityId">
+    ///    <c>smmResponsibilityId</c> as type
+    /// </param>
+    /// <param name="_forUpdate">
+    ///    <c>boolean</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>KCS_KBVResponsibilitiesTable</c> as return value
+    /// </returns>
+    static KCS_KBVResponsibilitiesTable find(   KCS_KBVBuildingProjectID    _kcs_KBVBuildingProjectID,
+                                                smmResponsibilityId         _smmResponsibilityId,
+                                                boolean                     _forUpdate = false)
+    {
+        KCS_KBVResponsibilitiesTable record;
+
+        if (_forUpdate)
+        {
+            record.selectForUpdate(_forUpdate);
+        }
+
+        select firstonly record
+        where   record.KCS_KBVBuildingProjectID == _kcs_KBVBuildingProjectID
+            &&  record.smmResponsibilityId      == _smmResponsibilityId
+            &&  record.KCS_KBVCompetenceEndDate == dateNull();
+
+        if(!record.RecId)
+        {
+            select firstonly record
+            order by record.KCS_KBVCompetenceEndDate desc
+            where   record.KCS_KBVBuildingProjectID == _kcs_KBVBuildingProjectID
+                &&  record.smmResponsibilityId      == _smmResponsibilityId
+                &&  record.KCS_KBVCompetenceEndDate != dateNull();
+        }
+
+        return record;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHighestResponsibility</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>getHighestResponsibility</c> method.
+    /// </summary>
+    /// <param name="_kcs_KBVBuildingProjectID">
+    ///    <c>KCS_KBVBuildingProjectID</c> as type
+    /// </param>
+    /// <param name="_dataArea">
+    ///    <c>DataAreaId</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>HCMWorkerRecId</c> as return value
+    /// </returns>
+    static HCMWorkerRecId getHighestResponsibility( KCS_KBVBuildingProjectID   _kcs_KBVBuildingProjectID,
+                                                    DataAreaId                 _dataArea)
+    {
+        KCS_KBVResponsibilitiesTable    locKCS_KBVResponsibilitiesTable;
+        smmResponsibilityGroup          locsmmResponsibilityGroup;
+        HcmWorker                       locHCMWorker;
+
+        container                       locDataAreaIdContainer;
+        HCMWorkerRecId                  locHCMWorkerRecId;
+
+        locDataAreaIdContainer = [_dataArea];
+
+        select firstonly crosscompany : locDataAreaIdContainer *
+        from    locKCS_KBVResponsibilitiesTable
+        order by locsmmResponsibilityGroup.KCS_KBVSalesPriority desc, locKCS_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate
+        where   locKCS_KBVResponsibilitiesTable.KCS_KBVBuildingProjectID        == _kcs_KBVBuildingProjectID
+            &&  (   locKCS_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate    == DateNull()
+                ||  locKCS_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate    >= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())    )
+        join    locsmmResponsibilityGroup
+        where   locsmmResponsibilityGroup.ResponsibilityId == locKCS_KBVResponsibilitiesTable.smmResponsibilityId
+        join    locHCMWorker
+        where   locHCMWorker.RecId              == locKCS_KBVResponsibilitiesTable.smmWorker
+            &&  locHCMWorker.NDX_KBVActivities  == NoYes::Yes;
+
+        locHCMWorkerRecId       = locKCS_KBVResponsibilitiesTable.smmWorker;
+
+        return locHCMWorkerRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHighestResponsibilityCrosscompany</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// N.Freidenberger 24.06.2025
+    /// </summary>
+    /// <param name = "_kcs_KBVBuildingProjectID">_kcs_KBVBuildingProjectID</param>
+    /// <returns>HCMWorkerRecId</returns>
+    static KCS_KBVResponsibilitiesTable getHighestResponsibilityCrosscompany( KCS_KBVBuildingProjectID   _kcs_KBVBuildingProjectID)
+    {
+        KCS_KBVResponsibilitiesTable    locKCS_KBVResponsibilitiesTable;
+        smmResponsibilityGroup          locsmmResponsibilityGroup;
+        HcmWorker                       locHCMWorker;
+        KCS_KBVCompPrio                 compPrio;
+
+        container                       locDataAreaIdContainer;
+        HCMWorkerRecId                  locHCMWorkerRecId;
+
+
+        select firstonly crosscompany 
+            locKCS_KBVResponsibilitiesTable
+        order by compPrio.Id asc,  locsmmResponsibilityGroup.KCS_KBVSalesPriority desc, locKCS_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate
+        where   locKCS_KBVResponsibilitiesTable.KCS_KBVBuildingProjectID        == _kcs_KBVBuildingProjectID
+            &&  (   locKCS_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate    == DateNull()
+                ||  locKCS_KBVResponsibilitiesTable.KCS_KBVCompetenceEndDate    >= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())    )
+        join    locsmmResponsibilityGroup
+        where   locsmmResponsibilityGroup.ResponsibilityId == locKCS_KBVResponsibilitiesTable.smmResponsibilityId
+        join    locHCMWorker
+        where   locHCMWorker.RecId              == locKCS_KBVResponsibilitiesTable.smmWorker
+            &&  locHCMWorker.NDX_KBVActivities  == NoYes::Yes
+        join compPrio
+            where compPrio.Company == locKCS_KBVResponsibilitiesTable.DataAreaId
+               && compPrio.ActivityCompany != '';
+
+        locHCMWorkerRecId       = locKCS_KBVResponsibilitiesTable.smmWorker;
+
+        return locKCS_KBVResponsibilitiesTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>activityAvail</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>activityAvail</c> method.
+    /// </summary>
+    /// <param name="_kcs_KBVBuildingProjectRecId">
+    ///    <c>RecId</c> as type
+    /// </param>
+    /// <param name="_hcm_WorkerRecId">
+    ///    <c>HcmWorkerRecId</c> as type
+    /// </param>
+    /// <param name="_dataArea">
+    ///    <c>DataAreaId</c> as type
+    /// </param>
+    /// <returns>
+    ///    <c>smmActivities</c> as return value
+    /// </returns>
+    static smmActivities activityAvail( RecId           _kcs_KBVBuildingProjectRecId, 
+                                        HcmWorkerRecId  _hcm_WorkerRecId,
+                                        DataAreaId      _dataArea                       = '')
+    {
+        //  checks if there is allready an activity
+        //  if function is called without a dataarea it searches in all bp-companies
+        smmActivityParentLinkTable  smmActivityParentLinkTable;
+        smmActivities               smmActivities;
+        KCS_KBVParameters           kcs_KBVParameters;
+        container                   cDataAreaId;
+
+        if (!_dataArea)
+        {
+            cDataAreaId = AVAKBVBuildingProjectHelper::getAllBPCompanies();
+        }
+        else
+        {
+            cDataAreaId = [_dataArea];
+        }
+
+        kcs_KBVParameters = KCS_KBVParameters::find();
+        if (kcs_KBVParameters.RecId)
+        {
+            select firstOnly1 crosscompany : cDataAreaId *
+            from    smmActivityParentLinkTable
+                where   smmActivityParentLinkTable.ParentType   == smmActivityParentType::BuildingProject
+                    &&  smmActivityParentLinkTable.RefRecId     == _kcs_KBVBuildingProjectRecId
+                join *
+                from    smmActivities
+                where   smmActivities.ActivityNumber        == smmActivityParentLinkTable.ActivityNumber
+                    &&  smmActivities.Category              == kcs_KBVParameters.KCS_KBVActivityCategory
+                    &&  smmActivities.TypeId                == kcs_KBVParameters.KCS_KBVActivityTypeId
+                    //&&  smmActivities.ResponsibleEmployee   == _emplId;
+                    &&  smmActivities.ResponsibleWorker     == _hcm_WorkerRecId;
+        }
+
+        return smmActivities;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayKCS_KBVSalesPriority</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>displayKCS_KBVSalesPriority</c> method.
+    /// </summary>
+    /// <returns>
+    ///    <c>KCS_KBVSalesPriority</c> as return value
+    /// </returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    display KCS_KBVSalesPriority displayKCS_KBVSalesPriority()
+    {
+        KCS_KBVSalesPriority    retVal;
+
+        smmResponsibilityGroup  locBuffer;
+
+        select firstonly locBuffer
+            where   locBuffer.KCS_KBVsmmRespGroupIsBV   == NoYes::Yes
+            &&  locBuffer.ResponsibilityId              == this.smmResponsibilityId;
+
+        retVal =  locBuffer.KCS_KBVSalesPriority;
+
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NXAResponsibilities</DeveloperDocumentation>
+	<Label>@NDX:NXAResponsibilities</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>KCS_KBVBuildingProjectID</TitleField1>
+	<TitleField2>KCS_KBVCompetenceEndDate</TitleField2>
+	<CreatedBy>Yes</CreatedBy>
+	<CreatedDateTime>Yes</CreatedDateTime>
+	<ModifiedBy>Yes</ModifiedBy>
+	<ModifiedDateTime>Yes</ModifiedDateTime>
+	<ReplacementKey>KCS_KBVBuildingProjectIDIdx</ReplacementKey>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>smmResponsibilityId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>smmWorker</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVBuildingProjectID</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVCompetenceEndDate</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVBuildingProjectID</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>smmResponsibilityId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVCompetenceEndDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>smmWorker</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Overview</Name>
+			<Label>@SYS9039</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>smmResponsibilityId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>smmWorker</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVBuildingProjectID</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVCompetenceEndDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>displayKCS_KBVSalesPriority</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>GridCrossCompany</Name>
+			<Label>@SYS9039</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>dataAreaId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>smmResponsibilityId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>smmWorker</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KCS_KBVCompetenceEndDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>displayKCS_KBVSalesPriority</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>smmResponsibilityId</Name>
+			<AllowEdit>No</AllowEdit>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>smmResponsibilityId</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>smmWorker</Name>
+			<AssetClassification>Customer Content </AssetClassification>
+			<ExtendedDataType>smmWorker</ExtendedDataType>
+			<Label>@SYS4705</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>KCS_KBVBuildingProjectID</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>KCS_KBVBuildingProjectID</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>KCS_KBVCompetenceEndDate</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>KCS_KBVCompetenceEndDate</ExtendedDataType>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>KCS_KBVBuildingProjectIDIdx</Name>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>KCS_KBVBuildingProjectID</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>smmResponsibilityId</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>KCS_KBVCompetenceEndDate</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>smmWorker</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>smmResponsibilityGroup</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>smmResponsibilityGroup</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>smmResponsibilityId</Name>
+					<SourceEDT>smmResponsibilityId</SourceEDT>
+					<Field>smmResponsibilityId</Field>
+					<RelatedField>ResponsibilityId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>smmWorker</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HcmWorker</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>HcmWorker</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Role>HcmWorker_smmResponsibilitiesEmplTable</Role>
+			<UseDefaultRoleNames>No</UseDefaultRoleNames>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>smmWorker</Name>
+					<Field>smmWorker</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>KCS_KBVBuildingProjectTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>KCS_KBVBuildingProjectTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>KCS_KBVBuildingProjectID</Name>
+					<SourceEDT>KCS_KBVBuildingProjectID</SourceEDT>
+					<Field>KCS_KBVBuildingProjectID</Field>
+					<RelatedField>KCS_KBVBuildingProjectID</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

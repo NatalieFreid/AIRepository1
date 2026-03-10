@@ -1,0 +1,429 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDX_KBV2RicoProtTable</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 02.01.24
+/// </summary>
+public class NDX_KBV2RicoProtTable extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>checkDuplicateProt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 03.01.24
+    /// </summary>
+    /// <param name = "_contract">NDXRicoKalk2KBVBuildingProjectContract</param>
+    static void checkDuplicateProt(NDXRicoKalk2KBVBuildingProjectContract _contract)
+
+        //KCS_KBVBuildingProjectID projId = '',
+        //NDXDateFromUTC fromDate = DateTimeUtil::addDays( DateTimeUtil::utcNow(), -30),
+        //NDXDateToUTC toDate = DateTimeUtil::utcNow(),
+        //NDXProtKopfTyp protKopfTyp = NDXProtKopfTyp::RicoKalk_Angebot_Abgleich)
+    {
+        KCS_KBVBuildingProjectID projId = _contract.parmKBVBuildingProjectID();
+        NDXDateFromUTC fromDate = DateTimeUtil::addDays( DateTimeUtil::utcNow(), - _contract.parmFromDateOffset());
+        NDXDateToUTC toDate = DateTimeUtil::utcNow();
+        NDXProtKopfTyp protKopfTyp = _contract.parmProtKopftyp();
+
+        NDX_KBV2RicoKalkMap     mapTable;
+        int                     anzHeader, anzPosDel, anzHeaderDel;
+        int                     anzHeaderSum, anzPosDelSum, anzHeaderDelSum;
+        int                     anzBV;
+        str                     txt;
+        ;
+        txt = strfmt("@NDXRicoBV:NDXRicoKalkCheckDuplicateStart", NDXHelperCommon::seconds2Str());        // [%1] Start: Prüfung auf doppelte RicoKalk-Abgleich-Protokolleinträge
+
+        if (projId)
+        {
+            txt += ' ' + strfmt("@NDXRicoBV:NDXBVNumber", projid);                     // BV [%1]
+            [anzHeaderSum, anzPosDelSum, anzHeaderDelSum] = NDX_KBV2RicoProtTable::delDuplicateProt(projId, protKopfTyp);
+            ++anzBV;
+        }
+        else
+        {
+            txt += ' ' + strfmt("@NDXBase:NDXPeriod", fromDate, toDate);           // Zeitraum [%1 - %2]
+            while select mapTable
+            where   mapTable.createdDateTime  >= fromDate
+                &&  mapTable.createdDateTime  <= toDate
+            {
+                [anzHeader, anzPosDel, anzHeaderDel] = NDX_KBV2RicoProtTable::delDuplicateProt(mapTable.KBVBuildingProjectID, protKopfTyp);
+                anzHeaderSum    += anzHeader;
+                anzPosDelSum    += anzPosDel;
+                anzHeaderDelSum += anzHeaderDel;
+                ++anzBV;
+            }
+        }
+
+        info(txt);
+        info(strfmt("@NDXRicoBV:NDXRicoKalkCheckDuplicateEnd", NDXHelperCommon::seconds2Str(), anzBV, anzHeaderSum, anzPosDelSum, anzHeaderDelSum));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>delDuplicateProt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 03.01.24
+    /// </summary>
+    /// <param name = "projID">KCS_KBVBuildingProjectID</param>
+    /// <param name = "protKopfTyp">NDXProtKopfTyp</param>
+    /// <returns>container</returns>
+    static container delDuplicateProt(
+        KCS_KBVBuildingProjectID    projID,
+        NDXProtKopfTyp protKopfTyp = NDXProtKopfTyp::RicoKalk_Angebot_Abgleich )
+    {
+        NDX_KBV2RicoProtTable   protTable, protTable2;
+        NDX_KBV2RicoProtLine    protLine, protLine2;
+        NDX_KBV2RicoProtLine    protLineGrp;
+        int                     anzHeader, anzPosDel, anzHeaderDel;
+        boolean                 lInfo = false;
+        ;
+        // The protocol headers form the basis of the investigation
+        // form oldest to newest entry
+        while select    protTable
+        order by    createdDateTime
+        where       protTable.KBVBuildingProjectID  == projID
+            &&      protTable.ProtKopfTyp           == protKopfTyp
+        {
+            // Loop through all log entries for the same building project
+            while select    protTable2
+            where       protTable2.KBVBuildingProjectID == protTable.KBVBuildingProjectID
+                &&      protTable2.ProtKopfTyp          == protTable.ProtKopfTyp
+                &&      protTable2.RecId                != protTable.RecId
+                &&      protTable2.createdDateTime      >= protTable.createdDateTime
+            {
+                // Examination per protocol id (e.g. per quotation id) [Basis]
+                while select KBVProtID, ProtId2, count(recid) from protLineGrp
+                group by KBVProtId, ProtID2
+                where   protLineGrp.KBVProtIDInt == protTable.KBVProtIDInt
+                {
+                    // Number of elements [comparison set]
+                    select count(recId) from protLine2
+                    where   protLine2.KBVProtIDInt == protTable2.KBVProtIDInt
+                        &&  protLine2.ProtID2   == protLineGrp.ProtID2;
+
+                    // If the number of log entries is different, the entries may not be deleted
+                    if (protLineGrp.RecId != protLine2.RecId)
+                    {
+                        continue;
+                    }
+
+                    // Are there different entries in the base set compared to the comparison set?
+                    select count(recID) from protLine
+                    where           protLine.KBVProtIDInt      == protTable.KBVProtIDInt
+                        &&          protLine.ProtID2        == protLineGrp.ProtID2
+                    notexists join  protLine2
+                        where       protLine2.KBVProtIDInt     == protTable2.KBVProtIDInt
+                            &&      protLine2.ProtID2       == protLine.ProtID2
+                            &&      protLine2.KBVProtDetail == protLine.KBVProtDetail
+                            &&      protLine2.ValueOld      == protLine.ValueOld
+                            &&      protLine2.ValueNew      == protLine.ValueNew;
+                    if (protLine.RecId)
+                    {
+                        continue;
+                    }
+
+                    // Are there differnt entries in the comparison set compared to the basic set?
+                    select count(recID) from protLine
+                    where           protLine.KBVProtIDInt   == protTable2.KBVProtIDInt
+                        &&          protLine.ProtID2        == protLineGrp.ProtID2
+                    notexists join  protLine2
+                        where       protLine2.KBVProtIDInt  == protTable.KBVProtIDInt
+                            &&      protLine2.ProtID2       == protLine.ProtID2
+                            &&      protLine2.KBVProtDetail == protLine.KBVProtDetail
+                            &&      protLine2.ValueOld      == protLine.ValueOld
+                            &&      protLine2.ValueNew      == protLine.ValueNew;
+                    if (protLine.RecId)
+                    {
+                        continue;
+                    }
+
+                    if (lInfo)
+                    {
+                        setprefix(strfmt("@NDXRicoBV:NDXDuplicateLogEntryBV", protTable.KBVBuildingProjectID, protTable.KBVProtIDInt));
+                        info(strfmt("@NDXRicoBV:NDXLogEntryTime", protTable2.createdDateTime, protTable2.KBVProtIDInt, protLineGrp.ProtID2));
+                    }
+                    ttsbegin;
+                    while select forUpdate protLine
+                    where           protLine.KBVProtIDInt  == protTable2.KBVProtIDInt
+                        &&          protLine.ProtID2    == protLineGrp.ProtID2
+                    {
+                        protLine.delete();
+                        ++anzPosDel;
+                    }
+                    ttscommit;
+                    ++anzHeader;
+                }
+            }
+        }
+        // delete all protocol headers without positions
+        ttsbegin;
+        while select forUpdate protTable
+        where           protTable.KBVBuildingProjectID  == projID
+            &&          protTable.ProtKopfTyp           == protKopfTyp
+        notexists join  protLine
+            where       protLine.KBVProtIDInt  == protTable.KBVProtIDInt
+        {
+            ++anzHeaderDel;
+            protTable.delete();
+        }
+        ttscommit;
+        return [anzHeader, anzPosDel, anzHeaderDel];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getNextProtIdInt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 06.01.24
+    /// </summary>
+    /// <returns>next KBVProtID</returns>
+    public static NDXKBVProtIDInt getNextProtIdInt()
+    {
+        NDX_KBV2RicoProtTable nDX_KBV2RicoProtTable;
+        select firstonly KBVProtIDInt from nDX_KBV2RicoProtTable
+            order by KBVProtIDInt desc;
+        //return int2Str(str2Int(nDX_KBV2RicoProtTable.KBVProtID) + 1);
+        if (nDX_KBV2RicoProtTable.KBVProtIDInt == 0)
+        {
+            nDX_KBV2RicoProtTable.KBVProtIDInt = 1000000 - 1;
+        }
+        return nDX_KBV2RicoProtTable.KBVProtIDInt + 1;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateFromNDXADO</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.01.24
+    /// </summary>
+    /// <param name = "_nDXAdo">NDXADO</param>
+    /// <param name = "_PostInitializeNDXADO">boolean</param>
+    public void updateFromNDXADO(NDXADO _nDXAdo, boolean _PostInitializeNDXADO = true)
+    {
+        this.CounterSelectStatement = _nDXAdo.parmSelectOperations();
+        this.CounterInsertStatement = _nDXAdo.parmInsertOperations();
+        this.CounterDeleteStatement = _nDXAdo.parmDeleteOperations();
+        this.CounterUpdateStatement = _nDXAdo.parmUpdateOperations();
+        //this.ChangeLog = _nDXAdo.parmHistory();
+        List listHistory = _nDXAdo.parmListOperationHistory();
+        ListEnumerator enum = listHistory.getEnumerator();
+        while (enum.moveNext())
+        {
+            this.ChangeLog += enum.current() + '\n';
+        }
+        if (_PostInitializeNDXADO)
+        {
+            _nDXAdo.initialize();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDXRicoBV:NDXKBV2RicoProtTable</DeveloperDocumentation>
+	<Label>@NDXRicoBV:NDXKBV2RicoProtTable</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TableGroup>Transaction</TableGroup>
+	<TitleField1>KBVBuildingProjectID</TitleField1>
+	<TitleField2>RicoKalkBVNr</TitleField2>
+	<AllowRowVersionChangeTracking>Yes</AllowRowVersionChangeTracking>
+	<ClusteredIndex>KBVBuildingProjectIDIdx</ClusteredIndex>
+	<CreatedBy>Yes</CreatedBy>
+	<CreatedDateTime>Yes</CreatedDateTime>
+	<ModifiedBy>Yes</ModifiedBy>
+	<ModifiedDateTime>Yes</ModifiedDateTime>
+	<SaveDataPerCompany>No</SaveDataPerCompany>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>KBVProtID</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KBVBuildingProjectID</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>RicoKalkBVNr</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>NewPublicate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ProtKopfTyp</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>KBVProtIDInt</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ChangeLog</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CounterSelectStatement</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CounterInsertStatement</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CounterUpdateStatement</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CounterDeleteStatement</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>KBVProtID</Name>
+			<ExtendedDataType>NDXKBVProtID</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>KBVBuildingProjectID</Name>
+			<ExtendedDataType>KCS_KBVBuildingProjectID</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>RicoKalkBVNr</Name>
+			<ExtendedDataType>NDXRicoKalkBVNr</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>NewPublicate</Name>
+			<EnumType>NDXKBV2RicoProtStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ProtKopfTyp</Name>
+			<EnumType>NDXProtKopfTyp</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>KBVProtIDInt</Name>
+			<ExtendedDataType>NDXKBVProtIDInt</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ChangeLog</Name>
+			<ExtendedDataType>NDXChangeLogMemo</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>CounterSelectStatement</Name>
+			<ExtendedDataType>NDXCounterSelectStatement</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>CounterInsertStatement</Name>
+			<ExtendedDataType>NDXCounterInsertStatement</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>CounterUpdateStatement</Name>
+			<ExtendedDataType>NDXCounterUpdateStatement</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>CounterDeleteStatement</Name>
+			<ExtendedDataType>NDXCounterDeleteStatement</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>KBVBuildingProjectIDIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>KBVBuildingProjectID</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>KBVProtIDInt</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>CreatedDateTimeIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>KBVBuildingProjectID</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>CreatedDateTime</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>KBVProtIdIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>KBVProtIDInt</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>KCS_KBVBuildingProjectTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>KCS_KBVBuildingProjectTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>KBVBuildingProjectID</Name>
+					<Field>KBVBuildingProjectID</Field>
+					<RelatedField>KCS_KBVBuildingProjectID</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

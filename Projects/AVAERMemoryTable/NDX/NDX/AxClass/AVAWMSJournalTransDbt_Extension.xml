@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAWMSJournalTransDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>AVAWMSJournalTransDbt_Extension</c> is the execution class for table <c>WMSJournalTrans</c>
+///     AVA - Schneider 13.02.2024
+/// </summary>
+[ExtensionOf(tableStr(WMSJournalTrans))]
+final class AVAWMSJournalTransDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initFromWMSArrivalDetailTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>initFromWMSArrivalDetailTmp</c> method.
+    ///     Initializes the buffer based on the specified <c>WMSArrivalDetailTmp</c>.
+    ///     AVA - Schneider 13.02.2024
+    /// </summary>
+    /// <param name = "_wmsArrivalDetailTmp">
+    ///     The <c>WMSArrivalDetailTmp</c> to use for the initialization.
+    /// </param>
+    public void initFromWMSArrivalDetailTmp(WMSArrivalDetailTmp _wmsArrivalDetailTmp)
+    {
+        WMSArrivalDetailTmp locWMSArrivalDetailTmp;
+        SalesLine           locSalesLine;
+
+        locWMSArrivalDetailTmp = _wmsArrivalDetailTmp;
+
+        if(     locWMSArrivalDetailTmp.InventTransType  == InventTransType::Sales
+            &&  locWMSArrivalDetailTmp.InventTransRefId != ''                       )
+        {
+            locSalesLine = SalesLine::findInventTransId(_wmsArrivalDetailTmp.InventTransId);
+        }
+
+        next initFromWMSArrivalDetailTmp(_wmsArrivalDetailTmp);
+
+        if(     locSalesLine.RecId
+            &&  locSalesLine.AVADispositionCodeId   != ''
+            &&  this.IsReturnOrder                  == NoYes::Yes       )
+        {
+            this.ReturnDispositionCodeId = locSalesLine.AVADispositionCodeId;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateDelete</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// NS Zelinka 26.02.24
+    /// CoC method for validateDelete
+    /// </summary>
+    /// <returns>boolean value - true or false</returns>
+    public boolean validateDelete()
+    {
+        boolean         ret             = next validateDelete();
+        WMSJournalTable wmsJournalTable = this.wmsJournalTable();
+
+        if (ret                     &&
+            wmsJournalTable.Posted  &&
+            (wmsJournalTable.JournalType == WMSJournalType::Reception    ||
+             wmsJournalTable.JournalType == WMSJournalType::Production)      )
+        {
+            ret = checkFailed("@NDX:NXAPostedRecordCanNotDeleted");
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

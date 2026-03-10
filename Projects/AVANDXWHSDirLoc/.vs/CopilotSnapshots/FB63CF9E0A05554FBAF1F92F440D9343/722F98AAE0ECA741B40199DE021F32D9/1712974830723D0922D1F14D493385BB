@@ -1,0 +1,97 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAGenBatchLocDirService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Service class for Generate Batch Location Directives operation
+/// </summary>
+internal final class AVAGenBatchLocDirService extends SysOperationServiceBase
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>processDirectives</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Main processing method for generating batch location directives
+    /// </summary>
+    /// <param name="_contract">The data contract containing the query</param>
+    [SysEntryPointAttribute(false)]
+    public void processDirectives(AVAGenBatchLocDirContract _contract)
+    {
+        WHSLocDir locDir;
+        WHSLocDirAction action, newAction;
+        QueryRun queryRun;
+        int dirCount = 0;
+        int actionCount = 0;
+        int skippedCount = 0;
+        container packedQuery;
+        
+        if (!_contract)
+        {
+            throw error("@AVAExtension:InvalidContract");
+        }
+        
+        queryRun = _contract.getQuery();
+        
+        if (!queryRun)
+        {
+            throw error("@AVAExtension:NoQueryDefined");
+        }
+        
+        ttsbegin;
+        
+        try
+        {
+            // Iterate through selected location directives
+            while (queryRun.next())
+            {
+                locDir = queryRun.get(tableNum(WHSLocDir));
+                
+                if (locDir.RecId)
+                {
+                    dirCount++;
+                    
+                    // Process all actions for this directive
+                    while select forupdate action
+                        where action.DirectiveId == locDir.DirectiveId
+                    {
+                        // Only process if batch is not enabled and not already copied
+                        if (action.IsBatchEnabled == NoYes::No && action.IsCopied == NoYes::No)
+                        {
+                            // Clone and create new action
+                            newAction = AVAWHSLocDirActionQueryHelper::copyActionRecord(action);
+                            
+                            if (newAction && newAction.RecId)
+                            {
+                                actionCount++;
+                            }
+                        }
+                        else
+                        {
+                            skippedCount++;
+                        }
+                    }
+                }
+            }
+            
+            ttscommit;
+            
+            // Show results
+            info(strFmt("@AVAExtension:ProcessingComplete", dirCount, actionCount, skippedCount));
+        }
+        catch (Exception::Error)
+        {
+            ttsabort;
+            error("@AVAExtension:ProcessingError");
+            throw;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

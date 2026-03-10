@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>AVAInventoryCockpit</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class AVAInventoryCockpit extends FormRun
+{
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateRecords</Name>
+				<Source><![CDATA[
+    AVAInventoryCockpit populateRecords()
+    {
+        AVAInventoryCockpit tmpTable;
+        InventItemLocation  inventItemLocation;
+        InventTable         inventTable;
+        InventDim           inventDim;
+        InventLocation      inventLocation;
+        InventLocationId    locId;
+        Counter             counted, notCounted;
+        KCS_KAOItemStateTable   itemState;
+        InventItemGroup     itemGroup;
+
+        while select inventItemLocation 
+            join InventDim order by InventLocationId
+            join inventLocation where inventDim.inventDimId == inventItemLocation.inventDimId
+                                   && inventLocation.InventLocationId == inventDim.InventLocationId
+                                   && inventLocation.AVACountCycleActive
+        {
+            inventTable = inventItemLocation.inventTable();
+            itemState = KCS_KAOItemStateTable::find(inventTable.KCS_KAOItemState);
+            itemGroup = inventTable.itemGroup();
+
+            if (itemState.AVACountCycleActive && itemGroup.AVACountCycleActive)
+            {
+                if (locId != inventDim.InventLocationId)
+                {
+                    tmpTable.clear();
+                    tmpTable.InventSiteId = InventLocation::find(locId).InventSiteId;
+                    tmpTable.InventLocationId = locId;
+                    tmpTable.Counted = counted;
+                    tmpTable.NotCounted = notCounted;
+                    tmpTable.InventorySum = Counted + notCounted;
+                    if ((counted + notCounted) > 0)
+                    {
+                        tmpTable.Progress = counted / (counted + notCounted);
+                    }
+                    tmpTable.insert();
+
+                    locId = inventDim.InventLocationId;
+                    counted = 0;
+                    notCounted = 0;
+                }
+                if (inventItemLocation.AVAInvCountLast && DateTimeUtil::getStartOfYearDate(new Session().preferredLocale(), DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())) <= inventItemLocation.AVAInvCountLast)
+                {
+                    counted++;
+                }
+                if (DateTimeUtil::getStartOfYearDate(new Session().preferredLocale(), DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())) > inventItemLocation.AVAInvCountLast && inventItemLocation.AVAInvCountNeeded)
+                {
+                    notCounted++;
+                }
+            }
+        }
+        if (counted || notCounted)
+        {
+            tmpTable.clear();
+            tmpTable.InventSiteId = InventLocation::find(locId).InventSiteId;
+            tmpTable.InventLocationId = locId;
+            tmpTable.Counted = counted;
+            tmpTable.NotCounted = notCounted;
+            tmpTable.InventorySum = Counted + notCounted;
+            if ((counted + notCounted) > 0)
+            {
+                tmpTable.Progress = counted / (counted + notCounted);
+            }
+            tmpTable.insert();
+        }
+
+
+        return tmpTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        super();
+
+        AVAInventoryCockpit.setTmpData(element.populateRecords());
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="" />
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>AVAInventoryCockpit</Name>
+			<Table>AVAInventoryCockpit</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>Counted</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventLocationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventorySum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventSiteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NotCounted</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Progress</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@NDX:NXAInventoryCockpit</Caption>
+		<Pattern xmlns="">SimpleList</Pattern>
+		<PatternVersion xmlns="">1.1</PatternVersion>
+		<Style xmlns="">SimpleList</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>FormActionPaneControl1</Name>
+				<Type>ActionPane</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>FormGroupControl1</Name>
+				<Pattern>CustomAndQuickFilters</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl>
+						<Name>QuickFilterControl1</Name>
+						<FormControlExtension>
+							<Name>QuickFilterControl</Name>
+							<ExtensionComponents />
+							<ExtensionProperties>
+								<AxFormControlExtensionProperty>
+									<Name>targetControlName</Name>
+									<Type>String</Type>
+									<Value>FormGridControl1</Value>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>placeholderText</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>defaultColumnName</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+							</ExtensionProperties>
+						</FormControlExtension>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+				<FrameType>None</FrameType>
+				<Style>CustomFilter</Style>
+				<ViewEditMode>Edit</ViewEditMode>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGridControl">
+				<Name>FormGridControl1</Name>
+				<Type>Grid</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AVAInventoryCockpit_InventSiteId</Name>
+						<FilterExpression>%1</FilterExpression>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>InventSiteId</DataField>
+						<DataSource>AVAInventoryCockpit</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AVAInventoryCockpit_InventLocationId</Name>
+						<FilterExpression>%1</FilterExpression>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>InventLocationId</DataField>
+						<DataSource>AVAInventoryCockpit</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormIntegerControl">
+						<Name>AVAInventoryCockpit_Counted</Name>
+						<Type>Integer</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Counted</DataField>
+						<DataSource>AVAInventoryCockpit</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormIntegerControl">
+						<Name>AVAInventoryCockpit_NotCounted</Name>
+						<Type>Integer</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>NotCounted</DataField>
+						<DataSource>AVAInventoryCockpit</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormIntegerControl">
+						<Name>AVAInventoryCockpit_InventorySum</Name>
+						<Type>Integer</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>InventorySum</DataField>
+						<DataSource>AVAInventoryCockpit</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>AVAInventoryCockpit_Progress</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Progress</DataField>
+						<DataSource>AVAInventoryCockpit</DataSource>
+					</AxFormControl>
+				</Controls>
+				<DataSource>AVAInventoryCockpit</DataSource>
+				<Style>Tabular</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

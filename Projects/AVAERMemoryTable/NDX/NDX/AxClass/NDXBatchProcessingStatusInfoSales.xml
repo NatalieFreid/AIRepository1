@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXBatchProcessingStatusInfoSales</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 08.09.25
+/// </summary>
+internal final class NDXBatchProcessingStatusInfoSales extends NDXBatchProcessingStatusInfo
+{
+    NDXSignature signatureCurrentYear;
+    NDXSignature signatureLastYear;
+    NDXBatchProcessingStatusCounter batchProcessingStatusCounterVJlast;
+    NDXBatchProcessingStatusCounter batchProcessingStatusCounterVJact;
+    NDXBatchProcessingStatusCounter batchProcessingStatusCounterVJdiff;
+    NDXBatchProcessingStatusCounter batchProcessingStatusCounterLJlast;
+    NDXBatchProcessingStatusCounter batchProcessingStatusCounterLJact;
+    NDXBatchProcessingStatusCounter batchProcessingStatusCounterLJdiff;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 08.09.25
+    /// </summary>
+    protected void new()
+    {
+        super();
+
+        NDXBatchProcessingTableHeader nDXBatchProcessingTableHeaderSalesCurrentYear;
+        NDXBatchProcessingTableHeader nDXBatchProcessingTableHeaderSalesLastYear;
+        select firstonly nDXBatchProcessingTableHeaderSalesCurrentYear
+            order by ID desc
+            where nDXBatchProcessingTableHeaderSalesCurrentYear.BatchProcessingType == NDXBatchProcessingType::SalesCurrentYear;
+        signatureCurrentYear = nDXBatchProcessingTableHeaderSalesCurrentYear.Signature;
+
+        // aktuellster Eintrag (höchste ID) Umsatz Vorjahr - Signatur
+        select firstonly nDXBatchProcessingTableHeaderSalesLastYear
+            order by ID desc
+            where nDXBatchProcessingTableHeaderSalesLastYear.BatchProcessingType == NDXBatchProcessingType::SalesLastYear;
+        signatureLastYear = nDXBatchProcessingTableHeaderSalesLastYear.Signature;
+
+        batchProcessingStatusCounterVJlast = NDXBatchProcessingStatusCounter::construct();
+        batchProcessingStatusCounterVJact = NDXBatchProcessingStatusCounter::construct();
+        batchProcessingStatusCounterVJdiff = NDXBatchProcessingStatusCounter::construct();
+        batchProcessingStatusCounterLJlast = NDXBatchProcessingStatusCounter::construct();
+        batchProcessingStatusCounterLJact = NDXBatchProcessingStatusCounter::construct();
+        batchProcessingStatusCounterLJdiff = NDXBatchProcessingStatusCounter::construct();
+
+        batchProcessingStatusCounterVJlast = this.getStatusCounter(signatureLastYear);
+        batchProcessingStatusCounterLJlast = this.getStatusCounter(signatureCurrentYear);
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>toString</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 08.09.25
+    /// </summary>
+    /// <param name = "_startEndBlank">Start / End / ''</param>
+    /// <returns></returns>
+    public str toString(str _startEndBlank = '')
+    {
+        return strFmt("@NDX:NDXPreviousCurrentYear"
+            , NDXHelperCommon::seconds2Str()
+            , _startEndBlank
+            , batchProcessingStatusCounterVJlast.toString()
+            , batchProcessingStatusCounterLJlast.toString());
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 08.09.25
+    /// </summary>
+    /// <returns>NDXBatchProcessingStatusInfoSales</returns>
+    public static NDXBatchProcessingStatusInfoSales construct()
+    {
+        NDXBatchProcessingStatusInfoSales nDXBatchProcessingStatusInfoSales = new NDXBatchProcessingStatusInfoSales();
+       
+
+        return nDXBatchProcessingStatusInfoSales;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>hasActiveJobs</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 08.09.25
+    /// </summary>
+    /// <returns>active jobs exists?</returns>
+    public boolean hasActiveJobs()
+    {
+        boolean active = false;
+        boolean diffValues;
+        NDXBatchProcessingTableHeader nDXBatchProcessingTableHeader;
+        while select
+            BatchProcessingType,
+            CountTasksProcessed,
+            CountTasksWithError,
+            Signature,
+            StartDateTime,
+            EndDateTime,
+            BatchJob,
+            MessageDetail,
+            WithError,
+            Active
+            from nDXBatchProcessingTableHeader
+            where nDXBatchProcessingTableHeader.Signature == signatureCurrentYear
+            || nDXBatchProcessingTableHeader.Signature == signatureLastYear
+        {
+            active = active || nDXBatchProcessingTableHeader.Active;
+        }
+
+        if (active)
+        {
+            batchProcessingStatusCounterVJact = this.getStatusCounter(signatureLastYear);
+            batchProcessingStatusCounterLJact = this.getStatusCounter(signatureCurrentYear);
+            batchProcessingStatusCounterVJdiff = NDXBatchProcessingStatusCounter::getDiff(batchProcessingStatusCounterVJlast, batchProcessingStatusCounterVJact);
+            batchProcessingStatusCounterLJlast = NDXBatchProcessingStatusCounter::getDiff(batchProcessingStatusCounterLJlast, batchProcessingStatusCounterLJact);
+            diffValues = (batchProcessingStatusCounterVJdiff.hasValuesFilled() || batchProcessingStatusCounterLJlast.hasValuesFilled());
+            batchProcessingStatusCounterVJlast.copyValues(batchProcessingStatusCounterVJact);
+            batchProcessingStatusCounterLJlast.copyValues(batchProcessingStatusCounterLJact);
+            if (diffValues)
+            {
+                info(this.toString());
+            }
+
+        }
+        return active;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

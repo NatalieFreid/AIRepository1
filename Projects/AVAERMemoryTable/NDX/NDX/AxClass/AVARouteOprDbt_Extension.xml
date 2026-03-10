@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVARouteOprDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// AVA_008462_ProdRouteWrkCtr
+/// </summary>
+[ExtensionOf(tableStr(RouteOpr))]
+final class AVARouteOprDbt_Extension
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initFromWrkCtrId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA_008462_ProdRouteWrkCtr
+    /// </summary>
+    /// <param name = "_wrkCtrId">WrkCtrId</param>
+    void initFromWrkCtrId(WrkCtrId _wrkCtrId)
+    {
+        RouteOprTimeProcess         processTime;
+        RouteOprQtyTransferBatch    transferBatch;
+        ProdTable                   prodTable;
+        ProdRoute                   prodRoute;
+        WrkCtrTable                 wrkCtrTable;
+
+        if (this.RecId)
+        {
+            processTime     = this.ProcessTime;
+            transferBatch   = this.TransferBatch;
+        }
+
+        next initFromWrkCtrId(_wrkCtrId);
+        if (_wrkCtrId)
+        {
+            wrkCtrTable = WrkCtrTable::find(_wrkCtrId);
+
+            if (wrkCtrTable)
+            {
+                if (!wrkCtrTable.IsIndividualResource)
+                {
+                    this.QueueTimeBefore        = wrkCtrTable.QueueTimeBefore;
+                    this.SetupTime              = wrkCtrTable.SetupTime;
+                    this.ProcessTime            = wrkCtrTable.ProcessTime;
+                    this.ProcessPerQty          = wrkCtrTable.ProcessPerQty;
+                    this.TranspTime             = wrkCtrTable.TranspTime;
+                    this.QueueTimeAfter         = wrkCtrTable.QueueTimeAfter;
+                    this.ToHours                = wrkCtrTable.ToHours;
+                    this.TransferBatch          = wrkCtrTable.TransferBatch;
+                }
+            }
+        }
+
+        if (this.RecId)
+        {
+            this.ProcessTime    = processTime;
+            this.TransferBatch  = transferBatch;
+            while select prodRoute where prodRoute.RouteOprRefRecId == this.RecId
+            {
+                ttsbegin;
+                prodTable = prodRoute.prodTable(true);
+                prodTable.avaSetProdPoolFromWrkCtrId(_wrkCtrId);
+                ttscommit;
+            }
+        }
+       
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayFirstResourceId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/07/11
+    /// </summary>
+    /// <returns>WrkCtrId</returns>
+    public display WrkCtrId avaDisplayFirstResourceId()
+    {
+        WrkCtrActivityRequirementSet    locWrkCtrActivityRequirementSet;
+        WrkCtrActivityRequirement       locWrkCtrActivityRequirement;
+        WrkCtrRouteOprActivity          routeOprActivity;
+
+        select firstonly locWrkCtrActivityRequirement
+            join locWrkCtrActivityRequirementSet
+            join routeOprActivity
+            where locWrkCtrActivityRequirement.ActivityRequirementSet == locWrkCtrActivityRequirementSet.RecId
+            &&  locWrkCtrActivityRequirementSet.Activity    == routeOprActivity.Activity
+            && routeOprActivity.RouteOpr == this.RecId
+            && routeopractivity.RouteOprDataAreaId == this.DataAreaId;
+
+        switch(locWrkCtrActivityRequirement.subType().TableId)
+        {
+            case tableNum(WrkCtrActivityResourceRequirement):
+            case tableNum(WrkCtrActivityResourceGroupRequirement):
+                return locWrkCtrActivityRequirement.subtype().avaDisplayWrkCtrId();
+
+            default:
+                return '';
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaDisplayWrkCtrLoadPct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/07/11
+    /// </summary>
+    /// <returns>WrkCtrLoadPct</returns>
+    public display WrkCtrLoadPct avaDisplayWrkCtrLoadPct()
+    {
+        WrkCtrRouteOprActivity          locWrkCtrRouteOprActivity;
+        WrkCtrActivityRequirementSet    locWrkCtrActivityRequirementSet;
+
+        select firstonly  locWrkCtrActivityRequirementSet
+            join locWrkCtrRouteOprActivity
+            where locWrkCtrActivityRequirementSet.Activity == locWrkCtrRouteOprActivity.Activity
+            && 	locWrkCtrRouteOprActivity.RouteOpr == this.RecId;
+
+        return locWrkCtrActivityRequirementSet.LoadPercent;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    void initValue()
+    {
+        next initValue();
+
+        if (isConfigurationKeyEnabled(configurationkeynum(AVAPTM)))
+        {
+            this.AVACavity = 1.0;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedFieldValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2024/08/01 AVA_12288_DecimalsCavity
+    /// </summary>
+    /// <param name = "_fieldName">Fieldnum</param>
+    /// <param name = "_arrayIndex">int</param>
+    public void modifiedFieldValue(FieldName _fieldName, int _arrayIndex)
+    {
+        next modifiedFieldValue(_fieldName, _arrayIndex);
+
+        if (isConfigurationKeyEnabled(configurationkeynum(AVAPTM)))
+        {
+            switch (_fieldName)
+            {
+                case fieldStr(RouteOpr, AVACavity):
+                case fieldStr(RouteOpr, ProcessTime):
+                case fieldStr(RouteOpr, ToHours):
+                    if (this.KCS_PTMCycleTime > 0)
+                    {
+                        this.AVARouteOprCavityMap::KCS_PTMcalcProcessPerQty();
+                    }
+                    break;
+    
+                case fieldStr(RouteOpr, KCS_PTMCycleTime):
+                    if (this.ProcessTime == 0)
+                    {
+                        this.ProcessTime = 1;
+                    }
+                    if (this.KCS_PTMCycleTime > 0)
+                    {
+                        this.AVAPTMRouteOprMap::KCS_PTMcalcProcessPerQty();
+                    }
+                    break;
+    
+                case fieldStr(RouteOpr, ProcessPerQty):
+                    if (this.KCS_PTMCycleTime > 0)
+                    {
+                        this.AVAPTMRouteOprMap::KCS_PTMcalcCycleTime();
+                    }
+                    break;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

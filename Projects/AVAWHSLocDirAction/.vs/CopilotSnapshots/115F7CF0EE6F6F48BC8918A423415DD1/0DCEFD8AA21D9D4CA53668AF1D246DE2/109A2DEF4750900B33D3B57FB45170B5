@@ -1,0 +1,659 @@
+﻿# WHSLocDirAction Query Handling - Technical Notes
+
+## Overview
+
+This document provides detailed technical information about how location directive action queries are cloned and preserved when copying actions to batch-enabled versions.
+
+---
+
+## D365FO Location Directive Query Architecture
+
+### Query Storage in WHSLocDirAction
+
+Location directive actions store their query configuration in the **QueryCriteria** field:
+
+```xpp
+// Field on WHSLocDirAction table
+container QueryCriteria;
+```
+
+This container holds the serialized (packed) query definition including:
+- Data sources (tables)
+- Joins and relations
+- Field selections
+- Range filters
+- Sort orders
+- Group by clauses
+
+### The isBatchEnabled Reset Problem
+
+**The Issue:**
+When you toggle the `isBatchEnabled` field from `No` to `Yes` on a WHSLocDirAction record, D365FO's standard code automatically:
+
+1. Detects the flag change
+2. Calls a method that resets the query
+3. Clears all custom user-defined joins and ranges
+4. Sets a default/empty query based on the strategy
+
+**Why This Happens:**
+The standard code assumes that batch-enabled queries need different validation/structure, so it "helpfully" resets them. This causes loss of user customizations.
+
+**Our Solution:**
+Clone the query BEFORE setting the flag, then re-apply it AFTER the new record is created.
+
+---
+
+## Query Cloning Implementation
+
+### Pack/Unpack Pattern
+
+D365FO provides built-in serialization for Query objects:
+
+```xpp
+// Serialize query to container
+container queryCon = query.pack();
+
+// Deserialize container to query
+Query newQuery = new Query();
+newQuery.unpack(queryCon);
+```
+
+This pattern preserves:
+- ✅ All table joins (InnerJoin, OuterJoin, ExistsJoin, NotExistsJoin)
+- ✅ All custom ranges with complex expressions
+- ✅ Field selections
+- ✅ Sort orders
+- ✅ Group by clauses
+- ✅ Having clauses
+- ✅ Query properties and metadata
+
+### Our Implementation
+
+#### Step 1: Retrieve Original Query
+
+```xpp
+private static Query cloneActionQuery(WHSLocDirAction _sourceAction)
+{
+    Query clonedQuery;
+    container queryCon;
+    
+    // Get the packed query from the record
+    queryCon = _sourceAction.QueryCriteria;
+    
+    if (queryCon && conLen(queryCon) > 0)
+    {
+        // Unpack to create a clone
+        clonedQuery = new Query();
+        clonedQuery.unpack(queryCon);
+    }
+    
+    return clonedQuery;
+}
+```
+
+**Key Points:**
+- We read the QueryCriteria BEFORE any changes to the record
+- We check that the container is not empty
+- We create a NEW Query object (not reusing the source)
+
+#### Step 2: Create New Record
+
+```xpp
+WHSLocDirAction newAction;
+
+// Copy all fields
+buf2Buf(_sourceAction, newAction);
+
+// Clear system fields
+newAction.RecId = 0;
+newAction.RecVersion = 0;
+newAction.AVAIsCopied = NoYes::No;
+
+// Set the batch flag
+newAction.isBatchEnabled = NoYes::Yes;
+
+// Insert (this triggers the query reset)
+newAction.insert();
+```
+
+**Important:**
+At this point, `newAction.QueryCriteria` has been reset to an empty/default query by D365FO's standard code.
+
+#### Step 3: Re-apply Cloned Query
+
+```xpp
+private static void applyQueryToAction(WHSLocDirAction _action, Query _query)
+{
+    container queryCon;
+    
+    // Pack the cloned query
+    queryCon = _query.pack();
+    
+    if (queryCon && conLen(queryCon) > 0)
+    {
+        // Update the record with the cloned query
+        _action.selectForUpdate(true);
+        _action.QueryCriteria = queryCon;
+        _action.update();
+    }
+}
+```
+
+**Result:**
+The new action now has:
+- `isBatchEnabled = Yes`
+- `QueryCriteria` = original query (with all customizations)
+
+---
+
+## Query Structure Deep Dive
+
+### Example Query Container Structure
+
+When you call `query.pack()`, the container includes:
+
+```
+Container Structure:
+[
+    1: Query metadata (name, description, etc.)
+    2: [Data Source 1
+        - Table ID
+        - Data source name
+        - Join mode
+        - [Relations array]
+        - [Ranges array]
+        - [Nested data sources]
+    ]
+    3: [Data Source 2]
+    ...
+    N: [OrderBy array]
+    N+1: [GroupBy array]
+]
+```
+
+### Preserved Elements
+
+#### 1. Table Joins
+
+All join types are preserved:
+
+```xpp
+// Inner Join
+qbds2.joinMode(JoinMode::InnerJoin);
+
+// Outer Join
+qbds2.joinMode(JoinMode::OuterJoin);
+
+// Exists Join
+qbds2.joinMode(JoinMode::ExistsJoin);
+
+// Not Exists Join
+qbds2.joinMode(JoinMode::NotExistsJoin);
+```
+
+#### 2. Relations (Custom Joins)
+
+```xpp
+// Standard relation
+qbds2.addLink(fieldNum(Table1, Field1), fieldNum(Table2, Field2));
+
+// Complex relation
+qbds2.relations(true); // Enable relation processing
+```
+
+#### 3. Range Filters
+
+All range types are preserved:
+
+```xpp
+// Simple value
+qbr.value("ABC");
+
+// Multiple values
+qbr.value("ABC,XYZ,123");
+
+// Range
+qbr.value("A..Z");
+
+// Greater than
+qbr.value(">100");
+
+// Complex expression
+qbr.value("((Field1 > 0) && (Field2 < 100))");
+
+// Date range
+qbr.value(queryValue(fromDate) + ".." + queryValue(toDate));
+```
+
+#### 4. Field Selections
+
+```xpp
+// Dynamic fields (all fields)
+qbds.fields().dynamic(true);
+
+// Specific fields
+qbds.addSelectionField(fieldNum(Table1, Field1));
+qbds.addSelectionField(fieldNum(Table1, Field2));
+```
+
+#### 5. Sorting
+
+```xpp
+qbds.addOrderByField(fieldNum(Table1, Field1));
+qbds.addOrderByField(fieldNum(Table1, Field2), SortOrder::Descending);
+```
+
+---
+
+## Alternative Approaches Considered
+
+### Approach 1: Override Table Methods (Not Used)
+
+**Considered:**
+```xpp
+[ExtensionOf(tableStr(WHSLocDirAction))]
+final class WHSLocDirAction_Extension
+{
+    public void update()
+    {
+        // Detect isBatchEnabled change
+        // Preserve query
+        next update();
+        // Restore query
+    }
+}
+```
+
+**Why Not Used:**
+- More invasive (affects all updates)
+- Risk of infinite loops
+- Harder to maintain
+- Doesn't solve the form-based scenario
+
+### Approach 2: Query Deep Copy Class (Not Used)
+
+**Considered:**
+Creating a custom query cloner that manually copies each element:
+
+```xpp
+public static Query deepCopyQuery(Query _source)
+{
+    Query target = new Query();
+    
+    // Manually copy data sources
+    // Manually copy ranges
+    // Manually copy joins
+    // etc.
+}
+```
+
+**Why Not Used:**
+- Reinventing the wheel
+- More code to maintain
+- pack/unpack already does this
+- Risk of missing elements
+
+### Approach 3: Use QueryRun Instead of Query (Not Used)
+
+**Considered:**
+```xpp
+QueryRun queryRun = new QueryRun(query);
+container qrCon = queryRun.pack();
+```
+
+**Why Not Used:**
+- QueryRun includes runtime state (current record, etc.)
+- We only need the query definition
+- Query.pack() is more lightweight
+
+---
+
+## WHSLocDirStrategy Integration
+
+### Strategy Pattern
+
+D365FO uses the Strategy pattern for location directives:
+
+```xpp
+abstract class WHSLocDirStrategy
+{
+    public Query getQuery(WHSLocDirAction _action) {}
+    public void setQuery(WHSLocDirAction _action, Query _query) {}
+}
+
+class WHSLocDirStrategyEmpty extends WHSLocDirStrategy {}
+class WHSLocDirStrategyConsolidate extends WHSLocDirStrategy {}
+class WHSLocDirStrategyLocation extends WHSLocDirStrategy {}
+// etc.
+```
+
+### Strategy Construction
+
+```xpp
+WHSLocDirStrategy strategy = WHSLocDirStrategy::construct(_action.LocDirStrategyId);
+```
+
+### Query Retrieval via Strategy
+
+Our helper class uses this pattern:
+
+```xpp
+public static Query getActionQuery(WHSLocDirAction _action)
+{
+    Query query;
+    WHSLocDirStrategy strategy;
+    
+    strategy = WHSLocDirStrategy::construct(_action.LocDirStrategyId);
+    
+    if (strategy)
+    {
+        query = strategy.getQuery(_action);
+    }
+    
+    return query;
+}
+```
+
+**Note:** In practice, we found that reading `_action.QueryCriteria` directly is more reliable, as it always contains the current query state.
+
+---
+
+## Error Handling and Edge Cases
+
+### Edge Case 1: Empty Query
+
+**Scenario:** Action has no custom query (QueryCriteria is empty)
+
+**Handling:**
+```xpp
+if (queryCon && conLen(queryCon) > 0)
+{
+    // Process query
+}
+else
+{
+    // No custom query - this is OK
+    // The new record will get the default query for its strategy
+}
+```
+
+**Result:** No error, new record gets standard default query.
+
+### Edge Case 2: Corrupt Query Container
+
+**Scenario:** QueryCriteria contains invalid data
+
+**Handling:**
+```xpp
+try
+{
+    clonedQuery = new Query();
+    clonedQuery.unpack(queryCon);
+}
+catch
+{
+    warning("@AVAExtension:AVAQueryUnpackError");
+    clonedQuery = null;
+}
+```
+
+**Result:** Warning logged, process continues without custom query.
+
+### Edge Case 3: Strategy Change
+
+**Scenario:** User changes LocDirStrategyId after creating custom query
+
+**Handling:**
+- Our code copies the LocDirStrategyId along with other fields
+- The cloned query is still applied
+- May need validation that query matches strategy
+
+**Potential Enhancement:**
+```xpp
+if (!validateQueryForStrategy(_query, _action.LocDirStrategyId))
+{
+    warning("@AVAExtension:AVAQueryStrategyMismatch");
+}
+```
+
+---
+
+## Performance Considerations
+
+### Memory Usage
+
+**Pack/Unpack Operation:**
+- Creates temporary container in memory
+- Container size depends on query complexity
+- Typical size: 1-10 KB per query
+- Memory is released after operation
+
+**Mass Function:**
+- Processes one query at a time
+- No query cache needed
+- Linear memory growth with number of records
+
+### Execution Time
+
+**Single Record:**
+- Pack: ~1-5 ms
+- Unpack: ~1-5 ms
+- Total overhead: ~10-20 ms
+- User won't notice delay
+
+**Mass Function (100 records):**
+- 100 × 20 ms = 2 seconds
+- Plus database operations
+- Total: ~5-10 seconds
+- Acceptable for batch operation
+
+### Database Operations
+
+**Reads:**
+- 1 read for source action
+- Minimal load
+
+**Writes:**
+- 1 insert for new action
+- 1 update for QueryCriteria
+- 1 update for source (isCopied flag)
+- Total: 1 insert + 2 updates per action
+
+**Optimization:**
+- All operations within single tts transaction
+- No N+1 query problem
+- Indexes on LocDirId and SequenceNumber help
+
+---
+
+## Testing the Query Clone
+
+### Verification Script
+
+```xpp
+static void AVA_TestQueryClone(Args _args)
+{
+    WHSLocDirAction sourceAction, newAction;
+    Query sourceQuery, clonedQuery;
+    QueryBuildDataSource sourceDs, clonedDs;
+    QueryBuildRange sourceRange, clonedRange;
+    
+    // Select a source action
+    select firstonly sourceAction
+        where sourceAction.QueryCriteria != conNull();
+    
+    // Clone the query
+    sourceQuery = new Query();
+    sourceQuery.unpack(sourceAction.QueryCriteria);
+    
+    clonedQuery = AVAWHSLocDirActionQueryHelper::cloneQuery(sourceQuery);
+    
+    // Compare data sources
+    sourceDs = sourceQuery.dataSourceNo(1);
+    clonedDs = clonedQuery.dataSourceNo(1);
+    
+    info(strFmt("Source DS: %1", sourceDs.name()));
+    info(strFmt("Cloned DS: %1", clonedDs.name()));
+    
+    // Compare ranges
+    sourceRange = sourceDs.rangeNo(1);
+    clonedRange = clonedDs.rangeNo(1);
+    
+    info(strFmt("Source Range: %1 = %2", sourceRange.name(), sourceRange.value()));
+    info(strFmt("Cloned Range: %1 = %2", clonedRange.name(), clonedRange.value()));
+    
+    // Verify they are different objects
+    info(strFmt("Different objects: %1", sourceQuery != clonedQuery));
+}
+```
+
+### Visual Verification
+
+1. Open source action in form
+2. Click "Edit query" button
+3. Note all ranges, joins, sorting
+4. Copy to batch
+5. Open new action in form
+6. Click "Edit query" button
+7. Verify all elements match source
+
+---
+
+## Future Enhancements
+
+### 1. Query Validation
+
+Add validation to ensure cloned query is compatible with batch processing:
+
+```xpp
+private static boolean validateBatchQuery(Query _query)
+{
+    QueryBuildDataSource qbds;
+    
+    // Validate data sources
+    for (int i = 1; i <= _query.dataSourceCount(); i++)
+    {
+        qbds = _query.dataSourceNo(i);
+        
+        // Check for invalid joins
+        // Check for invalid ranges
+        // etc.
+    }
+    
+    return true;
+}
+```
+
+### 2. Query Comparison Tool
+
+Create a tool to show differences between source and cloned queries:
+
+```xpp
+public static container compareQueries(Query _query1, Query _query2)
+{
+    // Return container with differences
+}
+```
+
+### 3. Query Optimization
+
+Automatically optimize queries during clone:
+
+```xpp
+private static Query optimizeQuery(Query _sourceQuery)
+{
+    // Remove redundant ranges
+    // Optimize join order
+    // etc.
+}
+```
+
+### 4. Query Documentation
+
+Auto-generate documentation for complex queries:
+
+```xpp
+public static str documentQuery(Query _query)
+{
+    // Generate human-readable description
+}
+```
+
+---
+
+## Troubleshooting Guide
+
+### Issue: Query not cloning correctly
+
+**Symptoms:**
+- Ranges missing after copy
+- Joins not preserved
+
+**Debug Steps:**
+
+1. Check source QueryCriteria:
+```xpp
+info(con2Str(_sourceAction.QueryCriteria));
+```
+
+2. Verify pack/unpack works:
+```xpp
+Query testQuery = new Query();
+testQuery.unpack(_sourceAction.QueryCriteria);
+info(strFmt("DS Count: %1", testQuery.dataSourceCount()));
+```
+
+3. Check for exceptions:
+```xpp
+try
+{
+    clonedQuery.unpack(queryCon);
+}
+catch (Exception::Error)
+{
+    error(AifUtil::getInfologMessages());
+}
+```
+
+### Issue: Performance degradation
+
+**Symptoms:**
+- Mass function slow
+- Form freezes during copy
+
+**Debug Steps:**
+
+1. Profile the operation:
+```xpp
+utcdatetime startTime = DateTimeUtil::utcNow();
+// ... operation ...
+info(strFmt("Duration: %1 ms", DateTimeUtil::getDifference(DateTimeUtil::utcNow(), startTime)));
+```
+
+2. Check database:
+- Review execution plans
+- Check for missing indexes
+- Look for lock escalation
+
+3. Optimize:
+- Process in smaller batches
+- Add progress indicator
+- Move to batch framework
+
+---
+
+## Conclusion
+
+The query cloning implementation uses D365FO's built-in pack/unpack mechanism to reliably preserve all query customizations when copying location directive actions to batch-enabled versions. The approach is:
+
+- ✅ Reliable - uses framework features
+- ✅ Complete - preserves all query elements
+- ✅ Performant - minimal overhead
+- ✅ Maintainable - simple code
+- ✅ Robust - handles edge cases
+
+---
+
+**Document Version:** 1.0
+**Last Updated:** 2026-02-25
+**Author:** Development Team

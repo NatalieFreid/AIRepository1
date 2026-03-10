@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXPALabelAdministratedProcessing</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using System.Collections;
+using Niedax.AzureServiceBus.PALabel;
+using Niedax.AzureServiceBus.Models.PALabel;
+using Niedax.AzureStorage.Blob.PALabel.D365FO;
+/// <summary>
+/// PaffH 18.07.23
+/// Label is administrated in onPrem Bartender table
+/// </summary>
+class NDXPALabelAdministratedProcessing
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>InitFromContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 18.07.23
+    /// </summary>
+    /// <param name = "_contract">NDXPALabelSaved2NDXDatabaseContract</param>
+    protected void InitFromContract(NDXPALabelAdministratedContract _contract)
+    {
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ProcessingManual</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 17.04.24
+    /// </summary>
+    public static void ProcessingManual()
+    {
+        NDXPALabelAdministratedProcessing nDXPALabelAdministratedProcessing = new NDXPALabelAdministratedProcessing();
+        nDXPALabelAdministratedProcessing.Processing();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Processing</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 18.07.23
+    /// modified: 25.10.24
+    /// process return messages (contracts) from queue
+    /// </summary>
+    protected void Processing()
+    {
+        NDXStepCurrent stepCurrent = 3;
+        System.Exception ex;
+        str conStr, queue;
+        Niedax.AzureServiceBus.Models.PALabel.ResponseLabelMaintainedContract responseLabelMaintainedContract;
+        Niedax.AzureServiceBus.Models.PALabel.NDXPALabelMaintainContract nDXPALabelMaintainContract;
+        boolean lHostCheckOK;
+        container conProdId = conNull();
+        List receivedMessagesToSendAgain = new List(Types::Class);
+        List receivedMessagesToProcess = new List(Types::Class);
+        NDXHistoryMessage historyMessage = '';
+        NDXLastChecked lastChecked = DateTimeUtil::utcNow();
+
+        [conStr, queue] = NDXServiceBusQueueReaderAdminPALabel::getConnectionParam();
+        if (!conStr)
+        {
+            NDXHistoryLogProdIdentMaintainContract::construct(stepCurrent).saveAsError("@NDX:NDXConnectionValueError");
+            throw Error("@NDX:NDXConnectionValueError");
+        }
+
+        try
+        {
+            Info(strFmt("@NDXBase:NDXGetAzuresServiceBusMessagesFromQueue", NDXHelperCommon::seconds2Str(), "@NDXBase:NDXStart", queue));
+            ServiceBusMessagingPALabelMaintained serviceBusMessagingPALabelMaintained = new ServiceBusMessagingPALabelMaintained(conStr, NDXProdIdentControlPanelParameters::find().AzureServiceBusQueueNameLabelAdminHandshake);
+            do 
+            {
+                info(strFmt("@NDXBase:NDXGetAzuresServiceBusGet1MessageFromQueue", NDXHelperCommon::seconds2Str()));
+                ServiceBusReceivedMessageValuesServiceBusMessagingPALabelMaintained serviceBusReceivedMessageValuesServiceBusMessagingPALabelMaintained =
+                    serviceBusMessagingPALabelMaintained.Receive1MessageValuesD365FO(true);
+                responseLabelMaintainedContract = serviceBusReceivedMessageValuesServiceBusMessagingPALabelMaintained.Contract;
+                if (responseLabelMaintainedContract == null)
+                {
+                    info(strFmt("@NDXBase:NDXGetAzuresServiceBusQueueNoMessage", NDXHelperCommon::seconds2Str()));
+                    break;
+                }
+                else
+                {
+                    info(strFmt("@NDXBase:NDXGetAzuresServiceBusQueue1Message", NDXHelperCommon::seconds2Str()));
+                }
+
+                nDXPALabelMaintainContract = responseLabelMaintainedContract.NDXPALabelMaintain;
+               
+                // check if received host is the same as the sending host
+                lHostCheckOK = nDXPALabelMaintainContract.HostURL == NDXEnvironmentInformation::construct().parmHostUrl();
+                if (!lHostCheckOK)
+                {
+                    receivedMessagesToSendAgain.addEnd(serviceBusReceivedMessageValuesServiceBusMessagingPALabelMaintained.ServiceBusReceivedMessage);
+                }
+
+                if (lHostCheckOK)
+                {
+                    historyMessage += strFmt(' Host: [%1] queue: [%2]', nDXPALabelMaintainContract.Host, queue);
+                    // populate responseLabelMaintainedContract from blobStorage ?
+                    info(strFmt("@NDXBase:NDXAzureBlobStorageSavedTo", NDXHelperCommon::seconds2Str(), responseLabelMaintainedContract.SavedToBlobStorage));
+                    if (responseLabelMaintainedContract.SavedToBlobStorage)
+                    {
+                        BlobServiceClientPALabelResponseLabelMaintainedD365FO blobClient = BlobServiceClientPALabelResponseLabelMaintainedD365FO::InstanceBlobServiceClient;
+                        blobClient.ConnectionString = NDXKeyVaultHelper::GetKeyVaultSecretValueFromD365FO(NDXProdIdentControlPanelParameters::find().KeyVaultSecretNameConnectionStringOnPremFileStorageD365FO);
+                        blobClient.ContainerName = responseLabelMaintainedContract.ContainerName;
+                        blobClient.BlobFileName = responseLabelMaintainedContract.BlobFileName;
+                        responseLabelMaintainedContract = blobClient.GetContractFromBlob(true);
+                        info(strFmt("@NDXBase:NDXAzureBlobStorageSavedToFile", NDXHelperCommon::seconds2Str(), blobClient.ContainerName, blobClient.BlobFileName));
+                        historyMessage += strFmt(' ResponseLabelMaintainedContract from Blob: Container [%1] FileName [%2]', blobClient.ContainerName, blobClient.BlobFileName);
+                    }
+                    receivedMessagesToProcess.addEnd(responseLabelMaintainedContract);
+                }
+            
+            } while (nDXPALabelMaintainContract != null); 
+            Info(strFmt("@NDXBase:NDXGetAzuresServiceBusMessagesFromQueue", NDXHelperCommon::seconds2Str(), "@NDXBase:NDXEnd", queue));
+
+            // populate messages from other hosts back to service bus
+            ListEnumerator enumreceivedMessagesToSendAgain = receivedMessagesToSendAgain.getEnumerator();
+            while (enumreceivedMessagesToSendAgain.moveNext())
+            {
+                Azure.Messaging.ServiceBus.ServiceBusReceivedMessage serviceBusReceivedMessage = enumreceivedMessagesToSendAgain.current();
+                serviceBusMessagingPALabelMaintained.SendReceivedMessageToQueue(serviceBusReceivedMessage, queue);
+            }
+
+            // process messages
+            ListEnumerator enumReceivedMessagesToProcess = receivedMessagesToProcess.getEnumerator();
+            while (enumReceivedMessagesToProcess.moveNext())
+            {
+                responseLabelMaintainedContract = enumReceivedMessagesToProcess.current();
+
+                int counterElements = NDXPALabelAdministratedProcessing::fillNDXProdIdentControlPanelOnPremFromResponseLabelMaintainedContract(responseLabelMaintainedContract, lastChecked);
+
+                historyMessage += ' ' + strFmt("@NDXBase:NDXNewRecordsInTable", counterElements, tableId2PName(tableNum(NDXProdIdentControlPanelOnPrem)));
+                info(strFmt("@NDXBase:NDXNewRecordsInTable", counterElements, tableId2PName(tableNum(NDXProdIdentControlPanelOnPrem))));
+
+                // save to history log
+                NDXHistoryLogProdIdentMaintainContract::construct(stepCurrent).saveAsSuccess(historyMessage);
+            }
+        }
+        catch (ex)
+        {
+            // save to history log
+            NDXHistoryLogProdIdentMaintainContract::construct(stepCurrent).saveAsError(ex.Message);
+
+            error(strFmt("@NDX:NDXErrorMessage", ex.message));
+        }
+        info( conLen(conProdId) > 0 ? strFmt("@NDX:NDXConfirmationGenForProdOrder", conLen(conProdId), con2Str(conProdId, ', ')) : "@NDX:NDXNoConfirmations");
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>maintainFromResponseLabelMaintainedContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 13.11.24
+    /// </summary>
+    /// <param name = "responseLabelMaintainedContract"></param>
+    /// <param name = "lastChecked">NDXLastChecked</param>
+    /// <returns>counter</returns>
+    public static counter maintainFromResponseLabelMaintainedContract(Niedax.AzureServiceBus.Models.PALabel.ResponseLabelMaintainedContract responseLabelMaintainedContract, NDXLastChecked lastChecked = DateTimeUtil::utcNow())
+    {
+        IEnumerable tList = responseLabelMaintainedContract.NDXPALabelMaintain.PALabelMaintainDetails;
+        IEnumerator enum = tList.GetEnumerator();
+        Counter counterElements = 0;
+        while (enum.moveNext())
+        {
+            Niedax.AzureServiceBus.Models.PALabel.NDXPALabelMaintainDetailsContract contract = enum.Current;
+
+            if (contract.IsDeleted)
+            {
+                // check BT_Status
+                NDXProdIdentControlPanel nDXProdIdentControlPanel = NDXProdIdentControlPanel::findRecId(contract.ProdIdentControlPanel.RecIdNDXProdIdentControlPanel, true);
+                if (nDXProdIdentControlPanel)
+                {
+                    if (nDXProdIdentControlPanel.BT_Status != NDXProdIdentBTStatus::BTRecordDeleted)
+                    {
+                        ttsbegin;
+                        nDXProdIdentControlPanel.BT_Status = NDXProdIdentBTStatus::BTRecordDeleted;
+                        nDXProdIdentControlPanel.BT_StatusDateTime = contract.ProdIdentControlPanel.BT_StatusDateTime;
+                        nDXProdIdentControlPanel.LastChecked = lastChecked;
+                        nDXProdIdentControlPanel.update();
+                        ttscommit;
+                    }
+                }
+                ++counterElements;
+            }
+        }
+        return counterElements;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillNDXProdIdentControlPanelOnPremFromResponseLabelMaintainedContract</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 07.11.24
+    /// </summary>
+    /// <param name = "responseLabelMaintainedContract">Niedax.AzureServiceBus.Models.PALabel.ResponseLabelMaintainedContract</param>
+    /// <param name = "lastChecked">NDXLastChecked</param>
+    /// <returns>Counter</returns>
+    public static Counter fillNDXProdIdentControlPanelOnPremFromResponseLabelMaintainedContract(Niedax.AzureServiceBus.Models.PALabel.ResponseLabelMaintainedContract responseLabelMaintainedContract, NDXLastChecked lastChecked = DateTimeUtil::utcNow())
+    {
+        NDXProdIdentControlPanel nDXProdIdentControlPanel;
+        // delete existing records in nDXProdIdentControlPanelOnPrem
+        NDXProdIdentControlPanelOnPrem nDXProdIdentControlPanelOnPrem;
+        var sysDaQ = new SysDaQueryObject(nDXProdIdentControlPanelOnPrem);
+        sysDaQ.projection().add(fieldStr(NDXProdIdentControlPanelOnPrem, RecId));
+        var sysDaDS = new SysDaDeleteStatement();
+        var sysDaDO = new SysDaDeleteObject(sysDaQ);
+        sysDaDS.delete(sysDaDO);
+
+        // fill nDXProdIdentControlPanelOnPrem
+        RecordInsertList recordList = new RecordInsertList(tableNum(NDXProdIdentControlPanelOnPrem));
+        IEnumerable tList = responseLabelMaintainedContract.ProdIdentControlPanelLines;
+        IEnumerator enum = tList.GetEnumerator();
+        Counter counterElements = 0;
+        while (enum.moveNext())
+        {
+            Niedax.AzureServiceBus.Models.PALabel.NDXProdIdentControlPanelContract nDXProdIdentControlPanelContract = enum.Current;
+            nDXProdIdentControlPanelOnPrem = NDXProdIdentControlPanelOnPrem::FillFromContract(nDXProdIdentControlPanelContract);
+            recordList.add(nDXProdIdentControlPanelOnPrem);
+
+            // check BT_Status
+            nDXProdIdentControlPanel = NDXProdIdentControlPanel::findBT_RecordId(nDXProdIdentControlPanelOnPrem.BT_RecordId, true);
+            if (nDXProdIdentControlPanel)
+            {
+                if (nDXProdIdentControlPanel.BT_Status != NDXProdIdentBTStatus::BTRecordInserted)
+                {
+                    ttsbegin;
+                    nDXProdIdentControlPanel.BT_Status = NDXProdIdentBTStatus::BTRecordInserted;
+                    nDXProdIdentControlPanel.BT_StatusDateTime = nDXProdIdentControlPanelOnPrem.NDXCreatedDateTime;
+                    nDXProdIdentControlPanel.LastChecked = lastChecked;
+                    nDXProdIdentControlPanel.update();
+                    ttscommit;
+                }
+            }
+            ++counterElements;
+        }
+        ttsbegin;
+        recordList.insertDatabase();
+        ttscommit;
+
+        ttsbegin;
+        while select forupdate nDXProdIdentControlPanel 
+            where nDXProdIdentControlPanel.LastChecked != lastChecked
+            && !(nDXProdIdentControlPanel.BT_Status == NDXProdIdentBTStatus::BTRecordDeleted 
+            || nDXProdIdentControlPanel.BT_Status == NDXProdIdentBTStatus::BTRecordNotFound)
+        {
+            nDXProdIdentControlPanel.BT_Status = NDXProdIdentBTStatus::BTRecordNotFound;
+            if (!nDXProdIdentControlPanel.LastChecked)
+            {
+                nDXProdIdentControlPanel.LastChecked = lastChecked;
+            }
+            nDXProdIdentControlPanel.update();
+        }
+        ttscommit;
+
+        return counterElements;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Validate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.04.22
+    /// </summary>
+    /// <returns>boolean</returns>
+    public boolean Validate()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.04.22
+    /// </summary>
+    /// <param name = "_contract">NDXPALabelSaved2NDXDatabaseContract</param>
+    public void Run(NDXPALabelAdministratedContract _contract)
+    {
+        if (!_contract.validate())
+        {
+            return;
+        }
+        this.InitFromContract(_contract);
+        if (!this.Validate())
+        {
+            return;
+        }
+        this.Processing();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

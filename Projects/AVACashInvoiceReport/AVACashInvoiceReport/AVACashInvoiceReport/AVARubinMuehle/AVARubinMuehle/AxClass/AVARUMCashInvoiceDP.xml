@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVARUMCashInvoiceDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Data Provider class for AVARUMCashInvoice report
+/// </summary>
+[
+    SRSReportParameterAttribute(classstr(AVARUMCashInvoiceContract))
+]
+public class AVARUMCashInvoiceDP extends SRSReportDataProviderBase
+{
+    AVARUMCashInvoiceTmpHeader tmpHeader;
+    AVARUMCashInvoiceTmpLines tmpLines;
+    AVARUMCashVoucher cashVoucher;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Main method to process the report and populate temp tables
+    /// </summary>
+    public void processReport()
+    {
+        AVARUMCashInvoiceContract contract;
+        AVARUMCashSalesCashVoucher cashSalesVoucher;
+        SalesLine salesLine;
+        InventTable inventTable;
+        
+        contract = this.parmDataContract() as AVARUMCashInvoiceContract;
+        cashVoucher = contract.parmAVARUMCashVoucher();
+        
+        this.populateHeaderData();
+        this.populateLinesData();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateHeaderData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Populates header temp table with cash voucher and company information
+    /// </summary>
+    private void populateHeaderData()
+    {
+        AVARUMCashSalesCashVoucher cashSalesVoucher;
+        CompanyInfo companyInfo;
+        DirPartyTable dirPartyTable;
+        LogisticsPostalAddress postalAddress;
+        LogisticsElectronicAddress electronicAddress;
+        LogisticsLocation logisticsLocation;
+        
+        // Find cash voucher record
+        select firstonly cashSalesVoucher
+            where cashSalesVoucher.CashVoucher == cashVoucher;
+        
+        if (!cashSalesVoucher.RecId)
+        {
+            throw error(strFmt("@SYS19306", cashVoucher));
+        }
+        
+        // Get company information
+        companyInfo = CompanyInfo::find();
+        dirPartyTable = DirPartyTable::findByPartyRecId(companyInfo.RecId);
+        
+        // Get primary postal address
+        logisticsLocation = LogisticsLocation::findDefault(
+            dirPartyTable.RecId,
+            LogisticsLocationRoleType::Business
+        );
+        
+        if (logisticsLocation.RecId)
+        {
+            postalAddress = LogisticsPostalAddress::findByLocation(logisticsLocation.RecId);
+        }
+        
+        // Get phone number
+        electronicAddress = LogisticsElectronicAddress::findByLocation(
+            logisticsLocation.RecId,
+            LogisticsElectronicAddressMethodType::Phone,
+            true
+        );
+        
+        // Populate temp header table
+        tmpHeader.clear();
+        tmpHeader.CashVoucher = cashSalesVoucher.CashVoucher;
+        tmpHeader.GrossAmount = cashSalesVoucher.GrossAmount;
+        tmpHeader.NetAmount = cashSalesVoucher.NetAmount;
+        tmpHeader.AmountMST = cashSalesVoucher.AmountMST;
+        tmpHeader.AmountGiven = cashSalesVoucher.AmountGiven;
+        tmpHeader.AmountBack = cashSalesVoucher.AmountBack;
+        tmpHeader.CashSalesDeskId = cashSalesVoucher.CashSalesDeskId;
+        
+        // Company information
+        tmpHeader.CompanyName = companyInfo.Name;
+        tmpHeader.CompanyStreet = postalAddress.Street;
+        tmpHeader.CompanyZipCode = postalAddress.ZipCode;
+        tmpHeader.CompanyPhone = electronicAddress.Locator;
+        tmpHeader.CompanyTaxNo = companyInfo.TaxRegistrationNumber() ? 
+                                 companyInfo.TaxRegistrationNumber() : 
+                                 companyInfo.CoRegNum;
+        
+        tmpHeader.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateLinesData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Populates lines temp table with sales line information
+    /// </summary>
+    private void populateLinesData()
+    {
+        SalesLine salesLine;
+        InventTable inventTable;
+        EcoResProduct product;
+        EcoResProductTranslation productTranslation;
+        
+        // Query sales lines with matching cash voucher
+        while select salesLine
+            where salesLine.AVARUMCashVoucher == cashVoucher
+            join inventTable
+                where inventTable.ItemId == salesLine.ItemId
+            outer join product
+                where product.RecId == inventTable.Product
+            outer join productTranslation
+                where productTranslation.Product == product.RecId
+                   && productTranslation.LanguageId == SystemParameters::getSystemLanguageId()
+        {
+            tmpLines.clear();
+            tmpLines.AVARUMCashVoucher = salesLine.AVARUMCashVoucher;
+            tmpLines.SalesQty = salesLine.SalesQty;
+            tmpLines.SalesUnit = salesLine.SalesUnit;
+            tmpLines.Item = salesLine.ItemId;
+            tmpLines.ItemName = productTranslation.Name ? 
+                                productTranslation.Name : 
+                                inventTable.itemName();
+            tmpLines.LineAmount = salesLine.LineAmount;
+            tmpLines.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHeaderData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns header temp table
+    /// </summary>
+    /// <returns>Header temp table</returns>
+    [
+        SRSReportDataSetAttribute(tablestr(AVARUMCashInvoiceTmpHeader))
+    ]
+    public AVARUMCashInvoiceTmpHeader getHeaderData()
+    {
+        select tmpHeader;
+        return tmpHeader;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getLinesData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns lines temp table
+    /// </summary>
+    /// <returns>Lines temp table</returns>
+    [
+        SRSReportDataSetAttribute(tablestr(AVARUMCashInvoiceTmpLines))
+    ]
+    public AVARUMCashInvoiceTmpLines getLinesData()
+    {
+        select tmpLines;
+        return tmpLines;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesInvoiceDPCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Extension of salesInvoiceDP Class
+/// </summary>
+[ExtensionOf(classStr(SalesInvoiceDP))]
+final class AVASalesInvoiceDPCls_Extension
+{
+    public FormLetterRemarks avaFormLetterRemarks_YieldReduction;
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Extension of class init method
+    /// </summary>
+    /// <param name = "_custInvoiceJour">CustInvoiceJour</param>
+    protected void init(CustInvoiceJour _custInvoiceJour)
+    {
+        next init(_custInvoiceJour);
+
+        avaFormLetterRemarks_YieldReduction = FormLetterRemarks::find(_custInvoiceJour.salesTable().LanguageId, FormTextType::AVASalesOrder_YieldReduction);
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateSalesInvoiceHeaderFooterTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Populates the invoice header information into the <c>SalesInvoiceHeaderFooterTmp</c> table buffer.
+    /// </summary>
+    /// <param name="_custInvoiceJour">
+    /// The <c>CustInvoiceJour</c> record that has the invoice header information.
+    /// </param>
+    /// <param name="_companyInfo">
+    /// The <c>CompanyInfo</c> record that has the company information.
+    /// </param>
+    /// <remarks>
+    /// This method will insert the invoice header information into the <c>SalesInvoiceHeaderFooterTmp</c>
+    /// table which is only used for Eastern European countries and other countries that need customization
+    /// from the SYS layer functionality.
+    /// </remarks>
+    protected void populateSalesInvoiceHeaderFooterTmp(CustInvoiceJour _custInvoiceJour, CompanyInfo _companyInfo)
+    {
+        HcmWorker avaWorkerSalesTaker;
+        str avaHVLS = 'HV-LS';              // Req9022 - Check against SalesOriginId
+        str avaHVLSA = 'HV-LS-A';           // Req9022 - Check against SalesOriginId
+        CustInvoiceTrans avaFirstTrans  = _custInvoiceJour.avaFirstTransLine();
+        CustPackingSlipJour avaCustJour;
+
+        if(avaFirstTrans.packingSlipId(avaFirstTrans) != '*')
+        {
+            CustPackingSlipTrans avaPackingSlipTrans;
+
+            select firstonly avaPackingSlipTrans
+                        where avaPackingSlipTrans.InvoiceTransRefRecId == avaFirstTrans.RecId;
+
+            avaCustJour = avaPackingSlipTrans.custPackingSlipJour();
+        }
+        
+
+        if(_custInvoiceJour.creditNote())
+        {
+            avaWorkerSalesTaker = HcmWorker::find(_custInvoiceJour.KCS_CreditNoteResponsible);
+            salesInvoiceHeaderFooterTmp.AVAWSTType = AVAWSTType::CreditNoteResponsible;
+        }
+        else if(_custInvoiceJour.AVASQClerk)
+        {
+            avaWorkerSalesTaker = HcmWorker::find(_custInvoiceJour.AVASQClerk);
+            salesInvoiceHeaderFooterTmp.AVAWSTType = AVAWSTType::SQClerk;
+        }                                                                
+        else
+        {
+            avaWorkerSalesTaker = HcmWorker::find(_custInvoiceJour.AVADlvResponsible);
+            salesInvoiceHeaderFooterTmp.AVAWSTType = AVAWSTType::DeliveryResponsible;
+        }
+
+        next populateSalesInvoiceHeaderFooterTmp(_custInvoiceJour, _companyInfo);
+
+        if(_custInvoiceJour.InvoiceAccount != _custInvoiceJour.OrderAccount)
+        {
+            CustTable avaCustTable = _custInvoiceJour.custTable_OrderAccount();
+
+            salesInvoiceHeaderFooterTmp.AVABuyerName                        = avaCustTable.avaName();
+            salesInvoiceHeaderFooterTmp.AVABuyerAddress                     = avaCustTable.address();
+        }
+
+        salesInvoiceHeaderFooterTmp.AVAProForma                             = _custInvoiceJour.Proforma;
+        salesInvoiceHeaderFooterTmp.AVADeliveryName                         = _custInvoiceJour.DeliveryName;
+        salesInvoiceHeaderFooterTmp.AVADeliveryAddress                      = _custInvoiceJour.deliveryAddress();
+        salesInvoiceHeaderFooterTmp.AVACashDiscTxt                          = CashDisc::txt(_custInvoiceJour.CashDiscCode, _custInvoiceJour.LanguageId);
+        salesInvoiceHeaderFooterTmp.AVADlvMode                              = _custInvoiceJour.DlvMode;
+        salesInvoiceHeaderFooterTmp.AVADlvTerm                              = _custInvoiceJour.DlvTerm;
+        salesInvoiceHeaderFooterTmp.AVAEmailRecipient                       = _custInvoiceJour.AVAEmailInvoice;
+        salesInvoiceLocalizationTmp.AVAFormLetterRemarksTxt_YieldReduction  = avaFormLetterRemarks_YieldReduction.Txt;
+        salesInvoiceHeaderFooterTmp.AVAOrderAccount                         = _custInvoiceJour.OrderAccount;
+        salesInvoiceHeaderFooterTmp.AVASalesGroup                           = _custInvoiceJour.AVASalesGroup;
+        salesInvoiceHeaderFooterTmp.AVAValutaExtensionDays                  = _custInvoiceJour.AVAValutaExtensionDays;
+        salesInvoiceHeaderFooterTmp.AVAPreferenceOutput                     = _custInvoiceJour.AVAPreferenceOutput;
+        
+        salesInvoiceHeaderFooterTmp.AVAWSTName                              = avaWorkerSalesTaker.avaPersonName();
+        salesInvoiceHeaderFooterTmp.AVAWSTMail                              = avaWorkerSalesTaker.email();
+        salesInvoiceHeaderFooterTmp.AVAWSTPhone                             = avaWorkerSalesTaker.phone() + ' ' + avaWorkerSalesTaker.phoneLocal();
+
+        if(_custInvoiceJour.SalesOriginId == avaHVLS
+            || _custInvoiceJour.SalesOriginId == avaHVLSA)
+        {
+            salesInvoiceHeaderFooterTmp.AVARepPckSlipNum                    = _custInvoiceJour.AVARepPckSlipNum;
+            salesInvoiceHeaderFooterTmp.AVARepPckSlipDate                   = _custInvoiceJour.AVARepPckSlipDate;
+        }
+
+        if(avaCustJour.PrintMgmtSiteId != '')
+        {    
+            LogisticsPostalAddress avaPostalAddress = InventSite::find(avaCustJour.PrintMgmtSiteId).logisticsPostalAddress();
+
+            salesInvoiceHeaderFooterTmp.AVAInventSiteSender = avaPostalAddress.avaName() + '\n' + avaPostalAddress.Address;
+        }
+        else if(avaCustJour.AVAInventSiteId != '')
+        {
+            LogisticsPostalAddress avaPostalAddress = InventSite::find(avaCustJour.AVAInventSiteId).logisticsPostalAddress();
+
+            salesInvoiceHeaderFooterTmp.AVAInventSiteSender = avaPostalAddress.avaName() + '\n' + avaPostalAddress.Address;
+        }
+        else if(avaFirstTrans.inventSiteId())
+        {
+            LogisticsPostalAddress avaPostalAddress = InventSite::find(avaFirstTrans.inventSiteId()).logisticsPostalAddress();
+
+            salesInvoiceHeaderFooterTmp.AVAInventSiteSender = avaPostalAddress.avaName() + '\n' + avaPostalAddress.Address;
+        }
+
+        if(_custInvoiceJour.CustomerRef != '')
+        {
+            salesInvoiceHeaderFooterTmp.AVAPurchaseOrder = strFmt("@NDX:NXAVar1FromVar2CommaVar3", _custInvoiceJour.PurchaseOrder, _custInvoiceJour.KCS_PurchRefDate, _custInvoiceJour.CustomerRef);
+        }
+        else
+        {
+            salesInvoiceHeaderFooterTmp.AVAPurchaseOrder = strFmt("@NDX:NXAVar1FromVar2", _custInvoiceJour.PurchaseOrder, _custInvoiceJour.KCS_PurchRefDate);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateSalesInvoiceTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Populates the invoice detail information into the <c>SalesInvoiceTmp</c> table buffer.
+    /// </summary>
+    /// <param name="_custInvoiceJour">
+    /// The <c>CustInvoiceJour</c> record that has the invoice header information.
+    /// </param>
+    /// <param name="_custInvoiceTrans">
+    /// The <c>CustInvoiceTrans</c> record that has the invoice details information.
+    /// </param>
+    /// <param name="_taxSpec">
+    /// The <c>TaxSpec</c> class instance that has the taxes information.
+    /// </param>
+    /// <param name="_custPaymSchedLine">
+    /// The <c>CustPaymSchedLine</c> record that has the payment schedules information.
+    /// </param>
+    /// <param name="_prepaymentCustTrans">
+    /// The <c>CustTrans</c> record that has the prepayment information.
+    /// </param>
+    /// <param name="_prepaymentTaxTrans">
+    /// The <c>TaxTrans</c> record that has the prepayment taxes information.
+    /// </param>
+    protected void populateSalesInvoiceTmp(CustInvoiceJour _custInvoiceJour,
+        CustInvoiceTrans _custInvoiceTrans,
+        TaxSpec _taxSpec,
+        CustPaymSchedLine _custPaymSchedLine,
+        CustTrans _prepaymentCustTrans,
+        TaxTrans _prepaymentTaxTrans)
+    {
+        next populateSalesInvoiceTmp(_custInvoiceJour, _custInvoiceTrans, _taxSpec, _custPaymSchedLine, _prepaymentCustTrans, _prepaymentTaxTrans);
+
+        salesInvoiceTmp.AVAFormLetterRemarksTxt_YieldReduction  = avaFormLetterRemarks_YieldReduction.Txt;
+        salesInvoiceTmp.AVALineNum                              = _custInvoiceTrans.LineNum;
+        salesInvoiceTmp.AVAInventTransId                        = _custInvoiceTrans.InventTransId;
+        salesInvoiceTmp.AVAQuotationId                          = _custInvoiceTrans.AVAQuotationId;
+        salesInvoiceTmp.AVAPriceUnit                            = _custInvoiceTrans.PriceUnit;
+        salesInvoiceTmp.AVACustInvoiceTransRefRecId             = _custInvoiceTrans.RecId;
+        salesInvoiceTmp.AVAPreferenceAuthorized                 = _custInvoiceTrans.AVAPreferenceAuthorized;
+
+        salesInvoiceTmp.AVAItemSetComponent                     = _custInvoiceTrans.AVAItemSetComponent;
+        salesInvoiceTmp.AVAItemSetLineAmount                    = _custInvoiceTrans.AVAItemSetLineAmount;
+
+        if(_custInvoiceTrans.AVAItemSet)
+        {
+            salesInvoiceTmp.LineAmount = _custInvoiceTrans.AVAItemSetLineAmount;
+        }
+        
+        if(_custInvoiceJour.AVADlvReason
+            || LogisticsPostalAddress::findRecId(_custInvoiceJour.DeliveryPostalAddress).CountryRegionId != CompanyInfo::find().postalAddress().CountryRegionId)
+        {
+            salesInvoiceTmp.AVAOrigCountryName                  = _custInvoiceTrans.inventTable().OrigCountryRegionId;
+            salesInvoiceTmp.AVAIntrastatCommodity               = EcoResCategory::find(_custInvoiceTrans.IntrastatCommodity).Code;
+        }
+
+        salesInvoiceTmp.AVAHeaderNotes_Bottom                   = avaCachedHeaderNotes_Bottom;
+        salesInvoiceTmp.AVAHeaderNotes_Top                      = avaCachedHeaderNotes_Top;
+        salesInvoiceTmp.AVANotes_Bottom                         = this.avaGetDocumentNote(_custInvoiceTrans, custFormLetterDocument, AVATCVNotePosition::Bottom);
+        salesInvoiceTmp.AVANotes_Top                            = this.avaGetDocumentNote(_custInvoiceTrans, custFormLetterDocument, AVATCVNotePosition::Top);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

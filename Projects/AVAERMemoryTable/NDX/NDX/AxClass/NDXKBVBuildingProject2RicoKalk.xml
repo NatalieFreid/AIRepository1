@@ -1,0 +1,2229 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXKBVBuildingProject2RicoKalk</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using System.Collections;
+using System.Net.Http;
+using System.Data;
+using Niedax.AzureRelayHelper.RicoKalk;
+using Niedax.AzureServiceBus.Models.RicoKalk;
+
+using Niedax.AzureServiceBus.Models.RicoKalk.Relay;
+using Niedax.AzureSecurityHelper.KeyVault.RicoKalk;
+using Niedax.AdoNS.RicoKalk;
+using Niedax.General;
+using Niedax.General.Sql;
+
+
+/// <summary>
+/// PaffH 22.12.23
+/// </summary>
+public class NDXKBVBuildingProject2RicoKalk
+{
+    NDXRicoKalk2KBVBuildingProjectContract nDXRicoKalk2KBVBuildingProjectContract;
+    KCS_KBVBuildingProjectTable kBV_BuildingProjectTable;
+    NDX_KBV2RicoKalkMap nDX_KBV2RicoKalkMap;
+    NDX_KBV2RicoProtTable nDX_KBV2RicoProtTable;
+    NDX_KBV2RicoProtLine nDX_KBV2RicoProtLine;
+
+    DataAreaId masterCompany;
+    KCS_KBVRelationID kBVRelationIdPlaner;
+    boolean lDoRicoKalkPublicate;
+    boolean lTestEnvironment;
+    boolean lInfoRicoKalkSyncInit;
+    boolean lInfoRicoKalkSync;          // Informationsanzeige beim sync. mit RicoKalk
+    container conRicoUK = conNull();
+    NDXRicoKalkDatabase ricoKalkDatabase;
+    NDXKBVBuildingProject2RicoKalkProt oProtInfo;
+    int nrIstAnfrage;   // aktuelle / neue Anfrage-Nr. aus RicoKalk
+    NDXRicoKalkBVNr bvNrRicoKalk;
+    FormRun callerForm;
+    boolean lRicoRequest;       // Rico-Anfrage im aktuellen BV?
+    boolean lIsInBatch;
+
+    boolean mocking = true;
+    ADORicoKalk ado;
+    NDXRicoKalkADO  nDXRicoKalkADO;
+    KeyVaultGetSecretRelayBVRico keyVaultGetSecretRelay;
+    NDXUserIdRico userIdRico;
+    TimeOfDay startPublicateSeconds;
+    boolean lRicoSyncRequiered;         // ist eine Synchronisierung mit Rico erforderlich?
+    NDXMailerRicoKalk oErrorMail;
+   
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>Name</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 06.02.25
+    /// </summary>
+    /// <returns>classname</returns>
+    public str Name()
+    {
+        return classId2Name(classIdGet(this));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCallerForm</Name>
+				<Source><![CDATA[
+    public FormRun parmCallerForm()
+    {
+        return callerForm;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 22.12.23
+    /// </summary>
+    /// <param name = "args">Args</param>
+    protected void new(Args args = null)
+    {
+        lIsInBatch = true;
+        oErrorMail = NDXMailerRicoKalk::construct(true, lIsInBatch);
+        KCS_KBVParameters kCS_KBVParameters = KCS_KBVParameters::find();
+        masterCompany = kCS_KBVParameters.KCS_DataAreaName;
+        kBVRelationIdPlaner = kCS_KBVParameters.KCS_KBVRelationID1;
+        lDoRicoKalkPublicate = kCS_KBVParameters.NDXKBVPublicate2RicoKalk == NoYes::Yes;
+        lTestEnvironment = kCS_KBVParameters.NDXTestEnvironment == NoYes::Yes;
+
+        conRicoUK += kCS_KBVParameters.AVADataAreaIdRICO;
+
+        ricoKalkDatabase = lTestEnvironment ? NDXRicoKalkConstants::DataBaseTest : NDXRicoKalkConstants::DataBaseLive;
+        if(lDoRicoKalkPublicate == true)
+        {
+            oProtInfo = NDXKBVBuildingProject2RicoKalkProt::construct();
+            this.initializeADO();
+        }
+
+        if (args)
+        {
+            if (!(args.object() is NDXRicoKalk2KBVBuildingProjectContract))
+            {
+                throw new System.Exception(Error::wrongUseOfFunction(funcName()));
+            }
+            nDXRicoKalk2KBVBuildingProjectContract = args.object() as NDXRicoKalk2KBVBuildingProjectContract;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmStartPublicateSeconds</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.01.24
+    /// </summary>
+    /// <param name = "_timeOfDay">TimeOfDay</param>
+    /// <returns>TimeOfDay</returns>
+    public TimeOfDay parmStartPublicateSeconds(TimeOfDay _timeOfDay = startPublicateSeconds)
+    {
+        TimeOfDay timeOfDayLoc = _timeOfDay;
+        if (prmIsDefault(_timeOfDay) && !startPublicateSeconds)
+        {
+            timeOfDayLoc = NDXHelperCommon::timeNow();
+        }
+        startPublicateSeconds = timeOfDayLoc;
+        return startPublicateSeconds;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmlRicoSyncRequiered</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 12.02.24
+    /// </summary>
+    /// <param name = "_lRicoSyncRequiered">boolean</param>
+    /// <returns>boolean</returns>
+    boolean parmlRicoSyncRequiered(boolean _lRicoSyncRequiered = lRicoSyncRequiered)
+    {
+        lRicoSyncRequiered  = _lRicoSyncRequiered;
+        return lRicoSyncRequiered;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.12.23
+    /// </summary>
+    /// <param name = "args">Args</param>
+    /// <returns>NDXKBVBuildingProject2RicoKalk</returns>
+    static NDXKBVBuildingProject2RicoKalk construct(Args args = null)
+    {
+        return new NDXKBVBuildingProject2RicoKalk(args);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.12.23
+    /// </summary>
+    /// <param name = "_args">Args</param>
+    static void main(Args _args)
+    {
+        NDXKBVBuildingProject2RicoKalk::publicate2RicoKalkAsync(_args);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkRicoKalkPublicate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 09.02.24
+    /// last modified: PaffH 16.12.24
+    /// </summary>
+    /// <param name = "_kCS_KBVBuildingProjectTable">KCS_KBVBuildingProjectTable</param>
+    void checkRicoKalkPublicate(KCS_KBVBuildingProjectTable _kCS_KBVBuildingProjectTable)
+    {
+        if (this.parmLRicoRequest() || this.parmlRicoSyncRequiered())   // building project with Rico-request
+        {
+            // additional check: there must be at least 1 Rico request for publication
+            KCS_KBVRequestTable kCS_KBVRequestTableLocal;
+            select firstonly crosscompany:conRicoUk RecId from kCS_KBVRequestTableLocal
+                where kCS_KBVRequestTableLocal.KCS_KBVBuildingProjectID == _kCS_KBVBuildingProjectTable.KCS_KBVBuildingProjectID;
+            if (kCS_KBVRequestTableLocal.RecId == 0)
+            {
+                //Error(strFmt("@NDXRicoBV:NDXRicoTransferWithoutRicoRequest", _kCS_KBVBuildingProjectTable.KCS_KBVBuildingProjectID));
+                this.parmLRicoRequest(false);
+                this.parmlRicoSyncRequiered(false);
+                return;
+            }
+            boolean lDoPublicate = !this.parmLInfoRicoKalkSync() ||
+                (Box::yesNo(strFmt("@NDXRicoBV:NDXAdjustBVInformationWithRicoKalk", _kCS_KBVBuildingProjectTable.KCS_KBVBuildingProjectID), DialogButton::Yes) == DialogButton::Yes);
+            // PaffH 23.07.24 leave Record - event is fired twice!
+            this.parmLRicoRequest(false);
+            this.parmlRicoSyncRequiered(false);
+            if (lDoPublicate)
+            {
+                MenuFunction menuFunction = new MenuFunction(menuItemActionStr(NDXKBVBuildingProject2RicoKalk), MenuItemType::Action);
+                if (menuFunction && menuFunction.checkAccessRights())
+                {
+                    Args args = new Args();
+                    args.record(_kCS_KBVBuildingProjectTable);
+                    menuFunction.run(args);
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmLRicoRequest</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 09.02.24
+    /// </summary>
+    /// <param name = "_lRicoRequest">boolean</param>
+    /// <returns>lRicoRequest</returns>
+    public boolean parmLRicoRequest(boolean _lRicoRequest = lRicoRequest)
+    {
+        lRicoRequest = _lRicoRequest;
+        return lRicoRequest;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>doRicoKalkPublicate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 09.02.24
+    /// </summary>
+    /// <param name = "_kCS_KBVBuildingProjectID">_kCS_KBVBuildingProjectID</param>
+    /// <returns>container</returns>
+    public container doRicoKalkPublicate(KCS_KBVBuildingProjectID _kCS_KBVBuildingProjectID)
+    {
+        boolean lDoRicoKalkPublicateUK = lDoRicoKalkPublicate;
+        if (lDoRicoKalkPublicateUK)
+        {
+            KCS_KBVRequestTable kCS_KBVRequestTable;
+            select firstonly crosscompany:conRicoUK kCS_KBVRequestTable
+                where kCS_KBVRequestTable.KCS_KBVBuildingProjectID == _kCS_KBVBuildingProjectID;
+            lDoRicoKalkPublicateUK = (kCS_KBVRequestTable != null);
+        }
+        return [lDoRicoKalkPublicateUK, lDoRicoKalkPublicate, conPeek(conRicoUK, 1)];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>publicate2RicoKalkAsync</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 29.01.24
+    /// </summary>
+    /// <param name = "_args">Args</param>
+    /// <returns>container</returns>
+    public static container publicate2RicoKalkAsync(Args _args)
+    {
+        KCS_KBVBuildingProjectTable  kBV_BuildingProjectTable = _args.record();
+        KCS_KBVBuildingProjectID kBVBuildingProjectID = kBV_BuildingProjectTable.KCS_KBVBuildingProjectID;
+        //container conTable = kBV_BuildingProjectTable.buf2con();
+        Global::runAsync(
+            classNum(NDXKBVBuildingProject2RicoKalk),
+            staticMethodStr(NDXKBVBuildingProject2RicoKalk, publicate2RicoKalkFromCon),
+            [kBV_BuildingProjectTable, kBVBuildingProjectID],
+            System.Threading.CancellationToken::None,
+            classNum(NDXKBVBuildingProject2RicoKalk),
+            staticMethodStr(NDXKBVBuildingProject2RicoKalk, publicate2RicoKalkResult)
+            );
+        return (['']);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>publicate2RicoKalkResult</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 29.01.24
+    /// </summary>
+    /// <param name = "_result">AsyncTaskResult</param>
+    public static void publicate2RicoKalkResult(AsyncTaskResult _result)
+    {
+        //container returnValue = _result.getResult();
+        boolean taskSucceed = conPeek(_result.getResult(), 1);
+        boolean lInfoRicoKalkSync = conPeek(_result.getResult(), 2);
+        str infoLogAsStr = NDXHelperCommon::infoStrFromAsyncTaskResult(_result);
+        if (!taskSucceed)
+        {
+            Error(infoLogAsStr);
+        }
+        else if (lInfoRicoKalkSync)
+        {
+            info(infoLogAsStr);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeADO</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.12.23
+    /// modified: 14.11.24
+    /// </summary>
+    protected void initializeADO()
+    {
+        changecompany(conPeek(conRicoUK, 1))
+        {
+            ado = new ADORicoKalk(mocking);
+            keyVaultGetSecretRelay = new KeyVaultGetSecretRelayBVRico();
+            keyVaultGetSecretRelay.KeyVaultValue = NDXKeyVaultHelper::GetKeyVaultSecretValueFromD365FO(KCS_KBVParameters::find().NDXKeyVaultSecretNameConnectionStringAzureRelayD365FO, "@NDXRicoBV:NDXMissingEntryKeyVaultSecretNameRelay");
+            if (keyVaultGetSecretRelay.KeyVaultValue == null)
+            {
+                error("@NDX:NDXErrorInitADOConnectionStringAzureRelay");
+            }
+            else
+            {
+                nDXRicoKalkADO = NDXRicoKalkADO::construct(ado, keyVaultGetSecretRelay, mocking);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmLInfoRicoKalkSync</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.12.23
+    /// modified: PaffH 15.11.24
+    /// AX2009: classes.NDX_KBVBuildingProject2RicoKalk.parmLInfoRicoKalkSync()
+    /// </summary>
+    /// <param name = "_lInfoRicoKalkSync">boolean</param>
+    /// <returns>boolean</returns>
+    boolean parmLInfoRicoKalkSync(boolean _lInfoRicoKalkSync = lInfoRicoKalkSync)
+    {
+        lInfoRicoKalkSync = _lInfoRicoKalkSync;
+        if (prmisdefault(_lInfoRicoKalkSync) && !lInfoRicoKalkSyncInit)
+        {
+            NDXPrivilegeNoRicoKalkTransferInfo privilege = KCS_KBVParameters::find().NDXPrivilegeNoRicoKalkTransferInfo;
+            if (!privilege)
+            {
+                error(strfmt("@NDXBase:NDXFillFieldInTable", tableId2Name(tableNum(KCS_KBVParameters)), fieldstr(KCS_KBVParameters, NDXPrivilegeNoRicoKalkTransferInfo)));
+                const str privilegeDefault = 'NDXRicoKalkTransferWithoutInfo';
+                warning(strFmt("@NDXBase:NDXDefaultValueIsApplied", privilegeDefault));
+                privilege = privilegeDefault;
+            }
+            lInfoRicoKalkSync = xUserInfo::isSysAdmin() || !NDXHelperSecurity::hasUserSecurityPrivilege(privilege);
+            lInfoRicoKalkSyncInit = true;
+        }
+        return lInfoRicoKalkSync;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateKalkBVKopf</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.12.23
+    /// update RicoKalk::KalkBVKopf
+    /// AX2009: classes.NDX_KBVBuildingProject2RicoKalk.updateKalkBVKopf()
+    /// </summary>
+    /// <returns>boolean success</returns>   
+    protected boolean updateKalkBVKopf()
+    {
+        oProtInfo.parmProtID2(NDXRicoKalkConstants::BV_Kopf);
+        if (this.parmLInfoRicoKalkSync())
+        {
+            Info("@NDXRicoBV:NDXTransferBVKopf");
+        }
+        bvNrRicoKalk = nDXRicoKalkADO.selectBVNrFromTblKalkBVKopf(
+            nDX_KBV2RicoKalkMap.RicoKalkBVNr, 
+            false, 
+            strFmt("@NDXRicoBV:NDXRicoKalkBuildingProjectTransfer", nDX_KBV2RicoKalkMap.KBVBuildingProjectID, nDX_KBV2RicoKalkMap.RicoKalkBVNr));
+        if (!bvNrRicoKalk)
+        {
+            // insert new record in RicoKalk.tblKalkBVKopf
+            bvNrRicoKalk = nDXRicoKalkADO.insertKalkBVKopf(nDX_KBV2RicoKalkMap.RicoKalkBVNr, false);
+        }
+
+        // get information from tblKalkBVKopf
+        TblKalkBVKopf tblKalkBVKopf = nDXRicoKalkADO.selectFromTblKalkBVKopf(bvNrRicoKalk, false);
+        if (!tblKalkBVKopf)
+        {
+            throw(Error(strFmt("@NDXRicoBV:NDXDataTransfertoRicoKalkNotSuccessful", bvNrRicoKalk)));
+        }
+
+        char c1 = subStr(kBV_BuildingProjectTable.KCS_KBVSubject, NDXRicoKalkConstants::BezFieldLength, 1);
+        char c2 = subStr(kBV_BuildingProjectTable.KCS_KBVSubject, NDXRicoKalkConstants::BezFieldLength + 1, 1);
+        int lastStringTokenPos = 0;
+        if (c1 != '' && c2 != '' && c1 != ' ' && c2 != ' ')
+        {
+            lastStringTokenPos = strFind(kBV_BuildingProjectTable.KCS_KBVSubject, ' ', NDXRicoKalkConstants::BezFieldLength, -NDXRicoKalkConstants::BezFieldLength);
+        }
+        
+        // Bez1, Bez2
+        NDXRicoBVBezeichnung nDXRicoBVBezeichnung1, nDXRicoBVBezeichnung2;
+        if (lastStringTokenPos > 0)
+        {
+            nDXRicoBVBezeichnung1 = subStr(kBV_BuildingProjectTable.KCS_KBVSubject, 1, lastStringTokenPos);
+            nDXRicoBVBezeichnung2 = subStr(kBV_BuildingProjectTable.KCS_KBVSubject, lastStringTokenPos + 1, strLen(kBV_BuildingProjectTable.KCS_KBVSubject));
+        }
+        else
+        {
+            nDXRicoBVBezeichnung1 = subStr(kBV_BuildingProjectTable.KCS_KBVSubject, 1, NDXRicoKalkConstants::BezFieldLength);
+            nDXRicoBVBezeichnung2 = subStr(kBV_BuildingProjectTable.KCS_KBVSubject, NDXRicoKalkConstants::BezFieldLength + 1, strLen(kBV_BuildingProjectTable.KCS_KBVSubject));
+        }
+        oProtInfo.add(NDXKBVProtDetail::KalkBVKopf_Bez1,
+            tblKalkBVKopf.Bez1, nDXRicoBVBezeichnung1,
+            tblKalkBVKopf.Bez1, nDXRicoBVBezeichnung1, NDXRicoKalkTblKalkBVKopfConstants::Bez1, true);
+        oProtInfo.add(NDXKBVProtDetail::KalkBVKopf_Bez2,
+            tblKalkBVKopf.Bez2, nDXRicoBVBezeichnung2,
+            tblKalkBVKopf.Bez2, nDXRicoBVBezeichnung2, NDXRicoKalkTblKalkBVKopfConstants::Bez2);
+
+        // created by user
+        oProtInfo.add(NDXKBVProtDetail::KalkBVKopf_UserAngelegt,
+            tblKalkBVKopf.UserAngelegt_IDBound, oProtInfo.getMappedRicoKalkUser(kBV_BuildingProjectTable.KCS_KBVCreatedBy),
+            tblKalkBVKopf.UserAngelegt_IDBound, oProtInfo.getMappedRicoKalkUser(kBV_BuildingProjectTable.KCS_KBVCreatedBy), NDXRicoKalkTblKalkBVKopfConstants::UserAngelegt_IDBOUND);
+
+        // country
+        int Land_IdBound = NDX_RicoKalkMapping::getMappedCountryRegionId(kBV_BuildingProjectTable.AddressCountryRegionId, tblKalkBVKopf.Land_IdBound);
+        oProtInfo.add(NDXKBVProtDetail::KalkBVKopf_LandID,
+            tblKalkBVKopf.Land_IdBound, Land_IdBound,
+            int2Str(tblKalkBVKopf.Land_IdBound), int2Str(Land_IdBound), NDXRicoKalkTblKalkBVKopfConstants::Land_IdBound);
+
+        // location
+        int NL_IdBound = 1;
+        oProtInfo.add(NDXKBVProtDetail::KalkBVKopf_Niederlassung,
+            tblKalkBVKopf.NL_IDBOUND, NL_IdBound,
+            int2Str(tblKalkBVKopf.NL_IDBOUND), int2Str(NL_IdBound), NDXRicoKalkTblKalkBVKopfConstants::NL_IDBOUND);
+
+        // 1.LV-Pos
+        if (strLen(kBV_BuildingProjectTable.KCS_KBVTenderFirstPosition) > NDXRicoKalkConstants::LVPOSELength)
+        {
+            warning(strFmt("@NDXRicoBV:NDXFieldContentsInRicoKalkIsTruncated",
+                NDXRicoKalkConstants::LVPOSE,
+                NDXRicoKalkConstants::LVPOSELength,
+                subStr(kBV_BuildingProjectTable.KCS_KBVTenderFirstPosition, NDXRicoKalkConstants::LVPOSELength, strLen(kBV_BuildingProjectTable.KCS_KBVTenderFirstPosition))
+                ));
+        }
+        oProtInfo.add(NDXKBVProtDetail::KalkBVKopf_LVPosFirst,
+            tblKalkBVKopf.LVPOSE, subStr(kBV_BuildingProjectTable.KCS_KBVTenderFirstPosition, 1, NDXRicoKalkConstants::LVPOSELength),
+            tblKalkBVKopf.LVPOSE, subStr(kBV_BuildingProjectTable.KCS_KBVTenderFirstPosition, 1, NDXRicoKalkConstants::LVPOSELength), NDXRicoKalkTblKalkBVKopfConstants::LVPOSE);
+
+        // 1.LV-Pos quantity
+        oProtInfo.add(NDXKBVProtDetail::KalkBVKopf_LVPosFirstMenge,
+            tblKalkBVKopf.MengeLVPosE, kBV_BuildingProjectTable.KCS_KBVTenderFirstPositionQty,
+            num2Str(tblKalkBVKopf.MengeLVPosE, 0, 2, DecimalSeparator::Comma, ThousandSeparator::Dot), 
+            num2Str(kBV_BuildingProjectTable.KCS_KBVTenderFirstPositionQty, 0, 2, DecimalSeparator::Comma, ThousandSeparator::Dot), NDXRicoKalkTblKalkBVKopfConstants::MengeLVPosE);
+
+        // last LV-Pos (don't exists anymore)
+        // last LV-Pos quantity (don't exists anymore)
+
+        // BV-Art
+        int BVArt_IdBound = nDXRicoKalkADO.checkBVKlasse(kBV_BuildingProjectTable.KCS_KBVClassID, false);
+        oProtInfo.add(NDXKBVProtDetail::KalkBVKopf_BVArt,
+            tblKalkBVKopf.BVArt_IdBound, BVArt_IdBound,
+            int2Str(tblKalkBVKopf.BVArt_IdBound), int2Str(BVArt_IdBound), NDXRicoKalkTblKalkBVKopfConstants::BVArt_IdBound);
+
+        // BV-number Niedax
+        oProtInfo.add(NDXKBVProtDetail::KalkBVKopf_BVNr_Niedax,
+            tblKalkBVKopf.BVNR_Niedax, str2Int(kBV_BuildingProjectTable.KCS_KBVBuildingProjectID),
+            int2Str(tblKalkBVKopf.BVNR_Niedax), int2Str(str2Int(kBV_BuildingProjectTable.KCS_KBVBuildingProjectID)), NDXRicoKalkTblKalkBVKopfConstants::BVNR_Niedax);
+
+        // ZIP
+        oProtInfo.add(NDXKBVProtDetail::KalkBVKopf_PLZ,
+            tblKalkBVKopf.PLZ, kBV_BuildingProjectTable.AddressZipCodeId,
+            tblKalkBVKopf.PLZ, kBV_BuildingProjectTable.AddressZipCodeId, NDXRicoKalkTblKalkBVKopfConstants::PLZ);
+
+        // City
+        oProtInfo.add(NDXKBVProtDetail::KalkBVKopf_Ort,
+            tblKalkBVKopf.Ort, kBV_BuildingProjectTable.AddressCity,
+            tblKalkBVKopf.Ort, kBV_BuildingProjectTable.AddressCity, NDXRicoKalkTblKalkBVKopfConstants::Ort);
+
+        // Street
+        oProtInfo.add(NDXKBVProtDetail::KalkBVKopf_Strasse,
+            tblKalkBVKopf.Strasse, kBV_BuildingProjectTable.AddressStreet,
+            tblKalkBVKopf.Strasse, kBV_BuildingProjectTable.AddressStreet, NDXRicoKalkTblKalkBVKopfConstants::Strasse);
+
+        // date created
+        oProtInfo.add(NDXKBVProtDetail::KalkBVKopf_DatumAngelegt,
+            tblKalkBVKopf.DatumAngelegt, kBV_BuildingProjectTable.KCS_KBVCreatedDate,
+            date2Str(tblKalkBVKopf.DatumAngelegt, 123, DateDay::Digits2, DateSeparator::Dot, DateMonth::Digits2, DateSeparator::Dot, DateYear::Digits4), 
+            date2Str(kBV_BuildingProjectTable.KCS_KBVCreatedDate, 123, DateDay::Digits2, DateSeparator::Dot, DateMonth::Digits2, DateSeparator::Dot, DateYear::Digits4), NDXRicoKalkTblKalkBVKopfConstants::DatumAngelegt);
+
+        // date start of work
+        oProtInfo.add(NDXKBVProtDetail::KalkBVKopf_DatumBaubeginn,
+            tblKalkBVKopf.DatumBaubegin, kBV_BuildingProjectTable.KCS_KBVStartOfWork,
+            date2Str(tblKalkBVKopf.DatumBaubegin, 123, DateDay::Digits2, DateSeparator::Dot, DateMonth::Digits2, DateSeparator::Dot, DateYear::Digits4), 
+            date2Str(kBV_BuildingProjectTable.KCS_KBVStartOfWork, 123, DateDay::Digits2, DateSeparator::Dot, DateMonth::Digits2, DateSeparator::Dot, DateYear::Digits4), NDXRicoKalkTblKalkBVKopfConstants::DatumBaubegin);
+
+
+        if (oProtInfo.write(this, ado))
+        {
+            nDXRicoKalkADO.updateFromKalkBVKopf(bvNrRicoKalk, false);
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateRequests</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 11.01.24
+    /// update requests
+    /// </summary>
+    void updateRequests()
+    {
+        if (!bvNrRicoKalk)
+        {
+            Error("@NDXRicoBV:NDXBVNumberRicoKalkUnknown");
+            return;
+        }
+        TblKalkInterressent tblKalkInterressent;
+        TblKalkInteressentenZuord tblKalkInteressentenZuord;
+        boolean lNewAbruf;
+        TblKalkKopf tblKalkKopf;
+        TblKalkKopf tblKalkKopfNew;
+        KCS_KBVRequestTable kCS_KBVRequestTable;
+        NDXRicoInquiryTrackingStatus Verfolg_Status;
+
+        Query q = new Query();
+        q.allowCrossCompany(true);
+        //if (KCS_KBVParameters::find().NDXTestEnvironment == NoYes::Yes && KCS_KBVParameters::find().NDXTestDataArea)
+        //{
+        //    q.addCompanyRange(KCS_KBVParameters::find().NDXTestDataArea);
+        //}
+        //else
+        //{
+        q.addCompanyRange(conPeek(conRicoUK, 1));
+        //}
+        QueryBuildDataSource qbdsKbvRequestTable = q.addDataSource(tableNum(KCS_KBVRequestTable));
+        qbdsKbvRequestTable.addRange(fieldNum(KCS_KBVRequestTable, KCS_KBVBuildingProjectID)).value(queryValue(kBV_BuildingProjectTable.KCS_KBVBuildingProjectID));
+        QueryRun qr = new QueryRun(q);
+        while (qr.next())
+        {   
+            if (qr.changed(tableNum(KCS_KBVRequestTable)))
+            {
+                kCS_KBVRequestTable = qr.get(tableNum(KCS_KBVRequestTable));
+            }
+            oProtInfo.parmProtID2(kCS_KBVRequestTable.KCS_KBVRequestID);
+
+            if (this.parmLInfoRicoKalkSync())
+            {
+                info(strFmt("@NDXRicoBV:NDXRequestAdjustment", NDXHelperCommon::seconds2Str(), kCS_KBVRequestTable.KCS_KBVRequestID));
+            }
+            tblKalkKopfNew = new TblKalkKopf();
+            tblKalkKopfNew.UserAngelegt_IDBound = '';
+
+            // get information from tblKalkKopf
+            tblKalkKopf = nDXRicoKalkADO.selectFromTblKalkKopf(
+                bvNrRicoKalk, 
+                kCS_KBVRequestTable.KCS_KBVRequestID,
+                false,
+                strFmt("@NDXRicoBV:NDXRicoKalkRequestTransfer", nDX_KBV2RicoKalkMap.KBVBuildingProjectID, bvNrRicoKalk, kCS_KBVRequestTable.KCS_KBVRequestID)
+                );
+            lNewAbruf = (tblKalkKopf.Abruf == 0);
+            Verfolg_Status = tblKalkKopf.Verfolg_Status;
+            // AX2009: Verfolg_Datum       = kBV_BuildingProjectTable.KCS_KBVReminderDate ? kBV_BuildingProjectTable.KCS_KBVReminderDate : kCS_KBVRequestTable.KCS_KBVReceiptDate;
+            //         Field kBV_BuildingProjectTable.KCS_KBVReminderDate doesn't exist anymore.
+            tblKalkKopfNew.Verfolg_Datum = kCS_KBVRequestTable.KCS_KBVReceiptDate;
+
+            if (!(tblKalkKopf.BVNr_IDBOUND && tblKalkKopf.KBVRequestID))
+            {
+                // create Inquiry
+                tblKalkKopf = nDXRicoKalkADO.insertKalkKopf(bvNrRicoKalk, kCS_KBVRequestTable, false);
+            }
+
+            if (!tblKalkKopf.AbrufID)
+            {
+                tblKalkKopf = nDXRicoKalkADO.selectFromTblKalkKopf(bvNrRicoKalk, kCS_KBVRequestTable.KCS_KBVRequestID, false);
+            }
+
+            NDXRicoKalkInteressent nDXRicoKalkInteressent = this.updateAnfrager(kCS_KBVRequestTable, false);
+            tblKalkInterressent = nDXRicoKalkADO.selectTblKalkInterressentFromIntId(nDXRicoKalkInteressent.Int_ID, false);
+            if (lNewAbruf)
+            {
+                tblKalkInteressentenZuord = nDXRicoKalkADO.selectFromTblKalkInteressentenZuord(nDXRicoKalkInteressent, false);
+                tblKalkKopfNew.Verfolg_Status = tblKalkInteressentenZuord.AbrufStat;
+            }
+            else
+            {
+                tblKalkKopfNew.Verfolg_Status = tblKalkKopf.Verfolg_Status;
+            }
+            tblKalkKopfNew.AbrufID = tblKalkKopf.AbrufID;
+
+            tblKalkKopfNew.UserAngelegt_IDBound = (lNewAbruf || !tblKalkKopf.UserAngelegt_IDBound) ?
+                NDXRicoKalkTblKalkKopfConstants::UserAngelegt_IDBOUNDVorgabe :
+                tblKalkKopf.UserAngelegt_IDBound;
+
+            tblKalkKopfNew.Preisliste_IDBOUND = (lNewAbruf || !tblKalkKopf.Preisliste_IDBOUND) ?
+                nDXRicoKalkADO.GetRicoPreisListId(nDXRicoKalkInteressent.Int_ID, false) :
+                tblKalkKopf.Preisliste_IDBOUND;
+
+            tblKalkKopfNew.VNr_Idbound = (lNewAbruf || !tblKalkKopf.VNr_Idbound) ?
+                nDXRicoKalkADO.getRicoVnr(nDXRicoKalkInteressent.Int_ID, false) :
+                tblKalkKopf.VNr_Idbound;
+
+            tblKalkKopfNew.MWST_IDBOUND = (lNewAbruf || !tblKalkKopf.MWST_IDBOUND) ?
+                tblKalkInterressent.MWST_IDBOUND :
+                tblKalkKopf.MWST_IDBOUND;
+            
+            tblKalkKopfNew.GrundRabatt = (lNewAbruf || !tblKalkKopf.GrundRabatt) ?
+                tblKalkInterressent.GRRabatt :
+                tblKalkKopf.GrundRabatt;
+
+            tblKalkKopfNew.WKZ_BOUND = (lNewAbruf || !tblKalkKopf.WKZ_BOUND) ?
+                tblKalkInterressent.WKZ_BOUND :
+                tblKalkKopf.WKZ_BOUND;
+            
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_IntAnspr_Id,
+                tblKalkKopf.intAnspr_IDBOUND, nDXRicoKalkInteressent.Ansp_ID,
+                int2Str(tblKalkKopf.intAnspr_IDBOUND), int2Str(nDXRicoKalkInteressent.Ansp_ID), NDXRicoKalkTblKalkKopfConstants::IntAnspr_IDBOUND, true);
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_Int_ID,
+                tblKalkKopf.Int_IDBOUND, nDXRicoKalkInteressent.Int_ID,
+                int2Str(tblKalkKopf.Int_IDBOUND), int2Str(nDXRicoKalkInteressent.Int_ID), NDXRicoKalkTblKalkKopfConstants::Int_IDBOUND);
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_Knr,
+                tblKalkKopf.Knr_IDBOUND, nDXRicoKalkInteressent.Knr_ID,
+                int2Str(tblKalkKopf.Knr_IDBOUND), int2Str(nDXRicoKalkInteressent.Knr_ID), NDXRicoKalkTblKalkKopfConstants::Knr_IDBOUND);
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_UserAngelegtID,
+                tblKalkKopf.UserAngelegt_IDBound, tblKalkKopfNew.UserAngelegt_IDBound,
+                tblKalkKopf.UserAngelegt_IDBound, tblKalkKopfNew.UserAngelegt_IDBound, NDXRicoKalkTblKalkKopfConstants::UserAngelegt_IDBOUND);
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_Name1,
+                tblKalkKopf.Name1, nDXRicoKalkInteressent.Name,
+                tblKalkKopf.Name1, nDXRicoKalkInteressent.Name, NDXRicoKalkTblKalkKopfConstants::Name1);
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_Name2,
+                tblKalkKopf.Name2, nDXRicoKalkInteressent.Name2,
+                tblKalkKopf.Name2, nDXRicoKalkInteressent.Name2, NDXRicoKalkTblKalkKopfConstants::Name2);
+            
+            boolean conwithContactPersonId;
+            boolean concontactPersonFound;
+            str conAnfrage_PLZ;
+            str conAnfrage_Strasse;
+            str conAnfrage_Ort;
+            [conwithContactPersonId, concontactPersonFound, conAnfrage_PLZ, conAnfrage_Strasse, conAnfrage_Ort] = this.getContactPersonData(kCS_KBVRequestTable);
+            if (!conwithContactPersonId || concontactPersonFound)
+            {
+                oProtInfo.add(NDXKBVProtDetail::Anfrage_PLZ,
+                    tblKalkKopf.PLZ, conAnfrage_PLZ,
+                    tblKalkKopf.PLZ, conAnfrage_PLZ, NDXRicoKalkTblKalkKopfConstants::PLZ);
+                oProtInfo.add(NDXKBVProtDetail::Anfrage_Strasse,
+                    tblKalkKopf.Strasse, conAnfrage_Strasse,
+                    tblKalkKopf.Strasse, conAnfrage_Strasse, NDXRicoKalkTblKalkKopfConstants::Strasse);
+                oProtInfo.add(NDXKBVProtDetail::Anfrage_Ort,
+                    tblKalkKopf.Ort, conAnfrage_Ort,
+                    tblKalkKopf.Ort, conAnfrage_Ort, NDXRicoKalkTblKalkKopfConstants::Ort);
+            }
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_Telefon,
+                tblKalkKopf.Telefon, nDXRicoKalkInteressent.Phone,
+                tblKalkKopf.Telefon, nDXRicoKalkInteressent.Phone, NDXRicoKalkTblKalkKopfConstants::Telefon);
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_Fax,
+                tblKalkKopf.Fax, nDXRicoKalkInteressent.Telefax,
+                tblKalkKopf.Fax, nDXRicoKalkInteressent.Telefax, NDXRicoKalkTblKalkKopfConstants::Fax);
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_EMail,
+                tblKalkKopf.EMail, nDXRicoKalkInteressent.EMail,
+                tblKalkKopf.EMail, nDXRicoKalkInteressent.EMail, NDXRicoKalkTblKalkKopfConstants::EMail);
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_Sollabgabe,
+                tblKalkKopf.Datum_Sollabgabe, kCS_KBVRequestTable.KCS_KBVDeliveryDate,
+                date2Str(tblKalkKopf.Datum_Sollabgabe, 123, 2,-1,2,-1,4), date2Str(kCS_KBVRequestTable.KCS_KBVDeliveryDate, 123, 2,-1,2,-1,4), NDXRicoKalkTblKalkKopfConstants::Datum_Sollabgabe);
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_KundenReferenz,
+                tblKalkKopf.BVNR_Int, kCS_KBVRequestTable.CustRef,
+                tblKalkKopf.BVNR_Int, kCS_KBVRequestTable.CustRef, NDXRicoKalkTblKalkKopfConstants::BVNr_Int);
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_VerfolgStatus,
+                tblKalkKopf.Verfolg_Status, tblKalkKopfNew.Verfolg_Status,
+                int2Str(tblKalkKopf.Verfolg_Status), int2Str(tblKalkKopfNew.Verfolg_Status), NDXRicoKalkTblKalkKopfConstants::Verfolg_Status);
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_VerfolgDatum,
+                tblKalkKopf.Verfolg_Datum, tblKalkKopfNew.Verfolg_Datum,
+                date2Str(tblKalkKopf.Verfolg_Datum, 123, 2,-1,2,-1,4), date2Str(tblKalkKopfNew.Verfolg_Datum, 123, 2,-1,2,-1,4), NDXRicoKalkTblKalkKopfConstants::Verfolg_Datum);
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_Preisliste,
+                tblKalkKopf.Preisliste_IDBOUND, tblKalkKopfNew.Preisliste_IDBOUND,
+                int2Str(tblKalkKopf.Preisliste_IDBOUND), int2Str(tblKalkKopfNew.Preisliste_IDBOUND), NDXRicoKalkTblKalkKopfConstants::Preisliste_IDBound);
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_Vertreter,
+                tblKalkKopf.VNr_Idbound, tblKalkKopfNew.VNr_Idbound,
+                int2Str(tblKalkKopf.VNr_Idbound), int2Str(tblKalkKopfNew.VNr_Idbound), NDXRicoKalkTblKalkKopfConstants::VNr_Idbound);
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_MwSt,
+                tblKalkKopf.MWST_IDBOUND, tblKalkKopfNew.MWST_IDBOUND,
+                int2Str(tblKalkKopf.MWST_IDBOUND), int2Str(tblKalkKopfNew.MWST_IDBOUND), NDXRicoKalkTblKalkKopfConstants::MWST_IDBOUND);
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_WKZ,
+                tblKalkKopf.WKZ_BOUND, tblKalkKopfNew.WKZ_BOUND,
+                tblKalkKopf.WKZ_BOUND, tblKalkKopfNew.WKZ_BOUND, NDXRicoKalkTblKalkKopfConstants::WKZ_BOUND);
+            oProtInfo.add(NDXKBVProtDetail::Anfrage_Grundrabatt,
+                tblKalkKopf.GrundRabatt, tblKalkKopfNew.GrundRabatt,
+                num2Str(tblKalkKopf.GrundRabatt,8,2,1,0), num2Str(tblKalkKopfNew.GrundRabatt,8,2,1,0), NDXRicoKalkTblKalkKopfConstants::Grundrabatt);
+
+            // check AbrufId
+            if (!tblKalkKopf.Abruf)
+            {
+                tblKalkKopfNew.Abruf = nDXRicoKalkADO.getNextAbruf(bvNrRicoKalk, false);
+                oProtInfo.add(NDXKBVProtDetail::Anfrage_Abruf,
+                tblKalkKopf.Abruf, tblKalkKopfNew.Abruf,
+                    int2Str(tblKalkKopf.Abruf), int2Str(tblKalkKopfNew.Abruf), NDXRicoKalkTblKalkKopfConstants::Abruf);
+            }
+
+            // check tblKalkKopfWerte
+            nDXRicoKalkADO.checkForTblKalkKopfWerteRecord(tblKalkKopfNew.AbrufID, false);
+            
+            if (oProtInfo.write(this, ado))
+            {
+                nDXRicoKalkADO.updateKalkKopf(tblKalkKopf.AbrufID);
+            }
+
+            //ToDo WolfA
+            if(lNewAbruf && kCS_KBVRequestTable && tblKalkKopfNew.Abruf)
+            {
+                NDXRicoReqDocuTransfer::transferDocumentsToRicoByRequest(kCS_KBVRequestTable, tblKalkKopfNew.Abruf);
+            }
+
+            oProtInfo.parmProtID2('');
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getContactPersonData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 23.01.24
+    /// </summary>
+    /// <param name = "_kCS_KBVRequestTable">KCS_KBVRequestTable</param>
+    /// <returns>container</returns>
+    private container getContactPersonData(KCS_KBVRequestTable _kCS_KBVRequestTable)
+    {
+        ContactPerson   contactPerson;
+        DirPartyTable dirPartyTable;
+        LogisticsPostalAddress logisticsPostalAddress;
+        container conDataAreaId = conNull();
+        container retCon = connull();
+        boolean contactFound = false;
+
+        retCon += _kCS_KBVRequestTable.ContactPersonId != '';
+        if (_kCS_KBVRequestTable.ContactPersonId)
+        {
+            conDataAreaId += _kCS_KBVRequestTable.DataAreaId;
+            select firstonly crosscompany:conDataAreaId contactPerson
+                where contactPerson.ContactPersonid ==  _kCS_KBVRequestTable.ContactPersonId
+            join dirPartyTable
+                where contactPerson.Party == dirPartyTable.RecId
+            join logisticsPostalAddress
+                where logisticsPostalAddress.Location == dirPartyTable.PrimaryAddressLocation;
+            retCon += contactPerson.RecId != 0;
+            if (contactPerson.RecId != 0 &&
+                (logisticsPostalAddress.ZipCode != '' ||
+                logisticsPostalAddress.Street != '' ||
+                logisticsPostalAddress.City != ''))
+            {
+                retCon += logisticsPostalAddress.ZipCode;
+                retCon += logisticsPostalAddress.Street;
+                retCon += logisticsPostalAddress.City;
+                contactFound = true;
+            }
+        }
+        if (!contactFound)
+        {
+            retCon += false;
+            retCon += _kCS_KBVRequestTable.AddressZipCodeId;
+            retCon += _kCS_KBVRequestTable.AddressStreet;
+            retCon += _kCS_KBVRequestTable.AddressCity;
+        }
+        return retCon;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateAnfrager</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 15.01.24
+    /// </summary>
+    /// <param name = "_KCS_KBVRequestTable">KCS_KBVRequestTable</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>NDXRicoKalkInteressent</returns>
+    protected NDXRicoKalkInteressent updateAnfrager(
+        KCS_KBVRequestTable _KCS_KBVRequestTable, 
+        boolean _displayOnConsole = true, 
+        str _textToDisplayOnConsole = '')
+    {
+        NDXRicoKalkInteressent nDXRicoKalkInteressent;
+        changecompany(_KCS_KBVRequestTable.DataAreaId)
+        {
+            nDXRicoKalkInteressent = this.getContactInfo(NDXKBVAddressType::Anfrager, _KCS_KBVRequestTable.DirPartyId, 0, _KCS_KBVRequestTable.ContactPersonId);
+            nDXRicoKalkInteressent = this.updateTblKalkInteressent(nDXRicoKalkInteressent, _displayOnConsole, _textToDisplayOnConsole, false);
+        }
+        return nDXRicoKalkInteressent;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateTblKalkInteressent</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 15.01.24
+    /// </summary>
+    /// <param name = "_nDXRicoKalkInteressent">NDXRicoKalkInteressent</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <param name = "_displayOnConsoleInherit">boolean</param>
+    /// <param name = "_textToDisplayOnConsoleInherit">str</param>
+    /// <returns>NDXRicoKalkInteressent</returns>
+    private NDXRicoKalkInteressent updateTblKalkInteressent(
+        NDXRicoKalkInteressent _nDXRicoKalkInteressent, 
+        boolean _displayOnConsole = true, 
+        str _textToDisplayOnConsole = '',
+        boolean _displayOnConsoleInherit = true,
+        str _textToDisplayOnConsoleInherit = '')
+    {
+        TblKalkInterressent tblKalkInterressentExists = nDXRicoKalkADO.selectFromTblKalkInterressent(_nDXRicoKalkInteressent.OrgPartyId, _displayOnConsole, _textToDisplayOnConsole);
+        if (!tblKalkInterressentExists.Int_id)
+        {
+            tblKalkInterressentExists.Int_id = 0;
+            tblKalkInterressentExists.VNr = 0;
+            tblKalkInterressentExists.Land_IdBound = 0;
+            tblKalkInterressentExists.WKZ_BOUND = '';
+            tblKalkInterressentExists.Name1 = '';
+            tblKalkInterressentExists.Name2 = '';
+            tblKalkInterressentExists.Name3 = '';
+            tblKalkInterressentExists.Strasse = '';
+            tblKalkInterressentExists.PLZ = '';
+            tblKalkInterressentExists.Ort = '';
+            tblKalkInterressentExists.Matchcode = '';
+            tblKalkInterressentExists.OrgPartyId = '';
+        }
+        else
+        {
+            _nDXRicoKalkInteressent.ZuordnungId = tblKalkInterressentExists.ZuordnungID_Bound;
+            _nDXRicoKalkInteressent.Int_ID = tblKalkInterressentExists.Int_id;
+        }
+        _displayOnConsole = _displayOnConsoleInherit;
+        _textToDisplayOnConsole = _textToDisplayOnConsoleInherit;
+        
+        TblKalkInterressent tblKalkInterressentNew = new TblKalkInterressent();
+        tblKalkInterressentNew.VNr = tblKalkInterressentExists.VNr;
+        tblKalkInterressentNew.Land_IdBound = NDX_RicoKalkMapping::getMappedCountryRegionId(_nDXRicoKalkInteressent.CountryRegionId);
+        tblKalkInterressentNew.MWST_IDBOUND = tblKalkInterressentExists.MWST_IDBOUND ? tblKalkInterressentExists.MWST_IDBOUND : NDXRicoKalkConstants::MWST_IDBOUND_Default;
+        tblKalkInterressentNew.WKZ_BOUND = tblKalkInterressentExists.WKZ_BOUND ? tblKalkInterressentExists.WKZ_BOUND : NDXRicoKalkConstants::WKZ_BOUND_Default;
+        tblKalkInterressentNew.Knr = _nDXRicoKalkInteressent.Knr_ID;
+        tblKalkInterressentNew.Name1 = _nDXRicoKalkInteressent.Name;
+        tblKalkInterressentNew.Name2 = _nDXRicoKalkInteressent.Name2;
+        tblKalkInterressentNew.Name3 = _nDXRicoKalkInteressent.Name3;
+        tblKalkInterressentNew.Strasse = _nDXRicoKalkInteressent.Street;
+        tblKalkInterressentNew.PLZ = _nDXRicoKalkInteressent.ZipCode;
+        tblKalkInterressentNew.Ort = _nDXRicoKalkInteressent.City;
+        tblKalkInterressentNew.Matchcode = _nDXRicoKalkInteressent.NameAlias;
+        tblKalkInterressentNew.OrgPartyId = _nDXRicoKalkInteressent.OrgPartyId;
+        tblKalkInterressentNew.Int_id = _nDXRicoKalkInteressent.Int_ID;
+
+        if (!tblKalkInterressentExists.Int_id)
+        {
+            tblKalkInterressentNew.Int_id = nDXRicoKalkADO.setNextInt_Id(_displayOnConsole, _textToDisplayOnConsole);
+            tblKalkInterressentNew.ZuordnungID_Bound = NDXRicoKalkConstants::ZuordnungID_BoundNeukunde;
+
+            nDXRicoKalkADO.insertKalkInterressent(tblKalkInterressentNew, _displayOnConsole, _textToDisplayOnConsole);
+
+            _nDXRicoKalkInteressent.ZuordnungId = NDXRicoKalkConstants::ZuordnungID_BoundNeukunde;
+        }
+        else
+        {
+            _nDXRicoKalkInteressent.ZuordnungId = tblKalkInterressentNew.ZuordnungID_Bound;
+        }
+        _nDXRicoKalkInteressent.Int_ID = tblKalkInterressentNew.Int_id;
+
+        // check contact person
+        if (_nDXRicoKalkInteressent.ContactPersonId || _nDXRicoKalkInteressent.PersPartyId)
+        {
+            _nDXRicoKalkInteressent.Ansp_ID = this.updatetblKalkAnsprechpartner(_nDXRicoKalkInteressent, _displayOnConsole, _textToDisplayOnConsole);
+        }
+
+        // actualize Inquirer information
+        oProtInfo.add(this.getProtDetailFromAddressType(_nDXRicoKalkInteressent.KBVAddressType, NDXKBVProtDetail::Anfrager_Name1),
+            tblKalkInterressentExists.Name1, tblKalkInterressentNew.Name1,
+            tblKalkInterressentExists.Name1, tblKalkInterressentNew.Name1, NDXRicoKalkTblKalkInterressentConstants::Name1, true);
+
+        oProtInfo.add(this.getProtDetailFromAddressType(_nDXRicoKalkInteressent.KBVAddressType, NDXKBVProtDetail::Anfrager_Name2),
+            tblKalkInterressentExists.Name2, tblKalkInterressentNew.Name2,
+            tblKalkInterressentExists.Name2, tblKalkInterressentNew.Name2, NDXRicoKalkTblKalkInterressentConstants::Name2);
+
+        oProtInfo.add(this.getProtDetailFromAddressType(_nDXRicoKalkInteressent.KBVAddressType, NDXKBVProtDetail::Anfrager_Name3),
+            tblKalkInterressentExists.Name3, tblKalkInterressentNew.Name3,
+            tblKalkInterressentExists.Name3, tblKalkInterressentNew.Name3, NDXRicoKalkTblKalkInterressentConstants::Name3);
+
+        oProtInfo.add(this.getProtDetailFromAddressType(_nDXRicoKalkInteressent.KBVAddressType, NDXKBVProtDetail::Anfrager_Strasse),
+            tblKalkInterressentExists.Strasse, tblKalkInterressentNew.Strasse,
+            tblKalkInterressentExists.Strasse, tblKalkInterressentNew.Strasse, NDXRicoKalkTblKalkInterressentConstants::Strasse);
+
+        oProtInfo.add(this.getProtDetailFromAddressType(_nDXRicoKalkInteressent.KBVAddressType, NDXKBVProtDetail::Anfrager_PLZ),
+            tblKalkInterressentExists.PLZ, tblKalkInterressentNew.PLZ,
+            tblKalkInterressentExists.PLZ, tblKalkInterressentNew.PLZ, NDXRicoKalkTblKalkInterressentConstants::PLZ);
+
+        oProtInfo.add(this.getProtDetailFromAddressType(_nDXRicoKalkInteressent.KBVAddressType, NDXKBVProtDetail::Anfrager_Ort),
+            tblKalkInterressentExists.Ort, tblKalkInterressentNew.Ort,
+            tblKalkInterressentExists.Ort, tblKalkInterressentNew.Ort, NDXRicoKalkTblKalkInterressentConstants::Ort);
+
+        oProtInfo.add(this.getProtDetailFromAddressType(_nDXRicoKalkInteressent.KBVAddressType, NDXKBVProtDetail::Anfrager_Matchcode),
+            tblKalkInterressentExists.Matchcode, tblKalkInterressentNew.Matchcode,
+            tblKalkInterressentExists.Matchcode, tblKalkInterressentNew.Matchcode, NDXRicoKalkTblKalkInterressentConstants::Matchcode);
+        
+        oProtInfo.add(this.getProtDetailFromAddressType(_nDXRicoKalkInteressent.KBVAddressType, NDXKBVProtDetail::Anfrager_Id),
+            tblKalkInterressentExists.Int_id, tblKalkInterressentNew.Int_id,
+            int2Str(tblKalkInterressentExists.Int_id), int2Str(tblKalkInterressentNew.Int_id), NDXRicoKalkTblKalkInterressentConstants::Int_id);
+        
+        oProtInfo.add(this.getProtDetailFromAddressType(_nDXRicoKalkInteressent.KBVAddressType, NDXKBVProtDetail::Anfrager_Knr),
+            tblKalkInterressentExists.Knr, tblKalkInterressentNew.Knr,
+            int2Str(tblKalkInterressentExists.Knr), int2Str(tblKalkInterressentNew.Knr), NDXRicoKalkTblKalkInterressentConstants::Knr);
+        
+        oProtInfo.add(this.getProtDetailFromAddressType(_nDXRicoKalkInteressent.KBVAddressType, NDXKBVProtDetail::Anfrager_Vnr),
+            tblKalkInterressentExists.VNr, tblKalkInterressentNew.VNr,
+            int2Str(tblKalkInterressentExists.VNr), int2Str(tblKalkInterressentNew.VNr), NDXRicoKalkTblKalkInterressentConstants::Vnr);
+        
+        oProtInfo.add(this.getProtDetailFromAddressType(_nDXRicoKalkInteressent.KBVAddressType, NDXKBVProtDetail::Anfrager_Land),
+            tblKalkInterressentExists.Land_IdBound, tblKalkInterressentNew.Land_IdBound,
+            int2Str(tblKalkInterressentExists.Land_IdBound), int2Str(tblKalkInterressentNew.Land_IdBound), NDXRicoKalkTblKalkInterressentConstants::Land_IdBound);
+        
+        oProtInfo.add(this.getProtDetailFromAddressType(_nDXRicoKalkInteressent.KBVAddressType, NDXKBVProtDetail::Anfrager_MwStKennung),
+            tblKalkInterressentExists.MWST_IDBOUND, tblKalkInterressentNew.MWST_IDBOUND,
+            int2Str(tblKalkInterressentExists.MWST_IDBOUND), int2Str(tblKalkInterressentNew.MWST_IDBOUND), NDXRicoKalkTblKalkInterressentConstants::MWST_IDBOUND);
+        
+        oProtInfo.add(this.getProtDetailFromAddressType(_nDXRicoKalkInteressent.KBVAddressType, NDXKBVProtDetail::Anfrager_WKZ),
+            tblKalkInterressentExists.WKZ_BOUND, tblKalkInterressentNew.WKZ_BOUND,
+            tblKalkInterressentExists.WKZ_BOUND, tblKalkInterressentNew.WKZ_BOUND, NDXRicoKalkTblKalkInterressentConstants::WKZ_BOUND);
+
+        if (oProtInfo.write(this, ado))
+        {
+            nDXRicoKalkADO.updateKalkInterressent(_nDXRicoKalkInteressent.Int_ID, false);
+        }
+        return _nDXRicoKalkInteressent;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getProtDetailFromAddressType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 22.01.24
+    /// </summary>
+    /// <param name = "_nDXKBVAddressType">NDXKBVAddressType</param>
+    /// <param name = "_protDetailInquirer">NDXKBVProtDetail</param>
+    /// <returns>NDXKBVProtDetail</returns>
+    private NDXKBVProtDetail getProtDetailFromAddressType(NDXKBVAddressType _nDXKBVAddressType, NDXKBVProtDetail _protDetailInquirer)
+    {
+        NDXKBVProtDetail nDXKBVProtDetail = NDXKBVProtDetail::ohneFestlegung;
+        switch (_nDXKBVAddressType)
+        {
+            case NDXKBVAddressType::Anfrager :
+                return _protDetailInquirer;
+            case NDXKBVAddressType::Planer :
+                switch (_protDetailInquirer)
+                {
+                    case NDXKBVProtDetail::Anfrager_Name1 :
+                        return NDXKBVProtDetail::Planer_Name1;
+                    case NDXKBVProtDetail::Anfrager_Name2 :
+                        return NDXKBVProtDetail::Planer_Name2;
+                    case NDXKBVProtDetail::Anfrager_Name3 :
+                        return NDXKBVProtDetail::Planer_Name3;
+                    case NDXKBVProtDetail::Anfrager_Strasse :
+                        return NDXKBVProtDetail::Planer_Strasse;
+                    case NDXKBVProtDetail::Anfrager_PLZ :
+                        return NDXKBVProtDetail::Planer_PLZ;
+                    case NDXKBVProtDetail::Anfrager_Ort :
+                        return NDXKBVProtDetail::Planer_Ort;
+                    case NDXKBVProtDetail::Anfrager_Matchcode :
+                        return NDXKBVProtDetail::Planer_Matchcode;
+                    case NDXKBVProtDetail::Anfrager_Id :
+                        return NDXKBVProtDetail::Planer_Id;
+                    case NDXKBVProtDetail::Anfrager_Knr :
+                        return NDXKBVProtDetail::Planer_Knr;
+                    case NDXKBVProtDetail::Anfrager_Vnr :
+                        return NDXKBVProtDetail::Planer_Vnr;
+                    case NDXKBVProtDetail::Anfrager_Land :
+                        return NDXKBVProtDetail::Planer_Land;
+                    case NDXKBVProtDetail::Anfrager_MwStKennung :
+                        return NDXKBVProtDetail::Planer_MwStKennung;
+                    case NDXKBVProtDetail::Anfrager_WKZ :
+                        return NDXKBVProtDetail::Planer_WKZ;
+                    default :
+                        Error(strFmt("@NDXBase:NDXTheElementIsNotTakenIntoAccount", _protDetailInquirer));
+                }
+                break;
+        }
+        return nDXKBVProtDetail;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updatetblKalkAnsprechpartner</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 18.01.24
+    /// compare contact person with RicoKalk
+    /// </summary>
+    /// <param name = "_nDXRicoKalkInteressent">NDXRicoKalkInteressent</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>Anspr_Id</returns>
+    protected int updatetblKalkAnsprechpartner(NDXRicoKalkInteressent _nDXRicoKalkInteressent, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        TblKalkAnsprechpartner tblKalkAnsprechpartner = nDXRicoKalkADO.selectFromTblKalkAnsprechpartner(_nDXRicoKalkInteressent, _displayOnConsole, _textToDisplayOnConsole);
+        if (!tblKalkAnsprechpartner.Ansp_ID)
+        {
+            tblKalkAnsprechpartner.Anrede_BOUND = NDX_RicoKalkMapping::getMappedTitle(_nDXRicoKalkInteressent.SocialTitle);
+            tblKalkAnsprechpartner.Nachname = _nDXRicoKalkInteressent.LastName;
+            tblKalkAnsprechpartner.Vorname = _nDXRicoKalkInteressent.FirstName;
+            tblKalkAnsprechpartner.ID_Bound = _nDXRicoKalkInteressent.Int_ID;
+            tblKalkAnsprechpartner.Telefon = _nDXRicoKalkInteressent.Phone;
+            tblKalkAnsprechpartner.Fax = _nDXRicoKalkInteressent.TeleFax;
+            tblKalkAnsprechpartner.EMail = _nDXRicoKalkInteressent.Email;
+            tblKalkAnsprechpartner.PersPartyID = _nDXRicoKalkInteressent.PersPartyId;
+            tblKalkAnsprechpartner.ContactPersonID = _nDXRicoKalkInteressent.ContactPersonId;
+            tblKalkAnsprechpartner = nDXRicoKalkADO.InsertKalkAnsprechpartner(tblKalkAnsprechpartner, true, _displayOnConsole, _textToDisplayOnConsole);
+        }
+
+        return tblKalkAnsprechpartner.Ansp_ID;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getContactInfo</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 15.01.24
+    /// </summary>
+    /// <param name = "_addressType">NDXKBVAddressType</param>
+    /// <param name = "_dirPartyTableAddress">RefRecId</param>
+    /// <param name = "_dirPartyTableContact">RefRecId</param>
+    /// <param name = "_contactPersonId">ContactPersonId</param>
+    /// <returns>NDXRicoKalkInteressent</returns>
+    protected NDXRicoKalkInteressent getContactInfo(NDXKBVAddressType _addressType,
+        RefRecId _dirPartyTableAddress,
+        RefRecId _dirPartyTableContact,
+        ContactPersonId _contactPersonId)
+    {
+        NDXRicoKalkInteressent nDXRicoKalkInteressent;
+        ContactPerson contactPerson;
+        LogisticsElectronicAddress logisticsElectronicAddress;
+        DirPartyTable dirPartyTableOrg;
+        LogisticsPostalAddress locationOrg;
+        DirPerson dirPerson;
+
+        if (_dirPartyTableAddress)
+        {
+            dirPartyTableOrg = DirPartyTable::findRec(_dirPartyTableAddress);
+        }
+        nDXRicoKalkInteressent.OrgPartyId = dirPartyTableOrg.PartyNumber;
+        nDXRicoKalkInteressent.KBVAddressType = _addressType;
+
+        if (_addressType == NDXKBVAddressType::Anfrager)
+        {
+            // try to get contact info from contact person
+            if (_contactPersonId)
+            {
+                contactPerson = ContactPerson::find(_contactPersonId);
+                if (contactPerson)
+                {
+                    dirPartyTableOrg = DirPartyTable::findRec(contactPerson.ContactForParty);
+                    dirPerson = DirPerson::find(contactPerson.Party);
+                    nDXRicoKalkInteressent.ContactPersonId = contactPerson.ContactPersonId;
+                    nDXRicoKalkInteressent.ContactPersonName = dirPerson.Name;
+                    nDXRicoKalkInteressent.FirstName = dirPerson.PhoneticFirstName;
+                    nDXRicoKalkInteressent.LastName = dirPerson.PhoneticLastName;
+                    nDXRicoKalkInteressent.SocialTitle = contactPerson.Title;
+                    if (dirPerson.PrimaryContactEmail)
+                    {
+                        logisticsElectronicAddress = LogisticsElectronicAddress::findRecId(dirPerson.PrimaryContactEmail);
+                        nDXRicoKalkInteressent.Email = logisticsElectronicAddress.Locator;
+                    }
+                    if (dirPerson.PrimaryContactPhone)
+                    {
+                        logisticsElectronicAddress = LogisticsElectronicAddress::findRecId(dirPerson.PrimaryContactPhone);
+                        nDXRicoKalkInteressent.Phone = logisticsElectronicAddress.Locator;
+                    }
+                    if (dirPerson.PrimaryContactTelex)
+                    {
+                        logisticsElectronicAddress = LogisticsElectronicAddress::findRecId(dirPerson.PrimaryContactTelex);
+                        nDXRicoKalkInteressent.TeleFax = logisticsElectronicAddress.Locator;
+                    }
+                    nDXRicoKalkInteressent.PersPartyId = dirPerson.PartyNumber;
+                    nDXRicoKalkInteressent.OrgPartyId = dirPartyTableOrg.PartyNumber;
+                }
+            }
+        }
+
+        if (!nDXRicoKalkInteressent.PersPartyId && _dirPartyTableContact)
+        {
+            dirPerson = DirPerson::find(_dirPartyTableContact);
+            locationOrg = LogisticsPostalAddress::findByLocation(dirPerson.PrimaryAddressLocation);
+            nDXRicoKalkInteressent.ContactPersonName = dirPerson.Name;
+            nDXRicoKalkInteressent.FirstName = dirPerson.PhoneticFirstName;
+            nDXRicoKalkInteressent.LastName = dirPerson.PhoneticLastName;
+            nDXRicoKalkInteressent.PersPartyId = dirPerson.PartyNumber;
+            nDXRicoKalkInteressent.CountryRegionId = locationOrg.CountryRegionId;
+        }
+
+        if (nDXRicoKalkInteressent.OrgPartyId)
+        {
+            locationOrg = LogisticsPostalAddress::findByLocation(dirPartyTableOrg.PrimaryAddressLocation);
+            nDXRicoKalkInteressent.NameAlias = dirPartyTableOrg.NameAlias;
+            nDXRicoKalkInteressent.Name = locationOrg.NDXLogisticsLocationName1;
+            nDXRicoKalkInteressent.Name2 = locationOrg.NDXLogisticsLocationName2;
+            nDXRicoKalkInteressent.Name3 = locationOrg.NDXLogisticsLocationName3;
+            nDXRicoKalkInteressent.Street = locationOrg.Street;
+            nDXRicoKalkInteressent.ZipCode = locationOrg.ZipCode;
+            nDXRicoKalkInteressent.City = locationOrg.City;
+            nDXRicoKalkInteressent.CountryRegionId = locationOrg.CountryRegionId;
+
+            CustTable custTable = CustTable::findByPartyRecId(dirPartyTableOrg.RecId);
+            if (custTable)
+            {
+                nDXRicoKalkInteressent.Knr_ID = str2Int(custTable.AccountNum);
+            }
+        }
+        return nDXRicoKalkInteressent;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>publicate2RicoKalkFromCon</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 29.01.24
+    /// </summary>
+    /// <param name = "_params">container</param>
+    /// <returns>container</returns>
+    public static container publicate2RicoKalkFromCon(container _params)
+    {
+        KCS_KBVBuildingProjectTable  kBV_BuildingProjectTable = conPeek(_params,1);
+        return NDXKBVBuildingProject2RicoKalk::publicate2RicoKalk(kBV_BuildingProjectTable);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>publicate2RicoKalk</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.12.23
+    /// </summary>
+    /// <param name = "_KBV_BuildingProjectTable">KCS_KBVBuildingProjectTable</param>
+    /// <returns>container</returns>
+    public static container publicate2RicoKalk(KCS_KBVBuildingProjectTable  _KBV_BuildingProjectTable)
+    {
+        NDXKBVBuildingProject2RicoKalk     nDXKBVBuildingProject2RicoKalk;
+        nDXKBVBuildingProject2RicoKalk = NDXKBVBuildingProject2RicoKalk::construct();
+        return [nDXKBVBuildingProject2RicoKalk.publicate2RicoKalkLocal(_KBV_BuildingProjectTable),
+            nDXKBVBuildingProject2RicoKalk.parmLInfoRicoKalkSync()];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>publicate2RicoKalkLocal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.12.23
+    /// </summary>
+    /// <param name = "_KBV_BuildingProjectTable">KCS_KBVBuildingProjectTable</param>
+    /// <returns>boolean</returns>
+    protected boolean publicate2RicoKalkLocal(KCS_KBVBuildingProjectTable  _KBV_BuildingProjectTable)
+    {
+        this.parmStartPublicateSeconds();
+        boolean lOK = false;
+        if (this.parmLInfoRicoKalkSync())
+        {
+            Info(strFmt("@NDXRicoBV:NDXNotifikationBVToRicoKalk", NDXHelperCommon::seconds2Str(), "@NDXBase:NDXStart", _KBV_BuildingProjectTable.KCS_KBVBuildingProjectID));
+        }
+
+        try
+        {
+            kBV_BuildingProjectTable = _KBV_BuildingProjectTable;
+            nDX_KBV2RicoKalkMap = NDX_KBV2RicoKalkMap::find(kBV_BuildingProjectTable.KCS_KBVBuildingProjectID);
+            boolean lNewPublicate = (nDX_KBV2RicoKalkMap == null || nDX_KBV2RicoKalkMap.RicoKalkBVNr == 0);
+            if (lNewPublicate)
+            {
+                this.newMapRecord();
+            }
+            nrIstAnfrage = nDX_KBV2RicoKalkMap.RicoKalkBVNr;
+
+            ttsbegin;
+            // generate log entry
+            this.newProtRecord();
+            nDX_KBV2RicoProtTable.NewPublicate = lNewPublicate ? NDXKBV2RicoProtStatus::New : NDXKBV2RicoProtStatus::Unchanged;
+
+            oErrorMail.initialize(nDX_KBV2RicoProtTable);
+
+            // Comparison of building project information with RicoKalk
+            this.updateKalkBVKopf();
+
+            this.updateRequests();
+
+            this.updatePlaner();
+
+            if (nDX_KBV2RicoProtTable.validateWrite())
+            {
+                nDX_KBV2RicoProtTable.updateFromNDXADO(nDXRicoKalkADO);
+                nDX_KBV2RicoProtTable.write();
+            }
+            ttscommit;
+
+            lOK = true;
+        }
+        catch
+        {
+            Error(strFmt("@NDXRicoBV:NDXDataTransfertoRicoKalkNotSuccessful", kBV_BuildingProjectTable.KCS_KBVBuildingProjectID));
+        }
+
+        if (this.parmLInfoRicoKalkSync())
+        {
+            TimeOfDay start = this.parmStartPublicateSeconds();
+            TimeOfDay end = NDXHelperCommon::timeNow();
+            Info(strFmt("@NDXBase:NDXSelectStatementsInsertUpdate",
+                nDXRicoKalkADO.parmSelectOperations(),
+                nDXRicoKalkADO.parmInsertOperations(),
+                nDXRicoKalkADO.parmUpdateOperations()));
+            Info(strFmt("@NDXRicoBV:NDXNotifikationBVToRicoKalkDuration", NDXHelperCommon::seconds2Str(), "@NDXBase:NDXEnd", _KBV_BuildingProjectTable.KCS_KBVBuildingProjectID, end - start));
+        }
+        return lOK;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updatePlaner</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 25.01.24
+    /// </summary>
+    /// <returns>NDXRicoKalkInteressent</returns>
+    private NDXRicoKalkInteressent updatePlaner()
+    {
+        NDXProtID2 protId2 = oProtInfo.parmProtID2();
+        oProtInfo.parmProtID2(NDXRicoKalkConstants::RequestId);
+        NDXRicoKalkInteressent nDXRicoKalkInteressent;
+        KCS_KBVRelationsToBV kCS_KBVRelationsToBV = this.existsPlaner(nDX_KBV2RicoKalkMap.KBVBuildingProjectID);
+        if (!kCS_KBVRelationsToBV)
+        {
+            if (this.parmLInfoRicoKalkSync())
+            {
+                Info(strFmt("@NDXRicoBV:NDXBuildingProjectWithoutPlaner", NDXHelperCommon::seconds2Str(), nDX_KBV2RicoKalkMap.KBVBuildingProjectID));
+            }
+        }
+        else
+        {
+            nDXRicoKalkInteressent = this.getContactInfo(NDXKBVAddressType::Planer, 
+                kCS_KBVRelationsToBV.DirPartyId, 0,
+                kCS_KBVRelationsToBV.ContactPersonId);
+            nDXRicoKalkInteressent = this.updateTblKalkInteressent(
+                nDXRicoKalkInteressent,
+                false,
+                strFmt("@NDXRicoBV:NDXPlanerToBV", nDX_KBV2RicoKalkMap.KBVBuildingProjectID, nDX_KBV2RicoKalkMap.RicoKalkBVNr, kCS_KBVRelationsToBV.dirPartyTableOrganization().NameAlias),
+                false,
+                '');
+        }
+        TblKalkBVKopf tblKalkBVKopf = nDXRicoKalkADO.selectFromTblKalkBVKopf(nDX_KBV2RicoKalkMap.RicoKalkBVNr, false);
+        if (tblKalkBVKopf.Planer_IDBOUND != nDXRicoKalkInteressent.Int_ID ||
+            tblKalkBVKopf.PlanerAnspr_IDBOUND != nDXRicoKalkInteressent.Ansp_ID)
+        {
+            oProtInfo.add(NDXKBVProtDetail::KalkBVKopf_Planer_Id,
+                tblKalkBVKopf.Planer_IDBOUND, nDXRicoKalkInteressent.Int_ID,
+                int2Str(tblKalkBVKopf.Planer_IDBOUND), int2Str(nDXRicoKalkInteressent.Int_ID), NDXRicoKalkTblKalkBVKopfConstants::Planer_IDBOUND, true);
+            oProtInfo.add(NDXKBVProtDetail::KalkBVKopf_PlanerAnspr_Id,
+                tblKalkBVKopf.PlanerAnspr_IDBOUND, nDXRicoKalkInteressent.Ansp_ID,
+                int2Str(tblKalkBVKopf.PlanerAnspr_IDBOUND), int2Str(nDXRicoKalkInteressent.Ansp_ID), NDXRicoKalkTblKalkBVKopfConstants::PlanerAnspr_IDBOUND);
+            
+            if (oProtInfo.write(this, ado))
+            {
+                if (this.parmLInfoRicoKalkSync())
+                {
+                    Info(strFmt("@NDXRicoBV:NDXComparePlaner", NDXHelperCommon::seconds2Str(), nDXRicoKalkInteressent.Int_ID));
+                }
+                nDXRicoKalkADO.updateFromKalkBVKopf(nDX_KBV2RicoKalkMap.RicoKalkBVNr, false);
+            }
+        }
+        oProtInfo.parmProtID2(protId2);
+        return nDXRicoKalkInteressent;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>existsPlaner</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 25.01.24
+    /// </summary>
+    /// <param name = "_kBVBuildingProjectID">KCS_KBVBuildingProjectID</param>
+    /// <returns>KCS_KBVRelationsToBV</returns>
+    private KCS_KBVRelationsToBV existsPlaner(KCS_KBVBuildingProjectID _kBVBuildingProjectID = kBV_BuildingProjectTable.KCS_KBVBuildingProjectID)
+    {
+        KCS_KBVRelationsToBV    kCS_KBVRelationsToBV;
+
+        // select relation with RelationID:kCS_KBVParameters.KCS_KBVRelationID1
+        select firstOnly    kCS_KBVRelationsToBV
+        where           kCS_KBVRelationsToBV.KCS_KBVBuildingProjectID   == _kBVBuildingProjectID &&
+                        kCS_KBVRelationsToBV.KCS_KBVRelationID          == kBVRelationIdPlaner;
+        return kCS_KBVRelationsToBV;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>newMapRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.12.23
+    /// </summary>
+    protected void newMapRecord()
+    {
+        //nDXRicoKalkADO.setNextBVNum();     // neue BV-Nummer in RicoKalk bestimmen
+
+        nrIstAnfrage = nDXRicoKalkADO.setNextBVNum();
+        ttsbegin;
+        nDX_KBV2RicoKalkMap.selectForUpdate(true);
+        nDX_KBV2RicoKalkMap.RicoKalkBVNr            = nrIstAnfrage;
+        nDX_KBV2RicoKalkMap.KBVBuildingProjectID    = kBV_BuildingProjectTable.KCS_KBVBuildingProjectID;
+        if (nDX_KBV2RicoKalkMap.validateWrite())
+        {
+            nDX_KBV2RicoKalkMap.write();
+        }
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>newProtRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.12.23
+    /// </summary>
+    /// <param name = "lNewRecord">boolean</param>
+    protected void newProtRecord(boolean lNewRecord = false)
+    {
+        if (lNewRecord)
+        {
+            nDX_KBV2RicoProtTable.clear();
+        }
+
+        //TODO PaffH: numbersequence
+        //nDX_KBV2RicoProtTable.KBVProtID              = this.newGetNumNDXKBVProtId();
+        //nDX_KBV2RicoProtTable.KBVProtID              = NDX_KBV2RicoProtTable::getNextProtId();
+        nDX_KBV2RicoProtTable.KBVProtIDInt           = NDX_KBV2RicoProtTable::getNextProtIdInt();
+        nDX_KBV2RicoProtTable.ProtKopfTyp            = NDXProtKopfTyp::BV_Abgleich_RicoKalk;
+        nDX_KBV2RicoProtTable.KBVBuildingProjectID   = kBV_BuildingProjectTable.KCS_KBVBuildingProjectID;
+        nDX_KBV2RicoProtTable.RicoKalkBVNr           = nrIstAnfrage;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>newGetNumNDXKBVProtId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 27.12.23
+    /// </summary>
+    /// <returns>Num</returns>
+    public Num newGetNumNDXKBVProtId()
+    {
+        num         numNDX_KBVProtId;
+        ;
+        changecompany(masterCompany)
+        {
+            numNDX_KBVProtId = NumberSeq::newGetNum(KCS_KBVParameters::numRefNDXKBVProtID()).num();
+        }
+        return numNDX_KBVProtId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>newProtRecordLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 15.01.24
+    /// </summary>
+    /// <param name = "_FieldType">NDXKBVProtDetail</param>
+    /// <param name = "_ValueOld">NDXLogEntry</param>
+    /// <param name = "_ValueNew">NDXLogEntry</param>
+    public void newProtRecordLine(NDXKBVProtDetail  _FieldType, NDXLogEntry _ValueOld, NDXLogEntry _ValueNew)
+    {
+        ;
+        try
+        {
+            //ttsbegin;
+
+            //nDX_KBV2RicoProtLine = NDX_KBV2RicoProtLine::find(nDX_KBV2RicoProtTable.KBVProtIDInt, oProtInfo.parmProtID2(), _FieldType, true);
+            nDX_KBV2RicoProtLine.clear();
+            nDX_KBV2RicoProtLine.KBVProtID          = nDX_KBV2RicoProtTable.KBVProtID;
+            nDX_KBV2RicoProtLine.KBVProtIDInt       = nDX_KBV2RicoProtTable.KBVProtIDInt;
+            nDX_KBV2RicoProtLine.ProtID2            = oProtInfo.parmProtID2();
+
+            nDX_KBV2RicoProtLine.KBVProtDetail      = _FieldType;
+            nDX_KBV2RicoProtLine.ValueOld           = _ValueOld;
+            nDX_KBV2RicoProtLine.ValueNew           = _ValueNew;
+            //nDX_KBV2RicoProtLine.write();
+            nDX_KBV2RicoProtLine.insert();
+            //ttscommit;
+        }
+        catch
+        {
+            throw Error(strfmt("@NDX:NDXErrorNDX_KBV2RicoProtLineInsert", nDX_KBV2RicoProtLine.KBVProtID, nDX_KBV2RicoProtLine.ProtID2));
+        }
+        // handelt es sich um eine Meldung, die per EMail zu versenden ist?
+        switch (_FieldType)
+        {
+            case NDXKBVProtDetail::Angebot_ValidateWriteError:
+            case NDXKBVProtDetail::Angebot_Abgleichfehler :
+                oErrorMail.addSubMessage(nDX_KBV2RicoProtLine);
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getRicoKalkProduktGruppen</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 31.01.24
+    /// last modified: PaffH 04.12.25
+    /// get all records from RicoKalk 
+    /// </summary>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>Map</returns>
+    Map getRicoKalkProduktGruppen(boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        Map prodGrpMap = new Map(Types::Integer, Types::String);
+        IEnumerator enumeratorList = nDXRicoKalkADO.selectTblProduktgruppe(_displayOnConsole, _textToDisplayOnConsole);
+        if (enumeratorList != null)
+        {
+            while (enumeratorList.MoveNext())
+            {
+                TblProduktGruppe tblProduktGruppe = enumeratorList.Current;
+                prodGrpMap.insert(tblProduktGruppe.ID, tblProduktGruppe.Produktgruppe);
+            }
+        }
+        return prodGrpMap;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>existsRicoKalkBV</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 01.02.24
+    /// exists the RicoKalk BVNr
+    /// </summary>
+    /// <param name = "_ricoKalkBVNr">NDXRicoKalkBVNr</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>[(tblKalkBVKopf.BVNr > 0), tblKalkBVKopf.Bez1, tblKalkBVKopf.Bez2]</returns>
+    public container existsRicoKalkBV(NDXRicoKalkBVNr _ricoKalkBVNr, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        TblKalkBVKopf tblKalkBVKopf = nDXRicoKalkADO.selectFromTblKalkBVKopf(_ricoKalkBVNr, _displayOnConsole, _textToDisplayOnConsole);
+        return [(tblKalkBVKopf.BVNr > 0), tblKalkBVKopf.Bez1, tblKalkBVKopf.Bez2];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>recordAvailableInRicoKalk</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 01.02.24
+    /// AX2009: classes.NDX_KBVBuildingProject2RicoKalk.recordAvailableInRicoKalk()
+    /// </summary>
+    /// <param name = "_ndx_KBV2RicoKalkQuotation">NDX_KBV2RicoKalkQuotation</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>boolean</returns>
+    private boolean recordAvailableInRicoKalk(NDX_KBV2RicoKalkQuotation _ndx_KBV2RicoKalkQuotation, boolean _displayOnConsole = true, str _textToDisplayOnConsole = '')
+    {
+        boolean     recordAvailableInRico = true;
+        NDX_KBV2RicoKalkMap lNDX_KBV2RicoKalkMap;
+
+        if(_ndx_KBV2RicoKalkQuotation)
+        {
+            //Get Rico BV project id
+            lNDX_KBV2RicoKalkMap = NDX_KBV2RicoKalkMap::find(_ndx_KBV2RicoKalkQuotation.KBVBuildingProjectID);
+
+            if(lNDX_KBV2RicoKalkMap)
+            {
+                TblKalkKopf tblKalkKopf = nDXRicoKalkADO.selectTblKalkKopfForAvailableCheck(lNDX_KBV2RicoKalkMap, _ndx_KBV2RicoKalkQuotation, _displayOnConsole, _textToDisplayOnConsole);
+                recordAvailableInRico = (tblKalkKopf.AbrufID == 0);
+            }
+        }
+        return recordAvailableInRico;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>transRicoKalkAng2KBV</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 29.01.24
+    /// AX2009: classes.NDX_KBVBuildingProject2RicoKalk.transRicoKalkAng2KBV()
+    /// transfer RicoKalk quotations to D365FO
+    /// </summary>
+    /// <param name = "_contract">NDXRicoKalk2KBVBuildingProjectContract</param>
+    /// <returns>container</returns>
+    public container transRicoKalkAng2KBV(NDXRicoKalk2KBVBuildingProjectContract _contract)
+    {
+        System.Exception ex;
+        boolean withThrowError = false;
+        NDX_KBV2RicoKalkQuotation kBV2RicoKalkQuotation, kBV2RicoKalkQuotationOld, kBV2RicoKalkQuotationDeleted;
+        boolean lBVRicoExists;
+        boolean lNewAngebot, lNew;
+        NDXRicoBVBezeichnung ricoBVBez1, ricoBVBez2;
+        Set receivedRicoRecords;
+        boolean doesExistAtRico;
+        int anzBV = 0;
+        int anzBVRico = 0;
+        int anzQuotation = 0;
+        int nAnzProtPos;
+        KCS_StatusId kCS_StatusIdNew;
+        Info(strFmt("@NDXRicoBV:NDXQuotationComparison", NDXHelperCommon::seconds2Str(), "@NDXBase:NDXStart"));
+        try
+        {
+            Map prodGrpMap = this.getRicoKalkProduktGruppen(false, "@NDXRicoBV:NDXRicoKalkQuotationComparison");
+        
+            changecompany(conPeek(conRicoUK, 1))
+            {
+                Query q = new Query();
+                QueryBuildDataSource qbdsKBV2RicoKalkMap = q.addDataSource(tableNum(NDX_KBV2RicoKalkMap));
+                qbdsKBV2RicoKalkMap.addRange(fieldNum(NDX_KBV2RicoKalkMap, RicoKalkBVNr)).value(SysQuery::valueNot(0));
+                if ((_contract.parmKBVBuildingProjectIdFrom() && _contract.parmKBVBuildingProjectIdTo()) ||
+                (_contract.parmFromDate() && _contract.parmToDate()) ||
+                (_contract.parmCheckDays()))
+                {
+                    QueryBuildDataSource qbdsKBVBuildingProjectTable = qbdsKBV2RicoKalkMap.addDataSource(tableNum(KCS_KBVBuildingProjectTable));
+                    qbdsKBVBuildingProjectTable.relations(true);
+                    if (_contract.parmKBVBuildingProjectIdFrom() && _contract.parmKBVBuildingProjectIdTo())
+                    {
+                        qbdsKBVBuildingProjectTable
+                        .addRange(fieldNum(KCS_KBVBuildingProjectTable, KCS_KBVBuildingProjectID))
+                        .value(SysQuery::range(_contract.parmKBVBuildingProjectIdFrom(), _contract.parmKBVBuildingProjectIdTo()));
+                    }
+                    else if (_contract.parmFromDate() && _contract.parmToDate())
+                    {
+                        qbdsKBVBuildingProjectTable
+                        .addRange(fieldNum(KCS_KBVBuildingProjectTable, KCS_KBVReceiptDate))
+                        .value(SysQuery::range(_contract.parmFromDate(), _contract.parmToDate()));
+                    }
+                    else if (_contract.parmCheckDays())
+                    {
+                        qbdsKBVBuildingProjectTable
+                        .addRange(fieldNum(KCS_KBVBuildingProjectTable, KCS_KBVReceiptDate))
+                            .value(SysQuery::range((NDXHelperCommon::SystemDateGet() - _contract.parmCheckDays()), NDXHelperCommon::SystemDateGet()));
+                    }
+                }
+                else if (_contract.parmKBVBuildingProjectID())
+                {
+                    qbdsKBV2RicoKalkMap.addRange(fieldNum(NDX_KBV2RicoKalkMap, KBVBuildingProjectID)).value(queryValue(_contract.parmKBVBuildingProjectID()));
+                }
+                QueryRun qr = new QueryRun(q);
+                while (qr.next())
+                {
+                    ++anzBV;
+                    receivedRicoRecords = new Set(Types::Integer);
+                    NDX_KBV2RicoKalkMap nDX_KBV2RicoKalkMapLoc = qr.get(tableNum(NDX_KBV2RicoKalkMap));
+                    kBV2RicoKalkQuotationDeleted.clear();
+
+                    delete_from kBV2RicoKalkQuotationOld
+                    where   kBV2RicoKalkQuotationOld.KBVBuildingProjectID == nDX_KBV2RicoKalkMapLoc.KBVBuildingProjectID &&
+                            kBV2RicoKalkQuotationOld.OldValue             == NoYes::Yes;
+
+                    // nothing to do, if BV doesn't exists
+                    if (!KCS_KBVBuildingProjectTable::find(nDX_KBV2RicoKalkMapLoc.KBVBuildingProjectID))
+                    {
+                        continue;
+                    }
+
+                    [lBVRicoExists, ricoBVBez1, ricoBVBez2] = this.existsRicoKalkBV(
+                        nDX_KBV2RicoKalkMapLoc.RicoKalkBVNr,
+                        false,
+                        strFmt("@NDXRicoBV:NDXRicoKalkQuotationTransfer", nDX_KBV2RicoKalkMapLoc.RicoKalkBVNr, nDX_KBV2RicoKalkMapLoc.KBVBuildingProjectID)
+                        );
+                    info(strFmt("@NDXRicoBV:NDXRicoKalkQuotationTransfer", nDX_KBV2RicoKalkMapLoc.RicoKalkBVNr, nDX_KBV2RicoKalkMapLoc.KBVBuildingProjectID));
+
+                    try
+                    {
+                        ttsbegin;
+                        str whereAdd = strFmt(NDXSqlConstants::SQLAndFieldGreaterInt, NDXRicoKalkTblKalkKopfConstants::Abruf, 0);
+                        whereAdd += strFmt(NDXSqlConstants::SQLAndFieldNotIn, NDXRicoKalkTblKalkKopfConstants::Verfolg_Status, '50,51,52');
+
+                        IEnumerator enumeratorList = nDXRicoKalkADO.selectTblKalkKopf(nDX_KBV2RicoKalkMapLoc.RicoKalkBVNr, whereAdd, false);
+                        while (enumeratorList.MoveNext())
+                        {
+                            TblKalkKopf tblKalkKopf = enumeratorList.Current;
+
+                            kBV2RicoKalkQuotation   = NDX_KBV2RicoKalkQuotation::findAbrufID(tblKalkKopf.AbrufID, NoYes::No, true);
+
+                            receivedRicoRecords.add(tblKalkKopf.Abruf);
+
+                            //If there is a record in AX that does not exist on RicoKalk we delete the record
+                            kBV2RicoKalkQuotationDeleted = NDX_KBV2RicoKalkQuotation::findPossibleDeletedRecord(kBV2RicoKalkQuotation, true);
+                            if(kBV2RicoKalkQuotationDeleted)
+                            {
+                                kBV2RicoKalkQuotationDeleted.delete();
+                            }
+                            lNew = (kBV2RicoKalkQuotation == null);
+
+                            // save old/existing values from RicoKalk
+                            kBV2RicoKalkQuotationOld = kBV2RicoKalkQuotation.data();
+                            kBV2RicoKalkQuotationOld.OldValue = NoYes::Yes;
+                            kBV2RicoKalkQuotationOld.RecId = 0;
+
+                            kBV2RicoKalkQuotation.AbrufID = tblKalkKopf.AbrufID;
+                            kBV2RicoKalkQuotation.Abruf = tblKalkKopf.Abruf;
+                            kBV2RicoKalkQuotation.IntID = tblKalkKopf.Int_IDBOUND;
+                            kBV2RicoKalkQuotation.Int_Name = tblKalkKopf.Name1;
+                            kBV2RicoKalkQuotation.KBVBuildingProjectID = nDX_KBV2RicoKalkMapLoc.KBVBuildingProjectID;
+
+                            kBV2RicoKalkQuotation.KBVRequestID = tblKalkKopf.KBVRequestID ? tblKalkKopf.KBVRequestID : "@NDX:NDXMissingKBVRequestId";
+                            kBV2RicoKalkQuotation.QuotationId = strfmt(NDXRicoKalkConstants::QuotationIdPattern, 
+                                NDXRicoKalkConstants::QuotationIdPrefix, 
+                                nDX_KBV2RicoKalkMapLoc.RicoKalkBVNr,
+                                tblKalkKopf.Abruf);
+                            if (prodGrpMap.exists(tblKalkKopf.Produktgruppe_IDBound))
+                            {
+                                kBV2RicoKalkQuotation.KBVProductGroupID = prodGrpMap.lookup(tblKalkKopf.Produktgruppe_IDBound);
+                            }
+                            kBV2RicoKalkQuotation.Datum_Angelegt = tblKalkKopf.Datum_Auftrag;
+                            kBV2RicoKalkQuotation.QuotationExpiryDate = tblKalkKopf.Datum_Sollabgabe;
+                            kBV2RicoKalkQuotation.VerfolgStatus = tblKalkKopf.Verfolg_Status;
+                            kBV2RicoKalkQuotation.KCS_KBVSubject = strfmt(NDXPlaceholderConstants::FirstSpaceSecond, ricoBVBez1, ricoBVBez2);
+                            kBV2RicoKalkQuotation.QuotationTakerId = tblKalkKopf.Kalkulator_IDBound;
+                            kBV2RicoKalkQuotation.Verfolg_AenderDatum = tblKalkKopf.Verfolg_AenderDatum;
+                            //try
+                            //{
+                            if (kBV2RicoKalkQuotation.validateWrite())
+                            {
+                                kBV2RicoKalkQuotation.write();
+                            }
+
+                            if (!lNew && kBV2RicoKalkQuotationOld.validateWrite())
+                            {
+                                NDX_KBV2RicoKalkQuotation kBV2RicoKalkQuotationOld2 = NDX_KBV2RicoKalkQuotation::findAbrufID(kBV2RicoKalkQuotationOld.AbrufId, kBV2RicoKalkQuotationOld.OldValue, true);
+                                if (kBV2RicoKalkQuotationOld2)
+                                {
+                                    buf2Buf(kBV2RicoKalkQuotationOld, kBV2RicoKalkQuotationOld2);
+                                    select forupdate firstonly kBV2RicoKalkQuotationOld where kBV2RicoKalkQuotationOld.RecId == kBV2RicoKalkQuotationOld2.RecId;
+                                    buf2Buf(kBV2RicoKalkQuotationOld2, kBV2RicoKalkQuotationOld);
+                                }
+                                kBV2RicoKalkQuotationOld.write();
+                            }
+                            //}
+                            //catch
+                            //{
+                            //    error(strFmt("@NDXBase:NDXSavingError", 'kBV2RicoKalkQuotation'));
+                            //}
+                        }
+                        ttscommit;
+
+                        // generate new log header
+                        ttsbegin;
+                        nanzProtPos = 0;
+                        this.newProtRecord();
+                        nDX_KBV2RicoProtTable.KBVBuildingProjectID = nDX_KBV2RicoKalkMapLoc.KBVBuildingProjectID;
+                        nDX_KBV2RicoProtTable.RicoKalkBVNr = nDX_KBV2RicoKalkMapLoc.RicoKalkBVNr;
+                        nDX_KBV2RicoProtTable.ProtKopfTyp = NDXProtKopfTyp::RicoKalk_Angebot_Abgleich;
+                        oErrorMail.initialize(nDX_KBV2RicoProtTable);
+
+                        // Werte je Abruf ermitteln (KalkKopfWerte)
+                        Query qRicoKalkQuotation = new Query();
+                        QueryBuildDataSource qbdsRicoKalkQuotation = qRicoKalkQuotation.addDataSource(tableNum(NDX_KBV2RicoKalkQuotation));
+                        qbdsRicoKalkQuotation.addRange(fieldNum(NDX_KBV2RicoKalkQuotation, KBVBuildingProjectID)).value(queryValue(nDX_KBV2RicoKalkMapLoc.KBVBuildingProjectID));
+                        qbdsRicoKalkQuotation.addRange(fieldNum(NDX_KBV2RicoKalkQuotation, OldValue)).value(queryValue(NoYes::No));
+
+                        str qString = strFmt(NDXSqlConstants::SQLFieldNotEqualInt, fieldstr(NDX_KBV2RicoKalkQuotation, VerfolgStatus), 0);
+                        qString += ' ' + strfmt(NDXSqlConstants::SQLAndFieldNotEqualInt, fieldstr(NDX_KBV2RicoKalkQuotation, VerfolgStatus), 50);
+                        qString += ' ' + strfmt(NDXSqlConstants::SQLAndFieldNotEqualInt, fieldstr(NDX_KBV2RicoKalkQuotation, VerfolgStatus), 51);
+                        qString += ' ' + strfmt(NDXSqlConstants::SQLAndFieldNotEqualInt, fieldstr(NDX_KBV2RicoKalkQuotation, VerfolgStatus), 52);
+                        qbdsRicoKalkQuotation.addRange(fieldNum(NDX_KBV2RicoKalkQuotation, VerfolgStatus)).value(qString);
+                        qbdsRicoKalkQuotation.update(true);
+                        QueryRun qrRicoKalkQuotation = new QueryRun(qRicoKalkQuotation);
+                        while (qrRicoKalkQuotation.next())
+                        {
+                            kBV2RicoKalkQuotation = qrRicoKalkQuotation.get(tableNum(NDX_KBV2RicoKalkQuotation));
+
+                            oProtInfo.parmProtID2(kBV2RicoKalkQuotation.QuotationId);
+                            doesExistAtRico = receivedRicoRecords.in(kBV2RicoKalkQuotation.Abruf);
+                            if(!doesExistAtRico && this.recordAvailableInRicoKalk(kBV2RicoKalkQuotation, false, ''))
+                            {
+                                //Find records for deletion in AX (SalesQuotation and RicoKalkQuotaion table)
+                                kBV2RicoKalkQuotationOld = NDX_KBV2RicoKalkQuotation::findAbrufID(kBV2RicoKalkQuotation.AbrufID, NoYes::No,true);
+                                SalesQuotationTable salesQuotationTable = SalesQuotationTable::find(kBV2RicoKalkQuotation.QuotationId, true);
+                        
+                                if (salesQuotationTable)
+                                {
+                                    // Angebotsnummer
+                                    // We log only the Angebot_AngebotNr for deletion
+                                    oProtInfo.add(NDXKBVProtDetail::Angebot_AngebotNr,
+                                    kBV2RicoKalkQuotationOld.QuotationId, "@NDXBase:NDXDeleted",
+                                    kBV2RicoKalkQuotationOld.QuotationId, "@NDXBase:NDXDeleted", '', true);
+                                    // Delete record in AX in SalesQuotation and RicoKalkQuotaion table
+                                    salesQuotationTable.delete();
+
+                                    //publicate log
+                                    nDX_KBV2RicoProtTable.NewPublicate = NDXKBV2RicoProtStatus::Deleted;
+                                    nDX_KBV2RicoProtTable.CounterDeleteStatement += 1;
+
+                                    nAnzProtPos += oProtInfo.write(this);
+                                }
+                                if (kBV2RicoKalkQuotationOld)
+                                {
+                                    kBV2RicoKalkQuotationOld.delete();
+                                }
+
+                                continue;
+                            }
+                            TblKalkKopfWerte tblKalkKopfWerte = nDXRicoKalkADO.selectTblKalkKopfWerte(kBV2RicoKalkQuotation.AbrufId, false);
+                            if (tblKalkKopfWerte.Abruf_IDBound)
+                            {
+                                if (!tblKalkKopfWerte.ID)
+                                {
+                                    kBV2RicoKalkQuotation.OldValue = NoYes::Yes;
+                                    kBV2RicoKalkQuotation.update();
+                                    continue;
+                                }
+                        
+                                kBV2RicoKalkQuotation.KalkKopfWerteID = tblKalkKopfWerte.ID;
+                                kBV2RicoKalkQuotation.VKLohnS = tblKalkKopfWerte.VKLohnS;
+                                kBV2RicoKalkQuotation.VKDuebelS = tblKalkKopfWerte.VKDuebelS;
+                                kBV2RicoKalkQuotation.VKMatS = tblKalkKopfWerte.VKMatS;
+                                kBV2RicoKalkQuotation.VKLohnSRab = tblKalkKopfWerte.VKLohnSRab;
+                                kBV2RicoKalkQuotation.VKDuebelSRab = tblKalkKopfWerte.VKDuebelSRab;
+                                kBV2RicoKalkQuotation.VKMatSRab = tblKalkKopfWerte.VKMatSRab;
+                                kBV2RicoKalkQuotation.QuotationAmount = kBV2RicoKalkQuotation.VKLohnSRab
+                                + kBV2RicoKalkQuotation.VKDuebelSRab
+                                + kBV2RicoKalkQuotation.VKMatSRab;
+                            }
+
+                            // is the interested party a busRel or customer
+                            CustTable custTable;
+                            smmBusRelTable smmBusRelTable;
+                            SalesQuotationTable salesQuotationTable;
+                            DirPartyTable dirPartyTable;
+
+                            TblKalkInterressent tblKalkInterressent = nDXRicoKalkADO.selectTblKalkInterressentFromIntId(kBV2RicoKalkQuotation.IntId, false);
+                            if (tblKalkInterressent.Int_Id)
+                            {
+                                kBV2RicoKalkQuotation.OrgPartyID = tblKalkInterressent.OrgPartyId;
+                            }
+                            if (kBV2RicoKalkQuotation.OrgPartyID)
+                            {
+                                dirPartyTable = DirPartyTable::findByNum(kBV2RicoKalkQuotation.OrgPartyID, false, DirPartyType::Organization);
+                                if (dirPartyTable)
+                                {
+                                    custTable = CustTable::findByPartyRecId(dirPartyTable.RecId);
+                                    if (custTable)
+                                    {
+                                        kBV2RicoKalkQuotation.CustTable = custTable.RecId;
+                                        kBV2RicoKalkQuotation.CustAccount = custTable.AccountNum;
+                                    }
+                                    else
+                                    {
+                                        smmBusRelTable = smmBusRelTable::findByParty(dirPartyTable.RecId);
+                                        if (smmBusRelTable)
+                                        {
+                                            kBV2RicoKalkQuotation.smmBusRelTable = smmBusRelTable.RecId;
+                                            kBV2RicoKalkQuotation.BusRelAccount = smmBusRelTable.BusRelAccount;
+                                        }
+                                    }
+                                }
+                            }
+                            if (!custTable && !smmBusRelTable)
+                            {
+                                dirPartyTable = DirPartyTable::findByNum(NDXRicoKalkConstants::GBRicoAbgleichFehler, false, DirPartyType::Organization);
+                                smmBusRelTable = smmBusRelTable::findByParty(dirPartyTable.RecId);
+                                if (smmBusRelTable)
+                                {
+                                    kBV2RicoKalkQuotation.smmBusRelTable = smmBusRelTable.RecId;
+                                    kBV2RicoKalkQuotation.BusRelAccount = smmBusRelTable.BusRelAccount;
+                                }
+                            }
+                            if (!custTable && !smmBusRelTable)
+                            {
+                                if (kBV2RicoKalkQuotation.validateWrite())
+                                {
+                                    kBV2RicoKalkQuotation.write();
+                                }
+                                else
+                                {
+                                    // logging
+                                    oProtInfo.parmProtID2(kBV2RicoKalkQuotation.QuotationId);
+                                    oProtInfo.add(NDXKBVProtDetail::Angebot_Abgleichfehler,
+                                    kBV2RicoKalkQuotation.QuotationId, kBV2RicoKalkQuotation.KBVBuildingProjectID ,
+                                    kBV2RicoKalkQuotation.QuotationId, kBV2RicoKalkQuotation.KBVBuildingProjectID , '', true);
+                                    nAnzProtPos += oProtInfo.write(this);
+                                }
+
+                                // logging
+                                oProtInfo.parmProtID2(kBV2RicoKalkQuotation.QuotationId);
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_Abgleichfehler, 
+                                    kBV2RicoKalkQuotation.QuotationId, kBV2RicoKalkQuotation.OrgPartyID ,
+                                    kBV2RicoKalkQuotation.QuotationId, kBV2RicoKalkQuotation.OrgPartyID , '', true);
+                                nAnzProtPos += oProtInfo.write(this);
+                            }
+                            else
+                            {
+                                // generate salesQuotation
+                                ++anzQuotation;
+                                salesQuotationTable = SalesQuotationTable::find(kBV2RicoKalkQuotation.QuotationId, true);
+                                lNewAngebot = (salesQuotationTable == null);
+                                if (lNewAngebot)
+                                {
+                                    salesQuotationTable.initValue();
+                                    if (custTable)
+                                    {
+                                        salesQuotationTable.CustAccount = custTable.AccountNum;
+                                        salesQuotationTable.initFromCustTable();
+                                    }
+                                    else if (smmBusRelTable)
+                                    {
+                                        salesQuotationTable.BusRelAccount = smmBusRelTable.BusRelAccount;
+                                        salesQuotationTable.initFromBusinessRelationTable();
+                                    }
+                                    salesQuotationTable.QuotationId = kBV2RicoKalkQuotation.QuotationId;
+                                    salesQuotationTable.ShippingDateRequested = NDXHelperCommon::systemDateGet();
+                                    nDX_KBV2RicoProtTable.NewPublicate = NDXKBV2RicoProtStatus::New;
+                                    nDX_KBV2RicoProtTable.CounterInsertStatement += 1;
+                                }
+                                else
+                                {
+                                    if (custTable && custTable.AccountNum != salesQuotationTable.CustAccount)
+                                    {
+                                        salesQuotationTable.CustAccount = custTable.AccountNum;
+                                        salesQuotationTable.initFromCustTable();
+                                    }
+                                    if (!custTable && smmBusRelTable.BusRelAccount != salesQuotationTable.BusRelAccount)
+                                    {
+                                        salesQuotationTable.BusRelAccount = smmBusRelTable.BusRelAccount;
+                                        salesQuotationTable.initFromBusinessRelationTable();
+                                    }
+                                    // Either customer or busRel (customer priority)
+                                    if (salesQuotationTable.CustAccount && salesQuotationTable.BusRelAccount)
+                                    {
+                                        salesQuotationTable.BusRelAccount = '';
+                                    }
+                                    if (custTable)
+                                    {
+                                        salesQuotationTable.SalesUnitId = smmBusRelSalesDistrictGroup::avaFind(custTable.SalesDistrictId).KCS_KBVsmmSalesUnitId;
+                                    }
+                                    else if (smmBusRelTable)
+                                    {
+                                        salesQuotationTable.SalesUnitId = smmBusRelSalesDistrictGroup::avaFind(smmBusRelTable.SalesDistrict).KCS_KBVsmmSalesUnitId;
+                                    }
+                                    nDX_KBV2RicoProtTable.CounterUpdateStatement += 1;
+                                }
+                                //AX2009:
+                                // 1.14: NDX/PAFFH/NDX_TASK1235003877/19.06.2015
+                                //       SalesResponsible wird auch bei einem neuen Angebot falsch mit dem MainContact initialisiert!
+                                //salesQuotationTable.SalesResponsible = smmSalesUnit::NDX_getSalesUnitManager(salesQuotationTable.SalesUnitId, false);
+
+                                if (kBV2RicoKalkQuotation.validateWrite())
+                                {
+                                    kBV2RicoKalkQuotation.write();
+                                }
+                                else
+                                {
+                                    // logging
+                                    oProtInfo.parmProtID2(kBV2RicoKalkQuotation.QuotationId);
+                                    oProtInfo.add(NDXKBVProtDetail::Angebot_Abgleichfehler,
+                                    kBV2RicoKalkQuotation.QuotationId, kBV2RicoKalkQuotation.KBVBuildingProjectID ,
+                                    kBV2RicoKalkQuotation.QuotationId, kBV2RicoKalkQuotation.KBVBuildingProjectID , '', true);
+                                    nAnzProtPos += oProtInfo.write(this);
+                                }
+                                salesQuotationTable.KCS_KBVProductGroupID = kBV2RicoKalkQuotation.KBVProductGroupID;
+                                salesQuotationTable.modifiedField(fieldNum(SalesQuotationTable, KCS_KBVProductGroupID));
+                                salesQuotationTable.KCS_QuotationAmount = kBV2RicoKalkQuotation.QuotationAmount;
+                                salesQuotationTable.QuotationExpiryDate = kBV2RicoKalkQuotation.QuotationExpiryDate;
+                                salesQuotationTable.KCS_KBVRequestId = kBV2RicoKalkQuotation.KBVRequestId;
+
+                                if (kBV2RicoKalkQuotation.BusRelAccount == NDXRicoKalkConstants::GBRicoAbgleichFehler)
+                                {
+                                    salesQuotationTable.QuotationName = strFmt(NDXRicoKalkConstants::GBRicoAbgleichFehlerQuotationName
+                                        , kBV2RicoKalkQuotation.IntId, kBV2RicoKalkQuotation.Int_Name);
+                                }
+                                salesQuotationTable.KCS_KBVSubject = kBV2RicoKalkQuotation.KCS_KBVSubject;
+
+                                // worker sales taker
+                                salesQuotationTable.NDXRicoQuotationTaker = kBV2RicoKalkQuotation.QuotationTakerId;
+                                NDXRICOUserMap nDXRicoUserMap = NDXRICOUserMap::findRicoUser(kBV2RicoKalkQuotation.QuotationTakerId);
+                                HcmPersonnelNumberId personnelNumber = nDXRicoUserMap ? nDXRicoUserMap.HcmPersonnelNumberId : kBV2RicoKalkQuotation.QuotationTakerId;
+                                HcmWorker hCMWorker = HcmWorker::findByPersonnelNumber(personnelNumber);
+                                if (hCMWorker)
+                                {
+                                    salesQuotationTable.WorkerSalesTaker = hCMWorker.RecId;
+                                }
+                                salesQuotationTable.KCS_DecisionDate = kBV2RicoKalkQuotation.Verfolg_AenderDatum;
+
+                                if (salesQuotationTable.validateWrite())
+                                {
+                                    // TODO PaffH: Prüfen, ob Maßnahme notwendig ist
+                                    // Workaround, damit vorgegebene Rico-Angebotsnummer nicht überschrieben wird
+                                    if (lNewAngebot)
+                                    {
+                                        salesQuotationTable.KCS_KBVBuildingProjectID    = '';
+                                    }
+
+                                    if (salesQuotationTable.RecId)
+                                    {
+                                        salesQuotationTable.update(true, _contract.parmCalledFromSysOperations());
+                                    }
+                                    else
+                                    {
+                                        salesQuotationTable.insert();
+                                    }
+                                    if (lNewAngebot)
+                                    {
+                                        salesQuotationTable.KCS_KBVBuildingProjectID    = kBV2RicoKalkQuotation.KBVBuildingProjectID;
+                                        salesQuotationTable.update();
+                                    }
+
+                                    kCS_StatusIdNew = NDX_QuotationStatusMap2RicoKalk::getKCS_StatusId(kBV2RicoKalkQuotation.VerfolgStatus);
+                                    if (kCS_StatusIdNew && salesQuotationTable.KCS_StatusId != kCS_StatusIdNew)
+                                    {
+                                        salesQuotationTable.KCS_StatusId = kCS_StatusIdNew;
+                                        salesQuotationTable.QuotationStatus = KCS_QuotationStatus::find(salesQuotationTable.KCS_StatusId).KCS_SalesQuotationStatus;
+                                        salesQuotationTable.update();
+
+                                        // set status of other quotations from the building project
+                                        Args args = new Args();
+                                        args.record(salesQuotationTable);
+                                        AVAQuotationStatusModify aVAQuotationStatusModify = AVAQuotationStatusModify::construct(args);
+                                        aVAQuotationStatusModify.init();
+                                        aVAQuotationStatusModify.updateSalesQuotation();
+                                        salesQuotationTable.reread();
+                                    }
+                                }
+                                else
+                                {
+                                    error(strFmt("@NDXRicoBV:NDXRicoKalkQuotationNotSaved", kBV2RicoKalkQuotation.QuotationId, kBV2RicoKalkQuotation.KBVBuildingProjectID));
+                                    // logging
+                                    oProtInfo.parmProtID2(kBV2RicoKalkQuotation.QuotationId);
+                                    oProtInfo.add(NDXKBVProtDetail::Angebot_ValidateWriteError,
+                                    kBV2RicoKalkQuotation.QuotationId, kBV2RicoKalkQuotation.KBVBuildingProjectID ,
+                                    kBV2RicoKalkQuotation.QuotationId, kBV2RicoKalkQuotation.KBVBuildingProjectID , '', true);
+                                    nAnzProtPos += oProtInfo.write(this);
+                                }
+
+                                // logging
+                                kBV2RicoKalkQuotationOld = NDX_KBV2RicoKalkQuotation::findAbrufID(kBV2RicoKalkQuotation.AbrufId, NoYes::Yes);
+
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_AngebotNr,
+                                    kBV2RicoKalkQuotationOld.QuotationId, kBV2RicoKalkQuotation.QuotationId,
+                                    kBV2RicoKalkQuotationOld.QuotationId, kBV2RicoKalkQuotation.QuotationId, '', true);
+
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_Produktgruppe, 
+                                    kBV2RicoKalkQuotationOld.KBVProductGroupID, kBV2RicoKalkQuotation.KBVProductGroupID,
+                                    kBV2RicoKalkQuotationOld.KBVProductGroupID, kBV2RicoKalkQuotation.KBVProductGroupID);
+
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_AbrufID, 
+                                    kBV2RicoKalkQuotationOld.AbrufID, kBV2RicoKalkQuotation.AbrufID,
+                                    int2str(kBV2RicoKalkQuotationOld.AbrufID), int2str(kBV2RicoKalkQuotation.AbrufID));
+
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_Abruf, 
+                                    kBV2RicoKalkQuotationOld.Abruf, kBV2RicoKalkQuotation.Abruf,
+                                    int2str(kBV2RicoKalkQuotationOld.Abruf), int2str(kBV2RicoKalkQuotation.Abruf));
+
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_VKDuebel, 
+                                    kBV2RicoKalkQuotationOld.VKDuebelS, kBV2RicoKalkQuotation.VKDuebelS,
+                                    num2str(kBV2RicoKalkQuotationOld.VKDuebelS,12,2,2,1), num2str(kBV2RicoKalkQuotation.VKDuebelS,12,2,2,1));
+
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_VKLohn, 
+                                    kBV2RicoKalkQuotationOld.VKLohnS, kBV2RicoKalkQuotation.VKLohnS,
+                                    num2str(kBV2RicoKalkQuotationOld.VKLohnS,12,2,2,1), num2str(kBV2RicoKalkQuotation.VKLohnS,12,2,2,1));
+
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_VKMat, 
+                                    kBV2RicoKalkQuotationOld.VKMatS, kBV2RicoKalkQuotation.VKMatS,
+                                    num2str(kBV2RicoKalkQuotationOld.VKMatS,12,2,2,1), num2str(kBV2RicoKalkQuotation.VKMatS,12,2,2,1));
+
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_VKDuebelRab, 
+                                    kBV2RicoKalkQuotationOld.VKDuebelSRab, kBV2RicoKalkQuotation.VKDuebelSRab,
+                                    num2str(kBV2RicoKalkQuotationOld.VKDuebelSRab,12,2,2,1), num2str(kBV2RicoKalkQuotation.VKDuebelSRab,12,2,2,1));
+
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_VKLohnRab, 
+                                    kBV2RicoKalkQuotationOld.VKLohnSRab, kBV2RicoKalkQuotation.VKLohnSRab,
+                                    num2str(kBV2RicoKalkQuotationOld.VKLohnSRab,12,2,2,1), num2str(kBV2RicoKalkQuotation.VKLohnSRab,12,2,2,1));
+
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_VKMatRab, 
+                                    kBV2RicoKalkQuotationOld.VKMatSRab, kBV2RicoKalkQuotation.VKMatSRab,
+                                    num2str(kBV2RicoKalkQuotationOld.VKMatSRab,12,2,2,1), num2str(kBV2RicoKalkQuotation.VKMatSRab,12,2,2,1));
+                        
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_Angebotssumme, 
+                                    kBV2RicoKalkQuotationOld.QuotationAmount, kBV2RicoKalkQuotation.QuotationAmount,
+                                    num2str(kBV2RicoKalkQuotationOld.QuotationAmount,12,2,2,1)   , num2str(kBV2RicoKalkQuotation.QuotationAmount,12,2,2,1));
+
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_Kunde, 
+                                    kBV2RicoKalkQuotationOld.CustAccount, kBV2RicoKalkQuotation.CustAccount,
+                                    kBV2RicoKalkQuotationOld.CustAccount, kBV2RicoKalkQuotation.CustAccount);
+                        
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_GB, 
+                                    kBV2RicoKalkQuotationOld.BusRelAccount, kBV2RicoKalkQuotation.BusRelAccount,
+                                    kBV2RicoKalkQuotationOld.BusRelAccount, kBV2RicoKalkQuotation.BusRelAccount);
+
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_Ablaufdatum, 
+                                    kBV2RicoKalkQuotationOld.QuotationExpiryDate, kBV2RicoKalkQuotation.QuotationExpiryDate,
+                                    date2str(kBV2RicoKalkQuotationOld.QuotationExpiryDate, 123, DateDay::Digits2, DateSeparator::Dot, DateMonth::Digits2, DateSeparator::Dot, DateYear::Digits4),
+                                    date2str(kBV2RicoKalkQuotation.QuotationExpiryDate, 123, DateDay::Digits2, DateSeparator::Dot, DateMonth::Digits2, DateSeparator::Dot, DateYear::Digits4));
+
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_Erstellungsdatum, 
+                                    kBV2RicoKalkQuotationOld.Datum_Angelegt, kBV2RicoKalkQuotation.Datum_Angelegt,
+                                    date2str(DateTimeUtil::date(kBV2RicoKalkQuotationOld.Datum_Angelegt), 123, DateDay::Digits2, DateSeparator::Dot, DateMonth::Digits2, DateSeparator::Dot, DateYear::Digits4),
+                                    date2str(DateTimeUtil::date(kBV2RicoKalkQuotation.Datum_Angelegt), 123, DateDay::Digits2, DateSeparator::Dot, DateMonth::Digits2, DateSeparator::Dot, DateYear::Digits4));
+
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_VerfolgStatus, 
+                                    kBV2RicoKalkQuotationOld.VerfolgStatus, kBV2RicoKalkQuotation.VerfolgStatus,
+                                    int2str(kBV2RicoKalkQuotationOld.VerfolgStatus), int2str(kBV2RicoKalkQuotation.VerfolgStatus));
+                        
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_Bearbeiter, 
+                                    kBV2RicoKalkQuotationOld.QuotationTakerId, kBV2RicoKalkQuotation.QuotationTakerId,
+                                    kBV2RicoKalkQuotationOld.QuotationTakerId, kBV2RicoKalkQuotation.QuotationTakerId);
+
+                                oProtInfo.add(NDXKBVProtDetail::Angebot_BVBezeichnung, 
+                                    kBV2RicoKalkQuotationOld.KCS_KBVSubject, kBV2RicoKalkQuotation.KCS_KBVSubject,
+                                    kBV2RicoKalkQuotationOld.KCS_KBVSubject, kBV2RicoKalkQuotation.KCS_KBVSubject);
+
+                                oProtInfo.add(NDXKBVProtDetail::Anfrage_Verfolg_AenderDatum, 
+                                    kBV2RicoKalkQuotationOld.Verfolg_AenderDatum, kBV2RicoKalkQuotation.Verfolg_AenderDatum,
+                                    date2str(kBV2RicoKalkQuotationOld.Verfolg_AenderDatum, 123, DateDay::Digits2, DateSeparator::Dot, DateMonth::Digits2, DateSeparator::Dot, DateYear::Digits4),
+                                    date2str(kBV2RicoKalkQuotation.Verfolg_AenderDatum, 123, DateDay::Digits2, DateSeparator::Dot, DateMonth::Digits2, DateSeparator::Dot, DateYear::Digits4));
+                            }
+                            nAnzProtPos += oProtInfo.write(this);
+                        }
+
+                        this.deleteNotUsedSalesQuotations(nDX_KBV2RicoKalkMapLoc);
+                
+                        SysInfologLevel sysInfologLevel = infolog.infologLevel();
+                        infolog.setInfoLogLevel(SysInfologLevel::Error);
+                        this.updatePotSalesVol(nDX_KBV2RicoKalkMapLoc.KBVBuildingProjectID);
+                        infolog.setInfoLogLevel(sysInfologLevel);
+
+                        if (nAnzProtPos)
+                        {
+                            if (nDX_KBV2RicoProtTable.validateWrite())
+                            {
+                                NDX_KBV2RicoProtTable nDX_KBV2RicoProtTableSave;
+                                nDX_KBV2RicoProtTableSave.data(nDX_KBV2RicoProtTable);
+                                nDX_KBV2RicoProtTable.updateFromNDXADO(nDXRicoKalkADO);
+                                nDX_KBV2RicoProtTable.CounterDeleteStatement += nDX_KBV2RicoProtTableSave.CounterDeleteStatement;
+                                nDX_KBV2RicoProtTable.CounterInsertStatement += nDX_KBV2RicoProtTableSave.CounterInsertStatement;
+                                nDX_KBV2RicoProtTable.CounterUpdateStatement += nDX_KBV2RicoProtTableSave.CounterUpdateStatement;
+                                nDX_KBV2RicoProtTable.write();
+                            }
+                            nDX_KBV2RicoProtTable.clear();
+                        }
+                        ttscommit;
+                    }
+                    catch
+                    {
+                        ttsabort;
+                        // logging
+                        oProtInfo.parmProtID2(kBV2RicoKalkQuotation.QuotationId);
+                        oProtInfo.add(NDXKBVProtDetail::Angebot_Abgleichfehler,
+                                    kBV2RicoKalkQuotation.QuotationId, kBV2RicoKalkQuotation.KBVBuildingProjectID ,
+                                    kBV2RicoKalkQuotation.QuotationId, kBV2RicoKalkQuotation.KBVBuildingProjectID , '', true);
+                    }
+                    finally
+                    {
+                        oProtInfo.write(this);
+                        oErrorMail.sendMessage();
+                    }
+                }
+            }
+        }
+        catch (ex)
+        {
+            error(ex.Message);
+            withThrowError = true;
+        }
+        Info(strFmt("@NDXRicoBV:NDXNumberOfBuildingProjectsQuotations", anzBV, anzQuotation));
+        Info(strFmt("@NDXRicoBV:NDXQuotationComparison", NDXHelperCommon::seconds2Str(), "@NDXBase:NDXEnd"));
+        if (withThrowError)
+        {
+            throw error("@NDXRicoBV:NDXErrorRicoKalkQuotationTransfer");
+        }
+        return [anzBV, anzBVRico, anzQuotation];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteNotUsedSalesQuotations</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.02.24
+    /// </summary>
+    /// <param name = "_ndx_KBV2RicoKalkMap">NDX_KBV2RicoKalkMap</param>
+    /// <returns>counter deleted records</returns>
+    private int deleteNotUsedSalesQuotations(NDX_KBV2RicoKalkMap _ndx_KBV2RicoKalkMap)
+    {
+        SalesQuotationTable salesQuotationTable;
+        NDX_KBV2RicoProtTable lNDX_KBV2RicoProtTable;
+        NDX_KBV2RicoProtLine lNDX_KBV2RicoProtLine;
+        int anz;
+
+        lNDX_KBV2RicoProtTable.clear();
+        lNDX_KBV2RicoProtTable.KBVBuildingProjectID = _ndx_KBV2RicoKalkMap.KBVBuildingProjectID;
+        lNDX_KBV2RicoProtTable.RicoKalkBVNr         = _ndx_KBV2RicoKalkMap.RicoKalkBVNr;
+        lNDX_KBV2RicoProtTable.ProtKopfTyp          = NDXProtKopfTyp::RicoKalk_Angebot_Abgleich;
+        lNDX_KBV2RicoProtTable.NewPublicate         = NDXKBV2RicoProtStatus::Cleanup;
+        //lNDX_KBV2RicoProtTable.KBVProtID            = this.newGetNumNDXKBVProtId();
+        lNDX_KBV2RicoProtTable.KBVProtIDInt         = NDX_KBV2RicoProtTable::getNextProtIdInt();
+
+
+        while select forUpdate salesQuotationTable
+        where salesQuotationTable.KCS_KBVBuildingProjectID == _ndx_KBV2RicoKalkMap.KBVBuildingProjectID
+        {
+            if(!this.checkRicoKalkSalesQuotationExists(salesQuotationTable,  _ndx_KBV2RicoKalkMap.RicoKalkBVNr))
+            {
+                anz++;
+                ttsbegin;
+                salesQuotationTable.delete();
+
+                lNDX_KBV2RicoProtLine.clear();
+                lNDX_KBV2RicoProtLine.KBVProtID     = lNDX_KBV2RicoProtTable.KBVProtID;
+                lNDX_KBV2RicoProtLine.KBVProtIDInt  = lNDX_KBV2RicoProtTable.KBVProtIDInt;
+                lNDX_KBV2RicoProtLine.KBVProtDetail = NDXKBVProtDetail::Angebot_AngebotNr;
+                lNDX_KBV2RicoProtLine.ProtID2       = salesQuotationTable.QuotationId;
+                lNDX_KBV2RicoProtLine.ValueOld      = salesQuotationTable.QuotationId;
+                lNDX_KBV2RicoProtLine.ValueNew      = "@NDXRicoBV:NDXCleanUpQuotationDeleted";
+                lNDX_KBV2RicoProtLine.write();
+                ttscommit;
+            }
+        }
+        if(anz > 0)
+        {
+            lNDX_KBV2RicoProtTable.write();
+        }
+        return anz;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updatePotSalesVol</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.02.24
+    /// </summary>
+    /// <param name = "kCS_KBVBuildingProjectID">KCS_KBVBuildingProjectID</param>
+    protected void updatePotSalesVol(KCS_KBVBuildingProjectID kCS_KBVBuildingProjectID)
+    {
+        Args args = new Args();
+        args.record(KCS_KBVBuildingProjectTable::find(kCS_KBVBuildingProjectID));
+        args.caller(this);
+        AVABPJobsController::newFromRico(args);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkRicoKalkSalesQuotationExists</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 05.02.24
+    /// </summary>
+    /// <param name = "_salesQuotationTable">SalesQuotationTable</param>
+    /// <param name = "_currentcBVNr">NDXRicoKalkBVNr</param>
+    /// <param name = "_displayOnConsole">boolean</param>
+    /// <param name = "_textToDisplayOnConsole">str</param>
+    /// <returns>Salesquotation in RicoKalk exists</returns>
+    private boolean checkRicoKalkSalesQuotationExists(
+        SalesQuotationTable _salesQuotationTable, 
+        NDXRicoKalkBVNr _currentcBVNr, 
+        boolean _displayOnConsole = false, 
+        str _textToDisplayOnConsole = '')
+    {
+        NDXRicoAbrufStr cAbruf;
+        NDXRicoKalkBVNrStr RICBVNr;
+        NDXRicoKalkBVNrStr cBVNr;
+        boolean ret = true;
+
+        if(_salesQuotationTable)
+        {
+            [RICBVNr, cAbruf] = NDXTokenizer::getTokenFromString(_salesQuotationTable.QuotationId, [1,2] , '.');
+            NDXRicoAbruf abruf = str2int(cAbruf);
+
+            [cBVNr] = NDXTokenizer::getTokenFromString(RICBVNr, [2] , '-');
+
+            TblKalkKopf tblKalkKopf = nDXRicoKalkADO.selectTblKalkKopfFromBVNrAndAbrufAndRequestid(_currentcBVNr, abruf, _salesQuotationTable.KCS_KBVRequestID, _displayOnConsole, _textToDisplayOnConsole);
+            if (tblKalkKopf.Abruf == 0)
+            {
+                ret = false;
+            }
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

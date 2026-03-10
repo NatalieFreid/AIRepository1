@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASalesPackingSlipJournalPostCls_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     The <c>AVASalesPackingSlipJournalPostCls_Extension</c> class is the extension for <c>SalesPackingSlipJournalPost</c>
+/// </summary>
+[ExtensionOf(classStr(SalesPackingSlipJournalPost))]
+final class AVASalesPackingSlipJournalPostCls_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>updateSourceTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>updateSourceTable</c> method.
+    /// </summary>
+    protected void updateSourceTable()
+    {
+        SetEnumerator   locSE;
+        SalesTable      locSalesTable;
+
+        next updateSourceTable();
+
+        ttsbegin;
+        locSE = ordersPosted.getEnumerator();
+
+        while (locSE.moveNext())
+        {
+            locSalesTable = SalesTable::find(locSE.current(),true);
+            if (locSalesTable.RecId && !locSalesTable.InterCompanyOrder)
+            {
+                locSalesTable.avaUpdateFreightInformationAfterPSPost(true);
+            }
+        }
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postJournalPost</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Insert the tracking number information in the packing slip.
+    /// </summary>
+    public void postJournalPost()
+    {
+        DlvMode             locDlvMode;
+        SalesTable          locSalesTable;
+        DlvMode             locDlvModeSalesTable;
+        DlvTerm             locDlvTermSalesTable;
+        boolean             handleCollectionCommission;
+        boolean             updateSalesTable;
+
+        next postJournalPost();
+
+        locDlvMode              = DlvMode::find(custPackingSlipJour.DlvMode);
+        locSalesTable           = custPackingSlipJour.SalesTable();
+        locDlvModeSalesTable    = DlvMode::find(locSalesTable.DlvMode);
+
+        if(     !locDlvMode.KCS_ColComActive
+            &&  locDlvMode.Code != locDlvModeSalesTable.Code
+            &&  locDlvModeSalesTable.KCS_ColComActive   )
+        {
+            handleCollectionCommission = true;
+        }
+
+        if(     locDlvMode.KCS_ColComActive
+            &&  locSalesTable.packingSlipTotal() < locSalesTable.KCS_CollComp   )
+        {
+            handleCollectionCommission = true;
+        }
+        
+        if(handleCollectionCommission)
+        {
+            custPackingSlipJour.salesTable().avaRemoveMarkupCollectionCommision();
+        }
+
+        if(     locDlvMode.Code                     != locDlvModeSalesTable.Code
+            &&  locDlvMode.KCS_FreightChargeFree    != locDlvModeSalesTable.KCS_FreightChargeFree)
+        {
+            locDlvTermSalesTable = DlvTerm::find(locSalesTable.DlvTerm);
+
+            if(     locDlvTermSalesTable.KCS_FreightChargeFree  == NoYes::Yes
+                &&  locDlvMode.KCS_FreightChargeFree            == NoYes::No    )
+            {
+                updateSalesTable = true;
+            }
+        }
+
+        if(updateSalesTable)
+        {
+            ttsBegin;
+            locSalesTable.selectForUpdate(true);
+            locSalesTable.KCS_FreightChargeFree = NoYes::No;
+            locSalesTable.update();
+            ttsCommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateSourceLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    AVA <c>updateSourceLine</c> method.
+    /// </summary>
+    protected void updateSourceLine()
+    {
+        SalesLine                           locSalesLine;
+        SalesTable                          locSalesTable;
+        
+        next updateSourceLine();
+        
+        locSalesLine = SalesLine::findRecId(salesLine.RecId);
+
+        if(     locSalesLine.RemainInventPhysical           > 0
+            &&  locSalesLine.KCS_SOCPickingReleaseIndicator == NoYes::Yes)
+        {
+            ttsBegin;
+            locSalesLine.selectForUpdate(true);
+            locSalesLine.KCS_SOCPickingReleaseIndicator = NoYes::No;
+            locSalesLine.ReceiptDateConfirmed           = dateNull();
+            locSalesLine.ShippingDateConfirmed          = dateNull();
+            locSalesLine.doUpdate();
+            locSalesLine.avaUpdateSalesTableKCS_PickingReleaseIndicator();
+            locSalesTable                               = custPackingSlipJour.SalesTable();
+            locSalesTable.avaUpdateShippingDateConfirmedCommon(true);
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

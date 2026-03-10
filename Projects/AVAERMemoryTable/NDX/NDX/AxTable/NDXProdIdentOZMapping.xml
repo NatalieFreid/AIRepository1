@@ -1,0 +1,393 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>NDXProdIdentOZMapping</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// PaffH 24.10.23
+/// OZ-Item mapping for ProdIdent
+/// </summary>
+public class NDXProdIdentOZMapping extends common
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 24.10.23
+    /// </summary>
+    /// <param name = "itemId">ItemId</param>
+    /// <param name = "update">update</param>
+    /// <returns>NDXProdIdentOZMapping</returns>
+    static NDXProdIdentOZMapping find(ItemId  itemId,
+                                    boolean update = false)
+    {
+        NDXProdIdentOZMapping nDXProdIdentOZMapping;
+        nDXProdIdentOZMapping.selectForUpdate(update);
+
+        select firstonly nDXProdIdentOZMapping
+        where nDXProdIdentOZMapping.ItemIdOZ == itemId;
+
+        return nDXProdIdentOZMapping;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findOrCreate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 24.10.23
+    /// </summary>
+    /// <param name = "itemId">ItemId</param>
+    /// <param name = "doWrite">boolean</param>
+    /// <returns>NDXProdIdentOZMapping</returns>
+    static NDXProdIdentOZMapping findOrCreate(ItemId itemId, boolean doWrite = false)
+    {
+        NDXProdIdentOZMapping nDXProdIdentOZMapping = NDXProdIdentOZMapping::find(itemId, true);
+        if (!nDXProdIdentOZMapping)
+        {
+            nDXProdIdentOZMapping.ItemIdOZ = itemId;
+            if (doWrite)
+            {
+                nDXProdIdentOZMapping.insert();
+            }
+        }
+
+        return nDXProdIdentOZMapping;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkOZMappingProdIdentControlPanel</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 24.10.23
+    /// AX2009: tables.NDX_ProdIdent_OZMapping
+    /// </summary>
+    /// <param name = "buildNew">boolean</param>
+    /// <param name = "itemIdFilter">ItemId</param>
+    static void checkOZMappingProdIdentControlPanel(boolean buildNew = false, ItemId itemIdFilter = '')
+    {
+        NDXProdIdentOZMapping nDXProdIdentOZMapping;
+        InventTable inventTable;
+        Query   q = new Query();
+        QueryRun    qr;
+        QueryBuildDataSource    qbds;
+        if (buildNew)
+        {
+            if (itemIdFilter)
+            {
+                delete_from nDXProdIdentOZMapping
+                where nDXProdIdentOZMapping.ItemIdOZ == itemIdFilter
+                    && nDXProdIdentOZMapping.Active == NoYes::No;
+            }
+            else
+            {
+                delete_from nDXProdIdentOZMapping
+                where nDXProdIdentOZMapping.Active == NoYes::No;
+            }
+        }
+        qbds = q.addDataSource(tablenum(InventTable));
+        qbds.addGroupByField(fieldnum(InventTable, ItemId));
+        qbds.addGroupByField(fieldnum(InventTable, KCS_ItemUsageId));
+        if (itemIdFilter)
+        {
+            qbds.addRange(fieldnum(InventTable, ItemId)).value(QueryValue(itemIdFilter));
+        }
+ 
+        qr = new QueryRun(q);
+        while (qr.next())
+        {
+            inventTable = qr.get(tablenum(InventTable));
+            nDXProdIdentOZMapping = NDXProdIdentOZMapping::find(inventTable.ItemId, true);
+            if (nDXProdIdentOZMapping && nDXProdIdentOZMapping.Active == NoYes::Yes)
+            {
+                continue;
+            }
+
+            if (inventTable.NDXIsXItem())
+            {
+                ttsbegin;
+                nDXProdIdentOZMapping.ItemIdOZ = inventTable.ItemId;
+                nDXProdIdentOZMapping.write();
+                ttscommit;
+            }
+
+            if (inventTable.NDXIsOVItem())
+            {
+                ttsbegin;
+                nDXProdIdentOZMapping.ItemIdOZ = inventTable.ItemId;
+                nDXProdIdentOZMapping.ItemIdMapped = inventTable.NDXMappedItemidOVItem();
+                nDXProdIdentOZMapping.write();
+                ttscommit;
+            }
+
+            if (inventTable.NDXIsOZItem() ==  NoYes::Yes)
+            {
+                NDXProdIdentOZMapping::checkOZMapping(inventTable.ItemId);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkOZMapping</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 24.10.23
+    /// </summary>
+    /// <param name = "itemIdBase">ItemId</param>
+    /// <param name = "itemIdCheck">ItemId</param>
+    /// <param name = "bomIdBase">BomId</param>
+    /// <param name = "level">int</param>
+    static void checkOZMapping(ItemId itemIdBase, ItemId itemIdCheck = '', BomId bomIdBase = '', int level = 1)
+    {
+        BOM                             bom;
+        BOMId                           bOMId;
+        BOMVersion                      bomVersion;
+        NDXProdIdentOZMapping         nDXProdIdentOZMapping;
+        NDXProdIdentOZMappingLine     nDXProdIdentOZMappingLine;
+        InventTable inventTable;
+        boolean lFirst = true;
+        int assignements = 0;
+        ItemId locItemIdCheck = itemIdCheck;
+        if (prmisdefault(itemIdCheck))
+        {
+            locItemIdCheck = itemIdBase;
+        }
+        while select    bom
+        where       bom.ItemId == locItemIdCheck
+        join        bomVersion
+            where   bomVersion.BOMId == bom.BOMId
+                &&  bomVersion.Active == NoYes::Yes
+        join        inventTable
+            where   inventTable.ItemId == bomVersion.ItemId
+        notexists join nDXProdIdentOZMapping
+            where   nDXProdIdentOZMapping.ItemIdOZ  == bom.ItemId
+            &&  nDXProdIdentOZMapping.ItemIdMapped == locItemIdCheck
+
+        {
+            ++assignements;
+            bOMId = prmisdefault(bomIdBase) ? bom.BOMId : bomIdBase;
+            if (inventTable.NDXIsOZItem())
+            {
+                //            info(strfmt("OZ-Artikel [%1] Basis [%2]", bomVersion.ItemId, bomVersion.ItemId));
+                NDXProdIdentOZMapping::checkOZMapping(itemIdBase, bomVersion.ItemId, bom.BOMId, level + 1);
+                continue;
+            }
+            if (lFirst)
+            {
+                nDXProdIdentOZMapping = NDXProdIdentOZMapping::findOrCreate(itemIdBase, true);
+                lFirst = false;
+            }
+            nDXProdIdentOZMappingLine = NDXProdIdentOZMappingLine::findOrCreate(itemIdBase, bom.BOMId, bomVersion.ItemId, locItemIdCheck, level, true);
+
+            //        info(strfmt("Artikel [%1] wird verwendet in [%2]", itemIdBase, bomVersion.ItemId));
+        }
+        if (nDXProdIdentOZMapping && (level == 1))
+        {
+            nDXProdIdentOZMapping.reread();
+            nDXProdIdentOZMapping.Assignments = NDXProdIdentOZMappingLine::assignements(itemIdBase);
+            if (assignements == 1 && !nDXProdIdentOZMapping.ItemIdMapped)
+            {
+                nDXProdIdentOZMapping.ItemIdMapped = nDXProdIdentOZMappingLine.ItemId;
+            }
+            ttsbegin;
+            nDXProdIdentOZMapping.update();
+            ttscommit;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMappedItemIdActiv</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// PaffH 24.10.23
+    /// </summary>
+    /// <param name = "itemIdOZ">ItemId</param>
+    /// <param name = "retItemIdOZOrItemIdMapped">boolean</param>
+    /// <returns>ItemId</returns>
+    static public ItemId getMappedItemIdActiv(ItemId itemIdOZ, boolean retItemIdOZOrItemIdMapped = false)
+    {
+        NDXProdIdentOZMapping nDXProdIdentOZMapping = NDXProdIdentOZMapping::find(itemIdOZ);
+        if (nDXProdIdentOZMapping.ItemIdMapped && nDXProdIdentOZMapping.Active == NoYes::Yes)
+        {
+            return nDXProdIdentOZMapping.ItemIdMapped;
+        }
+        return (retItemIdOZOrItemIdMapped ? itemIdOZ : '');
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<DeveloperDocumentation>@NDX:NDXProdIdentOZMapping</DeveloperDocumentation>
+	<Label>@NDX:NDXProdIdentOZMapping</Label>
+	<SubscriberAccessLevel>
+		<Read>Allow</Read>
+	</SubscriberAccessLevel>
+	<TitleField1>ItemIdOZ</TitleField1>
+	<TitleField2>ItemIdMapped</TitleField2>
+	<AllowRowVersionChangeTracking>Yes</AllowRowVersionChangeTracking>
+	<ClusteredIndex>ItemIdOZIdx</ClusteredIndex>
+	<PrimaryIndex>ItemIdOZIdx</PrimaryIndex>
+	<ReplacementKey>ItemIdOZIdx</ReplacementKey>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>ItemIdOZ</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ItemIdMapped</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Assignments</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Active</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SysRowVersionNumber</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>ItemIdOZ</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>GridView</Name>
+			<Label>@NDXBase:NDXGridView</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>ItemIdOZ</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ItemIdMapped</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Assignments</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Active</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>SysRowVersionNumber</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>SysRowVersionNumber</ExtendedDataType>
+			<Null>Yes</Null>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ItemIdOZ</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>NDXItemIdOZ</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ItemIdMapped</Name>
+			<ExtendedDataType>NDXOZMappedBy</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>Assignments</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>NDXAssignments</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Active</Name>
+			<ExtendedDataType>NDXActive</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>UpdatedUTC</Name>
+			<ExtendedDataType>NDXUpdatedUTC</ExtendedDataType>
+			<IgnoreEDTRelation>Yes</IgnoreEDTRelation>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>ItemIdOZIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>ItemIdOZ</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>InventTable</Name>
+			<Cardinality>ExactlyOne</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>InventTable</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>ItemIdOZ</Name>
+					<Field>ItemIdOZ</Field>
+					<RelatedField>ItemId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>NDXProdIdentControlPanel</Name>
+			<Cardinality>ExactlyOne</Cardinality>
+			<RelatedTable>NDXProdIdentControlPanel</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>ItemIdOZ</Name>
+					<Field>ItemIdOZ</Field>
+					<RelatedField>ItemId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

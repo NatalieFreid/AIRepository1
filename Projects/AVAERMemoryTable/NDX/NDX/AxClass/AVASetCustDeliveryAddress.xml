@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVASetCustDeliveryAddress</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// runable class to associated existing addresses with a certain Role
+/// </summary>
+public class AVASetCustDeliveryAddress
+{
+    LogisticsLocationRoleType locationRoleType, locationRoleTypeReplacement;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// main method
+    /// </summary>
+    /// <param name = "_args">Args</param>
+    public static void main(Args _args)
+    {
+        AVASetCustDeliveryAddress setAddress = new AVASetCustDeliveryAddress();
+
+        setAddress.parmLocationRoleType(LogisticsLocationRoleType::Delivery);
+        setAddress.parmLocationRoleTypeReplacement(LogisticsLocationRoleType::Business);
+        setAddress.startDeliveryCreation();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmLocationRoleType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// sets the role type, addresses should be additionally set for
+    /// </summary>
+    /// <param name = "_roleType">LogisticsLocationRoleType</param>
+    /// <returns>LogisticsLocationRoleType</returns>
+    public LogisticsLocationRoleType parmLocationRoleType(LogisticsLocationRoleType _roleType = locationRoleType)
+    {
+        locationRoleType = _roleType;
+
+        return locationRoleType;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmLocationRoleTypeReplacement</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// sets the role type, addresses should be referenced from
+    /// </summary>
+    /// <param name = "_roleType">LogisticsLocationRoleType</param>
+    /// <returns>LogisticsLocationRoleType</returns>
+    public LogisticsLocationRoleType parmLocationRoleTypeReplacement(LogisticsLocationRoleType _roleType = locationRoleTypeReplacement)
+    {
+        locationRoleTypeReplacement = _roleType;
+
+        return locationRoleTypeReplacement;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>startDeliveryCreation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Contains the running logic for the class including info labels
+    /// </summary>
+    public void startDeliveryCreation()
+    {
+        info("@NDX:NXASetCustDeliveryAddressStart");
+ 
+        this.cycleCustomers();
+
+        info("@NDX:NXASetCustDeliveryAddressEnd");
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>cycleCustomers</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Loops through all customers that have no delivery address set
+    /// </summary>
+    public void cycleCustomers()
+    {
+        CustTable custTable;
+        DirPartyLocation deliveryPartyLocation, businessPartyLocation;
+
+        while select custTable
+        {
+            deliveryPartyLocation = DirPartyLocation::findByPartyLocationRoleType(custTable.Party, locationRoleType, NoYes::Yes);
+            businessPartyLocation   = DirPartyLocation::findByPartyLocationRoleType(custTable.Party, locationRoleTypeReplacement, NoYes::Yes);
+
+            if(!deliveryPartyLocation
+                && !businessPartyLocation)
+            {
+                warning(strFmt("@NDX:NXASetCustDeliveryAddressWarning", custTable.AccountNum, locationRoleTypeReplacement));
+            }
+            else if(!deliveryPartyLocation)
+            {
+                this.createPartyLocationRole(custTable.Party);
+                info(strFmt("@NDX:NXASetCustDeliveryAddressCreated", locationRoleTypeReplacement, custTable.AccountNum, locationRoleType));
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createPartyLocationRole</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Associates a DirPartyLocation of a specified role (var locationRoleTypeReplacement) with a second role (var locationRoleType) and creates a corresponding record
+    /// </summary>
+    /// <param name = "_party">DirPartyRecId</param>
+    public void createPartyLocationRole(DirPartyRecId _party)
+    {
+        DirPartyLocationRole insertPartyLocationRole;
+        DirPartyLocation businessPartyLocation;
+        LogisticsLocationRole locationRole;
+
+        locationRole            = LogisticsLocationRole::findBytype(locationRoleType);
+        businessPartyLocation   = DirPartyLocation::findByPartyLocationRoleType(_Party, locationRoleTypeReplacement, NoYes::Yes);
+
+        ttsbegin;
+        insertPartyLocationRole.initValue();
+        insertPartyLocationRole.PartyLocation   = businessPartyLocation.RecId;
+        insertPartyLocationRole.LocationRole    = locationRole.RecId;
+        insertPartyLocationRole.insert();
+        ttscommit;
+        
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

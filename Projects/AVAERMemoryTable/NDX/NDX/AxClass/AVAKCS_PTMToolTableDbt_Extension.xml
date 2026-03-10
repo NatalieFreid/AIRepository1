@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>AVAKCS_PTMToolTableDbt_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///     Extension class for KCS_PTMToolTable
+/// </summary>
+[ExtensionOf(tableStr(KCS_PTMToolTable))]
+final class AVAKCS_PTMToolTableDbt_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>avaICProjExist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaICProjProdExist</c> method.
+    ///     AVA - Schneider 19.08.2024
+    /// </summary>
+    /// <param name="_projId">
+    ///     <c>ProjId</c> as type
+    /// </param>
+    /// <param name="_dataAreaId">
+    ///     <c>DataAreaId</c> as type
+    /// </param>
+    /// <returns>
+    ///     <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaICProjExist(  ProjId      _projId, 
+                                    DataAreaId  _dataAreaId = this.dataAreaId   )
+    {
+        boolean     retVal;
+
+        DataAreaId  locDataAreaId;
+
+        locDataAreaId = _dataAreaId;
+
+        if(locDataAreaId == '')
+        {
+            locDataAreaId = curExt();
+        }
+
+        //if(this.AVAICProjProd)
+        if(_projId)
+        {
+            if (locDataAreaId == curExt())
+            {
+                if(ProjTable::find(_projId).RecId)
+                {
+                    retVal = true;
+                }
+            }
+            else
+            {
+                changecompany(_dataAreaId)
+                {
+                    if(ProjTable::find(_projId).RecId)
+                    {
+                        retVal = true;
+                    }
+                }
+            }
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaICProjProductionExist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaICProjProdExist</c> method.
+    ///     AVA - Schneider 19.08.2024
+    /// </summary>
+    /// <returns>
+    ///     <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaICProjProductionExist()
+    {
+        boolean retVal;
+
+        if(this.AVAICProjProd)
+        {
+            retVal = this.avaICProjExist(this.AVAICProjProd, this.KCS_ProducerUK);
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaICProjMaintenanceExist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     AVA <c>avaICProjMaintenanceExist</c> method.
+    ///     AVA - Schneider 19.08.2024
+    /// </summary>
+    /// <returns>
+    ///     <c>boolean</c> as return value
+    /// </returns>
+    public boolean avaICProjMaintenanceExist()
+    {
+        boolean retVal;
+
+        if(this.AVAICProjMaintenance)
+        {
+            retVal = this.avaICProjExist(this.AVAICProjMaintenance, this.KCS_MaintenanceUK);
+        }
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/05/15   AVA_013002_ResourceCalendar
+    /// </summary>
+    /// <param name = "_fieldId">FieldId</param>
+    public void modifiedField(FieldId _fieldId)
+    {
+        KCS_PTMReleaseStatusTable   releaseStatusTable;
+
+        next modifiedField(_fieldId);
+
+        switch (_fieldId)
+        {
+            case fieldNum(KCS_PTMToolTable, ReleaseStatus):
+                releaseStatusTable = KCS_PTMReleaseStatusTable::find(this.ReleaseStatus);
+                if (releaseStatusTable.CalendarId && !this.avasetCalendar(releaseStatusTable))
+                {
+                    this.ReleaseStatus = this.orig().ReleaseStatus;
+                }
+                break;
+            case fieldNum(KCS_PTMToolTable, ReleaseStatusExt):
+                ReleaseStatusTable = KCS_PTMReleaseStatusTable::find(this.ReleaseStatusExt);
+                if (releaseStatusTable.CalendarId && !this.avasetCalendar(releaseStatusTable))
+                {
+                    this.ReleaseStatusExt = this.orig().ReleaseStatusExt;
+                }
+                break;
+
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaCheckCalendar</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/05/15   AVA_013002_ResourceCalendar
+    /// </summary>
+    /// <param name = "_releaseStatusTable">KCS_PTMReleaseStatusTable</param>
+    /// <returns>boolean</returns>
+    public boolean avaCheckCalendar(KCS_PTMReleaseStatusTable _releaseStatusTable)
+    {
+        WrkCtrTable wrkCtrTable;
+        boolean ret = true;
+
+        if (_releaseStatusTable.CalendarId)
+        {
+            wrkCtrTable = wrkCtrTable::find(this.ToolId);
+            if (!wrkCtrTable)
+            {
+                ret = checkFailed(strFmt("@NDX:NXAResourceNotFound", this.ToolId));
+            }
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>avaSetCalendar</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// AVA/WEN/2025/05/15   AVA_013002_ResourceCalendar
+    /// </summary>
+    /// <param name = "_releaseStatusTable">KCS_PTMReleaseStatusTable</param>
+    /// <returns>boolean</returns>
+    public boolean avaSetCalendar(KCS_PTMReleaseStatusTable _releaseStatusTable)
+    {
+        boolean ret = false;
+        Args args = new Args();
+        MenuFunction    menuFunction;
+
+        if (this.avaCheckCalendar(_releaseStatusTable))
+        {
+            Dialog dialog;
+            DialogField dlgFld;
+
+            dialog = new Dialog(strFmt("@NDX:NXASetCalendarFromDate", _releaseStatusTable.CalendarId));
+            dlgFld = dialog.addFieldValue(extendedTypeStr(FromDate), DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+            dialog.run();
+            if (dialog.closedOk())
+            {
+                args.parm(date2Str(dlgFld.value(), 123, 2, DateSeparator::Dot, 2, DateSeparator::Dot, 4));
+                ret = true;
+            }
+            else
+            {
+                ret = false;
+            }
+
+            if (ret)
+            {
+                args.record(this);
+                menuFunction = new MenuFunction(menuItemActionStr(AVAUpdateResourceCalendar), MenuItemType::Action);
+                menuFunction.run(args);
+            }
+        }
+   
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>
