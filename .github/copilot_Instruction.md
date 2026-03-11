@@ -12,10 +12,20 @@ provided in the current TDD.
 
 ## Step 2 — X++ Code Generation
 
-For each individual TDD produced in Step 1, generate the X++ code in the
-processing sequence defined in Step 1.
+After Step 1 is complete, ask the user:
 
-For every X++ object:
+> **"Would you like to process all split TDDs at once, or one by one?"**
+
+**If one by one:**
+- Process the first TDD in the sequence.
+- After each TDD is complete, ask the user:
+  > **"Ready to proceed to the next TDD: [ObjectType] — [ObjectName]?"**
+- Wait for confirmation before processing the next TDD.
+
+**If all at once:**
+- Process all TDDs in the sequence without interruption.
+
+For every X++ object regardless of mode:
 - Create the **XML AOT file** for the model specified in the TDD.
 - If a label file for the model and languages specified in the TDD does not yet
   exist, ask the user to create it before generating any code that references labels.
